@@ -37,8 +37,8 @@
     },
     {
       "path": "07_REVIEW_STATUS.md",
-      "bytes": 3398,
-      "sha256": "7055a1594b005e52e24c68ecdcf43ed1cd0c4a3d7783a3729fb4256251d54505"
+      "bytes": 3621,
+      "sha256": "e9b368946e45eed24ad7f50f0f1116baed1345959ef8a92ad9310d4622a6c8e3"
     },
     {
       "path": "08_REQUIREMENT_COVERAGE.md",
@@ -54,6 +54,16 @@
       "path": "10_PRODUCT_DESIGN_NARRATIVE.md",
       "bytes": 39854,
       "sha256": "7f6c97295532f19d690379dba54b75a66f3ed4f2e201140d4a083a5357c275bb"
+    },
+    {
+      "path": "11_HANDWRITING_STATUS.md",
+      "bytes": 1524,
+      "sha256": "2276d0988bddef5bbfa1ea4d05055b000c4a4252ed386eb72bcfd0dafad3c11d"
+    },
+    {
+      "path": "SAMPLE_REVIEW.md",
+      "bytes": 4070,
+      "sha256": "79f6231b316cff7af6d102037abfb4fd739b746b26a2a679c0857d6e8efca2f7"
     },
     {
       "path": "sources/01_DECISIONS_AND_REQUIREMENTS.md",
