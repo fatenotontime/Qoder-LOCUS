@@ -19,7 +19,7 @@ node scripts/acceptance-seed.ts data/acceptance.json          # 种子课题/子
 PORT=5180 LOCUS_DATA=data/acceptance.json node server.ts      # → http://127.0.0.1:5180/acceptance.html
 ```
 
-材料待上传，点击即调用真实导入用例函数构建，停在「已上传 · 未开始」；样本署名见页内（DaRUS CC BY 4.0；手写件为生成演示件）。
+材料待上传，点击即调用真实导入用例函数构建，停在「已上传 · 未开始」；样本署名见页内（DaRUS CC BY 4.0；手写件为网络来源真实手写件，知乎水印署名，仅演示输入）。
 
 要求 Node ≥ 22（本项目 Node 24 实测）：原生 TypeScript 类型剥离 + `node:test`，**无需安装依赖、无需构建**。
 

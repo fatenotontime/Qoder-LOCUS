@@ -32,9 +32,9 @@ const MATS = [
     advanced: (st, a) => st.protocols.some((p) => p.sourceAssetId === a.id),
   },
   {
-    key: "hand", name: "handwriting-demo.jpg", file: "samples/handwriting-demo.jpg", kind: "image",
-    title: "手写实验记录（生成演示件）", path: "路径③ 实验记录 · OCR",
-    src: "ImageGen 生成演示件 · 带「AI生成」水印 · 非真实实验数据",
+    key: "hand", name: "handwriting-record.jpg", file: "samples/handwriting-record.jpg", kind: "image",
+    title: "手写实验记录（网络来源真实手写件）", path: "路径③ 实验记录 · OCR",
+    src: "知乎 @你知道我不知道（水印署名）· 大学物理实验记录 · 与 SLAC 课题不同源，仅演示 OCR 与人工确认门禁 · 无许可声明，不作再授权",
     act: "上传图片原件", route: "/api/import/image",
     body: (dataUrl, topicId) => ({ name: MATS[2].name, dataUrl, topicId }),
     stage: "识别未开始",
@@ -133,7 +133,7 @@ async function upload(m, isDup) {
 async function preview(m) {
   const box = $(`#prevbox-${m.key}`);
   if (box.innerHTML) { box.innerHTML = ""; return; }
-  if (m.kind === "image") { box.innerHTML = `<img class="prev" src="${m.file}" alt="手写记录演示件">`; return; }
+  if (m.kind === "image") { box.innerHTML = `<img class="prev" src="${m.file}" alt="手写实验记录（网络来源）">`; return; }
   const text = await contentOf(m);
   const lines = text.split("\n");
   box.innerHTML = `<pre class="prev">${esc(lines.slice(0, 30).join("\n"))}${lines.length > 30 ? `\n…（共 ${lines.length} 行，预览前 30 行）` : ""}</pre>`;
