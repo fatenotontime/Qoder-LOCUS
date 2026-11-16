@@ -14,7 +14,7 @@
 | `docs/`、`plugin-agent-handoff/` | 设计/交接 | 只读参考 |
 
 **证据（`[已核]`）**：
-- `git rev-parse` 在 `research workbench/`、`personal/`、`release/` 均返回 *not a git repository* → 无版本控制，改动不可用 git 回滚，**任何写入=不可逆**。
+- `git rev-parse` 在 `research workbench/`、`personal/`、`release/` 均返回 *not a git repository* → **不能依赖 Git 回滚**，需另外的恢复措施（本轮以文件级只读基线 `OLD_REPO_MANIFEST.txt` 兜底）。
 - STATUS.md（2026-09-11）记载 `personal` main 曾超前 origin 24 提交且有未跟踪文件 → 历史状态复杂，不得清理。
 - 只读保护基线：`docs/stage0/OLD_REPO_MANIFEST.txt`（sha256+大小+路径，排除 `.venv`/`data`/缓存）。
 

@@ -45,6 +45,20 @@
 
 公共规则：稳定 id + revision；引用固定 revision 而非 latest；版本冲突返回可恢复冲突；删除分撤回/归档与数据删除；首次确认须原件+原响应+草稿+确认稿一致提交，失败不得产生已确认态。
 
+### 2.1 三业务路径边界（**必须先分清，否则对象会串**）
+
+上表对象**共用同一领域模型**，但**不是同一条流水线**。三条不同业务路径：
+
+| 路径 | 入口材料 | 主对象 | 审阅 | 验收 |
+| --- | --- | --- | --- | --- |
+| **文献建库 LIT** | 文献 PDF/网页/题录 | SourceAsset(文献) + **EvidenceCard** + NameMapping/Comparison | 核对/重要程度/采用**三维分开** | T10–T16 |
+| **方案解析 EXP/ARC** | 方案文件/手填/AI | **ProtocolRevision** + RecordTemplateRevision | 模板人工确认后复用；图与表单同源 | T03/T06 |
+| **实验数据核对 OCR** | 仪器文件/谱图/表格/纸记录 | SourceAsset(数据) + **Measurement** + 执行记录骨架 | 原图回查→修订→确认 | T09 |
+
+**两事件**（同一次"导入"结果不同，不可互套）：**导入公开数据**→只产来源/证据，**不**产生用户执行、**不**新建用户样品、**不**宣称用户原创；**用户执行一次实验**→产 Execution/Session + 样品 + 测量 + 事件。
+
+详见 `05_DATAFLOW_WALKTHROUGH.md`。
+
 ## 3. 模块地图与需求编号（02）
 
 | 模块 | 编号段 | 一句话 |
@@ -113,12 +127,14 @@
 
 ## 8. 架构缺陷与失败案例（`[已核]`，逐条带证据）
 
+> 口径：区分**真缺陷**（两种部署下都错）与**部署条件不同**（私人版的设计原则，竞赛 Web 版**需重新设计**，不据此否定私人版）。
+
 | 缺陷/失败 | 证据 | 新版要求 |
 | --- | --- | --- |
 | 正式记录无不可变 revision 链 | `note_parser.save_confirmed_record` 把 confirmed 直接写入 `record.json`；`experiment_records.rename` 原地覆盖 record.json | 03：修订需生成新 revision，不原地覆盖 |
 | 受限执行非 OS 级沙箱 | `data_processing.py` 自述 "not an OS-level sandbox"；AST 白名单 + subprocess | 03：不得把本地 AST 限制搬上公共后端冒充系统隔离 |
-| 本地单用户，无服务端权限模型 | loopback-only（ARCHITECTURE WB-001），无跨访客/身份 | 04 ENV04/M03：普通访客隔离、服务端校验 |
-| 无持久化后端/Cloud | local-first，data/ 本机目录；无 DB/对象存储/函数 | 04：Pro 动态能力或 ECS 需实测 |
+| 服务端权限/多访客模型缺席 | loopback-only（WB-001），单机单用户 | **部署条件不同**：私人版本地单用户是**设计原则（WB-001 明确 local-first）**；竞赛 Web 版要面向公网访客，**需重新设计**身份/隔离，不据此否定私人版 |
+| 无 Cloud 持久化 | local-first，data/ 本机目录（**私人版的设计原则**） | **部署条件不同**：竞赛版需公网持久化与隔离，**需重新设计**存储/身份；不把私人版的 local-first 当作缺陷 |
 | 技术栈 Gradio 桌面 | app.py 全程 gr.Blocks | 01：技术栈不因旧 Gradio 锁死 |
 | 视觉 benchmark 证据不足 | README：单样本 60.4%–76.7%；ARCHITECTURE 标 `partial` | WB-006：分类证据 + 人工复核负担，不以单一准确率 |
 | 无摘要/定位强制 | 上下文组合为文本拼接，无区域定位 | LIT06：原文可回查（页/区/表行列） |
