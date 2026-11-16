@@ -130,6 +130,7 @@ table.grid th { background: var(--bg); position: sticky; top: 0; }
 table.grid th input, table.grid th select { margin: 2px 0 0; font-size: 12px; width: 100%; }
 table.grid td.cell { cursor: pointer; font-family: var(--font-mono); }
 table.grid td.cell:hover { background: #f0f6f2; }
+table.grid tr.marker td { color: var(--muted); font-style: italic; background: var(--bg); }
 .celledit { background: var(--bg); border: 1px dashed var(--line); border-radius: var(--radius-sm); padding: var(--space-2); }
 .celledit .raw { font-family: var(--font-mono); }
 #drawer-history table.grid td.raw { max-width: 160px; white-space: pre-wrap; word-break: break-word; }

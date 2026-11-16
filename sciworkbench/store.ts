@@ -65,6 +65,8 @@ export interface MeasurementTableRecord {
   readonly name: string;
   readonly columns: string[];
   readonly rows: string[][];
+  /** 块标记行下标（原件中的分块标题行，如时间块；保留原行、仅标注，非测量行）。 */
+  readonly markerRows?: number[];
   readonly columnMeta: ColumnMeta[];
   readonly note: string;
   readonly revision: number;

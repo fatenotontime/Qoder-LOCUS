@@ -4,7 +4,7 @@
 import { api } from "./lib/api.js";
 
 let state = { topics: [], subquestions: [], assets: [], cards: [], tables: [] };
-const ui = { nav: "literature", topicId: "", assetId: null, highlight: null, cell: null, dirty: false, busy: false };
+const ui = { nav: "literature", topicId: "", assetId: null, tableId: null, highlight: null, cell: null, dirty: false, busy: false };
 let lastAction = null; // { label, run }
 
 const $ = (s) => document.querySelector(s);
@@ -15,6 +15,7 @@ const topicName = (id) => state.topics.find((t) => t.id === id)?.name;
 async function refresh() {
   state = await api.getState();
   if (ui.assetId && !state.assets.some((a) => a.id === ui.assetId)) ui.assetId = null;
+  if (ui.tableId && !state.tables.some((t) => t.id === ui.tableId)) ui.tableId = null;
   if (ui.topicId && !state.topics.some((t) => t.id === ui.topicId)) ui.topicId = "";
   renderAll();
 }
@@ -133,7 +134,7 @@ function renderImportBox() {
       const r = await api.importMeasurements(name, csv, ui.topicId || undefined, $("#meas-hdr")?.value ?? "auto");
       $("#meas-text").value = ""; if ($("#meas-file")) $("#meas-file").value = "";
       await refresh(); ui.assetId = r.assetId; renderAll();
-      setStatus(`导入成功：表格 ${r.created} 行`);
+      setStatus(`导入成功：${r.tableCount ?? 1} 张表 · ${r.created} 行`);
     }));
   }
 }
@@ -179,16 +180,20 @@ function cardsHtml(assetId) {
     </div>`).join("");
 }
 function tableHtml(assetId) {
-  const t = state.tables.find((x) => x.assetId === assetId);
-  if (!t) return `<p class="hint">暂无表格。</p>`;
+  const ts = state.tables.filter((x) => x.assetId === assetId);
+  if (!ts.length) return `<p class="hint">暂无表格。</p>`;
+  const t = ts.find((x) => x.id === ui.tableId) ?? ts[0];
+  const markers = new Set(t.markerRows ?? []);
   const head = t.columns.map((name, i) => `<th><div>${esc(name)}</div>
     <input data-col="${i}" data-k="unit" value="${esc(t.columnMeta[i].unit)}" placeholder="单位" />
     <select data-col="${i}" data-k="decision">${["unreviewed", "confirm", "need_info"].map((v) => `<option ${v === t.columnMeta[i].decision ? "selected" : ""}>${v}</option>`).join("")}</select></th>`).join("");
-  const body = t.rows.map((r, ri) => `<tr>${t.columns.map((_, ci) => `<td class="cell" data-row="${ri}" data-col="${ci}">${esc(r[ci] ?? "")}</td>`).join("")}</tr>`).join("");
+  const body = t.rows.map((r, ri) => `<tr${markers.has(ri) ? ` class="marker" title="块标记行：原件中的分块标题（非测量行），保留原样"` : ""}>${t.columns.map((_, ci) => `<td class="cell" data-row="${ri}" data-col="${ci}">${esc(r[ci] ?? "")}</td>`).join("")}</tr>`).join("");
   const cell = ui.cell && ui.cell.tableId === t.id ? ui.cell : null;
+  const pick = ts.length > 1 ? `<div class="row"><label>表块</label><select id="table-pick">${ts.map((x) => `<option value="${x.id}" ${x.id === t.id ? "selected" : ""}>${esc(x.name)}</option>`).join("")}</select></div>` : "";
   return `
     <div class="item" data-id="${t.id}">
-      <div class="meta">${t.rows.length} 行 × ${t.columns.length} 列 · rev ${t.revision}</div>
+      ${pick}
+      <div class="meta">${t.rows.length} 行（${t.rows.length - markers.size} 数据 · ${markers.size} 标记）× ${t.columns.length} 列 · rev ${t.revision}</div>
       <div class="tablewrap"><table class="grid"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>
       <div class="row"><label>备注</label><input data-field="note" value="${esc(t.note)}" />
         <label>原因</label><input data-field="reason" placeholder="改单元格数值时必填" />
@@ -204,7 +209,7 @@ function tableHtml(assetId) {
 $("#nav").addEventListener("click", (ev) => {
   const b = ev.target.closest(".navitem"); if (!b || b.disabled) return;
   if (!guardLeave()) return;
-  ui.nav = b.dataset.nav; ui.highlight = null; ui.cell = null;
+  ui.nav = b.dataset.nav; ui.highlight = null; ui.cell = null; ui.tableId = null;
   $$(".navitem").forEach((x) => x.classList.toggle("active", x === b));
   renderAll();
 });
@@ -221,7 +226,10 @@ $("#material-list").addEventListener("click", (ev) => {
   const el = ev.target.closest(".material"); if (!el) return;
   if (el.dataset.id === ui.assetId) return;
   if (!guardLeave()) return;
-  ui.assetId = el.dataset.id; ui.highlight = null; ui.cell = null; renderAll();
+  ui.assetId = el.dataset.id; ui.highlight = null; ui.cell = null; ui.tableId = null; renderAll();
+});
+$("#right-content").addEventListener("change", (ev) => {
+  if (ev.target.id === "table-pick") { ui.tableId = ev.target.value; ui.cell = null; renderRight(); }
 });
 $("#right-content").addEventListener("input", (ev) => { if (ev.target.closest(".item")) ui.dirty = true; });
 $("#right-content").addEventListener("click", async (ev) => {

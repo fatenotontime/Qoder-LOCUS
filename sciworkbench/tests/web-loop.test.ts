@@ -249,7 +249,7 @@ test("仪器导出（前言+制表符块，首行无分隔符）→ 明确拒绝
   assert.throws(() => importMeasurements(emptyState(), { name: "run.txt", csv: tc }), (e: unknown) => e instanceof AppError && e.status === 422);
 });
 
-test("两级表头合并：首级空缺由下一级填充（EnzymeML 风格）", () => {
+test("两级表头合并：合并单元格组名前向填充（EnzymeML 风格）", () => {
   const rows = [
     ["   Data", "", "", "", "", ""],
     ["Experiment ID", "Type", "Reaction", "Protein", "", ""],
@@ -257,9 +257,64 @@ test("两级表头合并：首级空缺由下一级填充（EnzymeML 风格）",
     ["exp-1", "kinetic", "r1", "SLAC", "5", "mM"],
   ];
   const { columns, body } = analyseTable(rows);
-  assert.deepEqual(columns, ["Experiment ID", "Type", "Reaction", "Protein/Name", "Initial concentration", "Unit"]);
+  assert.deepEqual(columns, ["Experiment ID", "Type", "Reaction", "Protein/Name", "Protein/Initial concentration", "Protein/Unit"]);
   assert.equal(body.length, 1);
   assert.deepEqual(body[0], ["exp-1", "kinetic", "r1", "SLAC", "5", "mM"]);
+});
+
+test("块标记行：时间块标题保留原行但标出，不混同测量行", () => {
+  const rows = [
+    ["Experiment ID", "Type", "Reaction", "Protein", "", "", "Reactant", "", ""],
+    ["", "", "", "Name", "Initial concentration", "Unit", "Name", "Initial concentration", "Unit"],
+    ["0", "Time [min]", "ABTS oxidation", "", "", "", "", "", ""],
+    ["0", "Absorption", "ABTS oxidation", "SLAC", "0.07", "umole / l", "ABTS", "0", "umole / l"],
+  ];
+  const { columns, body, markerRows } = analyseTable(rows);
+  assert.deepEqual(columns, ["Experiment ID", "Type", "Reaction", "Protein/Name", "Protein/Initial concentration", "Protein/Unit", "Reactant/Name", "Reactant/Initial concentration", "Reactant/Unit"]);
+  assert.equal(body.length, 2);
+  assert.deepEqual(markerRows, [0]);
+});
+
+test("单级表头+列表数据（Documentation 风格）：不误把首行数据当第二级表头", () => {
+  const rows = [
+    ["   Documentation", "", "", "", ""],
+    ["", "", "Units", "Constants", "Types"],
+    ["", "", "mole / l", "Constant", "Concentration"],
+    ["", "", "umole / l", "", "Conversion [%]"],
+  ];
+  const { columns, body, markerRows } = analyseTable(rows);
+  assert.deepEqual(columns, ["Units", "Constants", "Types"]);
+  assert.equal(body.length, 2);
+  assert.deepEqual(body[0], ["mole / l", "Constant", "Concentration"]);
+  assert.deepEqual(markerRows, []);
+});
+
+test("多表叠放：仅表头的块跳过，数据块首尾空列裁剪（Kinetic Models 风格）", () => {
+  const csv = [
+    ",,,,,,,",
+    "   Kinetic Models,,,,,,,",
+    "Reaction,Equation,Modeled elements,,Parameter,,,",
+    ",,Proteins,Reactants,Name,Value,Unit,,",
+    ",,,,,,,",
+    ",,,,,,,,Reactant,,Protein,",
+    ",,,,,,,,Name,ID,Name,ID",
+    ",,,,,,,,ABTS,s0,SLAC,p0",
+  ].join("\n");
+  const r = importMeasurements(emptyState(), { name: "k.csv", csv });
+  assert.equal(r.state.tables.length, 1);
+  const t = r.state.tables[0];
+  assert.equal(t.name, "k.csv · Kinetic Models");
+  assert.deepEqual(t.columns, ["Reactant/Name", "Reactant/ID", "Protein/Name", "Protein/ID"]);
+  assert.deepEqual(t.rows, [["ABTS", "s0", "SLAC", "p0"]]);
+});
+
+test("多表叠放且都有数据：逐块成表并带块序号", () => {
+  const csv = ",,\nt1\nA,B\n1,2\n\n,,\nt2\nC,D\n3,4\n";
+  const r = importMeasurements(emptyState(), { name: "m.csv", csv });
+  assert.equal(r.state.tables.length, 2);
+  assert.equal(r.state.tables[0].name, "m.csv · t1 (1/2)");
+  assert.equal(r.state.tables[1].name, "m.csv · t2 (2/2)");
+  assert.equal(r.created, 2);
 });
 
 test("下一行像数据行(r0) → 不误合并表头（Vessels 风格）", () => {

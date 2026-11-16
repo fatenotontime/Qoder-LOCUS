@@ -80,10 +80,11 @@ export function parseCsv(text: string, delim = ","): string[][] {
     cell += ch;
   }
   if (cell.length > 0 || row.length > 0) { row.push(cell); rows.push(row); }
-  return rows.filter((r) => r.some((c) => c.trim().length > 0));
+  // 保留全空行：它们是表块边界（splitBlocks 依赖），由调用方自行过滤。
+  return rows;
 }
 
-/** 自动判断表头行数：若首级表头有空缺、且下一行填充 ≥2 格、且下一行不像数据行 → 视为两级表头。 */
+/** 自动判断表头行数：两级表头须符合**合并单元格**语义——第二级在首级空缺处有续列。 */
 function autoHeaderLevels(cleaned: string[][], h: number): number {
   const l1 = cleaned[h] ?? [];
   const l2 = cleaned[h + 1] ?? [];
@@ -91,39 +92,75 @@ function autoHeaderLevels(cleaned: string[][], h: number): number {
   if (/^[a-z]{1,3}\d{1,3}$/i.test(first2)) return 1; // 下一行像行号(r0/r1) → 单级
   const n2 = l2.filter((c) => c.trim() !== "").length;
   if (n2 < 2) return 1;
-  return l1.some((c) => c.trim() === "") ? 2 : 1;
+  return l2.some((c, i) => c.trim() !== "" && (l1[i] ?? "").trim() === "") ? 2 : 1;
+}
+
+/** 一个表块：标题行（单格行）归属其后的块；全空行是块边界。 */
+export interface TableBlock {
+  title: string | null;
+  rows: string[][];
+}
+
+/** 按标题行/全空行把整文件切成多个表块（EnzymeML 导出常多表叠放）。 */
+export function splitBlocks(rows: string[][]): TableBlock[] {
+  const blocks: TableBlock[] = [];
+  let cur: TableBlock | null = null;
+  let lastTitle: string | null = null;
+  const close = () => { if (cur && cur.rows.length) blocks.push(cur); cur = null; };
+  for (const r of rows) {
+    const filled = r.filter((c) => c.trim() !== "");
+    if (filled.length === 0) { close(); continue; }
+    if (filled.length === 1) {
+      // 仅首列单格行是章节标题；其余单格行是列表残行/备注，不作标题也不入表体。
+      if (r.findIndex((c) => c.trim() !== "") === 0) { close(); lastTitle = filled[0].trim(); }
+      continue;
+    }
+    if (!cur) cur = { title: lastTitle, rows: [] };
+    cur.rows.push(r);
+  }
+  close();
+  return blocks;
 }
 
 /**
- * 表分析：跳过章节标记行，识别表头（可含两级），丢弃键列独占的空数据行。
+ * 表分析（单个表块内）：识别表头（合并单元格两级时组名前向填充），
+ * 首尾全空列裁剪，保留全部数据行并标出**块标记行**（如时间块标题，非测量行）。
  * headerRows：1 / 2 / "auto"（默认自动）。
  */
-export function analyseTable(rows: string[][], headerRows: 1 | 2 | "auto" = "auto"): { columns: string[]; body: string[][] } {
-  const cleaned = rows.filter((r) => r.some((c) => c.trim() !== ""));
+export function analyseTable(rows: string[][], headerRows: 1 | 2 | "auto" = "auto"): { columns: string[]; body: string[][]; markerRows: number[] } {
   const nonEmpty = (r: string[]) => r.filter((c) => c.trim() !== "").length;
+  // 单格行是标题/章节标记，不属于表格本体（分块时已剥离，这里再兜底）。
+  const cleaned = rows.filter((r) => nonEmpty(r) >= 2);
   let h = 0;
   for (let i = 0; i < Math.min(cleaned.length, 12); i++) {
     if (nonEmpty(cleaned[i]) >= 2) { h = i; break; }
   }
   const levels = headerRows === "auto" ? autoHeaderLevels(cleaned, h) : headerRows;
-  // 宽度按“最后一列非空”裁剪，避免尾部全空列产生大量 colN 占位。
-  const width = Math.max(...cleaned.map((r) => {
-    let last = 0;
-    r.forEach((c, i) => { if (c.trim() !== "") last = i + 1; });
-    return last;
-  }));
-  const columns = Array.from({ length: width }, (_, i) => {
-    const parts: string[] = [];
-    for (let k = 0; k < levels; k++) {
-      const v = (cleaned[h + k]?.[i] ?? "").trim();
-      if (v) parts.push(v);
-    }
+  // 宽度按“首/末非空列”裁剪，避免首尾全空列产生大量 colN 占位。
+  let first = Number.POSITIVE_INFINITY;
+  let last = 0;
+  for (const r of cleaned) r.forEach((c, i) => { if (c.trim() !== "") { if (i < first) first = i; if (i + 1 > last) last = i + 1; } });
+  if (!Number.isFinite(first)) first = 0;
+  const at = (r: string[] | undefined, i: number) => (r?.[first + i] ?? "").trim();
+  let group = "";
+  const columns = Array.from({ length: last - first }, (_, i) => {
+    const a = at(cleaned[h], i);
+    const b = levels === 2 ? at(cleaned[h + 1], i) : "";
+    if (a) group = a;
+    const parts = levels === 2 ? (a && b ? [a, b] : b ? [group, b] : a ? [a] : []) : a ? [a] : [];
     return parts.join("/") || `col${i + 1}`;
   });
   const body = cleaned.slice(h + levels)
-    .map((r) => Array.from({ length: width }, (_, i) => (r[i] ?? "").trim()))
+    .map((r) => Array.from({ length: last - first }, (_, i) => at(r, i)))
     .filter((r) => nonEmpty(r) >= 2);
-  return { columns, body };
+  // 块标记行：非空格数 ≤ 表头一半、且集中在前缀列（原件中的分块标题，如 "0,Time [min],…"）。
+  const headFilled = columns.filter((c) => !/^col\d+$/.test(c)).length;
+  const markerRows: number[] = [];
+  body.forEach((r, i) => {
+    const idx = r.map((c, j) => (c !== "" ? j : -1)).filter((j) => j >= 0);
+    if (idx.length >= 2 && idx.length * 2 <= headFilled && idx.every((j, k) => j === k)) markerRows.push(i);
+  });
+  return { columns, body, markerRows };
 }
 
 function makeAsset(kind: AssetRecord["kind"], name: string, text: string, topicId?: string): AssetRecord {
@@ -304,22 +341,32 @@ export function importMeasurements(state: LocusState, input: { name: string; csv
   if (!delim) throw new AppError(422, "首行未发现分隔符（可能是带前置标题的 CSV 或仪器导出格式）。请移除标题行、或用带表头在首行的 CSV/TSV。");
   const rows = parseCsv(asset.text, delim);
   if (rows.length < 2) throw new AppError(422, "表格至少需要表头 + 一行数据。");
-  const { columns, body } = analyseTable(rows, input.headerRows ?? "auto");
-  if (body.length === 0) throw new AppError(422, "解析后没有可核对的数据行（可能只有表头或章节标记）。");
-  const table: MeasurementTableRecord = {
-    id: `tbl_${randomUUID()}`,
-    assetId: asset.id,
-    name: asset.name,
-    columns,
-    rows: body,
-    columnMeta: columns.map<ColumnMeta>((cname) => ({ name: cname, unit: "", decision: "unreviewed" })),
-    note: "",
-    revision: 1,
-    history: [],
-    createdAt: now(),
-    updatedAt: now(),
-  };
-  return { state: { ...state, assets: [...state.assets, asset], tables: [...state.tables, table] }, asset, created: body.length };
+  // 整文件可能叠放多张表：按标题行/空行分块，每块独立识别表头与数据行。
+  const parsed = splitBlocks(rows)
+    .map((b) => ({ title: b.title, ...analyseTable(b.rows, input.headerRows ?? "auto") }))
+    .filter((b) => b.body.length > 0);
+  if (parsed.length === 0) throw new AppError(422, "解析后没有可核对的数据行（可能只有表头或章节标记）。");
+  const tables = parsed.map((b, i) => {
+    const suffix = b.title ? ` · ${b.title}` : "";
+    const idx = parsed.length > 1 ? ` (${i + 1}/${parsed.length})` : "";
+    const table: MeasurementTableRecord = {
+      id: `tbl_${randomUUID()}`,
+      assetId: asset.id,
+      name: `${asset.name}${suffix}${idx}`,
+      columns: b.columns,
+      rows: b.body,
+      columnMeta: b.columns.map<ColumnMeta>((cname) => ({ name: cname, unit: "", decision: "unreviewed" })),
+      markerRows: b.markerRows,
+      note: "",
+      revision: 1,
+      history: [],
+      createdAt: now(),
+      updatedAt: now(),
+    };
+    return table;
+  });
+  const created = tables.reduce((n, t) => n + t.rows.length, 0);
+  return { state: { ...state, assets: [...state.assets, asset], tables: [...state.tables, ...tables] }, asset, created };
 }
 
 export interface TablePatch {
