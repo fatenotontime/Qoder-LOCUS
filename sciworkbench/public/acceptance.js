@@ -134,17 +134,33 @@ async function preview(m) {
   const box = $(`#prevbox-${m.key}`);
   if (box.innerHTML) { box.innerHTML = ""; return; }
   if (m.kind === "image") { box.innerHTML = `<img class="prev" src="${m.file}" alt="手写实验记录（网络来源）">`; return; }
-  const text = await contentOf(m);
+  const text = await contentOf(m).catch((e) => { box.innerHTML = `<span class="err" style="color:var(--danger)">${esc(e.message)}</span>`; return null; });
+  if (text === null) return;
   const lines = text.split("\n");
   box.innerHTML = `<pre class="prev">${esc(lines.slice(0, 30).join("\n"))}${lines.length > 30 ? `\n…（共 ${lines.length} 行，预览前 30 行）` : ""}</pre>`;
 }
 
 async function load() {
   state = await (await fetch("/api/state")).json();
+  if (!Array.isArray(state.topics)) throw new Error(`/api/state 返回异常：${JSON.stringify(state).slice(0, 120)}`);
   render();
 }
-await load();
-const ai = await (await fetch("/api/ai/status")).json();
-$("#envnote").innerHTML += ai.configured
-  ? ` AI 已配置（${esc(ai.model)}）：上传构建不依赖 AI；解析/识别可在主界面发起。`
-  : " AI 未配置：上传构建走草稿/原图归档路径，不冒充 AI；如需 AI 解析/识别请在主界面配置。";
+
+function fatal(msg) {
+  $("#envnote").innerHTML = `<span style="color:var(--danger)"><strong>无法加载验收环境：</strong>${esc(msg)}</span><br>请通过服务打开 <code>http://127.0.0.1:5180/acceptance.html</code>（直接双击 HTML 文件走 file://，调不到后端 TS 函数）。服务未启动时：<code>cd sciworkbench && PORT=5180 LOCUS_DATA=data/acceptance.json node server.ts</code>`;
+  $("#topic-body").innerHTML = '<span class="hint warn">环境未连接，见上方提示。</span>';
+}
+
+if (location.protocol === "file:") {
+  fatal("当前以 file:// 直开 HTML 文件，浏览器无法请求后端接口。");
+} else {
+  try {
+    await load();
+    const ai = await (await fetch("/api/ai/status")).json();
+    $("#envnote").innerHTML += ai.configured
+      ? ` AI 已配置（${esc(ai.model)}）：上传构建不依赖 AI；解析/识别可在主界面发起。`
+      : " AI 未配置：上传构建走草稿/原图归档路径，不冒充 AI；如需 AI 解析/识别请在主界面配置。";
+  } catch (e) {
+    fatal(e.message ?? String(e));
+  }
+}
