@@ -207,5 +207,37 @@ table.grid .celledit input { width: auto; }
 .item.cmp { margin-bottom: var(--space-2); }
 #lit-tools { margin-top: var(--space-3); border-top: 1px solid var(--line); padding-top: var(--space-2); }
 
+/* ── 4C：实验图 / 步骤编辑器 / 影响面板 / 执行记录 / OCR ── */
+.diagram { padding: var(--space-2) 0; }
+.dnode {
+  border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--surface);
+  padding: var(--space-2) var(--space-3); cursor: pointer; max-width: 420px;
+}
+.dnode:hover { border-color: var(--accent); }
+.dnode.sel { border-color: var(--accent); background: #eef3ef; box-shadow: 0 0 0 1px var(--accent); }
+.dnode .dop { font-weight: 600; }
+.dnode .dmeta { display: flex; gap: var(--space-2); align-items: center; flex-wrap: wrap; font-size: var(--text-sm); color: var(--muted); }
+.dtime { font-family: var(--font-mono); font-size: 12px; }
+.darrow { color: var(--muted); padding: 0 0 0 var(--space-4); line-height: 1.2; }
+.dbranch { margin: var(--space-2) 0 var(--space-2) var(--space-5); border-left: 2px dashed var(--warn); padding-left: var(--space-3); }
+.dbranch-title { color: var(--warn); font-size: var(--text-sm); margin-bottom: var(--space-1); }
+.stepeditor {
+  position: sticky; bottom: 0; background: var(--bg); border: 1px dashed var(--accent);
+  border-radius: var(--radius-sm); padding: var(--space-2); margin-top: var(--space-2);
+}
+.stepeditor .row { margin-bottom: var(--space-1); }
+.stepeditor input, .stepeditor textarea { margin-bottom: 0; }
+.impactpanel { border-color: var(--accent); }
+.impactpanel > .meta { display: flex; gap: var(--space-2); align-items: baseline; flex-wrap: wrap; }
+.imp summary { display: flex; gap: var(--space-2); align-items: center; flex-wrap: wrap; }
+.impitem { border-top: 1px dashed var(--line); padding: var(--space-1) 0; }
+.evrow { display: flex; gap: var(--space-2); align-items: center; flex-wrap: wrap; padding: var(--space-1) 0; border-bottom: 1px solid var(--line); font-size: var(--text-sm); }
+.evrow button { padding: 0 var(--space-2); font-size: 12px; }
+.smprow { padding: var(--space-1) 0; border-bottom: 1px solid var(--line); }
+.tmpl { padding: var(--space-1) 0; }
+.ocrimg { max-width: 100%; border: 1px solid var(--line); border-radius: var(--radius-sm); }
+.item.meas .row input, .item.ocr .row input { width: auto; flex: 1 1 100px; margin: 0; }
+.item.smp .row input { width: auto; flex: 1 1 120px; margin: 0; }
+
 
 

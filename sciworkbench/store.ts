@@ -28,7 +28,7 @@ export interface RevisionEntry {
 /** 一条原始素材（导入的文献摘录或实验数据文件）。原件**完整保存**；超限直接拒绝，不截断。 */
 export interface AssetRecord {
   readonly id: string;
-  readonly kind: "literature" | "measurement";
+  readonly kind: "literature" | "measurement" | "image";
   readonly name: string;
   readonly topicId?: string;
   readonly bytes: number;
@@ -164,6 +164,180 @@ export interface TopicRecord {
   readonly createdAt: string;
 }
 
+// ── 4C：方案 / 模板 / 执行 / 样品 / 测量 / 影响 / OCR ────────
+
+/** 方案步骤：相对时间（分钟，可估计）、必要支路、观察终点。 */
+export interface ProtocolStep {
+  readonly id: string;
+  readonly op: string;
+  readonly params: Record<string, string>;
+  readonly note: string;
+  readonly durationMin: number | null;
+  readonly estimated: boolean;
+  readonly branch: string | null;
+  readonly observeEnd: string;
+}
+
+/** 方案修订：整版快照，追加式；引用固定 revision，不指向 latest。 */
+export interface ProtocolRevisionSnapshot {
+  readonly revision: number;
+  readonly at: string;
+  readonly reason: string;
+  readonly purpose: string;
+  readonly inputs: string[];
+  readonly steps: ProtocolStep[];
+  readonly conditions: string[];
+  readonly criteria: string;
+  readonly unknowns: string[];
+  readonly sourceFragments: string[];
+}
+
+export interface ProtocolRecord {
+  readonly id: string;
+  readonly topicId: string;
+  readonly name: string;
+  /** 方法来源：用户编写 / 公开材料重构（须标明）/ AI 草稿。 */
+  readonly sourceKind: "user" | "reconstructed" | "ai-draft";
+  readonly sourceAssetId?: string;
+  readonly revision: number;
+  readonly revisions: ProtocolRevisionSnapshot[];
+  readonly createdAt: string;
+  readonly updatedAt: string;
+}
+
+/** 记录模板：固定方案 revision；AI 草稿须人工确认后复用。 */
+export interface RecordTemplateRecord {
+  readonly id: string;
+  readonly protocolId: string;
+  readonly protocolRevision: number;
+  readonly fields: string[];
+  readonly aiDraft: boolean;
+  readonly humanConfirmed: boolean;
+  readonly confirmedAt?: string;
+  readonly revision: number;
+  readonly history: RevisionEntry[];
+  readonly createdAt: string;
+}
+
+/** 执行事件：实际层；后补标 backfilled；原位编辑留历史，不改源方案。 */
+export interface ExecEvent {
+  readonly id: string;
+  readonly at: string;
+  readonly recordedAt: string;
+  readonly backfilled: boolean;
+  readonly kind: "start" | "step" | "pause" | "resume" | "note" | "deviation";
+  readonly stepId?: string;
+  readonly text: string;
+  readonly actual: { readonly amount?: string; readonly durationMin?: number; readonly order?: number };
+  readonly revision: number;
+  readonly history: RevisionEntry[];
+}
+
+export interface ExecutionRecord {
+  readonly id: string;
+  readonly topicId: string;
+  readonly protocolId: string;
+  readonly protocolRevision: number;
+  readonly templateId?: string;
+  readonly status: "active" | "paused" | "done";
+  readonly events: ExecEvent[];
+  readonly pausedState?: {
+    readonly at: string;
+    readonly reason: string;
+    readonly risks: string[];
+    readonly resumeChecks: string[];
+    readonly aiSuggested: boolean;
+    readonly humanDecision?: string;
+  };
+  readonly createdAt: string;
+  readonly updatedAt: string;
+}
+
+/** 样品状态：追加式；用量可估计；历史不被改写。 */
+export interface SampleStateEntry {
+  readonly revision: number;
+  readonly at: string;
+  readonly amount: { readonly value: string; readonly unit: string; readonly estimated: boolean };
+  readonly handling: string;
+  readonly use: string;
+  readonly note: string;
+}
+
+export interface SampleRecord {
+  readonly id: string;
+  readonly topicId: string;
+  readonly executionId?: string;
+  /** 稳定短号：引用用 id，改名不破引用。 */
+  readonly shortName: string;
+  readonly displayName: string;
+  readonly origin: "user" | "public";
+  readonly states: SampleStateEntry[];
+  readonly createdAt: string;
+}
+
+/** 独立测量：固定样品状态 revision；可回链表格单元格。 */
+export interface MeasurementRecord {
+  readonly id: string;
+  readonly topicId: string;
+  readonly sampleId: string;
+  readonly sampleStateRevision: number;
+  readonly time: string;
+  readonly method: string;
+  readonly instrument: string;
+  readonly value: string;
+  readonly unit: string;
+  readonly cellRef?: { readonly tableId: string; readonly row: number; readonly col: number };
+  readonly note: string;
+  readonly revision: number;
+  readonly history: RevisionEntry[];
+  readonly createdAt: string;
+}
+
+export interface ImpactItem {
+  readonly targetKind: string;
+  readonly targetId: string;
+  readonly targetRevision?: number;
+  readonly category: "timing" | "execution" | "comparability" | "analysis" | "interpretation";
+  readonly finding: string;
+  readonly reason: string;
+  readonly evidenceRefs: string[];
+  readonly unknowns: string[];
+  readonly suggestedAction: string;
+}
+
+/** 影响分析：确定性时间传播独立；AI 语义评估分栏；失败/未配置 ≠ 无影响；新改动 → 旧分析 stale。 */
+export interface ImpactRecord {
+  readonly id: string;
+  readonly topicId: string;
+  readonly change: { readonly entityKind: "protocol" | "execution" | "sample" | "measurement" | "table"; readonly entityId: string; readonly revision: number; readonly summary: string };
+  readonly snapshotHash: string;
+  readonly status: "pending" | "running" | "completed" | "failed" | "stale";
+  readonly deterministic: { readonly timeShifts: { readonly stepId: string; readonly op: string; readonly deltaMin: number; readonly newTotalMin: number }[]; readonly note: string };
+  readonly model?: string;
+  readonly promptVersion: string;
+  readonly assessment?: "impact" | "no_supported_impact_found" | "needs_review";
+  readonly summary: string;
+  readonly items: ImpactItem[];
+  readonly error?: string;
+  readonly createdAt: string;
+  readonly updatedAt: string;
+}
+
+/** OCR/手写记录：原图归档 + 识别草稿 → 人工修订 → 确认。 */
+export interface OcrRecord {
+  readonly id: string;
+  readonly assetId: string;
+  readonly extraction: "ai" | "manual";
+  readonly rawText: string;
+  readonly fields: Record<string, string>;
+  readonly unknowns: string[];
+  readonly status: "draft" | "confirmed";
+  readonly revision: number;
+  readonly history: RevisionEntry[];
+  readonly createdAt: string;
+  readonly updatedAt: string;
+}
+
 /** 子问题：可探索性建立，实际任务再查缺项。 */
 export interface SubquestionRecord {
   readonly id: string;
@@ -183,12 +357,19 @@ export interface LocusState {
   readonly adoptions: AdoptionRecord[];
   readonly mappings: NameMappingRecord[];
   readonly comparisons: ComparisonRecord[];
+  readonly protocols: ProtocolRecord[];
+  readonly templates: RecordTemplateRecord[];
+  readonly executions: ExecutionRecord[];
+  readonly samples: SampleRecord[];
+  readonly measurements: MeasurementRecord[];
+  readonly impacts: ImpactRecord[];
+  readonly ocrs: OcrRecord[];
 }
 
-export const STATE_VERSION = 4;
+export const STATE_VERSION = 5;
 
 export function emptyState(): LocusState {
-  return { version: STATE_VERSION, topics: [], subquestions: [], assets: [], cards: [], tables: [], adoptions: [], mappings: [], comparisons: [] };
+  return { version: STATE_VERSION, topics: [], subquestions: [], assets: [], cards: [], tables: [], adoptions: [], mappings: [], comparisons: [], protocols: [], templates: [], executions: [], samples: [], measurements: [], impacts: [], ocrs: [] };
 }
 
 export interface Store {
@@ -216,8 +397,8 @@ export class JsonFileStore implements Store {
     try {
       const p = JSON.parse(readFileSync(this.#path, "utf8")) as Partial<LocusState> & { version?: number };
       const v = p.version ?? 0;
-      if (v !== 2 && v !== 3 && v !== STATE_VERSION) return emptyState();
-      // v2/v3 → v4：保留既有数据，补空新实体；旧卡补默认抽取结构（不丢用户数据）
+      if (v !== 2 && v !== 3 && v !== 4 && v !== STATE_VERSION) return emptyState();
+      // v2/v3/v4 → v5：保留既有数据，补空新实体；旧卡补默认抽取结构（不丢用户数据）
       // hash 统一为逻辑内容口径（旧记录按 canonical 重算，保持跨路径拒重一致）
       return {
         version: STATE_VERSION,
@@ -234,6 +415,13 @@ export class JsonFileStore implements Store {
         adoptions: p.adoptions ?? [],
         mappings: p.mappings ?? [],
         comparisons: p.comparisons ?? [],
+        protocols: p.protocols ?? [],
+        templates: p.templates ?? [],
+        executions: p.executions ?? [],
+        samples: p.samples ?? [],
+        measurements: p.measurements ?? [],
+        impacts: p.impacts ?? [],
+        ocrs: p.ocrs ?? [],
       };
     } catch {
       return emptyState();

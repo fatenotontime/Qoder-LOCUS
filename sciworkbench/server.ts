@@ -26,6 +26,33 @@ import {
   sourceView,
   upsertAdoption,
 } from "./services/app.ts";
+import {
+  addManualOcr,
+  addMeasurement,
+  addSampleState,
+  appendEvent,
+  completeExecution,
+  confirmOcr,
+  confirmTemplate,
+  createProtocol,
+  createSample,
+  createTemplate,
+  editEvent,
+  editMeasurement,
+  editProtocol,
+  importImage,
+  pauseAssist,
+  pauseExecution,
+  protocolDraftFromAi,
+  registerImpact,
+  renameSample,
+  resumeExecution,
+  runImpactAssessment,
+  runOcr,
+  startExecution,
+  templateProtocolCheck,
+} from "./services/experiment.ts";
+import { runTask } from "./services/ai.ts";
 
 const HERE = fileURLToPath(new URL(".", import.meta.url));
 const PUBLIC_DIR = join(HERE, "public");
@@ -35,10 +62,10 @@ const PORT = Number(process.env.PORT ?? process.argv[2] ?? 5173);
 const MAX_BODY = 8 * 1024 * 1024;
 
 /** 审计：留存模型原始响应（不含认证头）；写入数据区，不入 Git。失败不阻断主流程。 */
-function writeAudit(assetId: string, audit: { raws: { index: number; content: string }[]; model: string }): void {
+function writeAudit(assetId: string, audit: { raws: { index: number; content: string }[]; model: string }, task = "literature_extract"): void {
   try {
     mkdirSync(AUDIT_DIR, { recursive: true });
-    writeFileSync(join(AUDIT_DIR, `${assetId}.json`), JSON.stringify({ assetId, at: new Date().toISOString(), task: "literature_extract", model: audit.model, raws: audit.raws }, null, 2), "utf8");
+    writeFileSync(join(AUDIT_DIR, `${assetId}.json`), JSON.stringify({ assetId, at: new Date().toISOString(), task, model: audit.model, raws: audit.raws }, null, 2), "utf8");
   } catch {
     /* 审计失败不影响导入结果 */
   }
@@ -60,7 +87,7 @@ export interface Job {
   done: number;
   total: number;
   message: string;
-  result?: { assetId: string; created: number; reminder?: boolean };
+  result?: { assetId?: string; created?: number; reminder?: boolean; protocolId?: string; impactId?: string; ocrIds?: string[]; discarded?: boolean };
   error?: string;
 }
 
@@ -117,6 +144,11 @@ export async function createApp(store: Store) {
       if (method === "DELETE" && path === "/api/ai/config") { clearAiConfig(); send(res, 200, describeConfig(getAiConfig())); return; }
       if (method === "GET" && path.startsWith("/api/source/")) {
         send(res, 200, sourceView(state, decodeURIComponent(path.slice("/api/source/".length))));
+        return;
+      }
+      const tmplCheck = path.match(/^\/api\/templates\/([^/]+)\/check$/);
+      if (method === "GET" && tmplCheck) {
+        send(res, 200, templateProtocolCheck(state, decodeURIComponent(tmplCheck[1])));
         return;
       }
 
@@ -244,13 +276,288 @@ export async function createApp(store: Store) {
         }
         const tblMatch = path.match(/^\/api\/tables\/([^/]+)\/review$/);
         if (tblMatch) {
-          state = reviewTable(state, decodeURIComponent(tblMatch[1]), {
+          const tableId = decodeURIComponent(tblMatch[1]);
+          const before = state.tables.find((t) => t.id === tableId);
+          state = reviewTable(state, tableId, {
             columnUpdates: body.columnUpdates as never,
             cellUpdates: body.cellUpdates as never,
             note: body.note as string | undefined,
             reason: body.reason as string | undefined,
           });
+          const after = state.tables.find((t) => t.id === tableId);
+          // 表格数值修订 → 登记影响分析（确定性部分无；AI 语义评估待跑）。课题经原件取。
+          const tableTopic = after ? state.assets.find((a) => a.id === after.assetId)?.topicId : undefined;
+          if (before && after && after.revision > before.revision && tableTopic) {
+            state = registerImpact(state, {
+              topicId: tableTopic,
+              change: { entityKind: "table", entityId: tableId, revision: after.revision, summary: `表格修订 r${after.revision}` },
+              aiConfigured: getAiConfig() !== null,
+            }).state;
+          }
           await store.save(state); send(res, 200, { ok: true }); return;
+        }
+
+        // ── 4C：方案 / 模板 / 执行 / 样品 / 测量 / 影响 / OCR ──
+        if (path === "/api/protocols") {
+          const r = createProtocol(state, {
+            topicId: String(body.topicId ?? ""),
+            name: String(body.name ?? ""),
+            sourceKind: body.sourceKind as "user" | "reconstructed" | "ai-draft" | undefined,
+            sourceAssetId: body.sourceAssetId as string | undefined,
+            purpose: body.purpose as string | undefined,
+            inputs: body.inputs as string[] | undefined,
+            steps: (body.steps as never[]) ?? [],
+            conditions: body.conditions as string[] | undefined,
+            criteria: body.criteria as string | undefined,
+            unknowns: body.unknowns as string[] | undefined,
+            sourceFragments: body.sourceFragments as string[] | undefined,
+          });
+          state = r.state; await store.save(state);
+          send(res, 200, { ok: true, protocolId: r.protocol.id }); return;
+        }
+        if (path === "/api/protocols/parse") {
+          const cfg = getAiConfig();
+          if (!cfg) { send(res, 422, { error: "AI 未配置：无法解析方案。可先手工创建方案。" }); return; }
+          const assetId = String(body.assetId ?? "");
+          const asset = state.assets.find((a) => a.id === assetId);
+          if (!asset) { send(res, 404, { error: `原件不存在：${assetId}` }); return; }
+          const topicId = String(body.topicId ?? asset.topicId ?? "");
+          const name = String(body.name ?? `${asset.name} · 方案草稿`);
+          const id = `job_${randomUUID()}`;
+          const job: Job = { id, status: "running", done: 0, total: 1, message: "方案解析中…" };
+          jobs.set(id, job); trimJobs();
+          void (async () => {
+            try {
+              const { value, raw } = await runTask(cfg, "protocol_parse", asset.text.slice(0, 12000));
+              const draft = protocolDraftFromAi(value, assetId);
+              const r = createProtocol(state, { topicId, name, sourceKind: "ai-draft", sourceAssetId: assetId, ...draft });
+              state = r.state; await store.save(state);
+              writeAudit(assetId, { raws: [{ index: 0, content: raw }], model: cfg.model }, "protocol_parse");
+              job.status = "done"; job.result = { protocolId: r.protocol.id, assetId }; job.message = "完成";
+            } catch (e) { job.status = "error"; job.error = (e as Error).message ?? "失败"; }
+          })();
+          send(res, 202, { ok: true, jobId: id }); return;
+        }
+        const protoEdit = path.match(/^\/api\/protocols\/([^/]+)\/edit$/);
+        if (protoEdit) {
+          const r = editProtocol(state, decodeURIComponent(protoEdit[1]), {
+            name: body.name as string | undefined,
+            purpose: body.purpose as string | undefined,
+            inputs: body.inputs as string[] | undefined,
+            steps: body.steps as never,
+            conditions: body.conditions as string[] | undefined,
+            criteria: body.criteria as string | undefined,
+            unknowns: body.unknowns as string[] | undefined,
+            sourceFragments: body.sourceFragments as string[] | undefined,
+            reason: String(body.reason ?? ""),
+          });
+          state = r.state; await store.save(state);
+          send(res, 200, { ok: true, revision: r.protocol.revision }); return;
+        }
+        if (path === "/api/templates") {
+          const r = createTemplate(state, {
+            protocolId: String(body.protocolId ?? ""),
+            protocolRevision: typeof body.protocolRevision === "number" ? body.protocolRevision : undefined,
+            fields: body.fields as string[] | undefined,
+            aiDraft: body.aiDraft === true,
+          });
+          state = r.state; await store.save(state);
+          send(res, 200, { ok: true, templateId: r.template.id }); return;
+        }
+        const tmplConfirm = path.match(/^\/api\/templates\/([^/]+)\/confirm$/);
+        if (tmplConfirm) {
+          const r = confirmTemplate(state, decodeURIComponent(tmplConfirm[1]), body.fields as string[] | undefined);
+          state = r.state; await store.save(state);
+          send(res, 200, { ok: true }); return;
+        }
+        if (path === "/api/executions") {
+          const r = startExecution(state, {
+            topicId: String(body.topicId ?? ""),
+            protocolId: String(body.protocolId ?? ""),
+            protocolRevision: typeof body.protocolRevision === "number" ? body.protocolRevision : undefined,
+            templateId: body.templateId as string | undefined,
+          });
+          state = r.state; await store.save(state);
+          send(res, 200, { ok: true, executionId: r.execution.id }); return;
+        }
+        const execEvents = path.match(/^\/api\/executions\/([^/]+)\/events$/);
+        if (execEvents) {
+          const r = appendEvent(state, decodeURIComponent(execEvents[1]), {
+            kind: body.kind as never,
+            stepId: body.stepId as string | undefined,
+            text: body.text as string | undefined,
+            actual: body.actual as never,
+            at: body.at as string | undefined,
+            backfilled: body.backfilled === true,
+          });
+          state = r.state; await store.save(state);
+          send(res, 200, { ok: true, eventId: r.execution.events[r.execution.events.length - 1].id }); return;
+        }
+        const evEdit = path.match(/^\/api\/executions\/([^/]+)\/events\/([^/]+)\/edit$/);
+        if (evEdit) {
+          const r = editEvent(state, decodeURIComponent(evEdit[1]), decodeURIComponent(evEdit[2]), {
+            text: body.text as string | undefined,
+            actual: body.actual as never,
+            reason: body.reason as string | undefined,
+          });
+          state = r.state; await store.save(state);
+          send(res, 200, { ok: true }); return;
+        }
+        const execPauseAssist = path.match(/^\/api\/executions\/([^/]+)\/pause-assist$/);
+        if (execPauseAssist) {
+          const cfg = getAiConfig();
+          if (!cfg) { send(res, 422, { error: "AI 未配置：无法给出暂停建议。可直接人工暂停。" }); return; }
+          const r = await pauseAssist(cfg, state, decodeURIComponent(execPauseAssist[1]));
+          send(res, 200, r); return;
+        }
+        const execPause = path.match(/^\/api\/executions\/([^/]+)\/pause$/);
+        if (execPause) {
+          const r = pauseExecution(state, decodeURIComponent(execPause[1]), {
+            reason: String(body.reason ?? ""),
+            risks: body.risks as string[] | undefined,
+            resumeChecks: body.resumeChecks as string[] | undefined,
+            aiSuggested: body.aiSuggested === true,
+          });
+          state = r.state; await store.save(state);
+          send(res, 200, { ok: true }); return;
+        }
+        const execResume = path.match(/^\/api\/executions\/([^/]+)\/resume$/);
+        if (execResume) {
+          const r = resumeExecution(state, decodeURIComponent(execResume[1]), String(body.humanDecision ?? ""));
+          state = r.state; await store.save(state);
+          send(res, 200, { ok: true }); return;
+        }
+        const execDone = path.match(/^\/api\/executions\/([^/]+)\/done$/);
+        if (execDone) {
+          const r = completeExecution(state, decodeURIComponent(execDone[1]));
+          state = r.state; await store.save(state);
+          send(res, 200, { ok: true }); return;
+        }
+        if (path === "/api/samples") {
+          const r = createSample(state, {
+            topicId: String(body.topicId ?? ""),
+            executionId: body.executionId as string | undefined,
+            shortName: String(body.shortName ?? ""),
+            displayName: body.displayName as string | undefined,
+            origin: body.origin as "user" | "public" | undefined,
+            amount: (body.amount as never) ?? { value: "", unit: "" },
+            handling: body.handling as string | undefined,
+            use: body.use as string | undefined,
+            note: body.note as string | undefined,
+          });
+          state = r.state; await store.save(state);
+          send(res, 200, { ok: true, sampleId: r.sample.id }); return;
+        }
+        const smpStates = path.match(/^\/api\/samples\/([^/]+)\/states$/);
+        if (smpStates) {
+          const r = addSampleState(state, decodeURIComponent(smpStates[1]), {
+            amount: (body.amount as never) ?? { value: "", unit: "" },
+            handling: body.handling as string | undefined,
+            use: body.use as string | undefined,
+            note: body.note as string | undefined,
+          });
+          state = r.state; await store.save(state);
+          send(res, 200, { ok: true, revision: r.sample.states.length }); return;
+        }
+        const smpRename = path.match(/^\/api\/samples\/([^/]+)\/rename$/);
+        if (smpRename) {
+          const r = renameSample(state, decodeURIComponent(smpRename[1]), String(body.displayName ?? ""));
+          state = r.state; await store.save(state);
+          send(res, 200, { ok: true }); return;
+        }
+        if (path === "/api/measurements") {
+          const r = addMeasurement(state, {
+            topicId: String(body.topicId ?? ""),
+            sampleId: String(body.sampleId ?? ""),
+            sampleStateRevision: typeof body.sampleStateRevision === "number" ? body.sampleStateRevision : undefined,
+            time: body.time as string | undefined,
+            method: body.method as string | undefined,
+            instrument: body.instrument as string | undefined,
+            value: String(body.value ?? ""),
+            unit: body.unit as string | undefined,
+            cellRef: body.cellRef as never,
+            note: body.note as string | undefined,
+          });
+          state = r.state; await store.save(state);
+          send(res, 200, { ok: true, measurementId: r.measurement.id }); return;
+        }
+        const measEdit = path.match(/^\/api\/measurements\/([^/]+)\/edit$/);
+        if (measEdit) {
+          const r = editMeasurement(state, decodeURIComponent(measEdit[1]), {
+            value: body.value as string | undefined,
+            unit: body.unit as string | undefined,
+            method: body.method as string | undefined,
+            instrument: body.instrument as string | undefined,
+            note: body.note as string | undefined,
+            reason: body.reason as string | undefined,
+          });
+          state = r.state; await store.save(state);
+          send(res, 200, { ok: true }); return;
+        }
+        const impRun = path.match(/^\/api\/impacts\/([^/]+)\/run$/);
+        if (impRun) {
+          const cfg = getAiConfig();
+          if (!cfg) { send(res, 422, { error: "AI 未配置：语义影响无法评估（这不等于“无影响”）。" }); return; }
+          const impactId = decodeURIComponent(impRun[1]);
+          if (!state.impacts.some((i) => i.id === impactId)) { send(res, 404, { error: `影响分析不存在：${impactId}` }); return; }
+          const id = `job_${randomUUID()}`;
+          const job: Job = { id, status: "running", done: 0, total: 1, message: "影响评估中…" };
+          jobs.set(id, job); trimJobs();
+          void (async () => {
+            try {
+              const r = await runImpactAssessment(async () => state, async (s) => { state = s; await store.save(s); }, impactId, cfg);
+              job.status = "done";
+              job.result = { impactId, discarded: r.discarded };
+              job.message = r.ok ? "完成" : r.discarded ? "已有更新改动，旧评估结果已丢弃（stale 守卫）" : `失败：${r.error}`;
+              if (!r.ok && !r.discarded) { job.status = "error"; job.error = r.error; }
+            } catch (e) { job.status = "error"; job.error = (e as Error).message ?? "失败"; }
+          })();
+          send(res, 202, { ok: true, jobId: id }); return;
+        }
+        if (path === "/api/import/image") {
+          const r = importImage(state, { name: String(body.name ?? ""), dataUrl: String(body.dataUrl ?? ""), topicId: body.topicId as string | undefined });
+          state = r.state; await store.save(state);
+          send(res, 200, { ok: true, assetId: r.asset.id }); return;
+        }
+        if (path === "/api/ocr") {
+          const cfg = getAiConfig();
+          if (!cfg) { send(res, 422, { error: "AI 未配置：无法识别。可用人工转录兜底（标 manual）。" }); return; }
+          const assetId = String(body.assetId ?? "");
+          const asset = state.assets.find((a) => a.id === assetId);
+          if (!asset) { send(res, 404, { error: `原件不存在：${assetId}` }); return; }
+          const id = `job_${randomUUID()}`;
+          const job: Job = { id, status: "running", done: 0, total: 1, message: "识别中…" };
+          jobs.set(id, job); trimJobs();
+          void (async () => {
+            try {
+              const r = await runOcr(cfg, asset);
+              state = { ...state, ocrs: [...state.ocrs, ...r.ocrs] };
+              await store.save(state);
+              writeAudit(assetId, { raws: [{ index: 0, content: r.raw }], model: r.model }, "handwriting_ocr");
+              job.status = "done"; job.result = { assetId, created: r.ocrs.length, ocrIds: r.ocrs.map((o) => o.id) }; job.message = "完成";
+            } catch (e) { job.status = "error"; job.error = (e as Error).message ?? "失败"; }
+          })();
+          send(res, 202, { ok: true, jobId: id }); return;
+        }
+        if (path === "/api/ocr/manual") {
+          const r = addManualOcr(state, String(body.assetId ?? ""), {
+            rawText: String(body.rawText ?? ""),
+            fields: body.fields as Record<string, string> | undefined,
+            unknowns: body.unknowns as string[] | undefined,
+          });
+          state = r.state; await store.save(state);
+          send(res, 200, { ok: true, ocrId: r.ocr.id }); return;
+        }
+        const ocrConfirm = path.match(/^\/api\/ocr\/([^/]+)\/confirm$/);
+        if (ocrConfirm) {
+          const r = confirmOcr(state, decodeURIComponent(ocrConfirm[1]), {
+            rawText: body.rawText as string | undefined,
+            fields: body.fields as Record<string, string> | undefined,
+            unknowns: body.unknowns as string[] | undefined,
+            reason: body.reason as string | undefined,
+          });
+          state = r.state; await store.save(state);
+          send(res, 200, { ok: true }); return;
         }
       }
 

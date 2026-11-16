@@ -74,11 +74,11 @@ export type ImpactEvent =
   | { readonly type: "fail" }
   | { readonly type: "invalidate" };
 
-/** 状态机：pending → running → completed|failed；任意非终态可被 invalidate 置 stale。 */
+/** 状态机：pending|failed → running → completed|failed；任意非终态可被 invalidate 置 stale。 */
 export function transition(state: ImpactState, event: ImpactEvent): ImpactState {
   switch (event.type) {
     case "start":
-      return state.status === "pending" ? { status: "running" } : state;
+      return state.status === "pending" || state.status === "failed" ? { status: "running" } : state;
     case "complete":
       return state.status === "running"
         ? { status: "completed", assessment: event.assessment, snapshotHash: event.snapshotHash }

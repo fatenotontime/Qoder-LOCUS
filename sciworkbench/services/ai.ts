@@ -13,7 +13,7 @@ export interface AiConfig {
   readonly timeoutMs?: number;
 }
 
-export type TaskName = "literature_extract" | "protocol_parse" | "handwriting_ocr";
+export type TaskName = "literature_extract" | "protocol_parse" | "handwriting_ocr" | "impact_assess" | "pause_assist";
 
 export interface TaskDef {
   readonly name: TaskName;
@@ -45,6 +45,23 @@ export const TASKS: Record<TaskName, TaskDef> = {
       "你是手写实验记录识别助手。逐字转录图中的记录，保留单位与数值，辨认不清用 ? 占位；" +
       "不得猜测数值或单位。只返回 JSON，键必须用双引号。",
     schema: '{"records":[{"rawText":"转录文本","fields":{"键":"值"},"unknowns":["未知项"]}]}',
+  },
+  impact_assess: {
+    name: "impact_assess",
+    system:
+      "你是科研变更影响评估助手。输入包含一处已发生的变更与其上下文快照（方案/执行/样品/测量）。" +
+      "只做语义影响评估：时间传播等确定性数学已由系统算出，不要重复猜数学。" +
+      "逐条给出受影响的对象、类别（timing/execution/comparability/analysis/interpretation）、发现、理由、证据引用、未知项与建议动作；" +
+      "证据不足时用 needs_review，不得把“没找到证据”说成“无影响”。只返回 JSON，键必须用双引号。",
+    schema:
+      '{"summary":"一句话摘要","assessment":"impact|no_supported_impact_found|needs_review","items":[{"targetKind":"对象类型","targetId":"对象ID","category":"timing|execution|comparability|analysis|interpretation","finding":"发现","reason":"理由","evidenceRefs":["引用"],"unknowns":["未知项"],"suggestedAction":"建议动作"}]}',
+  },
+  pause_assist: {
+    name: "pause_assist",
+    system:
+      "你是实验暂停辅助助手。根据给定的方案快照与暂停时的执行状态，提示样品/时间相关风险与恢复前检查项；" +
+      "只提建议，不替人做决定；不确定的列入 unknowns。只返回 JSON，键必须用双引号。",
+    schema: '{"risks":["风险"],"resumeChecks":["恢复前检查"],"unknowns":["未知项"]}',
   },
 };
 
@@ -113,8 +130,11 @@ export function extractJson(text: string): unknown {
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-/** 单次请求；对超时/429/5xx 有上限重试（退避）。 */
-async function postChat(cfg: AiConfig, system: string, user: string): Promise<string> {
+/** 单次请求；对超时/429/5xx 有上限重试（退避）。images 为 dataURL（视觉任务）。 */
+async function postChat(cfg: AiConfig, system: string, user: string, images?: string[]): Promise<string> {
+  const userContent = images && images.length > 0
+    ? [{ type: "text", text: user }, ...images.map((url) => ({ type: "image_url", image_url: { url } }))]
+    : user;
   const timeoutMs = cfg.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   let lastErr: Error = new AiError("模型请求失败。");
   for (let attempt = 0; attempt < 3; attempt++) {
@@ -124,7 +144,7 @@ async function postChat(cfg: AiConfig, system: string, user: string): Promise<st
       const res = await fetch(`${cfg.baseUrl}/chat/completions`, {
         method: "POST",
         headers: { "content-type": "application/json", authorization: `Bearer ${cfg.key}` },
-        body: JSON.stringify({ model: cfg.model, temperature: 0, messages: [{ role: "system", content: system }, { role: "user", content: user }] }),
+        body: JSON.stringify({ model: cfg.model, temperature: 0, messages: [{ role: "system", content: system }, { role: "user", content: userContent }] }),
         signal: controller.signal,
       });
       if (res.status === 429) { lastErr = new AiError("模型限流（429）。"); await sleep(600 * (attempt + 1)); continue; }
@@ -147,15 +167,15 @@ async function postChat(cfg: AiConfig, system: string, user: string): Promise<st
 }
 
 /** 调一次任务；解析失败时用“严格 JSON”提示再试一次。返回 {value, raw}。 */
-export async function runTask(cfg: AiConfig, task: TaskName, input: string): Promise<{ value: unknown; raw: string }> {
+export async function runTask(cfg: AiConfig, task: TaskName, input: string, images?: string[]): Promise<{ value: unknown; raw: string }> {
   const def = TASKS[task];
   const system = `${def.system}\n输出 JSON 结构：${def.schema}`;
-  const first = await postChat(cfg, system, input);
+  const first = await postChat(cfg, system, input, images);
   try {
     return { value: extractJson(first), raw: first };
   } catch {
     const stricter = `${system}\n重要：上一次输出不是合法 JSON。请只返回严格 JSON（键必须双引号，无注释、无多余文字）。`;
-    const second = await postChat(cfg, stricter, input);
+    const second = await postChat(cfg, stricter, input, images);
     return { value: extractJson(second), raw: second };
   }
 }
