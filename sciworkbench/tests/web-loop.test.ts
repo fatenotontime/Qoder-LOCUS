@@ -8,8 +8,10 @@ import { emptyState, JsonFileStore, MemoryStore } from "../store.ts";
 import {
   AppError,
   MAX_IMPORT_BYTES,
+  analyseTable,
   createSubquestion,
   createTopic,
+  detectDelimiter,
   importLiterature,
   importMeasurements,
   parseCsv,
@@ -17,7 +19,7 @@ import {
   reviewTable,
   sourceView,
 } from "../services/app.ts";
-import { aiConfigFromEnv, clearAiConfig, describeConfig, getAiConfig, setAiConfig, TASKS, runTask, type AiConfig } from "../services/ai.ts";
+import { aiConfigFromEnv, chunkText, clearAiConfig, describeConfig, extractJson, getAiConfig, setAiConfig, TASKS, runTask, type AiConfig } from "../services/ai.ts";
 import { createApp } from "../server.ts";
 
 // ── 修正③：超限拒绝，不截断 ─────────────────────────────────
@@ -153,10 +155,11 @@ test("AI 文献抽取：经 stub 走通并映射为证据卡（extraction=ai）"
     new Response(JSON.stringify({ choices: [{ message: { content: '{"cards":[{"rawText":"pH 3 下最适","extracted":{"fields":{"pH":"3"},"units":[]},"unknowns":[]}]}' } }] }), { status: 200 })) as typeof fetch;
   try {
     const out = await runTask(cfg, "literature_extract", "文本");
-    assert.ok((out as { cards: unknown[] }).cards.length === 1);
-    const r = await importLiterature(emptyState(), { name: "l", text: "文本", mode: "ai" }, cfg);
+    assert.equal((out.value as { cards: unknown[] }).cards.length, 1);
+    const r = await importLiterature(emptyState(), { name: "l.md", text: "文本", mode: "ai" }, cfg);
     assert.equal(r.state.cards[0].extraction, "ai");
     assert.equal(r.state.cards[0].rawText, "pH 3 下最适");
+    assert.ok(r.audit && r.audit.raws.length === 1);
   } finally { globalThis.fetch = orig; }
 });
 
@@ -170,6 +173,88 @@ test("AI 输出结构不符 → 报错（不静默补造）", async () => {
   globalThis.fetch = (async () => new Response(JSON.stringify({ choices: [{ message: { content: '{"nope":1}' } }] }), { status: 200 })) as typeof fetch;
   try {
     await assert.rejects(importLiterature(emptyState(), { name: "l", text: "x", mode: "ai" }, cfg));
+  } finally { globalThis.fetch = orig; }
+});
+
+// ── 第二轮修复回归 ──────────────────────────────────────────
+test("analyseTable：跳过章节标记行、识别真表头、丢弃键列独占空行", () => {
+  const rows = [
+    ["   Reactions", "", "", ""],
+    ["ID", "Name", "pH value", "Reversible"],
+    ["r0", "ABTS oxidation", "3", "irreversible"],
+    ["r1", "", "", ""],
+    ["r2", "", "", ""],
+  ];
+  const { columns, body } = analyseTable(rows);
+  assert.deepEqual(columns, ["ID", "Name", "pH value", "Reversible"]);
+  assert.equal(body.length, 1);
+  assert.deepEqual(body[0], ["r0", "ABTS oxidation", "3", "irreversible"]);
+});
+
+test("真实 EnzymeML CSV：表头正确、空占位行被丢弃", () => {
+  const csv = "\uFEFF,,,,\n   Reactions,,,\nID,Name,Temperature value,pH value\nr0,ABTS oxidation,25,3\nr1,,,\nr2,,,\n";
+  const r = importMeasurements(emptyState(), { name: "EnzymeML_SLAC_pH5_5__Reactions.csv", csv });
+  const t = r.state.tables[0];
+  assert.deepEqual(t.columns, ["ID", "Name", "Temperature value", "pH value"]);
+  assert.equal(t.rows.length, 1);
+  assert.equal(r.created, 1);
+});
+
+test("extractJson 容错：围栏/未加引号键/尾逗号", () => {
+  assert.deepEqual(extractJson('```json\n{"a":1}\n```'), { a: 1 });
+  assert.deepEqual(extractJson('{a:1,b:"x"}'), { a: 1, b: "x" });
+  assert.deepEqual(extractJson('{"a":1,}'), { a: 1 });
+});
+
+test("chunkText 按段落分块，不超上限丢内容", () => {
+  const chunks = chunkText("a".repeat(100) + "\n\n" + "b".repeat(100), 150);
+  assert.equal(chunks.length, 2);
+});
+
+test("内容 hash 拒重：同内容二次导入 → 409（两条路径）", async () => {
+  const s1 = await importLiterature(emptyState(), { name: "l.md", text: "同样内容" });
+  await assert.rejects(importLiterature(s1.state, { name: "l.md", text: "同样内容" }), (e: unknown) => e instanceof AppError && e.status === 409);
+  const m1 = importMeasurements(emptyState(), { name: "d.csv", csv: "a,b\n1,2" });
+  assert.throws(() => importMeasurements(m1.state, { name: "d.csv", csv: "a,b\n1,2" }), (e: unknown) => e instanceof AppError && e.status === 409);
+});
+
+test("格式不支持 → 明确拒绝（文献非 md / 数据非 csv）", async () => {
+  await assert.rejects(importLiterature(emptyState(), { name: "paper.pdf", text: "x" }), (e: unknown) => e instanceof AppError && e.status === 422);
+  assert.throws(() => importMeasurements(emptyState(), { name: "book.xlsx", csv: "a,b\n1,2" }), (e: unknown) => e instanceof AppError && e.status === 422);
+});
+
+test("Markdown 文献文件可导入（.md）", async () => {
+  const r = await importLiterature(emptyState(), { name: "methods-source.md", text: "# 方法\npH 3 下最适 60°C。" });
+  assert.equal(r.state.cards.length >= 1, true);
+});
+
+test("疑似二进制内容 → 拒绝", () => {
+  assert.throws(() => importMeasurements(emptyState(), { name: "d.csv", csv: "a,b\n1,\u0000" }), (e: unknown) => e instanceof AppError && e.status === 422);
+});
+
+test("detectDelimiter：逗号/制表符/无（仪器导出）", () => {
+  assert.equal(detectDelimiter("a,b\n1,2"), ",");
+  assert.equal(detectDelimiter("a\tb\n1\t2"), "\t");
+  assert.equal(detectDelimiter("##BLOCKS= 2\nNote:\nprose"), null);
+});
+
+test("TSV 导入可用（按制表符解析）", () => {
+  const r = importMeasurements(emptyState(), { name: "t.tsv", csv: "a\tb\tc\n1\t2\t3\n4\t5\t6\n" });
+  assert.deepEqual(r.state.tables[0].columns, ["a", "b", "c"]);
+  assert.equal(r.state.tables[0].rows.length, 2);
+});
+
+test("仪器导出（前言+制表符块，首行无分隔符）→ 明确拒绝，不硬解析", () => {
+  const tc = "##BLOCKS= 2\nNote:\nBasic Endpoint Protocol\n00:00:00\t25\t0.03\n00:01:28\t25\t0.04\n";
+  assert.throws(() => importMeasurements(emptyState(), { name: "run.txt", csv: tc }), (e: unknown) => e instanceof AppError && e.status === 422);
+});
+
+test("AI 分块失败（某块结构不符）→ 报错，不静默补造", async () => {
+  const cfg: AiConfig = { baseUrl: "https://stub", model: "m", key: "k" };
+  const orig = globalThis.fetch;
+  globalThis.fetch = (async () => new Response(JSON.stringify({ choices: [{ message: { content: '{"nope":1}' } }] }), { status: 200 })) as typeof fetch;
+  try {
+    await assert.rejects(importLiterature(emptyState(), { name: "l.md", text: "x", mode: "ai" }, cfg));
   } finally { globalThis.fetch = orig; }
 });
 

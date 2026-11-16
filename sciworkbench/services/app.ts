@@ -4,6 +4,7 @@
  * AI：文献抽取走独立任务（services/ai.ts）；失败不冒充成功。
  */
 import { createHash, randomUUID } from "node:crypto";
+import { extname } from "node:path";
 import type {
   AssetRecord,
   ColumnMeta,
@@ -14,7 +15,7 @@ import type {
   SubquestionRecord,
   TopicRecord,
 } from "../store.ts";
-import { AiError, runTask, type AiConfig } from "./ai.ts";
+import { AiError, extractLiterature, type AiConfig } from "./ai.ts";
 
 /** 原件大小上限（字节）。超过即拒绝导入，绝不静默截断。 */
 export const MAX_IMPORT_BYTES = 2 * 1024 * 1024;
@@ -29,6 +30,74 @@ export class AppError extends Error {
 
 const now = () => new Date().toISOString();
 const sha256 = (t: string) => createHash("sha256").update(t, "utf8").digest("hex");
+const stripBom = (t: string) => t.replace(/^\uFEFF/, "");
+
+/** 文献暂只支持 Markdown / 纯文本；其他格式解析器未配置，明确拒绝。 */
+const LIT_EXT = new Set([".md", ".markdown", ".txt", ".text", ""]);
+function assertLiteratureName(name: string): void {
+  const ext = extname(name).toLowerCase();
+  if (!LIT_EXT.has(ext)) throw new AppError(422, `文献暂只支持 Markdown/纯文本（.md/.markdown/.txt）；${ext} 解析器未配置。`);
+}
+/** 实验数据暂只支持 CSV/TSV；其他格式解析器未配置。 */
+const CSV_EXT = new Set([".csv", ".tsv", ".txt", ""]);
+function assertCsvName(name: string): void {
+  const ext = extname(name).toLowerCase();
+  if (!CSV_EXT.has(ext)) throw new AppError(422, `实验数据暂只支持 CSV（.csv/.tsv）；${ext} 解析器未配置。`);
+}
+function assertTextual(text: string): void {
+  if (text.includes("\u0000")) throw new AppError(422, "文件疑似二进制/含不支持内容，已拒绝。请提供文本类文件。");
+}
+/** 内容 hash 拒重（LIT07）。 */
+function assertUniqueHash(state: LocusState, hash: string): void {
+  if (state.assets.some((a) => a.hash === hash)) throw new AppError(409, "已导入相同内容（文件 hash 相同），已拒收。");
+}
+/** 判断分隔符：以**首个非空行**为准（表头在首行才算常规表格）。返回 "," / "\t" / null。 */
+export function detectDelimiter(text: string): "," | "\t" | null {
+  const first = text.split(/\r?\n/).find((l) => l.trim() !== "");
+  if (!first) return null;
+  if (first.includes("\t")) return "\t";
+  if (first.includes(",")) return ",";
+  return null;
+}
+
+export function parseCsv(text: string, delim = ","): string[][] {
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let cell = "";
+  let quoted = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (quoted) {
+      if (ch === '"') {
+        if (text[i + 1] === '"') { cell += '"'; i++; } else quoted = false;
+      } else cell += ch;
+      continue;
+    }
+    if (ch === '"') { quoted = true; continue; }
+    if (ch === delim) { row.push(cell); cell = ""; continue; }
+    if (ch === "\n") { row.push(cell); rows.push(row); row = []; cell = ""; continue; }
+    if (ch === "\r") continue;
+    cell += ch;
+  }
+  if (cell.length > 0 || row.length > 0) { row.push(cell); rows.push(row); }
+  return rows.filter((r) => r.some((c) => c.trim().length > 0));
+}
+
+/** 表分析：跳过章节标记行，识别真表头，丢弃键列独占的空数据行。 */
+export function analyseTable(rows: string[][]): { columns: string[]; body: string[][] } {
+  const cleaned = rows.filter((r) => r.some((c) => c.trim() !== ""));
+  const nonEmpty = (r: string[]) => r.filter((c) => c.trim() !== "").length;
+  let headerIdx = 0;
+  for (let i = 0; i < Math.min(cleaned.length, 12); i++) {
+    if (nonEmpty(cleaned[i]) >= 2) { headerIdx = i; break; }
+  }
+  const width = Math.max(...cleaned.map((r) => r.length));
+  const columns = Array.from({ length: width }, (_, i) => (cleaned[headerIdx]?.[i] ?? "").trim() || `col${i + 1}`);
+  const body = cleaned.slice(headerIdx + 1)
+    .map((r) => Array.from({ length: width }, (_, i) => (r[i] ?? "").trim()))
+    .filter((r) => nonEmpty(r) >= 2); // 丢弃“只有键列”/空行
+  return { columns, body };
+}
 
 function makeAsset(kind: AssetRecord["kind"], name: string, text: string, topicId?: string): AssetRecord {
   const bytes = Buffer.byteLength(text, "utf8");
@@ -70,6 +139,8 @@ export interface ImportResult {
   state: LocusState;
   asset: AssetRecord;
   created: number;
+  /** AI 模式：原始模型响应（供审计留存；不含认证头）。 */
+  audit?: { raws: { index: number; content: string }[]; model: string };
 }
 
 function draftCards(assetId: string, text: string): LitCardRecord[] {
@@ -115,25 +186,28 @@ export async function importLiterature(
   input: { name: string; text: string; mode?: "draft" | "ai"; topicId?: string },
   ai: AiConfig | null,
 ): Promise<ImportResult> {
-  const asset = makeAsset("literature", input.name ?? "", input.text ?? "", input.topicId);
+  const name = input.name ?? "";
+  assertLiteratureName(name);
+  const text = stripBom(input.text ?? "");
+  const asset = makeAsset("literature", name, text, input.topicId);
+  assertUniqueHash(state, asset.hash);
   let cards: LitCardRecord[];
+  let audit: ImportResult["audit"];
   if (input.mode === "ai") {
-    if (!ai) throw new AppError(400, "未配置 AI（需设置 LOCUS_AI_BASE_URL / LOCUS_AI_MODEL / LOCUS_AI_KEY）。");
-    const raw = await runTask(ai, "literature_extract", asset.text);
-    cards = mapAiCards(asset.id, raw);
+    if (!ai) throw new AppError(400, "未配置 AI：请在页面「AI 配置」填写 baseUrl / 模型 / Key。");
+    const result = await extractLiterature(ai, asset.text);
+    cards = mapAiCards(asset.id, result.cards);
+    audit = { raws: result.raws, model: ai.model };
   } else {
     cards = draftCards(asset.id, asset.text);
   }
-  return { state: { ...state, assets: [...state.assets, asset], cards: [...state.cards, ...cards] }, asset, created: cards.length };
+  return { state: { ...state, assets: [...state.assets, asset], cards: [...state.cards, ...cards] }, asset, created: cards.length, audit };
 }
 
 /** 校验并映射文献抽取输出；结构不符即报错（不静默补造）。 */
-function mapAiCards(assetId: string, raw: unknown): LitCardRecord[] {
-  const obj = raw as { cards?: unknown };
-  if (!obj || !Array.isArray(obj.cards) || obj.cards.length === 0) {
-    throw new AiError("文献抽取结果结构不符：缺少 cards。");
-  }
-  return obj.cards.map((c) => {
+function mapAiCards(assetId: string, cards: unknown[]): LitCardRecord[] {
+  if (!Array.isArray(cards) || cards.length === 0) throw new AiError("文献抽取结果为空；未生成任何证据卡。");
+  return cards.map((c) => {
     const card = c as { rawText?: string; extracted?: { fields?: Record<string, string>; units?: string[] }; unknowns?: string[] };
     const rawText = String(card.rawText ?? "").trim();
     if (!rawText) throw new AiError("文献抽取结果含空 rawText。");
@@ -189,44 +263,28 @@ export function reviewCard(state: LocusState, id: string, patch: CardPatch): Loc
 }
 
 // ── 路径②：实验数据（保留表格结构）─────────────────────────
-export function parseCsv(text: string): string[][] {
-  const rows: string[][] = [];
-  let row: string[] = [];
-  let cell = "";
-  let quoted = false;
-  for (let i = 0; i < text.length; i++) {
-    const ch = text[i];
-    if (quoted) {
-      if (ch === '"') {
-        if (text[i + 1] === '"') { cell += '"'; i++; } else quoted = false;
-      } else cell += ch;
-      continue;
-    }
-    if (ch === '"') { quoted = true; continue; }
-    if (ch === ",") { row.push(cell); cell = ""; continue; }
-    if (ch === "\n") { row.push(cell); rows.push(row); row = []; cell = ""; continue; }
-    if (ch === "\r") continue;
-    cell += ch;
-  }
-  if (cell.length > 0 || row.length > 0) { row.push(cell); rows.push(row); }
-  return rows.filter((r) => r.some((c) => c.trim().length > 0));
-}
-
-/** 导入 CSV → **一张表格**（保留行列结构），供按表/列核对。 */
+/** 导入 CSV/TSV → **一张表格**（保留行列结构），供按表/列核对。 */
 export function importMeasurements(state: LocusState, input: { name: string; csv: string; topicId?: string }): ImportResult {
-  const asset = makeAsset("measurement", input.name ?? "", input.csv ?? "", input.topicId);
-  const rows = parseCsv(asset.text);
-  if (rows.length < 2) throw new AppError(422, "CSV 至少需要表头 + 一行数据。");
-  const width = Math.max(...rows.map((r) => r.length));
-  const columns = Array.from({ length: width }, (_, i) => rows[0][i]?.trim() || `col${i + 1}`);
-  const body = rows.slice(1).map((r) => Array.from({ length: width }, (_, i) => (r[i] ?? "").trim()));
+  const name = input.name ?? "";
+  assertCsvName(name);
+  const text = stripBom(input.csv ?? "");
+  assertTextual(text);
+  const asset = makeAsset("measurement", name, text, input.topicId);
+  assertUniqueHash(state, asset.hash);
+  // 分隔符判定：首行无 ,/\t → 视为仪器导出等非表格格式（解析器未配置），明确拒绝，不硬解析成垃圾表。
+  const delim = detectDelimiter(asset.text);
+  if (!delim) throw new AppError(422, "看起来不是 CSV/TSV 表格（仪器导出等格式解析器未配置）。请提供带分隔符、表头在首行的表格。");
+  const rows = parseCsv(asset.text, delim);
+  if (rows.length < 2) throw new AppError(422, "表格至少需要表头 + 一行数据。");
+  const { columns, body } = analyseTable(rows);
+  if (body.length === 0) throw new AppError(422, "解析后没有可核对的数据行（可能只有表头或章节标记）。");
   const table: MeasurementTableRecord = {
     id: `tbl_${randomUUID()}`,
     assetId: asset.id,
     name: asset.name,
     columns,
     rows: body,
-    columnMeta: columns.map<ColumnMeta>((name) => ({ name, unit: "", decision: "unreviewed" })),
+    columnMeta: columns.map<ColumnMeta>((cname) => ({ name: cname, unit: "", decision: "unreviewed" })),
     note: "",
     revision: 1,
     history: [],

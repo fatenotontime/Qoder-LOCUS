@@ -177,4 +177,11 @@ table.grid td.cell:hover { background: #f0f6f2; }
 .mid .source { max-height: none; }
 .mid mark { background: #ffe9a8; }
 
+.banner { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-2) var(--space-5); font-size: var(--text-sm); }
+.banner.error { background: #fdecec; color: var(--danger); border-bottom: 1px solid #f3c9c9; }
+.banner .primary { margin-left: auto; }
+table.grid th select, table.grid th input { min-width: 84px; }
+table.grid .celledit input { width: auto; }
+
+
 

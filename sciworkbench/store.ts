@@ -4,6 +4,7 @@
  * 现在：JsonFileStore（本地文件）/ MemoryStore（测试）。将来：Sites DB（同一 Store 接口）。
  */
 import { existsSync, mkdirSync, readFileSync, writeFileSync, renameSync } from "node:fs";
+import { randomUUID } from "node:crypto";
 import { dirname } from "node:path";
 
 /** 一条修订：记录字段前后值、原因与修订号（更正留历史）。 */
@@ -145,7 +146,8 @@ export class JsonFileStore implements Store {
   }
   async save(state: LocusState): Promise<void> {
     mkdirSync(dirname(this.#path), { recursive: true });
-    const tmp = `${this.#path}.tmp`;
+    // 唯一临时名：避免并发保存互相覆盖同一 .tmp
+    const tmp = `${this.#path}.${randomUUID()}.tmp`;
     writeFileSync(tmp, JSON.stringify(state, null, 2), "utf8");
     renameSync(tmp, this.#path);
   }

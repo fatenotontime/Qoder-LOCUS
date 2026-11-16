@@ -25,6 +25,8 @@
     <p class="hint">仅当前服务进程内存，重启失效；保存后清空 Key 输入，页面只显示非敏感状态。</p>
   </details>
 
+  <div class="banner" id="banner" hidden></div>
+
   <div class="app">
     <!-- 左：课题 / 子问题 / 材料 -->
     <aside class="pane left">
@@ -35,6 +37,7 @@
         <button class="navitem disabled" disabled title="未实现（阶段5）">分析 <em>未实现</em></button>
         <button class="navitem disabled" disabled title="未实现（阶段6）">产出 <em>未实现</em></button>
       </nav>
+      <p class="hint" id="nav-hint"></p>
 
       <div class="pane-title">课题</div>
       <select id="topic-select"></select>

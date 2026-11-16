@@ -4,8 +4,8 @@
  * AI 配置：启动时从环境变量读取，仅进程内存（见 services/ai.ts）。绝不写入文件/日志/Git。
  */
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { existsSync, readFileSync, statSync } from "node:fs";
-import { extname, join, normalize, resolve } from "node:path";
+import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { dirname, extname, join, normalize, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { JsonFileStore, type LocusState, type Store } from "./store.ts";
 import { AiError, clearAiConfig, describeConfig, getAiConfig, setAiConfig } from "./services/ai.ts";
@@ -23,8 +23,19 @@ import {
 const HERE = fileURLToPath(new URL(".", import.meta.url));
 const PUBLIC_DIR = join(HERE, "public");
 const DATA_PATH = process.env.LOCUS_DATA ?? join(HERE, "data", "state.json");
+const AUDIT_DIR = join(dirname(DATA_PATH), "audit");
 const PORT = Number(process.env.PORT ?? process.argv[2] ?? 5173);
 const MAX_BODY = 8 * 1024 * 1024;
+
+/** 审计：留存模型原始响应（不含认证头）；写入数据区，不入 Git。失败不阻断主流程。 */
+function writeAudit(assetId: string, audit: { raws: { index: number; content: string }[]; model: string }): void {
+  try {
+    mkdirSync(AUDIT_DIR, { recursive: true });
+    writeFileSync(join(AUDIT_DIR, `${assetId}.json`), JSON.stringify({ assetId, at: new Date().toISOString(), task: "literature_extract", model: audit.model, raws: audit.raws }, null, 2), "utf8");
+  } catch {
+    /* 审计失败不影响导入结果 */
+  }
+}
 
 const MIME: Record<string, string> = {
   ".html": "text/html; charset=utf-8",
@@ -110,6 +121,7 @@ export async function createApp(store: Store) {
         if (path === "/api/import/literature") {
           const r = await importLiterature(state, { name: String(body.name ?? ""), text: String(body.text ?? ""), mode: (body.mode as "draft" | "ai") ?? "draft", topicId: body.topicId as string | undefined }, getAiConfig());
           state = r.state; await store.save(state);
+          if (r.audit) writeAudit(r.asset.id, r.audit);
           send(res, 200, { ok: true, created: r.created, assetId: r.asset.id, mode: body.mode ?? "draft" });
           return;
         }
