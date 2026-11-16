@@ -7,7 +7,7 @@
 ```bash
 cd sciworkbench
 node server.ts                 # 最小 Web 闭环 → http://127.0.0.1:5173
-node --test "tests/*.test.ts"  # 契约测试（46 项）
+node --test "tests/*.test.ts"  # 契约测试（53 项）
 ```
 
 要求 Node ≥ 22（本项目 Node 24 实测）：原生 TypeScript 类型剥离 + `node:test`，**无需安装依赖、无需构建**。
@@ -18,7 +18,8 @@ node --test "tests/*.test.ts"  # 契约测试（46 项）
 | --- | --- |
 | `server.ts` | 零依赖本地 HTTP 服务：静态托管 + REST（前端协作接口） |
 | `store.ts` | **可替换存储**（`Store` 接口 + `JsonFileStore`/`MemoryStore`）与 DTO |
-| `services/app.ts` | 用例层：文献证据路径 与 实验数据路径**分开**（导入/核对/保存/原件回查） |
+| `services/app.ts` | 用例层：文献证据路径 与 实验数据路径**分开**（导入/核对/保存/原件回查/修订历史） |
+| `services/ai.ts` | OpenAI 兼容 AI：**三个独立任务**（文献抽取/方案解析/手写识别）；配置仅进程内存 |
 | `public/` | 最小前端（`index.html`/`app.js`/`styles.css`/`lib/api.js`），设计变量在 `:root` |
 | `domain/types.ts` | 实体与版本（稳定 id + 追加式 revision、固定 revision 引用） |
 | `domain/paths.ts` | **三业务路径** + **两事件** |
@@ -27,7 +28,7 @@ node --test "tests/*.test.ts"  # 契约测试（46 项）
 | `domain/backtrace.ts` | **按类型的回查链原型**（不是一条固定串联链） |
 | `domain/topic.ts` | 课题/子问题最小创建、按任务查缺项 |
 | `domain/literature.ts` | 文献证据卡四维审阅、候选库状态、组审、查重、命名映射、比较快照、汇总分层 |
-| `tests/*.test.ts` | 契约测试（46 项） |
+| `tests/*.test.ts` | 契约测试（53 项） |
 
 ## 边界
 

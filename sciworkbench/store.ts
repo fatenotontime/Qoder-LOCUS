@@ -1,22 +1,33 @@
 /**
- * 可替换存储层。
- * 现在：JsonFileStore（本地文件）/ MemoryStore（测试）。
- * 将来：Sites DB / 对象存储（只需实现同一 Store 接口）。
+ * 可替换存储层 与 数据模型（v2）。
+ * v2 变更：测量项改为**表格**模型；所有可编辑实体带**修订历史**。
+ * 现在：JsonFileStore（本地文件）/ MemoryStore（测试）。将来：Sites DB（同一 Store 接口）。
  */
 import { existsSync, mkdirSync, readFileSync, writeFileSync, renameSync } from "node:fs";
 import { dirname } from "node:path";
 
-/** 一条原始素材（导入的文献摘录或实验数据文件）。 */
+/** 一条修订：记录字段前后值、原因与修订号（更正留历史）。 */
+export interface RevisionEntry {
+  readonly revision: number;
+  readonly at: string;
+  readonly field: string;
+  readonly before: string;
+  readonly after: string;
+  readonly reason: string;
+}
+
+/** 一条原始素材（导入的文献摘录或实验数据文件）。原件**完整保存**；超限直接拒绝，不截断。 */
 export interface AssetRecord {
   readonly id: string;
   readonly kind: "literature" | "measurement";
   readonly name: string;
   readonly bytes: number;
   readonly hash: string;
-  /** 原始文本内容（用于**原件回查**；有大小上限）。 */
   readonly text: string;
   readonly createdAt: string;
 }
+
+export type Extraction = "draft" | "ai";
 
 /** 文献证据卡。 */
 export interface LitCardRecord {
@@ -28,20 +39,34 @@ export interface LitCardRecord {
   readonly importance: "high" | "medium" | "low" | null;
   readonly note: string;
   readonly reason: string;
+  readonly extraction: Extraction;
+  readonly revision: number;
+  readonly history: RevisionEntry[];
   readonly createdAt: string;
   readonly updatedAt: string;
 }
 
-/** 实验数据测量项（逐字段核对）。 */
-export interface MeasurementRecord {
-  readonly id: string;
-  readonly assetId: string;
-  /** 源定位：原文件行号 + 列名（用于原件回查）。 */
-  readonly source: { readonly fileName: string; readonly rowIndex: number; readonly column: string };
-  readonly value: string;
+/** 列级核对信息（单位、结论）。 */
+export interface ColumnMeta {
+  readonly name: string;
   readonly unit: string;
   readonly decision: "unreviewed" | "confirm" | "need_info";
+}
+
+/**
+ * 实验数据**表格**（保留结构）：真实时间序列以表格/系列核对，
+ * 不把每个单元格变成一张逐项表单。
+ */
+export interface MeasurementTableRecord {
+  readonly id: string;
+  readonly assetId: string;
+  readonly name: string;
+  readonly columns: string[];
+  readonly rows: string[][];
+  readonly columnMeta: ColumnMeta[];
   readonly note: string;
+  readonly revision: number;
+  readonly history: RevisionEntry[];
   readonly createdAt: string;
   readonly updatedAt: string;
 }
@@ -50,11 +75,13 @@ export interface LocusState {
   readonly version: number;
   readonly assets: AssetRecord[];
   readonly cards: LitCardRecord[];
-  readonly measurements: MeasurementRecord[];
+  readonly tables: MeasurementTableRecord[];
 }
 
+export const STATE_VERSION = 2;
+
 export function emptyState(): LocusState {
-  return { version: 1, assets: [], cards: [], measurements: [] };
+  return { version: STATE_VERSION, assets: [], cards: [], tables: [] };
 }
 
 export interface Store {
@@ -62,7 +89,6 @@ export interface Store {
   save(state: LocusState): Promise<void>;
 }
 
-/** 内存实现：测试与无盘运行用。 */
 export class MemoryStore implements Store {
   #state: LocusState = emptyState();
   async load(): Promise<LocusState> {
@@ -73,7 +99,6 @@ export class MemoryStore implements Store {
   }
 }
 
-/** 本地 JSON 文件实现：原子写（写临时文件再 rename）。 */
 export class JsonFileStore implements Store {
   readonly #path: string;
   constructor(path: string) {
@@ -82,8 +107,9 @@ export class JsonFileStore implements Store {
   async load(): Promise<LocusState> {
     if (!existsSync(this.#path)) return emptyState();
     try {
-      const parsed = JSON.parse(readFileSync(this.#path, "utf8")) as LocusState;
-      return { version: parsed.version ?? 1, assets: parsed.assets ?? [], cards: parsed.cards ?? [], measurements: parsed.measurements ?? [] };
+      const p = JSON.parse(readFileSync(this.#path, "utf8")) as Partial<LocusState>;
+      if ((p.version ?? 0) !== STATE_VERSION) return emptyState(); // 旧结构不自动迁移
+      return { version: STATE_VERSION, assets: p.assets ?? [], cards: p.cards ?? [], tables: p.tables ?? [] };
     } catch {
       return emptyState();
     }
