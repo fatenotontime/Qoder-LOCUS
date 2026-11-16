@@ -49,11 +49,36 @@ export const TASKS: Record<TaskName, TaskDef> = {
 
 /** 从环境变量读取配置；缺任一项返回 null（不报错、不落盘）。 */
 export function aiConfigFromEnv(env: NodeJS.ProcessEnv = process.env): AiConfig | null {
-  const baseUrl = (env.LOCUS_AI_BASE_URL ?? "").trim().replace(/\/+$/, "");
-  const model = (env.LOCUS_AI_MODEL ?? "").trim();
-  const key = (env.LOCUS_AI_KEY ?? "").trim();
+  return normalizeAiConfig({ baseUrl: env.LOCUS_AI_BASE_URL, model: env.LOCUS_AI_MODEL, key: env.LOCUS_AI_KEY });
+}
+
+/** 规范化输入：去空格、去尾斜杠；三项齐全才算有效。 */
+export function normalizeAiConfig(input: { baseUrl?: unknown; model?: unknown; key?: unknown }): AiConfig | null {
+  const baseUrl = String(input.baseUrl ?? "").trim().replace(/\/+$/, "");
+  const model = String(input.model ?? "").trim();
+  const key = String(input.key ?? "").trim();
   if (!baseUrl || !model || !key) return null;
   return { baseUrl, model, key };
+}
+
+// ── 运行时配置：仅进程内存；重启失效；不写文件/浏览器持久存储/日志/Git ──
+let runtimeConfig: AiConfig | null = aiConfigFromEnv();
+
+/** 当前进程内的 AI 配置（可能来自环境变量或网页配置）。 */
+export function getAiConfig(): AiConfig | null {
+  return runtimeConfig;
+}
+
+/** 由网页设置（仅内存）。非法输入返回 false，不改动现有配置。 */
+export function setAiConfig(input: { baseUrl?: unknown; model?: unknown; key?: unknown }): boolean {
+  const cfg = normalizeAiConfig(input);
+  if (!cfg) return false;
+  runtimeConfig = cfg;
+  return true;
+}
+
+export function clearAiConfig(): void {
+  runtimeConfig = null;
 }
 
 /** 供 /api/ai/status 报告；**绝不返回 key**。 */

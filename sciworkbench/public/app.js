@@ -16,14 +16,24 @@ async function refresh() {
 }
 function setStatus(m) { $("#status").textContent = m; }
 
-async function renderAiBar() {
-  try {
-    const s = await api.aiStatus();
-    $("#aibar").innerHTML = s.configured
-      ? `AI：已配置 · <strong>${esc(s.model)}</strong> @ ${esc(s.baseUrl)} ·（仅进程内存；重启失效）`
-      : `AI：<strong>未配置</strong> · 启动时设置 <code>LOCUS_AI_BASE_URL / LOCUS_AI_MODEL / LOCUS_AI_KEY</code> 后可用 AI 抽取`;
-  } catch { $("#aibar").textContent = ""; }
+async function refreshAiState() {
+  const s = await api.aiStatus();
+  $("#ai-state").textContent = s.configured
+    ? `已配置 · ${s.model} @ ${s.baseUrl}（仅进程内存，重启失效）`
+    : "未配置：填写下面三项并保存后，可在「文献证据流程」选择 AI 抽取";
 }
+
+$("#ai-save").addEventListener("click", async () => {
+  try {
+    const s = await api.setAiConfig($("#ai-base").value, $("#ai-model").value, $("#ai-key").value);
+    $("#ai-key").value = ""; // 不回填、不持久化
+    await refreshAiState();
+    setStatus(s.configured ? `AI 已配置（进程内存）· ${s.model}` : "AI 配置未生效");
+  } catch (e) { alert(`保存失败：${e.message}`); }
+});
+$("#ai-clear").addEventListener("click", async () => {
+  try { await api.clearAiConfig(); await refreshAiState(); setStatus("AI 配置已清除"); } catch (e) { alert(`清除失败：${e.message}`); }
+});
 
 function render() {
   setStatus(`素材 ${state.assets.length} · 证据卡 ${state.cards.length} · 表格 ${state.tables.length}`);
@@ -182,5 +192,5 @@ function openHistory(kind, obj) {
 
 $("#drawer-close").addEventListener("click", () => { $("#drawer").hidden = true; });
 
-renderAiBar();
+refreshAiState().catch(() => {});
 refresh().catch((e) => setStatus(`加载失败：${e.message}`));

@@ -7,7 +7,7 @@
 ```bash
 cd sciworkbench
 node server.ts                 # 最小 Web 闭环 → http://127.0.0.1:5173
-node --test "tests/*.test.ts"  # 契约测试（53 项）
+node --test "tests/*.test.ts"  # 契约测试（55 项）
 ```
 
 要求 Node ≥ 22（本项目 Node 24 实测）：原生 TypeScript 类型剥离 + `node:test`，**无需安装依赖、无需构建**。
@@ -28,7 +28,7 @@ node --test "tests/*.test.ts"  # 契约测试（53 项）
 | `domain/backtrace.ts` | **按类型的回查链原型**（不是一条固定串联链） |
 | `domain/topic.ts` | 课题/子问题最小创建、按任务查缺项 |
 | `domain/literature.ts` | 文献证据卡四维审阅、候选库状态、组审、查重、命名映射、比较快照、汇总分层 |
-| `tests/*.test.ts` | 契约测试（53 项） |
+| `tests/*.test.ts` | 契约测试（55 项） |
 
 ## 边界
 

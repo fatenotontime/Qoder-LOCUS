@@ -112,11 +112,14 @@ button:disabled { opacity: .5; cursor: not-allowed; }
 }
 .source mark { background: #ffe9a8; }
 
-.aibar {
-  padding: var(--space-2) var(--space-5); background: #eef3ef; border-bottom: 1px solid var(--line);
-  color: var(--muted); font-size: var(--text-sm);
+.aiconfig {
+  padding: var(--space-3) var(--space-5); background: #eef3ef; border-bottom: 1px solid var(--line);
 }
-.aibar code { font-family: var(--font-mono); font-size: 12px; }
+.aiconfig-head { display: flex; align-items: baseline; gap: var(--space-3); margin-bottom: var(--space-2); }
+.aiconfig .hint { margin: var(--space-1) 0 0; }
+.aiconfig .row { display: flex; gap: var(--space-2); flex-wrap: wrap; }
+.aiconfig .row input { width: auto; flex: 1 1 200px; margin: 0; }
+.aiconfig .row input#ai-key { flex: 0 1 180px; }
 
 .badge.ai { color: #2f5f8f; border-color: #2f5f8f; }
 

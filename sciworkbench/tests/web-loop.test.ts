@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { rmSync } from "node:fs";
+import type { AddressInfo } from "node:net";
 import { emptyState, JsonFileStore, MemoryStore } from "../store.ts";
 import {
   AppError,
@@ -14,7 +15,8 @@ import {
   reviewTable,
   sourceView,
 } from "../services/app.ts";
-import { aiConfigFromEnv, describeConfig, TASKS, runTask, type AiConfig } from "../services/ai.ts";
+import { aiConfigFromEnv, clearAiConfig, describeConfig, getAiConfig, setAiConfig, TASKS, runTask, type AiConfig } from "../services/ai.ts";
+import { createApp } from "../server.ts";
 
 // ── 修正③：超限拒绝，不截断 ─────────────────────────────────
 test("导入超过上限 → 413 拒绝，且不产生素材（不截断）", async () => {
@@ -162,4 +164,43 @@ test("MemoryStore 基本往返", async () => {
   const r = await importLiterature(emptyState(), { name: "s", text: "一段" });
   await mem.save(r.state);
   assert.equal((await mem.load()).cards.length, 1);
+});
+
+// ── AI 配置内置到网页（运行时内存，不落盘）──────────────────
+test("运行时 AI 配置：设置/读取/清除；不完整不生效；状态不含 Key", () => {
+  clearAiConfig();
+  assert.equal(getAiConfig(), null);
+  assert.equal(setAiConfig({ baseUrl: "https://x/v1", model: "m" }), false);
+  assert.equal(getAiConfig(), null);
+  assert.equal(setAiConfig({ baseUrl: "https://x/v1/", model: "m", key: "SECRET" }), true);
+  assert.equal(getAiConfig()!.baseUrl, "https://x/v1");
+  assert.equal(JSON.stringify(describeConfig(getAiConfig())).includes("SECRET"), false);
+  clearAiConfig();
+  assert.equal(getAiConfig(), null);
+});
+
+test("HTTP：网页配置 AI → 状态可见、Key 不回显、可清除", async () => {
+  clearAiConfig();
+  const app = await createApp(new MemoryStore());
+  await new Promise<void>((r) => app.listen(0, "127.0.0.1", () => r()));
+  const base = `http://127.0.0.1:${(app.address() as AddressInfo).port}`;
+  try {
+    let s = (await (await fetch(`${base}/api/ai/status`)).json()) as { configured: boolean };
+    assert.equal(s.configured, false);
+
+    const post = await fetch(`${base}/api/ai/config`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ baseUrl: "https://api.agnes-ai.cn/v1", model: "m", key: "SECRET" }),
+    });
+    assert.equal(post.status, 200);
+    const body = await post.json();
+    assert.equal(body.configured, true);
+    assert.equal(JSON.stringify(body).includes("SECRET"), false);
+
+    const cleared = (await (await fetch(`${base}/api/ai/config`, { method: "DELETE" })).json()) as { configured: boolean };
+    assert.equal(cleared.configured, false);
+  } finally {
+    await new Promise<void>((r) => app.close(() => r()));
+  }
 });

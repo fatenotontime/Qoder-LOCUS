@@ -13,7 +13,17 @@
     <div class="status" id="status">连接中…</div>
   </header>
 
-  <div class="aibar" id="aibar"></div>
+  <section class="aiconfig" id="aiconfig">
+    <div class="aiconfig-head"><strong>AI 配置</strong><span class="hint" id="ai-state">读取中…</span></div>
+    <div class="row">
+      <input id="ai-base" placeholder="接口地址 baseUrl（如 https://api.agnes-ai.cn/v1）" />
+      <input id="ai-model" placeholder="模型名" />
+      <input id="ai-key" type="password" placeholder="Key（仅进程内存，不落盘/日志/Git）" />
+      <button class="primary" id="ai-save">保存配置</button>
+      <button id="ai-clear">清除</button>
+    </div>
+    <p class="hint">仅当前服务进程内存，重启失效；不写文件、不写浏览器持久存储、不进日志、不进 Git。配好后「文献证据流程」可选 AI 抽取。</p>
+  </section>
 
   <nav class="tabs" role="tablist">
     <button class="tab active" data-tab="literature" role="tab">文献证据流程</button>

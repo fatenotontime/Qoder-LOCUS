@@ -11,20 +11,13 @@ cd sciworkbench
 node server.ts            # 或 npm run dev  → http://127.0.0.1:5173
 ```
 
-### AI 配置（可选；仅进程内存，重启失效）
+### AI 配置（可选；**在网页里填**，仅进程内存，重启失效）
 
-启动**前**在环境变量里提供（缺任一项即视为未配置）：
+打开页面顶部「**AI 配置**」：填 `baseUrl`（如 `https://api.agnes-ai.cn/v1`）、`模型名`、`Key` → 「保存配置」。**无需环境变量**（也支持 `LOCUS_AI_BASE_URL/_MODEL/_KEY` 作为可选初始值）。
 
-```bash
-LOCUS_AI_BASE_URL="https://<openai-compatible>/v1" \
-LOCUS_AI_MODEL="<模型名>" \
-LOCUS_AI_KEY="<你的Key>" \
-node server.ts
-```
-
-- **不写文件、不写浏览器持久存储、不进日志、不进 Git**；仅存活于当前服务进程内存，重启即失效。
-- 启动日志与 `/api/ai/status` 只报告 `baseUrl/model/是否配置`，**绝不回显 Key**。
-- 未配置时：文献导入可用 `draft` 模式（按行草稿）；请求 `ai` 模式会返回 **400**（不冒充 AI）。
+- **仅当前服务进程内存**：重启即失效；**不写文件、不写浏览器持久存储、不进日志、不进 Git**。
+- `/api/ai/status` 与界面只显示 `baseUrl/model/是否配置`，**绝不回显 Key**；保存后输入框立即清空。
+- 未配置时：文献导入用 `draft`；请求 `ai` 模式返回 **400**（不冒充 AI）。「清除」按钮可移除内存配置。
 
 ## 2. 两条流程分开验证
 
@@ -42,6 +35,8 @@ node server.ts
 | --- | --- | --- | --- |
 | GET | `/api/state` | — | `{version,assets,cards,tables}` |
 | GET | `/api/ai/status` | — | `{configured,baseUrl,model}`（无 Key） |
+| POST | `/api/ai/config` | `{baseUrl,model,key}` | `{configured,baseUrl,model}` / 400（不完整） |
+| DELETE | `/api/ai/config` | — | `{configured:false}` |
 | POST | `/api/import/literature` | `{name,text,mode:"draft"\|"ai"}` | `{ok,created,assetId,mode}` / 400 / 502 |
 | POST | `/api/import/measurements` | `{name,csv}` | `{ok,created,assetId}`（created=表行数） / 413 / 422 |
 | POST | `/api/cards/:id/review` | `{audit,importance,note,reason,rawText}` | `{ok}` / 422 |
@@ -78,7 +73,7 @@ node server.ts
 - `ai` 模式未配置 → **400** ✔
 - 原件回查返回素材完整原文 + 定位点 ✔
 - 刷新恢复：重启后 表格 rev 3 / 历史 3 条 / 更正单元格 / 列单位 均保留 ✔
-- 单测：`node --test "tests/*.test.ts"` → **53 项通过 / 0 失败**（含 AI stub、任务分离、状态不泄露 Key、超限拒绝、历史）
+- 单测：`node --test "tests/*.test.ts"` → **55 项通过 / 0 失败**（含 AI stub、任务分离、状态不泄露 Key、网页配置置换 HTTP 往返、超限拒绝、历史）
 
 **未做（明确声明）**
 - `protocol_parse` / `handwriting_ocr` 未接入界面（各有独立任务定义）。

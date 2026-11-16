@@ -8,7 +8,7 @@ import { existsSync, readFileSync, statSync } from "node:fs";
 import { extname, join, normalize, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { JsonFileStore, type LocusState, type Store } from "./store.ts";
-import { aiConfigFromEnv, AiError, describeConfig } from "./services/ai.ts";
+import { AiError, clearAiConfig, describeConfig, getAiConfig, setAiConfig } from "./services/ai.ts";
 import {
   AppError,
   importLiterature,
@@ -34,7 +34,7 @@ const MIME: Record<string, string> = {
   ".ico": "image/x-icon",
 };
 
-export async function createApp(store: Store, ai = aiConfigFromEnv()) {
+export async function createApp(store: Store) {
   let state: LocusState = await store.load();
 
   const readBody = (req: IncomingMessage): Promise<string> =>
@@ -75,7 +75,8 @@ export async function createApp(store: Store, ai = aiConfigFromEnv()) {
       if (!path.startsWith("/api/")) { serveStatic(res, path); return; }
 
       if (method === "GET" && path === "/api/state") { send(res, 200, state); return; }
-      if (method === "GET" && path === "/api/ai/status") { send(res, 200, describeConfig(ai)); return; }
+      if (method === "GET" && path === "/api/ai/status") { send(res, 200, describeConfig(getAiConfig())); return; }
+      if (method === "DELETE" && path === "/api/ai/config") { clearAiConfig(); send(res, 200, describeConfig(getAiConfig())); return; }
       if (method === "GET" && path.startsWith("/api/source/")) {
         send(res, 200, sourceView(state, decodeURIComponent(path.slice("/api/source/".length))));
         return;
@@ -85,8 +86,14 @@ export async function createApp(store: Store, ai = aiConfigFromEnv()) {
         const raw = await readBody(req);
         const body = raw ? (JSON.parse(raw) as Record<string, unknown>) : {};
 
+        if (path === "/api/ai/config") {
+          const ok = setAiConfig({ baseUrl: body.baseUrl, model: body.model, key: body.key });
+          if (!ok) { send(res, 400, { error: "AI 配置不完整：需要 baseUrl / model / key（仅进程内存，不落盘）。" }); return; }
+          send(res, 200, describeConfig(getAiConfig()));
+          return;
+        }
         if (path === "/api/import/literature") {
-          const r = await importLiterature(state, { name: String(body.name ?? ""), text: String(body.text ?? ""), mode: (body.mode as "draft" | "ai") ?? "draft" }, ai);
+          const r = await importLiterature(state, { name: String(body.name ?? ""), text: String(body.text ?? ""), mode: (body.mode as "draft" | "ai") ?? "draft" }, getAiConfig());
           state = r.state; await store.save(state);
           send(res, 200, { ok: true, created: r.created, assetId: r.asset.id, mode: body.mode ?? "draft" });
           return;
@@ -130,10 +137,14 @@ export async function createApp(store: Store, ai = aiConfigFromEnv()) {
   });
 }
 
-const store = new JsonFileStore(DATA_PATH);
-const app = await createApp(store);
-app.listen(PORT, "127.0.0.1", () => {
-  const d = describeConfig(aiConfigFromEnv());
-  console.log(`LOCUS dev server: http://127.0.0.1:${PORT}  (data: ${DATA_PATH})`);
-  console.log(`AI: ${d.configured ? `已配置 model=${d.model} @ ${d.baseUrl}` : "未配置（导入将用 draft 模式）"}`);
-});
+// 仅在被直接运行时才监听（被 import 时不产生副作用，便于测试）。
+import { pathToFileURL } from "node:url";
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  const store = new JsonFileStore(DATA_PATH);
+  const app = await createApp(store);
+  app.listen(PORT, "127.0.0.1", () => {
+    const d = describeConfig(getAiConfig());
+    console.log(`LOCUS dev server: http://127.0.0.1:${PORT}  (data: ${DATA_PATH})`);
+    console.log(`AI: ${d.configured ? `已配置 model=${d.model} @ ${d.baseUrl}` : "未配置（在网页「AI 配置」里填写即可；仅进程内存）"}`);
+  });
+}

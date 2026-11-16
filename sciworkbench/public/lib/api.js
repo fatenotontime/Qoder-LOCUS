@@ -2,6 +2,8 @@
 export const api = {
   async getState() { return json("/api/state"); },
   async aiStatus() { return json("/api/ai/status"); },
+  async setAiConfig(baseUrl, model, key) { return json("/api/ai/config", { baseUrl, model, key }); },
+  async clearAiConfig() { return fetch("/api/ai/config", { method: "DELETE" }).then((r) => r.json()); },
   async importLiterature(name, text, mode) { return json("/api/import/literature", { name, text, mode }); },
   async importMeasurements(name, csv) { return json("/api/import/measurements", { name, csv }); },
   async reviewCard(id, patch) { return json(`/api/cards/${encodeURIComponent(id)}/review`, patch); },
