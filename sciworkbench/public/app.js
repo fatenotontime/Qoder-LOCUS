@@ -4,15 +4,15 @@
 import { api } from "./lib/api.js";
 import { computeLanes, timeLabel } from "./lib/lanes.js";
 
-let state = { topics: [], subquestions: [], assets: [], cards: [], tables: [], adoptions: [], mappings: [], comparisons: [], protocols: [], templates: [], executions: [], samples: [], measurements: [], impacts: [], ocrs: [] };
-const ui = { nav: "literature", topicId: "", assetId: null, tableId: null, highlight: null, cell: null, dirty: false, busy: false, cardFilter: "all", groupSel: new Set(), batch: null, ack: false, protocolId: null, executionId: null, stepSel: null, viewRev: null, editEventId: null, pauseSuggest: null };
+let state = { topics: [], subquestions: [], assets: [], papers: [], attachments: [], cards: [], tables: [], adoptions: [], mappings: [], comparisons: [], protocols: [], templates: [], executions: [], samples: [], measurements: [], impacts: [], ocrs: [] };
+const ui = { nav: "topic", topicId: "", assetId: null, paperId: null, attId: null, tableId: null, highlight: null, cell: null, dirty: false, busy: false, cardFilter: "all", groupSel: new Set(), batch: null, ack: false, protocolId: null, executionId: null, stepSel: null, viewRev: null, editEventId: null, pauseSuggest: null };
 let lastAction = null; // { label, run }
 
 // 选择态持久（仅非敏感 UI 选择：页签/课题/材料/表块），刷新后归属正确。
-const UI_KEY = "locus.ui.v1";
+const UI_KEY = "locus.ui.v2"; // 阶段5 重构：七入口导航，旧选择态作废，默认落课题首页
 let uiRestored = false;
 function saveUi() {
-  try { localStorage.setItem(UI_KEY, JSON.stringify({ nav: ui.nav, topicId: ui.topicId, assetId: ui.assetId, tableId: ui.tableId, cardFilter: ui.cardFilter, protocolId: ui.protocolId, executionId: ui.executionId })); } catch {}
+  try { localStorage.setItem(UI_KEY, JSON.stringify({ nav: ui.nav, topicId: ui.topicId, assetId: ui.assetId, paperId: ui.paperId, tableId: ui.tableId, cardFilter: ui.cardFilter, protocolId: ui.protocolId, executionId: ui.executionId })); } catch {}
 }
 function restoreUi() {
   if (uiRestored) return;
@@ -20,10 +20,11 @@ function restoreUi() {
   try {
     const s = JSON.parse(localStorage.getItem(UI_KEY) ?? "null");
     if (!s) return;
-    if (["literature", "measurement", "protocol", "record"].includes(s.nav)) ui.nav = s.nav;
+    if (["topic", "papers", "knowledge", "protocol", "record", "literature", "measurement"].includes(s.nav)) ui.nav = s.nav;
     if (s.cardFilter === "all" || s.cardFilter === "pending" || s.cardFilter === "reviewed") ui.cardFilter = s.cardFilter;
     if (state.topics.some((t) => t.id === s.topicId)) ui.topicId = s.topicId;
     if (state.assets.some((a) => a.id === s.assetId)) ui.assetId = s.assetId;
+    if (state.papers.some((p) => p.id === s.paperId)) ui.paperId = s.paperId;
     if (state.tables.some((t) => t.id === s.tableId)) ui.tableId = s.tableId;
     if (state.protocols.some((p) => p.id === s.protocolId)) ui.protocolId = s.protocolId;
     if (state.executions.some((e) => e.id === s.executionId)) ui.executionId = s.executionId;
@@ -43,6 +44,8 @@ async function refresh() {
   if (ui.topicId && !state.topics.some((t) => t.id === ui.topicId)) ui.topicId = "";
   if (ui.protocolId && !state.protocols.some((p) => p.id === ui.protocolId)) ui.protocolId = null;
   if (ui.executionId && !state.executions.some((e) => e.id === ui.executionId)) ui.executionId = null;
+  if (ui.paperId && !state.papers.some((p) => p.id === ui.paperId)) { ui.paperId = null; ui.attId = null; }
+  if (ui.attId && !state.attachments.some((a) => a.id === ui.attId)) ui.attId = null;
   renderAll();
 }
 
@@ -80,6 +83,16 @@ async function runBusy(btn, label, fn) {
   finally { ui.busy = false; if (btn) { btn.disabled = false; btn.textContent = old; } }
 }
 
+/** 后台 job 专用：只禁用发起按钮，不锁全局——等待期可继续编辑（后端合并写回保证不覆盖）。 */
+async function runJob(btn, label, fn) {
+  hideBanner();
+  const old = btn?.textContent; if (btn) { btn.disabled = true; btn.textContent = "后台运行中…"; }
+  setStatus(`${label}…`);
+  try { await fn(); }
+  catch (e) { showBanner(`${label}失败：${e.message ?? e}`, () => runJob(btn, label, fn)); }
+  finally { if (btn) { btn.disabled = false; btn.textContent = old; } }
+}
+
 function materials() {
   return state.assets.filter((a) => a.kind === ui.nav && (!ui.topicId || a.topicId === ui.topicId || !a.topicId));
 }
@@ -93,8 +106,12 @@ function guardLeave() {
 }
 
 function renderAll() {
-  setStatus(`课题 ${state.topics.length} · 材料 ${state.assets.length} · 证据卡 ${state.cards.length} · 表格 ${state.tables.length} · 方案 ${state.protocols.length} · 执行 ${state.executions.length} · 样品 ${state.samples.length}`);
+  setStatus(`课题 ${state.topics.length} · 论文 ${state.papers.length} · 知识卡 ${state.cards.length} · 表格 ${state.tables.length} · 方案 ${state.protocols.length} · 执行 ${state.executions.length} · 样品 ${state.samples.length}`);
   $$(".navitem").forEach((x) => x.classList.toggle("active", x.dataset.nav === ui.nav));
+  $("#sec-subq").hidden = ui.nav !== "topic";
+  $("#topic-create-box").hidden = ui.nav !== "topic";
+  $("#sec-materials").hidden = ui.nav === "topic";
+  $("#materials-title").textContent = { papers: "论文条目", knowledge: "选择文献", protocol: "方案", record: "执行", literature: "材料（旧版·开发调试）", measurement: "数据表" }[ui.nav] ?? "材料";
   renderTopics(); renderSubq(); renderImportBox(); renderMaterials(); renderLitTools(); renderMiddle(); renderRight();
   saveUi();
 }
@@ -111,26 +128,32 @@ function renderSubq() {
 }
 function renderImportBox() {
   const hints = {
-    literature: "文献：上传 Markdown/纯文本，或粘贴文本（其他格式解析器未配置）",
+    topic: "课题首页：总览、进度与待办；从这里进入各工作区",
+    papers: "文献整理：论文条目≠文件；收藏/导入附件不触发 AI 解析",
+    knowledge: "领域知识：选文献＋写研究目的，才发起语义提取；结果进待审区",
+    literature: "旧版材料视图（开发调试）：逐段机械草稿，明确标记，不作为正式知识提取",
     measurement: "实验数据：上传/粘贴 CSV（保留表格结构）",
     protocol: "方案：手工创建或从文献 AI 解析；版本固定，编辑追加新快照",
     record: "记录：按固定方案版本执行；实际层编辑不改源方案",
   };
   $("#nav-hint").textContent = hints[ui.nav] ?? "";
   const box = $("#import-box");
+  if (ui.nav === "topic") { box.innerHTML = ""; return; }
+  if (ui.nav === "papers") { renderPaperForm(box); return; }
+  if (ui.nav === "knowledge") { renderKnowledgeForm(box); return; }
   if (ui.nav === "protocol") { renderProtocolImport(box); return; }
   if (ui.nav === "record") { renderRecordImport(box); return; }
   if (ui.nav === "literature") {
     box.innerHTML = `
       <details class="mini" ${state.assets.length ? "" : "open"}>
-        <summary>导入文献</summary>
+        <summary>导入文献（机械草稿·开发调试，非正式知识提取）</summary>
         <input id="lit-name" placeholder="来源名称（如 SLAC methods-source.md）" />
         <input id="lit-file" type="file" accept=".md,.markdown,.txt,text/markdown,text/plain" />
         <textarea id="lit-text" rows="3" placeholder="或粘贴 Markdown/文本…"></textarea>
         <div class="row"><select id="lit-mode"><option value="draft">draft 草稿</option><option value="ai">AI 抽取</option></select>
         <button class="primary" id="lit-import">导入</button></div>
       </details>`;
-    $("#lit-import").addEventListener("click", (ev) => runBusy(ev.target, "导入文献", async () => {
+    $("#lit-import").addEventListener("click", (ev) => runJob(ev.target, "导入文献", async () => {
       const file = $("#lit-file").files?.[0];
       let text = $("#lit-text").value, name = $("#lit-name").value;
       if (file) { text = await readTextFile(file); if (!name) name = file.name; }
@@ -177,6 +200,21 @@ function renderImportBox() {
 }
 function renderMaterials() {
   const box = $("#material-list");
+  if (ui.nav === "papers" || ui.nav === "knowledge") {
+    const ps = state.papers.filter((p) => !ui.topicId || p.topicIds.includes(ui.topicId) || !p.topicIds.length);
+    box.innerHTML = ps.length
+      ? ps.map((p) => {
+          const nAtt = state.attachments.filter((a) => a.paperId === p.id).length;
+          const nCard = state.cards.filter((c) => c.paperId === p.id).length;
+          const sel = ui.nav === "papers" ? p.id === ui.paperId : p.id === ui.paperId;
+          return `<div class="material ${sel ? "active" : ""}" data-paperid="${p.id}">
+            <div class="m-title">${esc(p.title)}</div>
+            <div class="m-meta">${p.year ? esc(p.year) + " · " : ""}${nAtt} 附件 · ${nCard} 卡${p.doi ? " · DOI " + esc(p.doi) : ""}</div>
+          </div>`;
+        }).join("")
+      : `<p class="hint">暂无论文条目。${ui.nav === "papers" ? "在上方新建或导入题录。" : "先在「文献整理」建立条目并导入附件。"}</p>`;
+    return;
+  }
   if (ui.nav === "protocol") {
     const ps = state.protocols.filter((p) => !ui.topicId || p.topicId === ui.topicId);
     box.innerHTML = ps.length
@@ -211,6 +249,35 @@ function renderMaterials() {
 }
 function renderMiddle() {
   const note = $("#mid-note"), content = $("#mid-content");
+  if (ui.nav === "topic") {
+    $("#mid-title").textContent = "课题总览";
+    note.hidden = true;
+    content.innerHTML = topicOverviewHtml();
+    return;
+  }
+  if (ui.nav === "papers") {
+    const p = currentPaper();
+    const att = currentAttachment();
+    $("#mid-title").textContent = att ? `附件原文 · ${state.assets.find((a) => a.id === att.assetId)?.name ?? ""}` : "附件原文";
+    if (!p) { note.hidden = true; content.textContent = "在左栏选择或新建论文条目。"; return; }
+    if (!att) { note.hidden = false; note.textContent = "该条目暂无附件；在右栏导入附件（只归档，不触发解析）。"; content.textContent = ""; return; }
+    const asset = state.assets.find((a) => a.id === att.assetId);
+    note.hidden = false; note.textContent = `角色：${ROLE_LABEL[att.role]}${att.version ? " · 版本 " + att.version : ""} · 原件 ${asset?.bytes ?? 0}B（hash 固定，不随加载重算）`;
+    content.innerHTML = esc(asset?.text ?? "");
+    return;
+  }
+  if (ui.nav === "knowledge") {
+    const p = currentPaper();
+    const atts = p ? state.attachments.filter((a) => a.paperId === p.id) : [];
+    const asset = (ui.assetId && state.assets.find((a) => a.id === ui.assetId)) || state.assets.find((a) => a.id === atts[0]?.assetId);
+    $("#mid-title").textContent = asset ? `原件 · ${asset.name}` : "原件";
+    if (!p) { note.hidden = true; content.textContent = "在左栏选择文献条目。"; return; }
+    if (!asset) { note.hidden = false; note.textContent = "该条目暂无附件；先到「文献整理」导入。"; content.textContent = ""; return; }
+    if (ui.highlight && asset.text.includes(ui.highlight)) { note.hidden = true; content.innerHTML = esc(asset.text).replace(esc(ui.highlight), `<mark>${esc(ui.highlight)}</mark>`); }
+    else if (ui.highlight) { note.hidden = false; note.textContent = "定位不足：未能在原件中精确匹配该引文，已展示完整原件。"; content.innerHTML = esc(asset.text); }
+    else { note.hidden = true; content.innerHTML = esc(asset.text); }
+    return;
+  }
   if (ui.nav === "protocol") {
     const p = currentProtocol();
     $("#mid-title").textContent = p ? `原始材料 · ${p.name}` : "原始材料";
@@ -252,6 +319,14 @@ function renderMiddle() {
   else { note.hidden = false; note.textContent = "定位不足：未能在原件中精确匹配该条目，已展示完整原件。"; content.innerHTML = esc(a.text); }
 }
 function renderRight() {
+  if (ui.nav === "topic") { $("#right-title").textContent = "待办与入口"; $("#right-content").innerHTML = topicTodosHtml(); return; }
+  if (ui.nav === "papers") { $("#right-title").textContent = "条目与附件"; $("#right-content").innerHTML = paperHtml(); return; }
+  if (ui.nav === "knowledge") {
+    $("#right-title").textContent = "知识卡（独立人工审阅）";
+    const p = currentPaper();
+    $("#right-content").innerHTML = p ? cardsHtml(null, p.id) : `<p class="hint">在左栏选择文献条目后，这里显示其知识卡与核对操作。</p>`;
+    return;
+  }
   if (ui.nav === "protocol") { $("#right-title").textContent = "方案与实验图"; $("#right-content").innerHTML = protocolHtml(); return; }
   if (ui.nav === "record") { $("#right-title").textContent = "实验记录"; $("#right-content").innerHTML = recordHtml(); return; }
   const a = currentAsset();
@@ -267,17 +342,23 @@ function candState(c) {
   return "unreviewed";
 }
 const CAND_LABEL = { unreviewed: "未复核", pending: "待补信息", reviewed: "已审候选", adopted: "已采用" };
+const KIND_LABEL = { data: "数据", argument: "论证", method: "方法", idea: "思路" };
+const ROLE_LABEL = { fulltext: "正文", supplement: "补充材料", other: "其他" };
 
-function cardsHtml(assetId) {
-  const all = state.cards.filter((c) => c.assetId === assetId);
+function cardsHtml(assetId, paperId) {
+  const all = state.cards.filter((c) => paperId ? c.paperId === paperId : c.assetId === assetId);
   const inFilter = (c) => ui.cardFilter === "all" ? true
     : ui.cardFilter === "pending" ? ["unreviewed", "pending"].includes(candState(c))
     : ["reviewed", "adopted"].includes(candState(c));
   const cards = all.filter(inFilter);
   const nPend = all.filter((c) => ["unreviewed", "pending"].includes(candState(c))).length;
   const nRev = all.length - nPend;
-  const asset = state.assets.find((a) => a.id === assetId);
-  const subqs = state.subquestions.filter((q) => !asset?.topicId || q.topicId === asset.topicId);
+  const paper = paperId ? state.papers.find((p) => p.id === paperId) : null;
+  const asset = paper
+    ? state.assets.find((a) => a.id === state.attachments.find((x) => x.paperId === paper.id)?.assetId)
+    : state.assets.find((a) => a.id === assetId);
+  const topicIds = paper ? paper.topicIds : (asset?.topicId ? [asset.topicId] : []);
+  const subqs = state.subquestions.filter((q) => !topicIds.length || topicIds.includes(q.topicId));
   const independent = all.filter((c) => c.audit === "confirm" && !c.secondaryCitation).length;
 
   const tabs = `<div class="tabs">
@@ -299,7 +380,7 @@ function cardsHtml(assetId) {
       <button class="batch-cancel">取消</button></div>
   </div>` : "";
 
-  const manualForm = `<details class="mini">
+  const manualForm = !asset ? (paper ? `<p class="hint">该条目暂无附件：手动补卡需要可定位的原件，请先导入附件。</p>` : "") : `<details class="mini">
     <summary>手动补卡（人工观察/摘录，标注 manual）</summary>
     <textarea id="mc-raw" rows="2" placeholder="证据内容（必填）"></textarea>
     <input id="mc-quote" placeholder="定位引文：粘贴原件中的连续片段（可留空＝定位不足，不得正式采用）" />
@@ -316,8 +397,11 @@ function cardsHtml(assetId) {
     return `
     <div class="item" data-id="${c.id}">
       <div class="meta"><label class="grpwrap"><input type="checkbox" class="grp" data-id="${c.id}" ${ui.groupSel.has(c.id) ? "checked" : ""}/></label>
-        抽取 <span class="badge ${c.extraction === "ai" ? "ai" : ""}">${c.extraction}</span> · 核对 <span class="badge ${c.audit}">${c.audit}</span> · 候选 <span class="badge cand-${cs}">${CAND_LABEL[cs]}</span>${c.secondaryCitation ? ` · <span class="badge secondary">转引(二手)</span>` : ""} · rev ${c.revision}</div>
+        ${c.kind ? `<span class="badge kind-${c.kind}">${KIND_LABEL[c.kind] ?? c.kind}</span> · ` : ""}抽取 <span class="badge ${c.extraction === "ai" ? "ai" : ""}">${c.extraction}</span> · 核对 <span class="badge ${c.audit}">${c.audit}</span> · 候选 <span class="badge cand-${cs}">${CAND_LABEL[cs]}</span>${c.mechanical ? ` · <span class="badge warn">机械草稿（逐段拆分，非语义提取）</span>` : ""}${c.secondaryCitation ? ` · <span class="badge secondary">转引(二手)</span>` : ""} · rev ${c.revision}</div>
       <div class="raw linkable" title="点击在原文件中定位">${esc(c.rawText)}</div>
+      ${c.scope ? `<div class="hint">适用范围：${esc(c.scope)}</div>` : ""}
+      ${c.interpretation ? `<div class="hint">作者解释（与数据/事实分开）：${esc(c.interpretation)}</div>` : ""}
+      ${c.spans?.length ? `<div class="spans">${c.spans.map((s) => `<div class="hint ${s.matched ? "" : "warn"}"><button class="span-link" data-asset="${s.assetId}" data-quote="${esc(s.quote)}">${s.matched ? "定位" : "定位不足"}</button> 「${esc(s.quote.slice(0, 80))}${s.quote.length > 80 ? "…" : ""}」</div>`).join("")}</div>` : ""}
       ${!c.locator.sectionQuote ? `<div class="hint warn">定位不足：无原文定位，不得用于正式采用。</div>` : ""}
       <details class="mini ex"><summary>字段/条件/缺项${c.unknowns.length ? `（缺项 ${c.unknowns.length}）` : ""}</summary>
         ${fields.map(([k, v]) => `<div class="row"><label>${esc(k)}</label><input data-fkey="${esc(k)}" value="${esc(v)}" /></div>`).join("") || `<p class="hint">暂无抽取字段。</p>`}
@@ -350,14 +434,207 @@ function cardsHtml(assetId) {
   return tabs + batchBar + batchPanel + manualForm + body;
 }
 
+// ── 阶段5 第一段：课题首页 / 文献整理 / 领域知识积累 ─────────────
+
+function currentPaper() { return state.papers.find((p) => p.id === ui.paperId) ?? null; }
+function currentAttachment() {
+  const p = currentPaper(); if (!p) return null;
+  const atts = state.attachments.filter((a) => a.paperId === p.id);
+  return atts.find((a) => a.id === ui.attId) ?? atts[0] ?? null;
+}
+
+/** 课题首页总览：研究问题＋各对象进度；不堆审计字段。 */
+function topicOverviewHtml() {
+  const ts = ui.topicId ? state.topics.filter((t) => t.id === ui.topicId) : state.topics;
+  if (!ts.length) return `<div class="item"><p class="hint">还没有课题。在左栏「新建课题」填写名称与研究问题即可开始——不需要先准备任何材料。</p></div>`;
+  return ts.map((t) => {
+    const papers = state.papers.filter((p) => p.topicIds.includes(t.id));
+    const paperIds = new Set(papers.map((p) => p.id));
+    const cards = state.cards.filter((c) => paperIds.has(c.paperId) || state.assets.find((a) => a.id === c.assetId)?.topicId === t.id);
+    const confirmed = cards.filter((c) => c.audit === "confirm").length;
+    const adopted = state.adoptions.filter((a) => a.decision === "adopt" && state.subquestions.find((q) => q.id === a.subquestionId)?.topicId === t.id).length;
+    const protos = state.protocols.filter((p) => p.topicId === t.id);
+    const execs = state.executions.filter((e) => e.topicId === t.id);
+    const tables = state.tables.filter((x) => state.assets.find((a) => a.id === x.assetId)?.topicId === t.id);
+    const subqs = state.subquestions.filter((q) => q.topicId === t.id);
+    return `<div class="item topiccard" data-id="${t.id}">
+      <div class="meta"><strong>${esc(t.name)}</strong></div>
+      <div>研究问题：${esc(t.researchQuestion)}</div>
+      <div class="hint">子问题 ${subqs.length} · 论文 ${papers.length} · 知识卡 ${cards.length}（已确认 ${confirmed} · 按任务采用 ${adopted}）</div>
+      <div class="hint">方案 ${protos.length} · 执行 ${execs.length}（进行中 ${execs.filter((e) => e.status === "active").length} · 暂停 ${execs.filter((e) => e.status === "paused").length} · 结束 ${execs.filter((e) => e.status === "done").length}）· 数据表 ${tables.length}</div>
+      <div class="row">
+        <button class="goto" data-goto="papers" data-topic="${t.id}">文献整理</button>
+        <button class="goto" data-goto="knowledge" data-topic="${t.id}">领域知识</button>
+        <button class="goto" data-goto="protocol" data-topic="${t.id}">实验方案</button>
+        <button class="goto" data-goto="record" data-topic="${t.id}">执行与记录</button>
+        <button class="goto" data-goto="measurement" data-topic="${t.id}">数据表（内部视图）</button>
+      </div>
+    </div>`;
+  }).join("");
+}
+
+/** 待办：只列需要人动作的事；入口直达对应工作区。 */
+function topicTodosHtml() {
+  const inTopic = (topicId) => !ui.topicId || topicId === ui.topicId;
+  const pendingCards = state.cards.filter((c) => ["unreviewed", "need_info"].includes(c.audit) && !c.mechanical && inTopic(state.papers.find((p) => p.id === c.paperId)?.topicIds[0] ?? state.assets.find((a) => a.id === c.assetId)?.topicId));
+  const mechCount = state.cards.filter((c) => c.mechanical).length;
+  const draftProtos = state.protocols.filter((p) => p.sourceKind === "ai-draft" && inTopic(p.topicId));
+  const unconfTmpls = state.templates.filter((t) => !t.humanConfirmed && inTopic(state.protocols.find((p) => p.id === t.protocolId)?.topicId));
+  const liveExecs = state.executions.filter((e) => e.status !== "done" && inTopic(e.topicId));
+  const rows = [];
+  if (pendingCards.length) rows.push(`<div class="item"><div class="meta">待审知识卡 ${pendingCards.length} 张</div><p class="hint">语义提取结果须人工核对后才算数。</p><button class="goto" data-goto="knowledge">去审阅</button></div>`);
+  if (draftProtos.length) rows.push(`<div class="item"><div class="meta">AI 方案草稿 ${draftProtos.length} 份待确认</div><button class="goto" data-goto="protocol">去确认</button></div>`);
+  if (unconfTmpls.length) rows.push(`<div class="item"><div class="meta">记录模板 ${unconfTmpls.length} 份待人工确认</div><button class="goto" data-goto="protocol">去确认</button></div>`);
+  if (liveExecs.length) rows.push(`<div class="item"><div class="meta">进行中/暂停的执行 ${liveExecs.length} 个</div><button class="goto" data-goto="record">去记录</button></div>`);
+  if (!rows.length) rows.push(`<div class="item"><p class="hint">当前没有待办。可新建课题、整理论文或发起知识提取。</p></div>`);
+  if (mechCount) rows.push(`<div class="item"><p class="hint">另有 ${mechCount} 张机械草稿（旧逐段拆分，开发调试产物），已明确标记，不计入语义知识。</p></div>`);
+  rows.push(`<div class="item"><div class="meta">暂藏功能清单</div><p class="hint">数据处理与分析、上下文AI对话：导航占位，阶段5后续段实现。Zotero 实时连接：未验证未实现（题录/附件导入可用）。手写 OCR：真实公开手写样本未验证。详见 docs/stage5/01_REFACTOR_PLAN.md。</p></div>`);
+  return rows.join("");
+}
+
+/** 409 不死路：给出已有条目定位按钮。 */
+function showLocate(msg, paperId) {
+  const b = $("#banner"); b.hidden = false; b.className = "banner info";
+  b.innerHTML = `<span>${esc(msg)}</span>`;
+  if (paperId) {
+    const btn = document.createElement("button"); btn.textContent = "定位已有条目"; btn.className = "primary";
+    btn.addEventListener("click", () => { hideBanner(); ui.paperId = paperId; ui.attId = null; renderAll(); });
+    b.appendChild(btn);
+  }
+}
+
+function renderPaperForm(box) {
+  box.innerHTML = `
+    <details class="mini" ${state.papers.length ? "" : "open"}>
+      <summary>新建论文条目（题名必填，其余可后补）</summary>
+      <input id="pp-title" placeholder="题名（必填）" />
+      <input id="pp-authors" placeholder="作者（and 或分号分隔）" />
+      <div class="row"><input id="pp-year" placeholder="年份" /><input id="pp-doi" placeholder="DOI（可空）" /></div>
+      <input id="pp-source" placeholder="来源（期刊/预印本/网址）" />
+      <input id="pp-license" placeholder="许可（如 CC BY 4.0；未提供留空，不补造）" />
+      <button class="primary" id="pp-create">创建条目</button>
+      <p class="hint">条目是题录身份，不是文件；附件在右栏导入，收藏不触发 AI 解析。</p>
+    </details>`;
+  $("#pp-create").addEventListener("click", (ev) => runBusy(ev.target, "创建论文条目", async () => {
+    try {
+      const r = await api.createPaper({
+        title: $("#pp-title").value, authors: $("#pp-authors").value, year: $("#pp-year").value,
+        doi: $("#pp-doi").value, source: $("#pp-source").value, license: $("#pp-license").value,
+        topicIds: ui.topicId ? [ui.topicId] : [],
+      });
+      ui.paperId = r.paperId; ui.attId = null; await refresh(); setStatus("论文条目已创建（未解析）");
+    } catch (e) {
+      if (e.status === 409 && e.details?.existingPaperId) { showLocate(e.message, e.details.existingPaperId); return; }
+      throw e;
+    }
+  }));
+}
+
+/** 右栏：条目元信息（修订留历史）＋附件管理＋课题关联＋去知识提取。 */
+function paperHtml() {
+  const p = currentPaper();
+  if (!p) return `<p class="hint">在左栏选择论文条目；或新建条目/导入题录。</p>`;
+  const atts = state.attachments.filter((a) => a.paperId === p.id);
+  const nCard = state.cards.filter((c) => c.paperId === p.id).length;
+  return `
+    <div class="item" data-id="${p.id}">
+      <div class="meta">题录 · rev ${p.revision} · ${nCard} 张知识卡</div>
+      <div class="row"><label>题名</label><input data-field="pTitle" value="${esc(p.title)}" /></div>
+      <div class="row"><label>作者</label><input data-field="pAuthors" value="${esc(p.authors.join(" and "))}" /></div>
+      <div class="row"><label>年份</label><input data-field="pYear" value="${esc(p.year)}" /><label>DOI</label><input data-field="pDoi" value="${esc(p.doi)}" /></div>
+      <div class="row"><label>来源</label><input data-field="pSource" value="${esc(p.source)}" /></div>
+      <div class="row"><label>许可</label><input data-field="pLicense" value="${esc(p.license)}" placeholder="未提供留空" /></div>
+      <div class="row"><label>备注</label><input data-field="pNote" value="${esc(p.note)}" /></div>
+      <div class="row"><input data-field="pReason" placeholder="修改原因（修订留历史）" />
+        <button class="primary" id="paper-save">保存题录</button><button class="history-btn">历史(${p.history.length})</button></div>
+      <div class="pane-title">课题关联（可多课题引用）</div>
+      ${state.topics.length ? state.topics.map((t) => `<label class="cmppick"><input type="checkbox" class="paper-topic" value="${t.id}" ${p.topicIds.includes(t.id) ? "checked" : ""}/> ${esc(t.name)}</label>`).join("") : `<p class="hint">暂无课题；先在「课题展示」创建。</p>`}
+      <div class="row"><button class="primary goto" data-goto="knowledge" data-paper="${p.id}">去知识提取（选目的后发起）</button></div>
+    </div>
+    <div class="item">
+      <div class="meta">附件（${atts.length}）· 导入只归档，不触发解析</div>
+      ${atts.map((a) => {
+        const asset = state.assets.find((x) => x.id === a.assetId);
+        return `<div class="material ${a.id === (currentAttachment()?.id ?? "") ? "active" : ""}" data-attid="${a.id}">
+          <div class="m-title">${esc(asset?.name ?? a.assetId)}</div>
+          <div class="m-meta">${ROLE_LABEL[a.role]}${a.version ? " · " + esc(a.version) : ""} · ${asset?.bytes ?? 0}B</div>
+        </div>`;
+      }).join("") || `<p class="hint">暂无附件。</p>`}
+      <details class="mini">
+        <summary>导入附件（Markdown/纯文本）</summary>
+        <input id="att-file" type="file" accept=".md,.markdown,.txt,text/markdown,text/plain" />
+        <textarea id="att-text" rows="3" placeholder="或粘贴文本…"></textarea>
+        <div class="row"><select id="att-role"><option value="fulltext">正文</option><option value="supplement">补充材料</option><option value="other">其他</option></select>
+          <input id="att-version" placeholder="版本（可空，如 v2）" /></div>
+        <button class="primary" id="att-add">导入附件</button>
+        <p class="hint">同 DOI 的不同附件/版本不互拒；真重复（同内容）会给出已有原件定位。PDF 等格式解析器未配置。</p>
+      </details>
+    </div>`;
+}
+
+/** 左栏：知识提取发起（目的必填）＋机械草稿调试入口（明确标记）。 */
+function renderKnowledgeForm(box) {
+  const p = currentPaper();
+  const atts = p ? state.attachments.filter((a) => a.paperId === p.id) : [];
+  const subqs = state.subquestions.filter((q) => !ui.topicId || q.topicId === ui.topicId);
+  box.innerHTML = `
+    <details class="mini" open>
+      <summary>发起语义提取（选文献＋研究目的）</summary>
+      ${p ? `<div class="hint">当前文献：${esc(p.title)}</div>
+        ${atts.length ? atts.map((a) => `<label class="cmppick"><input type="checkbox" class="k-att" value="${a.id}" checked/> ${esc(state.assets.find((x) => x.id === a.assetId)?.name ?? a.assetId)}（${ROLE_LABEL[a.role]}）</label>`).join("") : `<p class="hint warn">该条目无附件；先到「文献整理」导入。</p>`}
+        <textarea id="k-purpose" rows="2" placeholder="研究目的（必填）：围绕哪个研究问题提取？如：比较 pH 对 Km 的影响"></textarea>
+        ${subqs.length ? `<select id="k-subq"><option value="">（不挂子问题）</option>${subqs.map((q) => `<option value="${q.id}">${esc(q.question)}</option>`).join("")}</select>` : ""}
+        <button class="primary" id="k-start" ${atts.length ? "" : "disabled"}>发起语义提取（独立 AI 任务）</button>
+        <p class="hint">抽取单位是研究意义（数据＋条件/方法、结论＋依据、思路），不是逐行拆文本；结果进右栏待审区，须人工核对。等待期间可继续编辑，不会被覆盖。</p>`
+      : `<p class="hint">先在下方选择文献条目（或到「文献整理」新建）。</p>`}
+    </details>
+    <details class="mini">
+      <summary>机械草稿（开发调试，非正式提取）</summary>
+      <input id="dbg-name" placeholder="文件名" />
+      <textarea id="dbg-text" rows="2" placeholder="粘贴文本：逐段拆分为草稿卡，全部标记 mechanical"></textarea>
+      <button id="dbg-import">导入机械草稿</button>
+    </details>`;
+  const start = $("#k-start");
+  if (start) start.addEventListener("click", (ev) => runJob(ev.target, "语义知识提取", async () => {
+    const attachmentIds = [...$$(".k-att")].filter((x) => x.checked).map((x) => x.value);
+    const r = await api.knowledgeJob({ paperId: p.id, attachmentIds, purpose: $("#k-purpose").value, topicId: ui.topicId || undefined, subquestionId: $("#k-subq")?.value || undefined });
+    const res = await pollJob(r.jobId, "知识提取");
+    await refresh();
+    setStatus(`知识提取完成：新增 ${res.created} 张待审卡${res.skipped ? `，跳过重复 ${res.skipped}` : ""}（输入快照已固定）`);
+  }));
+  $("#dbg-import").addEventListener("click", (ev) => runBusy(ev.target, "导入机械草稿", async () => {
+    const r = await api.importLiterature($("#dbg-name").value || "debug.md", $("#dbg-text").value, "draft", ui.topicId || undefined);
+    await refresh(); setStatus(`机械草稿已导入：${r.created} 张（全部标记 mechanical，仅供调试）`);
+  }));
+}
+
 /** 左栏文献工具：命名映射 + 条件比较（仅文献导航显示）。 */
 function renderLitTools() {
   const box = $("#lit-tools");
   if (ui.nav === "record") { renderRecordTools(box); return; }
-  if (ui.nav !== "literature") { box.innerHTML = ""; return; }
+  if (ui.nav === "papers") {
+    box.innerHTML = `
+      <details class="mini">
+        <summary>题录导入（Zotero 导出即用）</summary>
+        <select id="bib-format"><option value="bibtex">BibTeX（.bib）</option><option value="csl-json">CSL-JSON（Zotero 导出）</option></select>
+        <textarea id="bib-text" rows="4" placeholder="粘贴题录内容；同 DOI 已有条目会跳过并给定位"></textarea>
+        <button class="primary" id="bib-import">导入题录</button>
+        <p class="hint">Zotero 三模式如实区分：题录导入（本功能）/ 附件导入（右栏上传）/ 实时连接（未验证、未实现，不做假入口）。</p>
+      </details>
+      <div class="row"><button class="goto" data-goto="literature">旧版材料视图（开发调试）</button></div>`;
+    $("#bib-import").addEventListener("click", (ev) => runBusy(ev.target, "导入题录", async () => {
+      const r = await api.importBibliography($("#bib-format").value, $("#bib-text").value);
+      $("#bib-text").value = "";
+      if (r.created?.length) ui.paperId = r.created[0];
+      await refresh();
+      setStatus(`题录导入：新建 ${r.created?.length ?? 0} 条${r.skipped?.length ? `，跳过同 DOI ${r.skipped.length} 条（已有条目可定位）` : ""}`);
+    }));
+    return;
+  }
+  if (ui.nav !== "literature" && ui.nav !== "knowledge") { box.innerHTML = ""; return; }
   const maps = state.mappings.filter((m) => !ui.topicId || !m.topicId || m.topicId === ui.topicId);
   const cmps = state.comparisons.filter((c) => !ui.topicId || c.topicId === ui.topicId);
-  const confirmed = state.cards.filter((c) => c.audit === "confirm" && (!ui.topicId || state.assets.find((a) => a.id === c.assetId)?.topicId === ui.topicId));
+  const confirmed = state.cards.filter((c) => c.audit === "confirm" && (!ui.topicId || state.assets.find((a) => a.id === c.assetId)?.topicId === ui.topicId || state.papers.find((p) => p.id === c.paperId)?.topicIds.includes(ui.topicId)));
   const DIV = { single: "单源", consistent: "一致", value_diff: "值分歧", conditions_diff: "条件差异" };
   box.innerHTML = `
     <details class="mini" id="map-box">
@@ -502,7 +779,7 @@ function renderProtocolImport(box) {
     await refresh(); setStatus("方案已创建（r1）");
   }));
   const parseBtn = $("#proto-parse");
-  if (parseBtn) parseBtn.addEventListener("click", (ev) => runBusy(ev.target, "AI 解析方案", async () => {
+  if (parseBtn) parseBtn.addEventListener("click", (ev) => runJob(ev.target, "AI 解析方案", async () => {
     if (!ui.topicId) throw new Error("请先选择/创建课题");
     const r = await api.parseProtocol($("#parse-asset").value, ui.topicId);
     const res = await pollJob(r.jobId, "方案解析");
@@ -779,6 +1056,15 @@ function renderRecordTools(box) {
 }
 
 // ── 事件 ────────────────────────────────────────────────────
+/** 工作区跳转（课题首页/待办/条目页的入口按钮）。 */
+document.addEventListener("click", (ev) => {
+  const b = ev.target.closest(".goto"); if (!b) return;
+  if (!guardLeave()) return;
+  if (b.dataset.topic) ui.topicId = b.dataset.topic;
+  if (b.dataset.paper) ui.paperId = b.dataset.paper;
+  ui.nav = b.dataset.goto; ui.highlight = null; ui.cell = null; ui.groupSel.clear(); ui.batch = null; ui.ack = false;
+  renderAll();
+});
 $("#nav").addEventListener("click", (ev) => {
   const b = ev.target.closest(".navitem"); if (!b || b.disabled) return;
   if (!guardLeave()) return;
@@ -798,6 +1084,11 @@ $("#subq-create").addEventListener("click", (ev) => runBusy(ev.target, "创建�
 }));
 $("#material-list").addEventListener("click", (ev) => {
   const el = ev.target.closest(".material"); if (!el) return;
+  if (el.dataset.paperid) {
+    if (el.dataset.paperid === ui.paperId) return;
+    if (!guardLeave()) return;
+    ui.paperId = el.dataset.paperid; ui.attId = null; ui.assetId = null; ui.highlight = null; ui.groupSel.clear(); ui.batch = null; ui.ack = false; renderAll(); return;
+  }
   if (el.dataset.pid) {
     if (el.dataset.pid === ui.protocolId) return;
     if (!guardLeave()) return;
@@ -813,6 +1104,13 @@ $("#material-list").addEventListener("click", (ev) => {
   ui.assetId = el.dataset.id; ui.highlight = null; ui.cell = null; ui.tableId = null; ui.groupSel.clear(); ui.batch = null; ui.ack = false; renderAll();
 });
 $("#right-content").addEventListener("change", (ev) => {
+  if (ev.target.classList.contains("paper-topic")) {
+    const p = currentPaper();
+    runBusy(null, "课题关联", async () => {
+      await api.linkPaperTopic(p.id, ev.target.value, ev.target.checked);
+      await refresh(); setStatus(ev.target.checked ? "已关联课题（多课题可引用同一来源）" : "已解除课题关联");
+    }); return;
+  }
   if (ev.target.id === "table-pick") { ui.tableId = ev.target.value; ui.cell = null; renderRight(); }
   if (ev.target.id === "proto-rev") { ui.viewRev = Number(ev.target.value); ui.stepSel = null; renderMiddle(); renderRight(); }
   if (ev.target.id === "meas-sample") {
@@ -832,6 +1130,38 @@ $("#right-content").addEventListener("click", async (ev) => {
   const val = (f) => item?.querySelector(`[data-field="${f}"]`)?.value ?? "";
   const splitList = (s) => String(s ?? "").split(/[,，]/).map((x) => x.trim()).filter(Boolean);
   try {
+    if (ev.target.classList.contains("span-link")) { ui.assetId = ev.target.dataset.asset; ui.highlight = ev.target.dataset.quote; renderMiddle(); return; }
+    const attEl = ev.target.closest(".material[data-attid]");
+    if (attEl) { ui.attId = attEl.dataset.attid; ui.highlight = null; renderMiddle(); renderRight(); return; }
+    if (ev.target.id === "paper-save") {
+      const p = currentPaper();
+      await runBusy(ev.target, "保存题录", async () => {
+        try {
+          await api.updatePaper(p.id, { title: val("pTitle"), authors: val("pAuthors"), year: val("pYear"), doi: val("pDoi"), source: val("pSource"), license: val("pLicense"), note: val("pNote"), reason: val("pReason") });
+          ui.dirty = false; await refresh(); setStatus("题录已保存（修订留历史）");
+        } catch (e) {
+          if (e.status === 409 && e.details?.existingPaperId) { showLocate(e.message, e.details.existingPaperId); return; }
+          throw e;
+        }
+      }); return;
+    }
+    if (ev.target.id === "att-add") {
+      const p = currentPaper();
+      await runBusy(ev.target, "导入附件", async () => {
+        const file = $("#att-file").files?.[0];
+        let text = $("#att-text").value, name = file?.name ?? "";
+        if (file) text = await readTextFile(file);
+        if (!name) name = "attachment.md";
+        try {
+          const r = await api.addPaperAttachment(p.id, { name, text, role: $("#att-role").value, version: $("#att-version").value });
+          ui.attId = r.attachmentId; $("#att-text").value = ""; if ($("#att-file")) $("#att-file").value = "";
+          await refresh(); setStatus("附件已归档（未触发解析）");
+        } catch (e) {
+          if (e.status === 409) { showLocate(e.message, e.details?.existingPaperId ?? p.id); return; }
+          throw e;
+        }
+      }); return;
+    }
     if (ev.target.classList.contains("tab")) { ui.cardFilter = ev.target.dataset.filter; renderRight(); saveUi(); return; }
     if (ev.target.classList.contains("batch-preview")) {
       ui.batch = await api.batchPreview([...ui.groupSel]); ui.ack = false; renderRight(); return;
@@ -853,7 +1183,7 @@ $("#right-content").addEventListener("click", async (ev) => {
           if (i > 0) fields[line.slice(0, i).trim()] = line.slice(i + 1).trim();
         }
         await api.addCard({
-          assetId: ui.assetId, rawText: $("#mc-raw").value, sectionQuote: $("#mc-quote").value,
+          assetId: ui.assetId ?? state.attachments.find((a) => a.paperId === ui.paperId)?.assetId, rawText: $("#mc-raw").value, sectionQuote: $("#mc-quote").value,
           fields, units: splitList($("#mc-units").value), conditions: splitList($("#mc-conditions").value),
           unknowns: splitList($("#mc-unknowns").value), secondaryCitation: $("#mc-secondary").checked, reason: $("#mc-reason").value,
         });
@@ -865,7 +1195,8 @@ $("#right-content").addEventListener("click", async (ev) => {
     if (ev.target.classList.contains("history-btn")) {
       const id = item.dataset.id;
       const obj = state.cards.find((c) => c.id === id) ?? state.tables.find((t) => t.id === id)
-        ?? state.ocrs.find((o) => o.id === id) ?? state.measurements.find((m) => m.id === id);
+        ?? state.ocrs.find((o) => o.id === id) ?? state.measurements.find((m) => m.id === id)
+        ?? state.papers.find((p) => p.id === id);
       if (obj) { openHistory(obj); return; }
       const p = state.protocols.find((x) => x.id === id);
       if (p) {
@@ -875,7 +1206,9 @@ $("#right-content").addEventListener("click", async (ev) => {
       return;
     }
     if (ev.target.classList.contains("raw") && ev.target.classList.contains("linkable")) {
-      const c = state.cards.find((x) => x.id === item.dataset.id); ui.highlight = c?.locator.sectionQuote || c?.rawText || null; renderMiddle(); return;
+      const c = state.cards.find((x) => x.id === item.dataset.id); ui.highlight = c?.locator.sectionQuote || c?.rawText || null;
+      if (ui.nav === "knowledge" && c) ui.assetId = c.assetId;
+      renderMiddle(); return;
     }
     if (ev.target.classList.contains("save-fields")) {
       const fields = {};
@@ -991,7 +1324,7 @@ $("#right-content").addEventListener("click", async (ev) => {
     }
     if (ev.target.classList.contains("imp-run")) {
       const iid = ev.target.dataset.id;
-      await runBusy(ev.target, "AI 影响评估", async () => {
+      await runJob(ev.target, "AI 影响评估", async () => {
         const r = await api.runImpact(iid);
         const res = await pollJob(r.jobId, "影响评估");
         await refresh();
@@ -1065,7 +1398,7 @@ $("#right-content").addEventListener("click", async (ev) => {
       }); return;
     }
     if (ev.target.id === "ocr-ai") {
-      await runBusy(ev.target, "AI 识别", async () => {
+      await runJob(ev.target, "AI 识别", async () => {
         const r = await api.runOcr(ui.assetId);
         const res = await pollJob(r.jobId, "手写识别");
         await refresh(); setStatus(`识别完成：${res.created} 条草稿（须人工确认）`);

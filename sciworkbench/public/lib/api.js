@@ -42,6 +42,13 @@ export const api = {
   async runOcr(assetId) { return json("/api/ocr", { assetId }); },
   async manualOcr(assetId, input) { return json("/api/ocr/manual", { assetId, ...input }); },
   async confirmOcr(id, patch) { return json(`/api/ocr/${encodeURIComponent(id)}/confirm`, patch); },
+  // ── 阶段5：论文条目/附件（文献整理）与语义知识提取 ──
+  async createPaper(input) { return json("/api/papers", input); },
+  async updatePaper(id, patch) { return json(`/api/papers/${encodeURIComponent(id)}/update`, patch); },
+  async addPaperAttachment(id, input) { return json(`/api/papers/${encodeURIComponent(id)}/attachments`, input); },
+  async linkPaperTopic(id, topicId, link) { return json(`/api/papers/${encodeURIComponent(id)}/topics`, { topicId, link }); },
+  async importBibliography(format, text) { return json("/api/papers/import-bibliography", { format, text }); },
+  async knowledgeJob(input) { return json("/api/knowledge/jobs", input); },
 };
 
 async function json(url, body) {
@@ -51,6 +58,6 @@ async function json(url, body) {
     body: body ? JSON.stringify(body) : undefined,
   });
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+  if (!res.ok) { const e = new Error(data.error || `HTTP ${res.status}`); e.status = res.status; e.details = data; throw e; }
   return data;
 }

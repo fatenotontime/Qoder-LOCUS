@@ -244,5 +244,17 @@ table.grid .celledit input { width: auto; }
 .item.meas .row input, .item.ocr .row input { width: auto; flex: 1 1 100px; margin: 0; }
 .item.smp .row input { width: auto; flex: 1 1 120px; margin: 0; }
 
+/* ── 阶段5：课题首页 / 论文条目 / 语义知识卡 ── */
+.navitem.navbottom { margin-top: var(--space-3); border-top: 1px dashed var(--line); padding-top: var(--space-3); }
+.source .item { white-space: normal; font-family: var(--font-sans); margin-bottom: var(--space-3); }
+.topiccard .row { margin-top: var(--space-2); }
+.badge.kind-data { color: var(--accent); border-color: var(--accent); }
+.badge.kind-argument { color: #2f5f8f; border-color: #2f5f8f; }
+.badge.kind-method { color: #6b4f9e; border-color: #6b4f9e; }
+.badge.kind-idea { color: var(--warn); border-color: var(--warn); }
+.spans { margin: var(--space-1) 0; }
+.spans .hint { margin: 0 0 2px; }
+.span-link { padding: 0 var(--space-2); font-size: 12px; margin-right: var(--space-1); }
+
 
 

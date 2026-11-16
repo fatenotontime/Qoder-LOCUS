@@ -32,36 +32,43 @@
     <!-- 左：课题 / 子问题 / 材料 -->
     <aside class="pane left">
       <nav class="nav" id="nav">
-        <button class="navitem active" data-nav="literature">文献证据</button>
-        <button class="navitem" data-nav="measurement">实验数据</button>
-        <button class="navitem" data-nav="protocol">方案与图</button>
-        <button class="navitem" data-nav="record">实验记录</button>
-        <button class="navitem disabled" disabled title="未实现（阶段5）">分析 <em>未实现</em></button>
-        <button class="navitem disabled" disabled title="未实现（阶段6）">产出 <em>未实现</em></button>
+        <button class="navitem active" data-nav="topic">课题展示</button>
+        <button class="navitem" data-nav="papers">文献整理</button>
+        <button class="navitem" data-nav="knowledge">领域知识积累</button>
+        <button class="navitem" data-nav="protocol">实验方案管理</button>
+        <button class="navitem" data-nav="record">实验执行与记录</button>
+        <button class="navitem disabled" disabled title="阶段5后续段实现">数据处理与分析 <em>未实现</em></button>
+        <button class="navitem disabled navbottom" disabled title="阶段5后续段实现">上下文AI对话 <em>未实现</em></button>
       </nav>
       <p class="hint" id="nav-hint"></p>
 
-      <div class="pane-title">课题</div>
-      <select id="topic-select"></select>
-      <details class="mini">
-        <summary>新建课题（仅名称＋研究问题）</summary>
-        <input id="topic-name" placeholder="课题名称" />
-        <input id="topic-q" placeholder="研究问题" />
-        <button id="topic-create">创建课题</button>
-      </details>
+      <div id="sec-topics">
+        <div class="pane-title">课题</div>
+        <select id="topic-select"></select>
+        <details class="mini" id="topic-create-box">
+          <summary>新建课题（仅名称＋研究问题）</summary>
+          <input id="topic-name" placeholder="课题名称" />
+          <input id="topic-q" placeholder="研究问题" />
+          <button id="topic-create">创建课题</button>
+        </details>
+      </div>
 
-      <div class="pane-title">子问题</div>
-      <ul class="subq" id="subq-list"></ul>
-      <details class="mini">
-        <summary>新建子问题</summary>
-        <input id="subq-q" placeholder="子问题" />
-        <select id="subq-kind"><option value="declared">已声明</option><option value="exploratory">探索性</option></select>
-        <button id="subq-create">创建子问题</button>
-      </details>
+      <div id="sec-subq">
+        <div class="pane-title">子问题</div>
+        <ul class="subq" id="subq-list"></ul>
+        <details class="mini">
+          <summary>新建子问题</summary>
+          <input id="subq-q" placeholder="子问题" />
+          <select id="subq-kind"><option value="declared">已声明</option><option value="exploratory">探索性</option></select>
+          <button id="subq-create">创建子问题</button>
+        </details>
+      </div>
 
-      <div class="pane-title">材料</div>
-      <div id="import-box"></div>
-      <div class="materials" id="material-list"></div>
+      <div id="sec-materials">
+        <div class="pane-title" id="materials-title">材料</div>
+        <div id="import-box"></div>
+        <div class="materials" id="material-list"></div>
+      </div>
 
       <div id="lit-tools"></div>
     </aside>
