@@ -35,9 +35,11 @@ export const TASKS: Record<TaskName, TaskDef> = {
     name: "protocol_parse",
     system:
       "你是实验方案结构化助手。把给定的方法/方案文本整理成可编辑的结构化方案草稿；" +
-      "不得补造未写明的条件或设备；未知项列入 unknowns。只返回 JSON，键必须用双引号。",
+      "不得补造未写明的条件或设备；未知项列入 unknowns。" +
+      "原文写明的时长必须拆到 durationMin（分钟数字），不要只埋在操作文本里；原文未给时长则 durationMin 置 null，不得估计；" +
+      "原文给了时长但无法确定是精确还是约计时，estimated 置 true。只返回 JSON，键必须用双引号。",
     schema:
-      '{"protocol":{"purpose":"目的","inputs":["输入"],"operations":["操作"],"conditions":["条件"],"criteria":"完成判据","unknowns":["未知项"]}}',
+      '{"protocol":{"purpose":"目的","inputs":["输入"],"steps":[{"op":"操作（不含时长数字）","durationMin":null,"estimated":false,"note":"备注"}],"conditions":["条件"],"criteria":"完成判据","unknowns":["未知项"]}}',
   },
   handwriting_ocr: {
     name: "handwriting_ocr",

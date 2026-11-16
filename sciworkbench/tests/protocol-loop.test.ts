@@ -81,6 +81,20 @@ test("T03 AI 方案解析结果映射：未知时长留空，不补造", () => {
   assert.throws(() => protocolDraftFromAi({ nope: 1 }, "ast_1"), /结构不符/);
 });
 
+test("T03 AI 方案解析：结构化 steps 的时长入 durationMin，不埋在操作文本（远端验收反例）", () => {
+  const d = protocolDraftFromAi({ protocol: { purpose: "P", steps: [
+    { op: "配制缓冲液", durationMin: 10, estimated: false },
+    { op: "孵育", durationMin: 30, estimated: true, note: "原文约 30 分钟" },
+    { op: "读吸光度", durationMin: null },
+  ] } }, "ast_1");
+  assert.deepEqual(d.steps.map((s) => s.durationMin), [10, 30, null]);
+  assert.equal(d.steps[1].estimated, true);
+  assert.equal(d.steps[1].note, "原文约 30 分钟");
+  // 旧 operations 兜底仍可用
+  const legacy = protocolDraftFromAi({ protocol: { operations: ["混合"] } }, "ast_1");
+  assert.equal(legacy.steps[0].durationMin, null);
+});
+
 // T03 / EXP03：模板固定 revision；AI 草稿须人工确认后复用
 test("T03 模板固定方案 revision；未确认不得用于执行；方案变更后须比较", () => {
   const { s, topicId } = base();

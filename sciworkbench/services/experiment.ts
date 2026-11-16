@@ -159,12 +159,15 @@ export function editProtocol(state: LocusState, id: string, patch: ProtocolPatch
   return { state: next, protocol };
 }
 
-/** 方案解析 AI 结果 → 草稿步骤（operations 字符串 → 步骤；未知时长留空，不补造）。 */
+/** 方案解析 AI 结果 → 草稿步骤（结构化 steps 优先，时长入 durationMin；旧 operations 字符串兜底；未知时长留空，不补造）。 */
 export function protocolDraftFromAi(value: unknown, sourceAssetId: string): { steps: ProtocolStep[]; purpose: string; inputs: string[]; conditions: string[]; criteria: string; unknowns: string[]; sourceAssetId: string } {
   const obj = (value ?? {}) as { protocol?: Record<string, unknown> };
   const p = obj.protocol;
-  if (!p || !Array.isArray(p.operations)) throw new AiError("方案解析结果结构不符：缺少 protocol.operations。");
-  const steps = cleanSteps((p.operations as unknown[]).map((op) => ({ op: str(op) })));
+  if (!p || (!Array.isArray(p.steps) && !Array.isArray(p.operations))) throw new AiError("方案解析结果结构不符：缺少 protocol.steps。");
+  const rawSteps = Array.isArray(p.steps) && p.steps.length > 0
+    ? (p.steps as unknown[])
+    : (p.operations as unknown[]).map((op) => ({ op: str(op) }));
+  const steps = cleanSteps(rawSteps);
   if (steps.length === 0) throw new AiError("方案解析结果为空。");
   const arr = (v: unknown): string[] => (Array.isArray(v) ? v.map(str).filter(Boolean) : []);
   return {
