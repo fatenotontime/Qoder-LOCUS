@@ -129,6 +129,7 @@
 ## 9. 边界与红线（贯穿）
 
 - 私人 SRTP/导师/学校材料**不得**进入公开提示词、Git、截图、测试、站点、样本（D01/U 系列）。
-- 公开样本仅用 approved 的 DaRUS 三案（见 04_VERIFY_ITEMS）。
+- 公开样本仅用 approved 的 DaRUS 三案（见 04_VERIFY_ITEMS；批准范围以 `prompt/…/SAMPLE_REVIEW.md` 为准）。
+- 三案 approved **不代表 OCR 通过**：无合格手写测试集（`11_HANDWRITING_STATUS.md`），OCR 仍待补。
 - 密钥不进前端构建/持久存储/Git/普通配置/日志。
 - 旧仓库只读；不清理、不提交、不搬迁、不混入竞赛提交。

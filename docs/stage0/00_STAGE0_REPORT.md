@@ -43,7 +43,7 @@
 - `docs/stage0/02_FEATURE_MAP.md`
 - `docs/stage0/03_PROTECTION_LIST.md`
 - `docs/stage0/04_VERIFY_ITEMS.md`
-- `docs/stage0/OLD_REPO_MANIFEST.txt`（旧仓库只读保护基线，732 行）
+- `docs/stage0/OLD_REPO_MANIFEST.txt`（旧仓库只读保护基线，185 行，源码/文档范围）
 - `record/COMMIT_LEDGER.md`、`record/sessions/…`（按 AGENTS.md 规范更新）
 
 提交：见 `record/COMMIT_LEDGER.md` 中 `S01-T5` 行（trailer `Turn: S01-T5`）。
@@ -61,7 +61,7 @@
 
 - **未运行**：ENV01–12、M01–M10、T01–T27、I-V01–V13 全部（本阶段不涉及代码与环境实操）。
 - **限制**：旧仓库无 `.git`，无法用版本控制追踪既有改动，只能文件冻结。
-- **缺口**：样本包缺 `SAMPLE_REVIEW.md`（已被用户批准解决，不阻塞）。
+- **样本审核记录**：用户已补入 `prompt/…/SAMPLE_REVIEW.md` 与 `11_HANDWRITING_STATUS.md`，批准范围以 `SAMPLE_REVIEW.md` 为准（SLAC/Chymotrypsin/CotA 三案，SLAC 主展示）。**OCR 手写识别仍待补**（三案无合格手写测试集），不记为 OCR 通过；不阻塞先设计上传/草稿/人工修订接口。
 - **未读（红线遵守）**：旧仓库 `data/`、`.env*`、`.venv/`，以及 `E:\SRTP`。
 - **不是完成声明**：文档覆盖表验证"文档有条目"，不代表实现符合。
 

@@ -64,7 +64,10 @@
   - `03_CotA/evaluator.zip` 2bb3296d… 90018 B ✔
   - `developer-reference/{chymotrypsin,CotA,SLAC}` 三个 8fcf8942… / 92120211… / 773a0a7e… ✔
 - 边界：三案同源，非多领域 benchmark；无真实手写扫描件，**不构成 OCR benchmark**；`developer-reference/` 只供人工验收，**不得注入评委/被测模型**；作者外部图在 Step 3 由用户主动提交，不预载初始上下文。
-- 缺口（`[已核]`）：`07_REVIEW_STATUS.md` 提到"最终核验以 SAMPLE_REVIEW.md 为准"，但样本包内**只有 `总索引.md`，无 SAMPLE_REVIEW.md**。→ 已由用户在阶段0 明确批准，**不再阻塞**；如需归档，建议后续补一份 SAMPLE_REVIEW.md。
+- 审核记录（`[已核]`，用户已补入）：`prompt/…/SAMPLE_REVIEW.md`（主核验记录）+ `11_HANDWRITING_STATUS.md`（手写状态）。批准范围以其为准。
+  - `SAMPLE_REVIEW.md` 要点：正式批准三案但 `APPROVED` **仅限 09_SAMPLE_BINDING 所列各案公开实验分析链**；SLAC 数据另署 Alaric Prins、chymotrypsin 另署 Marwa Mohamed；chymotrypsin 明确**已扣空白**，不得假装存在未扣空白记录；原 xlsm 含 `vbaProject.bin`（未执行），评委包改用无宏 CSV；最终评委 ZIP 与六个内嵌 ZIP CRC 全通过，文件哈希清单逐条一致；`xlsm` 原件、notebook 不进入评委包。
+  - `approved` 准确含义 = **材料审核通过（限定用途）**，不代表用户最终验收、站点功能通过或 OCR 通过；对外用完整中文状态，不只展示无范围的 approved。
+- **OCR 状态（`[已核]`）**：三案**均不含合格手写测试集**，手写识别测试**未完成**。→ 不把三案 APPROVED 扩大为 OCR 通过；不阻塞先设计上传/草稿/人工修订接口，但**不得记作 OCR 验收通过**。
 - 红线：任案未通过前**不得用私人 SRTP 替补**（本阶段不涉及）。
 
 ## 5. 影响链专项（I-V01–V13）— 全部 `未执行`
