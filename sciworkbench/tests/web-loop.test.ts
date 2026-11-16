@@ -288,6 +288,58 @@ test("AI 分块失败（某块结构不符）→ 报错，不静默补造", asyn
   } finally { globalThis.fetch = orig; }
 });
 
+// ── AI 补修：超时/限流/进度 ─────────────────────────────────
+test("timeoutMs 钳制到 [5s, 600s]", () => {
+  clearAiConfig();
+  setAiConfig({ baseUrl: "https://x", model: "m", key: "k", timeoutMs: 1000 });
+  assert.equal(getAiConfig()!.timeoutMs, 5000);
+  setAiConfig({ baseUrl: "https://x", model: "m", key: "k", timeoutMs: 999999 });
+  assert.equal(getAiConfig()!.timeoutMs, 600000);
+  assert.equal(describeConfig(getAiConfig()).timeoutMs, 600000);
+  clearAiConfig();
+});
+
+test("限流(429)有上限重试：两次 429 后成功（共 3 次调用）", async () => {
+  const cfg: AiConfig = { baseUrl: "https://stub", model: "m", key: "k", timeoutMs: 5000 };
+  let n = 0;
+  const orig = globalThis.fetch;
+  globalThis.fetch = (async () => {
+    n++;
+    if (n <= 2) return new Response("", { status: 429 });
+    return new Response(JSON.stringify({ choices: [{ message: { content: '{"cards":[{"rawText":"x","extracted":{"fields":{}},"unknowns":[]}]}' } }] }), { status: 200 });
+  }) as typeof fetch;
+  try {
+    const out = await runTask(cfg, "literature_extract", "x");
+    assert.equal((out.value as { cards: unknown[] }).cards.length, 1);
+    assert.equal(n, 3);
+  } finally { globalThis.fetch = orig; }
+});
+
+test("HTTP job：AI 导入返回 jobId，可轮询到 done", async () => {
+  const orig = globalThis.fetch;
+  globalThis.fetch = (async (u: unknown, init: unknown) => {
+    if (String(u).includes("/chat/completions")) return new Response(JSON.stringify({ choices: [{ message: { content: '{"cards":[{"rawText":"x","extracted":{"fields":{}},"unknowns":[]}]}' } }] }), { status: 200 });
+    return orig(u as never, init as never);
+  }) as typeof fetch;
+  setAiConfig({ baseUrl: "https://stub", model: "m", key: "k" });
+  const app = await createApp(new MemoryStore());
+  await new Promise<void>((r) => app.listen(0, "127.0.0.1", () => r()));
+  const base = `http://127.0.0.1:${(app.address() as AddressInfo).port}`;
+  try {
+    const post = await fetch(`${base}/api/import/literature`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: "l.md", text: "x", mode: "ai" }) });
+    assert.equal(post.status, 202);
+    const { jobId } = (await post.json()) as { jobId: string };
+    let job: { status: string; result?: { assetId: string } } = { status: "running" };
+    for (let i = 0; i < 60 && job.status === "running"; i++) { job = (await (await fetch(`${base}/api/jobs/${jobId}`)).json()) as typeof job; await new Promise((r) => setTimeout(r, 20)); }
+    assert.equal(job.status, "done");
+    assert.ok(job.result?.assetId);
+  } finally {
+    await new Promise<void>((r) => app.close(() => r()));
+    globalThis.fetch = orig;
+    clearAiConfig();
+  }
+});
+
 test("MemoryStore 基本往返", async () => {
   const mem = new MemoryStore();
   const r = await importLiterature(emptyState(), { name: "s", text: "一段" });

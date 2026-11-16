@@ -53,3 +53,21 @@
 
 ## 五、不改动
 - 阶段0–3 历史结论不回改；本轮仅 `sciworkbench/` 与 `docs/stage4/`。
+
+---
+
+## 六、补修（用户 review 后追加）
+
+### 6.1 CSV 多级表头（提交 `22253e2`）
+- `analyseTable`：识别并**合并两级表头**（首级空缺由下一级填充，如 `Protein/Name`）；**下一行像数据行（`r0`）则不合并**（修 Vessels 误吞）；宽度按**末列非空**裁剪（去尾部空列占位）。
+- 导入新增 `headerRows`（auto/1/2）；页面「表头行」选择控件。
+- **真实 48 个 SLAC csv 复测**：含占位列由 **36 → 12**；`Data.csv` 列名正确合并；6 个 `General Information`（带前置标题）仍拒绝并给可行提示。
+- 仍未解析：`Documentation.csv`/`Kinetic Models.csv` 表头不规则（各 5–7 占位）；仪器导出（`##BLOCKS=`）明确拒绝。
+
+### 6.2 AI 超时/限流/进度（本次）
+- **超时可配**：`AiConfig.timeoutMs`，页面「超时(秒)」或 `LOCUS_AI_TIMEOUT_MS`，钳制 [5s, 600s]，默认 120s。
+- **超时/429/5xx 有上限重试**（最多 3 次，退避）；解析失败另有一次“严格 JSON”重试。
+- **分块进度**：AI 文献导入改为**后台任务**（`POST /api/import/literature` 返回 `jobId`），`GET /api/jobs/:id` 报告 `第 k/n 块`；页面轮询显示进度。
+- 仍成立：原始响应留存 `data/audit/`、Key 仅进程内存、失败原子不写半成品。
+
+**验证**：单测 **77 项通过**（新增：超时钳制、429 重试计数、HTTP job 轮询到 done）。

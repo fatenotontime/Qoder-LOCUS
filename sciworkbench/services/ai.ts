@@ -1,14 +1,16 @@
 /**
- * OpenAI 兼容 AI 解析（健壮版）。
+ * OpenAI 兼容 AI 解析（健壮版 v3）。
  * 配置：运行时可从网页设置，仅进程内存；重启失效；不写文件/浏览器持久存储/日志/Git。
  * 任务：文献抽取 / 方案解析 / 手写识别 为三个独立任务，各自 prompt 与输出结构，不混用。
- * 健壮性：JSON 提取容错；失败一次受限重试；文献按段落分块抽取；原始响应回传供审计留存。
+ * 健壮性：JSON 提取容错；解析失败重试一次；对超时/429/5xx 有上限重试；文献分块并回报进度；原始响应回传供审计。
  */
 
 export interface AiConfig {
   readonly baseUrl: string;
   readonly model: string;
   readonly key: string;
+  /** 单次请求超时（毫秒）。缺省 120000。 */
+  readonly timeoutMs?: number;
 }
 
 export type TaskName = "literature_extract" | "protocol_parse" | "handwriting_ocr";
@@ -45,23 +47,31 @@ export const TASKS: Record<TaskName, TaskDef> = {
   },
 };
 
-/** 从环境变量读取配置（可选初始值）。 */
+export const DEFAULT_TIMEOUT_MS = 120000;
+const MIN_TIMEOUT_MS = 5000;
+const MAX_TIMEOUT_MS = 600000;
+
+const clampTimeout = (v: unknown): number => {
+  const n = Number(v);
+  if (!Number.isFinite(n) || n <= 0) return DEFAULT_TIMEOUT_MS;
+  return Math.min(MAX_TIMEOUT_MS, Math.max(MIN_TIMEOUT_MS, Math.round(n)));
+};
+
 export function aiConfigFromEnv(env: NodeJS.ProcessEnv = process.env): AiConfig | null {
-  return normalizeAiConfig({ baseUrl: env.LOCUS_AI_BASE_URL, model: env.LOCUS_AI_MODEL, key: env.LOCUS_AI_KEY });
+  return normalizeAiConfig({ baseUrl: env.LOCUS_AI_BASE_URL, model: env.LOCUS_AI_MODEL, key: env.LOCUS_AI_KEY, timeoutMs: env.LOCUS_AI_TIMEOUT_MS });
 }
 
-export function normalizeAiConfig(input: { baseUrl?: unknown; model?: unknown; key?: unknown }): AiConfig | null {
+export function normalizeAiConfig(input: { baseUrl?: unknown; model?: unknown; key?: unknown; timeoutMs?: unknown }): AiConfig | null {
   const baseUrl = String(input.baseUrl ?? "").trim().replace(/\/+$/, "");
   const model = String(input.model ?? "").trim();
   const key = String(input.key ?? "").trim();
   if (!baseUrl || !model || !key) return null;
-  return { baseUrl, model, key };
+  return { baseUrl, model, key, timeoutMs: clampTimeout(input.timeoutMs) };
 }
 
-// ── 运行时配置：仅进程内存 ──
 let runtimeConfig: AiConfig | null = aiConfigFromEnv();
 export function getAiConfig(): AiConfig | null { return runtimeConfig; }
-export function setAiConfig(input: { baseUrl?: unknown; model?: unknown; key?: unknown }): boolean {
+export function setAiConfig(input: { baseUrl?: unknown; model?: unknown; key?: unknown; timeoutMs?: unknown }): boolean {
   const cfg = normalizeAiConfig(input);
   if (!cfg) return false;
   runtimeConfig = cfg;
@@ -69,9 +79,10 @@ export function setAiConfig(input: { baseUrl?: unknown; model?: unknown; key?: u
 }
 export function clearAiConfig(): void { runtimeConfig = null; }
 
-/** 供 /api/ai/status 报告；**绝不返回 key**。 */
-export function describeConfig(cfg: AiConfig | null): { configured: boolean; baseUrl: string; model: string } {
-  return cfg ? { configured: true, baseUrl: cfg.baseUrl, model: cfg.model } : { configured: false, baseUrl: "", model: "" };
+export function describeConfig(cfg: AiConfig | null): { configured: boolean; baseUrl: string; model: string; timeoutMs: number } {
+  return cfg
+    ? { configured: true, baseUrl: cfg.baseUrl, model: cfg.model, timeoutMs: cfg.timeoutMs ?? DEFAULT_TIMEOUT_MS }
+    : { configured: false, baseUrl: "", model: "", timeoutMs: DEFAULT_TIMEOUT_MS };
 }
 
 export class AiError extends Error {}
@@ -86,73 +97,69 @@ function deTrailingComma(s: string): string {
 function quoteBareKeys(s: string): string {
   return s.replace(/([{,]\s*)([A-Za-z_][A-Za-z0-9_]*)\s*:/g, '$1"$2":');
 }
-
-/** 依序尝试多种清洗后解析；全失败抛 AiError。 */
 export function extractJson(text: string): unknown {
   const raw = String(text ?? "").trim();
   if (!raw) throw new AiError("模型返回为空。");
   const a = raw.indexOf("{");
   const b = raw.lastIndexOf("}");
   const sliced = a >= 0 && b > a ? raw.slice(a, b + 1) : raw;
-  const candidates = [
-    raw,
-    stripFence(raw),
-    sliced,
-    deTrailingComma(sliced),
-    quoteBareKeys(deTrailingComma(sliced)),
-    quoteBareKeys(deTrailingComma(stripFence(sliced))),
-  ];
+  const candidates = [raw, stripFence(raw), sliced, deTrailingComma(sliced), quoteBareKeys(deTrailingComma(sliced)), quoteBareKeys(deTrailingComma(stripFence(sliced)))];
   for (const c of candidates) {
-    try { return JSON.parse(c); } catch { /* try next */ }
+    try { return JSON.parse(c); } catch { /* next */ }
   }
   throw new AiError("模型未返回可解析的 JSON（已尝试去围栏/去尾逗号/补引号）。");
 }
 
-// ── 单次调用 ────────────────────────────────────────────────
-async function postChat(cfg: AiConfig, system: string, user: string, timeoutMs: number): Promise<string> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    const res = await fetch(`${cfg.baseUrl}/chat/completions`, {
-      method: "POST",
-      headers: { "content-type": "application/json", authorization: `Bearer ${cfg.key}` },
-      body: JSON.stringify({
-        model: cfg.model,
-        temperature: 0,
-        messages: [{ role: "system", content: system }, { role: "user", content: user }],
-      }),
-      signal: controller.signal,
-    });
-    if (res.status === 429) throw new AiError("模型限流（429），请稍后重试。");
-    if (!res.ok) throw new AiError(`模型请求失败：HTTP ${res.status}`);
-    const data = (await res.json()) as { choices?: { message?: { content?: string } }[] };
-    const content = data.choices?.[0]?.message?.content ?? "";
-    if (!content) throw new AiError("模型返回为空。");
-    return content;
-  } catch (e) {
-    if (e instanceof AiError) throw e;
-    if ((e as Error).name === "AbortError") throw new AiError("模型请求超时。");
-    throw new AiError(`模型调用错误：${(e as Error).message}`);
-  } finally {
-    clearTimeout(timer);
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/** 单次请求；对超时/429/5xx 有上限重试（退避）。 */
+async function postChat(cfg: AiConfig, system: string, user: string): Promise<string> {
+  const timeoutMs = cfg.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  let lastErr: Error = new AiError("模型请求失败。");
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const res = await fetch(`${cfg.baseUrl}/chat/completions`, {
+        method: "POST",
+        headers: { "content-type": "application/json", authorization: `Bearer ${cfg.key}` },
+        body: JSON.stringify({ model: cfg.model, temperature: 0, messages: [{ role: "system", content: system }, { role: "user", content: user }] }),
+        signal: controller.signal,
+      });
+      if (res.status === 429) { lastErr = new AiError("模型限流（429）。"); await sleep(600 * (attempt + 1)); continue; }
+      if (res.status >= 500) { lastErr = new AiError(`模型服务错误（HTTP ${res.status}）。`); await sleep(600 * (attempt + 1)); continue; }
+      if (!res.ok) throw new AiError(`模型请求失败：HTTP ${res.status}`);
+      const data = (await res.json()) as { choices?: { message?: { content?: string } }[] };
+      const content = data.choices?.[0]?.message?.content ?? "";
+      if (!content) throw new AiError("模型返回为空。");
+      return content;
+    } catch (e) {
+      const err = e as Error;
+      if (err instanceof AiError) throw err;
+      if (err.name === "AbortError") { lastErr = new AiError(`模型请求超时（${Math.round(timeoutMs / 1000)}s）。`); await sleep(400); continue; }
+      throw new AiError(`模型调用错误：${err.message}`);
+    } finally {
+      clearTimeout(timer);
+    }
   }
+  throw lastErr;
 }
 
-/** 调一次任务；解析失败时用“严格 JSON”提示重试一次。返回 {value, raw}。 */
-export async function runTask(cfg: AiConfig, task: TaskName, input: string, timeoutMs = 60000): Promise<{ value: unknown; raw: string }> {
+/** 调一次任务；解析失败时用“严格 JSON”提示再试一次。返回 {value, raw}。 */
+export async function runTask(cfg: AiConfig, task: TaskName, input: string): Promise<{ value: unknown; raw: string }> {
   const def = TASKS[task];
   const system = `${def.system}\n输出 JSON 结构：${def.schema}`;
-  const first = await postChat(cfg, system, input, timeoutMs);
+  const first = await postChat(cfg, system, input);
   try {
     return { value: extractJson(first), raw: first };
   } catch {
     const stricter = `${system}\n重要：上一次输出不是合法 JSON。请只返回严格 JSON（键必须双引号，无注释、无多余文字）。`;
-    const second = await postChat(cfg, stricter, input, timeoutMs);
+    const second = await postChat(cfg, stricter, input);
     return { value: extractJson(second), raw: second };
   }
 }
 
-// ── 文献抽取：分块 + 重试 + 原始响应回传 ────────────────────
+// ── 文献抽取：分块 + 进度回调 + 原始响应回传 ────────────────
 const CHUNK_CHARS = 4000;
 const MAX_CHUNKS = 24;
 
@@ -174,26 +181,28 @@ export function chunkText(text: string, size = CHUNK_CHARS): string[] {
 }
 
 export interface LiteratureExtractResult {
-  /** 扁平化后的 card 原始对象（未映射，交由 app 层校验）。 */
   cards: unknown[];
-  /** 每个分块的原始模型响应（供审计留存；不含认证头）。 */
   raws: { index: number; content: string }[];
 }
 
-export async function extractLiterature(cfg: AiConfig, text: string): Promise<LiteratureExtractResult> {
+export async function extractLiterature(
+  cfg: AiConfig,
+  text: string,
+  onProgress?: (done: number, total: number) => void,
+): Promise<LiteratureExtractResult> {
   const chunks = chunkText(text);
   if (chunks.length === 0) throw new AiError("文档为空。");
-  if (chunks.length > MAX_CHUNKS) {
-    throw new AiError(`文档过长：需分 ${chunks.length} 块，超过上限 ${MAX_CHUNKS} 块。请拆分后再导入。`);
-  }
+  if (chunks.length > MAX_CHUNKS) throw new AiError(`文档过长：需分 ${chunks.length} 块，超过上限 ${MAX_CHUNKS} 块。请拆分后再导入。`);
+  const total = chunks.length;
   const cards: unknown[] = [];
   const raws: { index: number; content: string }[] = [];
-  for (let i = 0; i < chunks.length; i++) {
+  for (let i = 0; i < total; i++) {
     const { value, raw } = await runTask(cfg, "literature_extract", chunks[i]);
     raws.push({ index: i, content: raw });
     const obj = value as { cards?: unknown };
-    if (!obj || !Array.isArray(obj.cards)) throw new AiError(`第 ${i + 1} 块抽取结果结构不符：缺少 cards。`);
+    if (!obj || !Array.isArray(obj.cards)) throw new AiError(`第 ${i + 1}/${total} 块抽取结果结构不符：缺少 cards。`);
     cards.push(...obj.cards);
+    onProgress?.(i + 1, total);
   }
   return { cards, raws };
 }

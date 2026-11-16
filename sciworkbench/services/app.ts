@@ -212,6 +212,7 @@ export async function importLiterature(
   state: LocusState,
   input: { name: string; text: string; mode?: "draft" | "ai"; topicId?: string },
   ai: AiConfig | null,
+  onProgress?: (done: number, total: number) => void,
 ): Promise<ImportResult> {
   const name = input.name ?? "";
   assertLiteratureName(name);
@@ -222,7 +223,7 @@ export async function importLiterature(
   let audit: ImportResult["audit"];
   if (input.mode === "ai") {
     if (!ai) throw new AppError(400, "未配置 AI：请在页面「AI 配置」填写 baseUrl / 模型 / Key。");
-    const result = await extractLiterature(ai, asset.text);
+    const result = await extractLiterature(ai, asset.text, onProgress);
     cards = mapAiCards(asset.id, result.cards);
     audit = { raws: result.raws, model: ai.model };
   } else {

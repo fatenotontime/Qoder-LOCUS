@@ -99,10 +99,21 @@ function renderImportBox() {
       const file = $("#lit-file").files?.[0];
       let text = $("#lit-text").value, name = $("#lit-name").value;
       if (file) { text = await readTextFile(file); if (!name) name = file.name; }
-      const r = await api.importLiterature(name, text, $("#lit-mode").value, ui.topicId || undefined);
+      const mode = $("#lit-mode").value;
+      const r = await api.importLiterature(name, text, mode, ui.topicId || undefined);
       $("#lit-text").value = ""; if ($("#lit-file")) $("#lit-file").value = "";
+      if (r.jobId) {
+        for (let i = 0; i < 1200; i++) {
+          const job = await api.getJob(r.jobId);
+          setStatus(`AI 抽取：${job.message}`);
+          if (job.status === "done") { ui.assetId = job.result.assetId; await refresh(); setStatus(`AI 导入成功：${job.result.created} 张证据卡`); return; }
+          if (job.status === "error") throw new Error(job.error || "AI 抽取失败");
+          await new Promise((res) => setTimeout(res, 700));
+        }
+        throw new Error("AI 抽取等待超时（请查看服务日志）");
+      }
       await refresh(); ui.assetId = r.assetId; renderAll();
-      setStatus(`导入成功：${r.created} 张证据卡（${r.mode}）`);
+      setStatus(`导入成功：${r.created} 张证据卡（draft）`);
     }));
   } else {
     box.innerHTML = `
@@ -271,10 +282,14 @@ window.addEventListener("beforeunload", (e) => { if (ui.dirty) { e.preventDefaul
 
 async function refreshAiState() {
   const s = await api.aiStatus();
-  $("#ai-state").textContent = s.configured ? `已配置 · ${s.model} @ ${s.baseUrl}（仅进程内存）` : "未配置：填写三项并保存后，文献导入可选 AI 抽取";
+  $("#ai-state").textContent = s.configured
+    ? `已配置 · ${s.model} @ ${s.baseUrl} · 超时 ${Math.round((s.timeoutMs ?? 120000) / 1000)}s（仅进程内存）`
+    : "未配置：填写三项并保存后，文献导入可选 AI 抽取";
 }
 $("#ai-save").addEventListener("click", (ev) => runBusy(ev.target, "保存 AI 配置", async () => {
-  const s = await api.setAiConfig($("#ai-base").value, $("#ai-model").value, $("#ai-key").value); $("#ai-key").value = ""; await refreshAiState();
+  const secs = Number($("#ai-timeout").value);
+  const timeoutMs = Number.isFinite(secs) && secs > 0 ? secs * 1000 : undefined;
+  const s = await api.setAiConfig($("#ai-base").value, $("#ai-model").value, $("#ai-key").value, timeoutMs); $("#ai-key").value = ""; await refreshAiState();
   setStatus(s.configured ? `AI 已配置 · ${s.model}` : "AI 配置未生效");
 }));
 $("#ai-clear").addEventListener("click", (ev) => runBusy(ev.target, "清除 AI 配置", async () => { await api.clearAiConfig(); await refreshAiState(); setStatus("AI 配置已清除"); }));

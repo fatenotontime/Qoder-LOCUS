@@ -2,8 +2,9 @@
 export const api = {
   async getState() { return json("/api/state"); },
   async aiStatus() { return json("/api/ai/status"); },
-  async setAiConfig(baseUrl, model, key) { return json("/api/ai/config", { baseUrl, model, key }); },
+  async setAiConfig(baseUrl, model, key, timeoutMs) { return json("/api/ai/config", { baseUrl, model, key, timeoutMs }); },
   async clearAiConfig() { return fetch("/api/ai/config", { method: "DELETE" }).then((r) => r.json()); },
+  async getJob(id) { return json(`/api/jobs/${encodeURIComponent(id)}`); },
   async createTopic(name, researchQuestion) { return json("/api/topics", { name, researchQuestion }); },
   async createSubquestion(topicId, question, kind) { return json(`/api/topics/${encodeURIComponent(topicId)}/subquestions`, { question, kind }); },
   async importLiterature(name, text, mode, topicId) { return json("/api/import/literature", { name, text, mode, topicId }); },

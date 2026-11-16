@@ -5,6 +5,7 @@
  */
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { randomUUID } from "node:crypto";
 import { dirname, extname, join, normalize, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { JsonFileStore, type LocusState, type Store } from "./store.ts";
@@ -47,8 +48,20 @@ const MIME: Record<string, string> = {
   ".ico": "image/x-icon",
 };
 
+export interface Job {
+  id: string;
+  status: "running" | "done" | "error";
+  done: number;
+  total: number;
+  message: string;
+  result?: { assetId: string; created: number };
+  error?: string;
+}
+
 export async function createApp(store: Store) {
   let state: LocusState = await store.load();
+  const jobs = new Map<string, Job>();
+  const trimJobs = () => { if (jobs.size > 20) { for (const k of jobs.keys()) { if (jobs.size <= 20) break; jobs.delete(k); } } };
 
   const readBody = (req: IncomingMessage): Promise<string> =>
     new Promise((res, rej) => {
@@ -89,6 +102,12 @@ export async function createApp(store: Store) {
 
       if (method === "GET" && path === "/api/state") { send(res, 200, state); return; }
       if (method === "GET" && path === "/api/ai/status") { send(res, 200, describeConfig(getAiConfig())); return; }
+      if (method === "GET" && path.startsWith("/api/jobs/")) {
+        const job = jobs.get(decodeURIComponent(path.slice("/api/jobs/".length)));
+        if (!job) { send(res, 404, { error: "任务不存在" }); return; }
+        send(res, 200, job);
+        return;
+      }
       if (method === "DELETE" && path === "/api/ai/config") { clearAiConfig(); send(res, 200, describeConfig(getAiConfig())); return; }
       if (method === "GET" && path.startsWith("/api/source/")) {
         send(res, 200, sourceView(state, decodeURIComponent(path.slice("/api/source/".length))));
@@ -119,10 +138,26 @@ export async function createApp(store: Store) {
           return;
         }
         if (path === "/api/import/literature") {
-          const r = await importLiterature(state, { name: String(body.name ?? ""), text: String(body.text ?? ""), mode: (body.mode as "draft" | "ai") ?? "draft", topicId: body.topicId as string | undefined }, getAiConfig());
+          const mode = (body.mode as "draft" | "ai") ?? "draft";
+          const input = { name: String(body.name ?? ""), text: String(body.text ?? ""), mode, topicId: body.topicId as string | undefined };
+          if (mode === "ai") {
+            const id = `job_${randomUUID()}`;
+            const job: Job = { id, status: "running", done: 0, total: 0, message: "处理中…" };
+            jobs.set(id, job); trimJobs();
+            void (async () => {
+              try {
+                const r = await importLiterature(state, input, getAiConfig(), (done, total) => { job.done = done; job.total = total; job.message = `第 ${done}/${total} 块`; });
+                state = r.state; await store.save(state);
+                if (r.audit) writeAudit(r.asset.id, r.audit);
+                job.status = "done"; job.result = { assetId: r.asset.id, created: r.created }; job.message = "完成";
+              } catch (e) { job.status = "error"; job.error = (e as Error).message ?? "失败"; }
+            })();
+            send(res, 202, { ok: true, jobId: id });
+            return;
+          }
+          const r = await importLiterature(state, input, getAiConfig());
           state = r.state; await store.save(state);
-          if (r.audit) writeAudit(r.asset.id, r.audit);
-          send(res, 200, { ok: true, created: r.created, assetId: r.asset.id, mode: body.mode ?? "draft" });
+          send(res, 200, { ok: true, created: r.created, assetId: r.asset.id, mode: "draft" });
           return;
         }
         if (path === "/api/import/measurements") {
