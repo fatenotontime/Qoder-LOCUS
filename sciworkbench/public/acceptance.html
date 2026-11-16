@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LOCUS · 验收台</title>
+<link rel="stylesheet" href="styles.css">
+<style>
+  .acc-main { max-width: 1080px; margin: 0 auto; padding: var(--space-4) var(--space-5) var(--space-6); }
+  .acc-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); gap: var(--space-4); }
+  .matcard .src { color: var(--muted); font-size: 12px; margin: var(--space-1) 0 var(--space-2); }
+  .matcard .acts { display: flex; gap: var(--space-2); flex-wrap: wrap; align-items: center; margin-top: var(--space-2); }
+  .matcard .out { margin-top: var(--space-2); font-size: var(--text-sm); }
+  .matcard .out .err { color: var(--danger); }
+  .matcard .out .ok { color: var(--accent); }
+  .matcard pre.prev { max-height: 220px; overflow: auto; font-family: var(--font-mono); font-size: 12px; background: var(--bg); border: 1px solid var(--line); border-radius: var(--radius-sm); padding: var(--space-2); white-space: pre-wrap; word-break: break-word; }
+  .matcard img.prev { max-width: 240px; border: 1px solid var(--line); border-radius: var(--radius-sm); display: block; }
+  .badge.wait { color: var(--muted); border-color: var(--line); }
+  .badge.uploaded { color: #2f5f8f; border-color: #2f5f8f; }
+  .badge.done { color: var(--accent); border-color: var(--accent); }
+  .subq li.declared { border-color: var(--accent); }
+  .envnote { background: #eef3ef; border: 1px solid var(--line); border-radius: var(--radius); padding: var(--space-3) var(--space-4); font-size: var(--text-sm); margin-bottom: var(--space-4); }
+</style>
+</head>
+<body>
+<header class="topbar">
+  <div class="brand"><span class="mark">LOCUS</span><span class="sub">验收台 · 独立验收环境（不含历史记录）</span></div>
+  <div class="status"><a href="/">打开主界面 →</a></div>
+</header>
+<main class="acc-main">
+  <div class="envnote" id="envnote">加载环境中…</div>
+
+  <section class="card" id="topic-card">
+    <h2>已创建课题与子问题</h2>
+    <p class="hint">由种子脚本调用真实 TS 用例函数 <code>createTopic / createSubquestion</code> 创建；刷新本页不重建。</p>
+    <div id="topic-body">加载中…</div>
+  </section>
+
+  <section>
+    <h2 style="font-size:var(--text-lg)">待上传材料 → 点击即调用真实导入函数构建</h2>
+    <p class="hint">每个按钮对应一条真实 REST 路由 → 已写好的 TS 用例函数。上传构建后一律停在「已上传 · 未开始」：核验 / 方案解析 / 手写识别都<strong>不做</strong>，留到主界面按门禁推进。重复上传会触发 409 并指向已有原件。</p>
+    <div class="acc-grid" id="mat-grid"></div>
+  </section>
+
+  <section class="card">
+    <h2>环境说明</h2>
+    <p class="hint">本验收台使用独立数据文件 <code>data/acceptance.json</code>（建议端口 5180），与你主实例 5173 的数据完全隔离——「删去之前的记录」在此以全新环境实现，主实例数据未被改动。</p>
+    <p class="hint">重建验收环境：<code>node scripts/acceptance-seed.ts data/acceptance.json --force</code>（仅清验收环境）。启动：<code>PORT=5180 LOCUS_DATA=data/acceptance.json node server.ts</code>。</p>
+    <p class="hint">真实样本来源：DaRUS DOI 10.18419/DARUS-3337 · CC BY 4.0（evaluator-safe 节选）。手写记录为<strong>生成演示件</strong>（带「AI生成」水印），非真实实验数据；其识别质量不在本轮验收结论内。</p>
+  </section>
+</main>
+<script type="module" src="acceptance.js"></script>
+</body>
+</html>
