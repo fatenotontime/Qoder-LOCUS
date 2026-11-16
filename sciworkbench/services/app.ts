@@ -83,19 +83,46 @@ export function parseCsv(text: string, delim = ","): string[][] {
   return rows.filter((r) => r.some((c) => c.trim().length > 0));
 }
 
-/** 表分析：跳过章节标记行，识别真表头，丢弃键列独占的空数据行。 */
-export function analyseTable(rows: string[][]): { columns: string[]; body: string[][] } {
+/** 自动判断表头行数：若首级表头有空缺、且下一行填充 ≥2 格、且下一行不像数据行 → 视为两级表头。 */
+function autoHeaderLevels(cleaned: string[][], h: number): number {
+  const l1 = cleaned[h] ?? [];
+  const l2 = cleaned[h + 1] ?? [];
+  const first2 = (l2[0] ?? "").trim();
+  if (/^[a-z]{1,3}\d{1,3}$/i.test(first2)) return 1; // 下一行像行号(r0/r1) → 单级
+  const n2 = l2.filter((c) => c.trim() !== "").length;
+  if (n2 < 2) return 1;
+  return l1.some((c) => c.trim() === "") ? 2 : 1;
+}
+
+/**
+ * 表分析：跳过章节标记行，识别表头（可含两级），丢弃键列独占的空数据行。
+ * headerRows：1 / 2 / "auto"（默认自动）。
+ */
+export function analyseTable(rows: string[][], headerRows: 1 | 2 | "auto" = "auto"): { columns: string[]; body: string[][] } {
   const cleaned = rows.filter((r) => r.some((c) => c.trim() !== ""));
   const nonEmpty = (r: string[]) => r.filter((c) => c.trim() !== "").length;
-  let headerIdx = 0;
+  let h = 0;
   for (let i = 0; i < Math.min(cleaned.length, 12); i++) {
-    if (nonEmpty(cleaned[i]) >= 2) { headerIdx = i; break; }
+    if (nonEmpty(cleaned[i]) >= 2) { h = i; break; }
   }
-  const width = Math.max(...cleaned.map((r) => r.length));
-  const columns = Array.from({ length: width }, (_, i) => (cleaned[headerIdx]?.[i] ?? "").trim() || `col${i + 1}`);
-  const body = cleaned.slice(headerIdx + 1)
+  const levels = headerRows === "auto" ? autoHeaderLevels(cleaned, h) : headerRows;
+  // 宽度按“最后一列非空”裁剪，避免尾部全空列产生大量 colN 占位。
+  const width = Math.max(...cleaned.map((r) => {
+    let last = 0;
+    r.forEach((c, i) => { if (c.trim() !== "") last = i + 1; });
+    return last;
+  }));
+  const columns = Array.from({ length: width }, (_, i) => {
+    const parts: string[] = [];
+    for (let k = 0; k < levels; k++) {
+      const v = (cleaned[h + k]?.[i] ?? "").trim();
+      if (v) parts.push(v);
+    }
+    return parts.join("/") || `col${i + 1}`;
+  });
+  const body = cleaned.slice(h + levels)
     .map((r) => Array.from({ length: width }, (_, i) => (r[i] ?? "").trim()))
-    .filter((r) => nonEmpty(r) >= 2); // 丢弃“只有键列”/空行
+    .filter((r) => nonEmpty(r) >= 2);
   return { columns, body };
 }
 
@@ -264,7 +291,7 @@ export function reviewCard(state: LocusState, id: string, patch: CardPatch): Loc
 
 // ── 路径②：实验数据（保留表格结构）─────────────────────────
 /** 导入 CSV/TSV → **一张表格**（保留行列结构），供按表/列核对。 */
-export function importMeasurements(state: LocusState, input: { name: string; csv: string; topicId?: string }): ImportResult {
+export function importMeasurements(state: LocusState, input: { name: string; csv: string; topicId?: string; headerRows?: 1 | 2 | "auto" }): ImportResult {
   const name = input.name ?? "";
   assertCsvName(name);
   const text = stripBom(input.csv ?? "");
@@ -273,10 +300,10 @@ export function importMeasurements(state: LocusState, input: { name: string; csv
   assertUniqueHash(state, asset.hash);
   // 分隔符判定：首行无 ,/\t → 视为仪器导出等非表格格式（解析器未配置），明确拒绝，不硬解析成垃圾表。
   const delim = detectDelimiter(asset.text);
-  if (!delim) throw new AppError(422, "看起来不是 CSV/TSV 表格（仪器导出等格式解析器未配置）。请提供带分隔符、表头在首行的表格。");
+  if (!delim) throw new AppError(422, "首行未发现分隔符（可能是带前置标题的 CSV 或仪器导出格式）。请移除标题行、或用带表头在首行的 CSV/TSV。");
   const rows = parseCsv(asset.text, delim);
   if (rows.length < 2) throw new AppError(422, "表格至少需要表头 + 一行数据。");
-  const { columns, body } = analyseTable(rows);
+  const { columns, body } = analyseTable(rows, input.headerRows ?? "auto");
   if (body.length === 0) throw new AppError(422, "解析后没有可核对的数据行（可能只有表头或章节标记）。");
   const table: MeasurementTableRecord = {
     id: `tbl_${randomUUID()}`,

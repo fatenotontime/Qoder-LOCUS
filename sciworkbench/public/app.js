@@ -111,13 +111,15 @@ function renderImportBox() {
         <input id="meas-name" placeholder="文件名（如 EnzymeML_SLAC_pH3__Data.csv）" />
         <input id="meas-file" type="file" accept=".csv,.tsv,text/csv,text/plain" />
         <textarea id="meas-text" rows="2" placeholder="或粘贴 CSV…"></textarea>
-        <button class="primary" id="meas-import">导入</button>
+        <div class="row"><label>表头行</label>
+          <select id="meas-hdr"><option value="auto">自动</option><option value="1">1 行</option><option value="2">2 行（两级）</option></select>
+          <button class="primary" id="meas-import">导入</button></div>
       </details>`;
     $("#meas-import").addEventListener("click", (ev) => runBusy(ev.target, "导入数据", async () => {
       const file = $("#meas-file").files?.[0];
       let csv = $("#meas-text").value, name = $("#meas-name").value;
       if (file) { csv = await readTextFile(file); if (!name) name = file.name; }
-      const r = await api.importMeasurements(name, csv, ui.topicId || undefined);
+      const r = await api.importMeasurements(name, csv, ui.topicId || undefined, $("#meas-hdr")?.value ?? "auto");
       $("#meas-text").value = ""; if ($("#meas-file")) $("#meas-file").value = "";
       await refresh(); ui.assetId = r.assetId; renderAll();
       setStatus(`导入成功：表格 ${r.created} 行`);

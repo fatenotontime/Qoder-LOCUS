@@ -126,7 +126,8 @@ export async function createApp(store: Store) {
           return;
         }
         if (path === "/api/import/measurements") {
-          const r = importMeasurements(state, { name: String(body.name ?? ""), csv: String(body.csv ?? ""), topicId: body.topicId as string | undefined });
+          const hr = body.headerRows;
+          const r = importMeasurements(state, { name: String(body.name ?? ""), csv: String(body.csv ?? ""), topicId: body.topicId as string | undefined, headerRows: hr === 1 || hr === 2 ? hr : "auto" });
           state = r.state; await store.save(state);
           send(res, 200, { ok: true, created: r.created, assetId: r.asset.id });
           return;

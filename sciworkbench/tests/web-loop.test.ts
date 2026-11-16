@@ -249,6 +249,36 @@ test("仪器导出（前言+制表符块，首行无分隔符）→ 明确拒绝
   assert.throws(() => importMeasurements(emptyState(), { name: "run.txt", csv: tc }), (e: unknown) => e instanceof AppError && e.status === 422);
 });
 
+test("两级表头合并：首级空缺由下一级填充（EnzymeML 风格）", () => {
+  const rows = [
+    ["   Data", "", "", "", "", ""],
+    ["Experiment ID", "Type", "Reaction", "Protein", "", ""],
+    ["", "", "", "Name", "Initial concentration", "Unit"],
+    ["exp-1", "kinetic", "r1", "SLAC", "5", "mM"],
+  ];
+  const { columns, body } = analyseTable(rows);
+  assert.deepEqual(columns, ["Experiment ID", "Type", "Reaction", "Protein/Name", "Initial concentration", "Unit"]);
+  assert.equal(body.length, 1);
+  assert.deepEqual(body[0], ["exp-1", "kinetic", "r1", "SLAC", "5", "mM"]);
+});
+
+test("下一行像数据行(r0) → 不误合并表头（Vessels 风格）", () => {
+  const rows = [
+    ["   Vessels", "", "", ""],
+    ["ID", "Name", "Volume value", "Volume unit"],
+    ["r0", "cup", "1", "mL"],
+  ];
+  const { columns, body } = analyseTable(rows);
+  assert.deepEqual(columns, ["ID", "Name", "Volume value", "Volume unit"]);
+  assert.equal(body.length, 1);
+});
+
+test("headerRows 显式指定（1/2）", () => {
+  const rows = [["A", "B"], ["C", "D"], ["1", "2"]];
+  assert.deepEqual(analyseTable(rows, 1).columns, ["A", "B"]);
+  assert.deepEqual(analyseTable(rows, 2).columns, ["A/C", "B/D"]);
+});
+
 test("AI 分块失败（某块结构不符）→ 报错，不静默补造", async () => {
   const cfg: AiConfig = { baseUrl: "https://stub", model: "m", key: "k" };
   const orig = globalThis.fetch;
