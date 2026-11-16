@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>LOCUS · 最小闭环（本地开发版）</title>
+  <link rel="stylesheet" href="/styles.css" />
+  <meta name="locus-note" content="本地开发版：无 AI 解析（抽取=分行/分格草稿）；存储=本地文件，可替换；样例须为 approved 公开材料" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand"><span class="mark">LOCUS</span><span class="sub">科研上下文工作台 · 最小闭环</span></div>
+    <div class="status" id="status">连接中…</div>
+  </header>
+
+  <nav class="tabs" role="tablist">
+    <button class="tab active" data-tab="literature" role="tab">文献证据流程</button>
+    <button class="tab" data-tab="measurement" role="tab">实验数据流程</button>
+  </nav>
+
+  <main>
+    <!-- 文献证据路径 -->
+    <section id="panel-literature" class="panel active">
+      <div class="import card">
+        <h2>导入文献摘录</h2>
+        <p class="hint">导入文本 → 生成<strong>待审证据卡草稿</strong>（抽取为草稿，非确认）。公开材料须为 approved 且署名来源。</p>
+        <input id="lit-name" type="text" placeholder="来源名称（如 SLAC methods-source）" />
+        <textarea id="lit-text" rows="5" placeholder="粘贴文献摘录 / 方法节选文本…"></textarea>
+        <button class="primary" id="lit-import">导入并生成草稿</button>
+      </div>
+      <div class="list" id="lit-list"></div>
+    </section>
+
+    <!-- 实验数据路径 -->
+    <section id="panel-measurement" class="panel">
+      <div class="import card">
+        <h2>导入实验数据（CSV）</h2>
+        <p class="hint">导入 CSV → 逐单元格生成<strong>待核对测量项</strong>（数值/单位由人工核对）。</p>
+        <input id="meas-name" type="text" placeholder="文件名（如 EnzymeML_SLAC_pH3__Data.csv）" />
+        <input id="meas-file" type="file" accept=".csv,text/csv,text/plain" />
+        <textarea id="meas-text" rows="3" placeholder="或直接粘贴 CSV 内容…"></textarea>
+        <button class="primary" id="meas-import">导入并生成待核对项</button>
+      </div>
+      <div class="list" id="meas-list"></div>
+    </section>
+  </main>
+
+  <!-- 原件回查抽屉 -->
+  <aside class="drawer" id="drawer" hidden>
+    <div class="drawer-head">
+      <strong id="drawer-title">原件回查</strong>
+      <button id="drawer-close">关闭</button>
+    </div>
+    <div class="drawer-meta" id="drawer-meta"></div>
+    <pre class="source" id="drawer-source"></pre>
+  </aside>
+
+  <script type="module" src="/app.js"></script>
+</body>
+</html>
