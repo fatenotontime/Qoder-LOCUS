@@ -8,7 +8,7 @@ export const api = {
   async createTopic(name, researchQuestion) { return json("/api/topics", { name, researchQuestion }); },
   async createSubquestion(topicId, question, kind) { return json(`/api/topics/${encodeURIComponent(topicId)}/subquestions`, { question, kind }); },
   async importLiterature(name, text, mode, topicId) { return json("/api/import/literature", { name, text, mode, topicId }); },
-  async importMeasurements(name, csv, topicId, headerRows) { return json("/api/import/measurements", { name, csv, topicId, headerRows }); },
+  async importMeasurements(name, csv, topicId, headerRows, profile) { return json("/api/import/measurements", { name, csv, topicId, headerRows, profile }); },
   async reviewCard(id, patch) { return json(`/api/cards/${encodeURIComponent(id)}/review`, patch); },
   async reviewTable(id, patch) { return json(`/api/tables/${encodeURIComponent(id)}/review`, patch); },
   async getSource(assetId) { return json(`/api/source/${encodeURIComponent(assetId)}`); },

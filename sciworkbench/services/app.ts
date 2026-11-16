@@ -92,6 +92,9 @@ function autoHeaderLevels(cleaned: string[][], h: number): number {
   if (/^[a-z]{1,3}\d{1,3}$/i.test(first2)) return 1; // 下一行像行号(r0/r1) → 单级
   const n2 = l2.filter((c) => c.trim() !== "").length;
   if (n2 < 2) return 1;
+  // 第二级全为数值 → 是数据行而非列名（单级表头中间有空列时不误吞数据）。
+  const numeric = /^[-+]?\d*\.?\d+(e[-+]?\d+)?$/i;
+  if (l2.every((c) => c.trim() === "" || numeric.test(c.trim()))) return 1;
   return l2.some((c, i) => c.trim() !== "" && (l1[i] ?? "").trim() === "") ? 2 : 1;
 }
 
@@ -328,8 +331,21 @@ export function reviewCard(state: LocusState, id: string, patch: CardPatch): Loc
 }
 
 // ── 路径②：实验数据（保留表格结构）─────────────────────────
-/** 导入 CSV/TSV → **一张表格**（保留行列结构），供按表/列核对。 */
-export function importMeasurements(state: LocusState, input: { name: string; csv: string; topicId?: string; headerRows?: 1 | 2 | "auto" }): ImportResult {
+/** 格式 profile：解析规则只在声明的 profile 内生效；auto 仅判定一次，可人工 override。 */
+export type FormatProfile = "plain-table" | "enzymeML-blocks";
+
+export function detectProfile(rows: string[][]): FormatProfile {
+  const blocks = splitBlocks(rows);
+  if (blocks.length > 1 || blocks.some((b) => b.title)) return "enzymeML-blocks";
+  const cleaned = (blocks[0]?.rows ?? []).filter((r) => r.filter((c) => c.trim() !== "").length >= 2);
+  return autoHeaderLevels(cleaned, 0) === 2 ? "enzymeML-blocks" : "plain-table";
+}
+
+/**
+ * 导入 CSV/TSV → **一张或多张表格**（保留行列结构），供按表/列核对。
+ * profile：plain-table（单表矩形）/ enzymeML-blocks（标题行+分块+合并表头+标记行）/ 默认 auto 判定。
+ */
+export function importMeasurements(state: LocusState, input: { name: string; csv: string; topicId?: string; headerRows?: 1 | 2 | "auto"; profile?: FormatProfile | "auto" }): ImportResult {
   const name = input.name ?? "";
   assertCsvName(name);
   const text = stripBom(input.csv ?? "");
@@ -342,9 +358,11 @@ export function importMeasurements(state: LocusState, input: { name: string; csv
   const rows = parseCsv(asset.text, delim);
   if (rows.length < 2) throw new AppError(422, "表格至少需要表头 + 一行数据。");
   // 整文件可能叠放多张表：按标题行/空行分块，每块独立识别表头与数据行。
-  const parsed = splitBlocks(rows)
-    .map((b) => ({ title: b.title, ...analyseTable(b.rows, input.headerRows ?? "auto") }))
-    .filter((b) => b.body.length > 0);
+  const profile = input.profile === "plain-table" || input.profile === "enzymeML-blocks" ? input.profile : detectProfile(rows);
+  const parsed = (profile === "plain-table"
+    ? [{ title: null as string | null, ...analyseTable(rows, input.headerRows ?? "auto") }]
+    : splitBlocks(rows).map((b) => ({ title: b.title, ...analyseTable(b.rows, input.headerRows ?? "auto") }))
+  ).filter((b) => b.body.length > 0);
   if (parsed.length === 0) throw new AppError(422, "解析后没有可核对的数据行（可能只有表头或章节标记）。");
   const tables = parsed.map((b, i) => {
     const suffix = b.title ? ` · ${b.title}` : "";

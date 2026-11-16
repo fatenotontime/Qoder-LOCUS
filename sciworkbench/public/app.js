@@ -147,13 +147,15 @@ function renderImportBox() {
         <textarea id="meas-text" rows="2" placeholder="或粘贴 CSV…"></textarea>
         <div class="row"><label>表头行</label>
           <select id="meas-hdr"><option value="auto">自动</option><option value="1">1 行</option><option value="2">2 行（两级）</option></select>
+          <label>格式</label>
+          <select id="meas-profile"><option value="auto">自动</option><option value="plain-table">单表</option><option value="enzymeML-blocks">分块</option></select>
           <button class="primary" id="meas-import">导入</button></div>
       </details>`;
     $("#meas-import").addEventListener("click", (ev) => runBusy(ev.target, "导入数据", async () => {
       const file = $("#meas-file").files?.[0];
       let csv = $("#meas-text").value, name = $("#meas-name").value;
       if (file) { csv = await readTextFile(file); if (!name) name = file.name; }
-      const r = await api.importMeasurements(name, csv, ui.topicId || undefined, $("#meas-hdr")?.value ?? "auto");
+      const r = await api.importMeasurements(name, csv, ui.topicId || undefined, $("#meas-hdr")?.value ?? "auto", $("#meas-profile")?.value ?? "auto");
       $("#meas-text").value = ""; if ($("#meas-file")) $("#meas-file").value = "";
       await refresh(); ui.assetId = r.assetId; renderAll();
       setStatus(`导入成功：${r.tableCount ?? 1} 张表 · ${r.created} 行`);

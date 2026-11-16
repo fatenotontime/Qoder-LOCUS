@@ -162,7 +162,8 @@ export async function createApp(store: Store) {
         }
         if (path === "/api/import/measurements") {
           const hr = body.headerRows;
-          const r = importMeasurements(state, { name: String(body.name ?? ""), csv: String(body.csv ?? ""), topicId: body.topicId as string | undefined, headerRows: hr === 1 || hr === 2 ? hr : "auto" });
+          const pf = body.profile;
+          const r = importMeasurements(state, { name: String(body.name ?? ""), csv: String(body.csv ?? ""), topicId: body.topicId as string | undefined, headerRows: hr === 1 || hr === 2 ? hr : "auto", profile: pf === "plain-table" || pf === "enzymeML-blocks" ? pf : "auto" });
           state = r.state; await store.save(state);
           send(res, 200, { ok: true, created: r.created, tableCount: state.tables.filter((t) => t.assetId === r.asset.id).length, assetId: r.asset.id });
           return;

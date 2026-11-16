@@ -1,0 +1,92 @@
+OK   EnzymeML_SLAC_pH3_5__Data.csv
+     EnzymeML_SLAC_pH3_5__Data.csv · Data | 50 行(标记 10) × 10 列 | Experiment ID / Type / Reaction / Protein/Name / Protein/Initial concentration / Protein/Unit / Reactant/Name / Reactant/Initial concentration / Reactant/Unit / Enter data via transpose (Rightclick + "Insert Transpose")
+OK   EnzymeML_SLAC_pH3_5__Documentation.csv  [含占位列]
+     EnzymeML_SLAC_pH3_5__Documentation.csv · Documentation | 20 行(标记 0) × 11 列 | col1 / col2 / col3 / col4 / col5 / col6 / col7 / col8 / Units / Constants / Types
+REJ  EnzymeML_SLAC_pH3_5__General Information.csv | 422 首行未发现分隔符（可能是带前置标题的 CSV 或仪器导出格式）。请移除标题行、或用带表头在首行的 CSV/TSV。
+OK   EnzymeML_SLAC_pH3_5__Kinetic Models.csv
+     EnzymeML_SLAC_pH3_5__Kinetic Models.csv · Kinetic Models | 20 行(标记 0) × 4 列 | Reactant/Name / Reactant/ID / Protein/Name / Protein/ID
+OK   EnzymeML_SLAC_pH3_5__Proteins.csv
+     EnzymeML_SLAC_pH3_5__Proteins.csv · Proteins | 6 行(标记 0) × 8 列 | ID / Name / Sequence / Vessel / Constant / Source organism / EC Number / UniProt ID
+OK   EnzymeML_SLAC_pH3_5__Reactants.csv
+     EnzymeML_SLAC_pH3_5__Reactants.csv · Reactants (species) | 4 行(标记 0) × 6 列 | ID / Name / Vessel / Constant / SMILES / InCHI
+OK   EnzymeML_SLAC_pH3_5__Reactions.csv
+     EnzymeML_SLAC_pH3_5__Reactions.csv · Reactions | 1 行(标记 0) × 10 列 | ID / Name / Temperature value / Temperature unit / pH value / Reversible / Educts / Products / Proteins / Modifiers
+OK   EnzymeML_SLAC_pH3_5__Vessels.csv
+     EnzymeML_SLAC_pH3_5__Vessels.csv · Vessels | 1 行(标记 0) × 4 列 | ID / Name / Volume value / Volume unit
+OK   EnzymeML_SLAC_pH3__Data.csv
+     EnzymeML_SLAC_pH3__Data.csv · Data | 50 行(标记 10) × 10 列 | Experiment ID / Type / Reaction / Protein/Name / Protein/Initial concentration / Protein/Unit / Reactant/Name / Reactant/Initial concentration / Reactant/Unit / Enter data via transpose (Rightclick + "Insert Transpose")
+OK   EnzymeML_SLAC_pH3__Documentation.csv  [含占位列]
+     EnzymeML_SLAC_pH3__Documentation.csv · Documentation | 20 行(标记 0) × 11 列 | col1 / col2 / col3 / col4 / col5 / col6 / col7 / col8 / Units / Constants / Types
+REJ  EnzymeML_SLAC_pH3__General Information.csv | 422 首行未发现分隔符（可能是带前置标题的 CSV 或仪器导出格式）。请移除标题行、或用带表头在首行的 CSV/TSV。
+OK   EnzymeML_SLAC_pH3__Kinetic Models.csv
+     EnzymeML_SLAC_pH3__Kinetic Models.csv · Kinetic Models | 20 行(标记 0) × 4 列 | Reactant/Name / Reactant/ID / Protein/Name / Protein/ID
+OK   EnzymeML_SLAC_pH3__Proteins.csv
+     EnzymeML_SLAC_pH3__Proteins.csv · Proteins | 6 行(标记 0) × 8 列 | ID / Name / Sequence / Vessel / Constant / Source organism / EC Number / UniProt ID
+OK   EnzymeML_SLAC_pH3__Reactants.csv
+     EnzymeML_SLAC_pH3__Reactants.csv · Reactants (species) | 4 行(标记 0) × 6 列 | ID / Name / Vessel / Constant / SMILES / InCHI
+OK   EnzymeML_SLAC_pH3__Reactions.csv
+     EnzymeML_SLAC_pH3__Reactions.csv · Reactions | 1 行(标记 0) × 10 列 | ID / Name / Temperature value / Temperature unit / pH value / Reversible / Educts / Products / Proteins / Modifiers
+OK   EnzymeML_SLAC_pH3__Vessels.csv
+     EnzymeML_SLAC_pH3__Vessels.csv · Vessels | 1 行(标记 0) × 4 列 | ID / Name / Volume value / Volume unit
+OK   EnzymeML_SLAC_pH4_5__Data.csv
+     EnzymeML_SLAC_pH4_5__Data.csv · Data | 50 行(标记 10) × 10 列 | Experiment ID / Type / Reaction / Protein/Name / Protein/Initial concentration / Protein/Unit / Reactant/Name / Reactant/Initial concentration / Reactant/Unit / Enter data via transpose (Rightclick + "Insert Transpose")
+OK   EnzymeML_SLAC_pH4_5__Documentation.csv  [含占位列]
+     EnzymeML_SLAC_pH4_5__Documentation.csv · Documentation | 20 行(标记 0) × 11 列 | col1 / col2 / col3 / col4 / col5 / col6 / col7 / col8 / Units / Constants / Types
+REJ  EnzymeML_SLAC_pH4_5__General Information.csv | 422 首行未发现分隔符（可能是带前置标题的 CSV 或仪器导出格式）。请移除标题行、或用带表头在首行的 CSV/TSV。
+OK   EnzymeML_SLAC_pH4_5__Kinetic Models.csv
+     EnzymeML_SLAC_pH4_5__Kinetic Models.csv · Kinetic Models | 20 行(标记 0) × 4 列 | Reactant/Name / Reactant/ID / Protein/Name / Protein/ID
+OK   EnzymeML_SLAC_pH4_5__Proteins.csv
+     EnzymeML_SLAC_pH4_5__Proteins.csv · Proteins | 6 行(标记 0) × 8 列 | ID / Name / Sequence / Vessel / Constant / Source organism / EC Number / UniProt ID
+OK   EnzymeML_SLAC_pH4_5__Reactants.csv
+     EnzymeML_SLAC_pH4_5__Reactants.csv · Reactants (species) | 4 行(标记 0) × 6 列 | ID / Name / Vessel / Constant / SMILES / InCHI
+OK   EnzymeML_SLAC_pH4_5__Reactions.csv
+     EnzymeML_SLAC_pH4_5__Reactions.csv · Reactions | 1 行(标记 0) × 10 列 | ID / Name / Temperature value / Temperature unit / pH value / Reversible / Educts / Products / Proteins / Modifiers
+OK   EnzymeML_SLAC_pH4_5__Vessels.csv
+     EnzymeML_SLAC_pH4_5__Vessels.csv · Vessels | 1 行(标记 0) × 4 列 | ID / Name / Volume value / Volume unit
+OK   EnzymeML_SLAC_pH4__Data.csv
+     EnzymeML_SLAC_pH4__Data.csv · Data | 50 行(标记 10) × 10 列 | Experiment ID / Type / Reaction / Protein/Name / Protein/Initial concentration / Protein/Unit / Reactant/Name / Reactant/Initial concentration / Reactant/Unit / Enter data via transpose (Rightclick + "Insert Transpose")
+OK   EnzymeML_SLAC_pH4__Documentation.csv  [含占位列]
+     EnzymeML_SLAC_pH4__Documentation.csv · Documentation | 20 行(标记 0) × 11 列 | col1 / col2 / col3 / col4 / col5 / col6 / col7 / col8 / Units / Constants / Types
+REJ  EnzymeML_SLAC_pH4__General Information.csv | 422 首行未发现分隔符（可能是带前置标题的 CSV 或仪器导出格式）。请移除标题行、或用带表头在首行的 CSV/TSV。
+OK   EnzymeML_SLAC_pH4__Kinetic Models.csv
+     EnzymeML_SLAC_pH4__Kinetic Models.csv · Kinetic Models | 20 行(标记 0) × 4 列 | Reactant/Name / Reactant/ID / Protein/Name / Protein/ID
+OK   EnzymeML_SLAC_pH4__Proteins.csv
+     EnzymeML_SLAC_pH4__Proteins.csv · Proteins | 6 行(标记 0) × 8 列 | ID / Name / Sequence / Vessel / Constant / Source organism / EC Number / UniProt ID
+OK   EnzymeML_SLAC_pH4__Reactants.csv
+     EnzymeML_SLAC_pH4__Reactants.csv · Reactants (species) | 4 行(标记 0) × 6 列 | ID / Name / Vessel / Constant / SMILES / InCHI
+OK   EnzymeML_SLAC_pH4__Reactions.csv
+     EnzymeML_SLAC_pH4__Reactions.csv · Reactions | 1 行(标记 0) × 10 列 | ID / Name / Temperature value / Temperature unit / pH value / Reversible / Educts / Products / Proteins / Modifiers
+OK   EnzymeML_SLAC_pH4__Vessels.csv
+     EnzymeML_SLAC_pH4__Vessels.csv · Vessels | 1 行(标记 0) × 4 列 | ID / Name / Volume value / Volume unit
+OK   EnzymeML_SLAC_pH5_5__Data.csv
+     EnzymeML_SLAC_pH5_5__Data.csv · Data | 50 行(标记 10) × 10 列 | Experiment ID / Type / Reaction / Protein/Name / Protein/Initial concentration / Protein/Unit / Reactant/Name / Reactant/Initial concentration / Reactant/Unit / Enter data via transpose (Rightclick + "Insert Transpose")
+OK   EnzymeML_SLAC_pH5_5__Documentation.csv  [含占位列]
+     EnzymeML_SLAC_pH5_5__Documentation.csv · Documentation | 20 行(标记 0) × 11 列 | col1 / col2 / col3 / col4 / col5 / col6 / col7 / col8 / Units / Constants / Types
+REJ  EnzymeML_SLAC_pH5_5__General Information.csv | 422 首行未发现分隔符（可能是带前置标题的 CSV 或仪器导出格式）。请移除标题行、或用带表头在首行的 CSV/TSV。
+OK   EnzymeML_SLAC_pH5_5__Kinetic Models.csv
+     EnzymeML_SLAC_pH5_5__Kinetic Models.csv · Kinetic Models | 20 行(标记 0) × 4 列 | Reactant/Name / Reactant/ID / Protein/Name / Protein/ID
+OK   EnzymeML_SLAC_pH5_5__Proteins.csv
+     EnzymeML_SLAC_pH5_5__Proteins.csv · Proteins | 6 行(标记 0) × 8 列 | ID / Name / Sequence / Vessel / Constant / Source organism / EC Number / UniProt ID
+OK   EnzymeML_SLAC_pH5_5__Reactants.csv
+     EnzymeML_SLAC_pH5_5__Reactants.csv · Reactants (species) | 4 行(标记 0) × 6 列 | ID / Name / Vessel / Constant / SMILES / InCHI
+OK   EnzymeML_SLAC_pH5_5__Reactions.csv
+     EnzymeML_SLAC_pH5_5__Reactions.csv · Reactions | 1 行(标记 0) × 10 列 | ID / Name / Temperature value / Temperature unit / pH value / Reversible / Educts / Products / Proteins / Modifiers
+OK   EnzymeML_SLAC_pH5_5__Vessels.csv
+     EnzymeML_SLAC_pH5_5__Vessels.csv · Vessels | 1 行(标记 0) × 4 列 | ID / Name / Volume value / Volume unit
+OK   EnzymeML_SLAC_pH5__Data.csv
+     EnzymeML_SLAC_pH5__Data.csv · Data | 50 行(标记 10) × 10 列 | Experiment ID / Type / Reaction / Protein/Name / Protein/Initial concentration / Protein/Unit / Reactant/Name / Reactant/Initial concentration / Reactant/Unit / Enter data via transpose (Rightclick + "Insert Transpose")
+OK   EnzymeML_SLAC_pH5__Documentation.csv  [含占位列]
+     EnzymeML_SLAC_pH5__Documentation.csv · Documentation | 20 行(标记 0) × 11 列 | col1 / col2 / col3 / col4 / col5 / col6 / col7 / col8 / Units / Constants / Types
+REJ  EnzymeML_SLAC_pH5__General Information.csv | 422 首行未发现分隔符（可能是带前置标题的 CSV 或仪器导出格式）。请移除标题行、或用带表头在首行的 CSV/TSV。
+OK   EnzymeML_SLAC_pH5__Kinetic Models.csv
+     EnzymeML_SLAC_pH5__Kinetic Models.csv · Kinetic Models | 20 行(标记 0) × 4 列 | Reactant/Name / Reactant/ID / Protein/Name / Protein/ID
+OK   EnzymeML_SLAC_pH5__Proteins.csv
+     EnzymeML_SLAC_pH5__Proteins.csv · Proteins | 6 行(标记 0) × 8 列 | ID / Name / Sequence / Vessel / Constant / Source organism / EC Number / UniProt ID
+OK   EnzymeML_SLAC_pH5__Reactants.csv
+     EnzymeML_SLAC_pH5__Reactants.csv · Reactants (species) | 4 行(标记 0) × 6 列 | ID / Name / Vessel / Constant / SMILES / InCHI
+OK   EnzymeML_SLAC_pH5__Reactions.csv
+     EnzymeML_SLAC_pH5__Reactions.csv · Reactions | 1 行(标记 0) × 10 列 | ID / Name / Temperature value / Temperature unit / pH value / Reversible / Educts / Products / Proteins / Modifiers
+OK   EnzymeML_SLAC_pH5__Vessels.csv
+     EnzymeML_SLAC_pH5__Vessels.csv · Vessels | 1 行(标记 0) × 4 列 | ID / Name / Volume value / Volume unit
+
+合计 48：成功 42 / 拒绝 6 / 含占位列表 6
