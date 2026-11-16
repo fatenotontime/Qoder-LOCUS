@@ -9,7 +9,7 @@ import type {
   ExecutionRecord, ExecEvent, SampleRecord, SampleStateEntry, MeasurementRecord,
   ImpactRecord, ImpactItem, OcrRecord, RevisionEntry, AssetRecord,
 } from "../store.ts";
-import { contentHash } from "../store.ts";
+import { contentHash, rawHash } from "../store.ts";
 import { AppError, MAX_IMPORT_BYTES } from "./app.ts";
 import { AiError, runTask, getAiConfig, type AiConfig } from "./ai.ts";
 import { transition, displayAssessment, type ImpactState } from "../domain/impact.ts";
@@ -777,8 +777,9 @@ export function importImage(state: LocusState, input: { name: string; dataUrl: s
   if (!IMAGE_DATAURL.test(dataUrl)) throw new AppError(422, "图片须为 PNG/JPEG/WebP 的 dataURL（原图归档，不压缩转码）。");
   const bytes = Buffer.byteLength(dataUrl, "utf8");
   if (bytes > MAX_IMPORT_BYTES) throw new AppError(413, `图片超过上限 ${MAX_IMPORT_BYTES} 字节，已拒绝（不截断）。`);
-  const hash = contentHash(dataUrl);
-  const existing = state.assets.find((a) => a.hash === hash);
+  const hash = rawHash(dataUrl);
+  const fingerprint = contentHash(dataUrl);
+  const existing = state.assets.find((a) => (a.fingerprint ?? a.hash) === fingerprint || a.hash === hash);
   if (existing) throw new AppError(409, `已导入相同图片（内容 hash 相同），已拒收。已有原件：${existing.name}`, { existingAssetId: existing.id, existingName: existing.name });
   const asset: AssetRecord = {
     id: `ast_${randomUUID()}`,
@@ -787,6 +788,7 @@ export function importImage(state: LocusState, input: { name: string; dataUrl: s
     topicId: input.topicId || undefined,
     bytes,
     hash,
+    fingerprint,
     text: dataUrl,
     createdAt: now(),
   };

@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { rmSync } from "node:fs";
 import type { AddressInfo } from "node:net";
-import { contentHash, emptyState, JsonFileStore, MemoryStore } from "../store.ts";
+import { contentHash, emptyState, JsonFileStore, MemoryStore, rawHash } from "../store.ts";
 import {
   AppError,
   MAX_IMPORT_BYTES,
@@ -117,13 +117,18 @@ test("旧版本状态不迁移（返回空）", async () => {
   rmSync(path, { force: true });
 });
 
-test("v2/v3/v4 → v5 迁移：保留既有数据，补空新实体与卡默认结构", async () => {
+test("v2–v5 → v6 迁移：保留既有数据与原件 hash，补论文/附件与机械草稿标记", async () => {
   const path = join(tmpdir(), `locus-v2-${Date.now()}.json`);
   const r = importMeasurements(emptyState(), { name: "d.csv", csv: "t,v\n0,1" });
-  await new JsonFileStore(path).save({ version: 2, assets: r.state.assets, cards: [], tables: r.state.tables } as never);
+  const oldHash = "legacy-hash-keep";
+  const legacyAssets = r.state.assets.map((a) => ({ ...a, hash: oldHash, fingerprint: undefined })); // 真旧记录无指纹字段
+  await new JsonFileStore(path).save({ version: 2, assets: legacyAssets, cards: [], tables: r.state.tables } as never);
   const back = await new JsonFileStore(path).load();
-  assert.equal(back.version, 5);
+  assert.equal(back.version, 6);
   assert.equal(back.tables.length, 1);
+  assert.equal(back.assets[0].hash, oldHash); // 历史原件 hash 不被加载重算覆盖（5C）
+  assert.equal(back.assets[0].fingerprint, oldHash); // 旧记录指纹=既有口径
+  assert.deepEqual(back.papers, []); // 测量原件不建论文条目
   assert.deepEqual(back.topics, []);
   assert.deepEqual(back.subquestions, []);
   assert.deepEqual(back.adoptions, []);
@@ -136,27 +141,44 @@ test("v2/v3/v4 → v5 迁移：保留既有数据，补空新实体与卡默认�
   assert.deepEqual(back.impacts, []);
   assert.deepEqual(back.ocrs, []);
   rmSync(path, { force: true });
-  // v3 旧卡（无 extracted/unknowns/secondaryCitation）→ 补默认，不丢 note/history
+  // v3 旧卡（无 extracted/unknowns/secondaryCitation）→ 补默认，不丢 note/history；draft → 机械草稿标记
   const path3 = join(tmpdir(), `locus-v3-${Date.now()}.json`);
   const oldCard = { id: "card_old", assetId: "ast_x", rawText: "x", locator: { sectionQuote: "x" }, audit: "confirm", importance: null, note: "旧备注", reason: "", extraction: "draft", revision: 2, history: [], createdAt: "t", updatedAt: "t" };
   await new JsonFileStore(path3).save({ version: 3, assets: [], cards: [oldCard], tables: [] } as never);
   const back3 = await new JsonFileStore(path3).load();
-  assert.equal(back3.version, 5);
+  assert.equal(back3.version, 6);
   assert.deepEqual(back3.cards[0].extracted, { fields: {}, units: [], conditions: [] });
   assert.deepEqual(back3.cards[0].unknowns, []);
   assert.equal(back3.cards[0].secondaryCitation, false);
   assert.equal(back3.cards[0].note, "旧备注");
+  assert.equal(back3.cards[0].mechanical, true);
   rmSync(path3, { force: true });
+  // v5 文献原件 → 论文条目 + 正文附件；再加载幂等不重复建
+  const path5 = join(tmpdir(), `locus-v5-${Date.now()}.json`);
+  const lit = importLiterature;
+  const r5 = await lit(emptyState(), { name: "paper.md", text: "Some method text." });
+  await new JsonFileStore(path5).save(r5.state);
+  const back5 = await new JsonFileStore(path5).load();
+  assert.equal(back5.papers.length, 1);
+  assert.equal(back5.papers[0].title, "paper.md");
+  assert.equal(back5.attachments.length, 1);
+  assert.equal(back5.attachments[0].role, "fulltext");
+  assert.equal(back5.cards.every((c) => c.paperId === back5.papers[0].id), true);
+  await new JsonFileStore(path5).save(back5);
+  const again = await new JsonFileStore(path5).load();
+  assert.equal(again.papers.length, 1);
+  assert.equal(again.attachments.length, 1);
+  rmSync(path5, { force: true });
 });
 
 // ── AI：独立任务 + 进程内配置 ───────────────────────────────
-test("五个任务提示词与输出结构互不相同（不混用）", () => {
+test("六个任务提示词与输出结构互不相同（不混用）", () => {
   const names = Object.keys(TASKS);
-  assert.deepEqual(names.sort(), ["handwriting_ocr", "impact_assess", "literature_extract", "pause_assist", "protocol_parse"]);
+  assert.deepEqual(names.sort(), ["handwriting_ocr", "impact_assess", "knowledge_extract", "literature_extract", "pause_assist", "protocol_parse"]);
   const systems = new Set(Object.values(TASKS).map((t) => t.system));
   const schemas = new Set(Object.values(TASKS).map((t) => t.schema));
-  assert.equal(systems.size, 5);
-  assert.equal(schemas.size, 5);
+  assert.equal(systems.size, 6);
+  assert.equal(schemas.size, 6);
 });
 
 test("配置来自环境、缺项即 null；状态不泄露 key", () => {
@@ -264,11 +286,12 @@ test("TSV 导入可用（按制表符解析）", () => {
   assert.equal(r.state.tables[0].rows.length, 2);
 });
 
-test("D1 反例：上传(CRLF) 与粘贴(LF) 同内容 → 同 hash 跨路径互拒", () => {
+test("D1 反例：上传(CRLF) 与粘贴(LF) 同内容 → 同指纹跨路径互拒；原件 hash 为原始字节", () => {
   const crlf = "a,b\r\n1,2\r\n";
   const lf = "a,b\n1,2\n";
   const r1 = importMeasurements(emptyState(), { name: "up.csv", csv: crlf });
-  assert.equal(r1.asset.hash, contentHash(lf));
+  assert.equal(r1.asset.fingerprint, contentHash(lf)); // 查重指纹=逻辑内容
+  assert.equal(r1.asset.hash, rawHash(crlf)); // 原件 hash=原始字节，不被规范化覆盖（5C）
   assert.throws(() => importMeasurements(r1.state, { name: "paste.csv", csv: lf }), (e: unknown) => e instanceof AppError && e.status === 409);
   assert.equal(r1.asset.text, crlf); // 原件逐字保留，规范化只用于查重口径
 });

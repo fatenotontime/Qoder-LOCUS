@@ -21,7 +21,7 @@ import type {
   SubquestionRecord,
   TopicRecord,
 } from "../store.ts";
-import { contentHash } from "../store.ts";
+import { contentHash, rawHash } from "../store.ts";
 import { AiError, extractLiterature, type AiConfig } from "./ai.ts";
 
 /** 原件大小上限（字节）。超过即拒绝导入，绝不静默截断。 */
@@ -55,9 +55,9 @@ function assertCsvName(name: string): void {
 function assertTextual(text: string): void {
   if (text.includes("\u0000")) throw new AppError(422, "文件疑似二进制/含不支持内容，已拒绝。请提供文本类文件。");
 }
-/** 内容 hash 拒重（LIT07）；附已有原件 id，重导时可定位既有引用。 */
-function assertUniqueHash(state: LocusState, hash: string): void {
-  const existing = state.assets.find((a) => a.hash === hash);
+/** 内容查重（LIT07/5C）：按规范化指纹（跨路径一致）；附已有原件 id，重导时可定位既有引用，不死路。 */
+export function assertUniqueHash(state: LocusState, fingerprint: string): void {
+  const existing = state.assets.find((a) => (a.fingerprint ?? a.hash) === fingerprint);
   if (existing) throw new AppError(409, `已导入相同内容（文件 hash 相同），已拒收。已有原件：${existing.name}`, { existingAssetId: existing.id, existingName: existing.name });
 }
 /** 判断分隔符：以**首个非空行**为准（表头在首行才算常规表格）。返回 "," / "\t" / null。 */
@@ -175,12 +175,13 @@ export function analyseTable(rows: string[][], headerRows: 1 | 2 | "auto" = "aut
   return { columns, body, markerRows };
 }
 
-function makeAsset(kind: AssetRecord["kind"], name: string, text: string, topicId?: string): AssetRecord {
+export function makeAsset(kind: AssetRecord["kind"], name: string, text: string, topicId?: string): AssetRecord {
   const bytes = Buffer.byteLength(text, "utf8");
   if (bytes > MAX_IMPORT_BYTES) {
     throw new AppError(413, `文件超过上限 ${MAX_IMPORT_BYTES} 字节，已拒绝导入（不截断）。请缩减后再试。`);
   }
-  return { id: `ast_${randomUUID()}`, kind, name: name.trim() || "未命名", topicId: topicId || undefined, bytes, hash: contentHash(text), text, createdAt: now() };
+  // hash=原始字节（保存后不重算）；fingerprint=逻辑内容指纹，仅用于查重（5C）。
+  return { id: `ast_${randomUUID()}`, kind, name: name.trim() || "未命名", topicId: topicId || undefined, bytes, hash: rawHash(text), fingerprint: contentHash(text), text, createdAt: now() };
 }
 
 // ── 课题 / 子问题（TOP01）────────────────────────────────────
@@ -221,12 +222,13 @@ export interface ImportResult {
   reminder?: boolean;
 }
 
+/** 机械草稿（开发调试保留，5C 明确标记）：逐段拆文本，不是知识抽取的产品体验。 */
 function draftCards(assetId: string, text: string): LitCardRecord[] {
   return text
     .split(/\n{2,}|\n/)
     .map((p) => p.trim())
     .filter((p) => p.length > 0)
-    .map((p) => newCard(assetId, p, { fields: {}, units: [], conditions: [] }, [], "draft"));
+    .map((p) => ({ ...newCard(assetId, p, { fields: {}, units: [], conditions: [] }, [], "draft"), mechanical: true }));
 }
 
 function newCard(
@@ -268,13 +270,13 @@ export function prepareLiterature(state: LocusState, input: { name: string; text
   assertLiteratureName(input.name ?? "");
   const text = stripBom(input.text ?? "");
   const asset = makeAsset("literature", input.name ?? "", text, input.topicId);
-  assertUniqueHash(state, asset.hash);
+  assertUniqueHash(state, asset.fingerprint!);
   return { asset };
 }
 
 /** 导入第二阶段：把已算好的卡追加到**传入的** state。AI job 完成时对最新 state 调用，不覆盖等待期编辑；查重复检。 */
 export function applyLiterature(state: LocusState, asset: AssetRecord, cards: LitCardRecord[], topicId?: string, audit?: ImportResult["audit"]): ImportResult {
-  assertUniqueHash(state, asset.hash);
+  assertUniqueHash(state, asset.fingerprint!);
   const reminder = state.comparisons.some((c) => !topicId || c.topicId === topicId);
   return { state: { ...state, assets: [...state.assets, asset], cards: [...state.cards, ...cards] }, asset, created: cards.length, audit, reminder };
 }
@@ -617,7 +619,7 @@ export function importMeasurements(state: LocusState, input: { name: string; csv
   const text = stripBom(input.csv ?? "");
   assertTextual(text);
   const asset = makeAsset("measurement", name, text, input.topicId);
-  assertUniqueHash(state, asset.hash);
+  assertUniqueHash(state, asset.fingerprint!);
   // 分隔符判定：首行无 ,/\t → 视为仪器导出等非表格格式（解析器未配置），明确拒绝，不硬解析成垃圾表。
   const delim = detectDelimiter(asset.text);
   if (!delim) throw new AppError(422, "首行未发现分隔符（可能是带前置标题的 CSV 或仪器导出格式）。请移除标题行、或用带表头在首行的 CSV/TSV。");

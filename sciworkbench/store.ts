@@ -14,6 +14,10 @@ export function canonicalText(t: string): string {
 export function contentHash(t: string): string {
   return createHash("sha256").update(canonicalText(t), "utf8").digest("hex");
 }
+/** 原件 hash：导入时的原始字节（utf8），一经保存不再重算覆盖（5C）。 */
+export function rawHash(t: string): string {
+  return createHash("sha256").update(t, "utf8").digest("hex");
+}
 
 /** 一条修订：记录字段前后值、原因与修订号（更正留历史）。 */
 export interface RevisionEntry {
@@ -32,8 +36,41 @@ export interface AssetRecord {
   readonly name: string;
   readonly topicId?: string;
   readonly bytes: number;
+  /** 原始字节 hash（导入时固定，加载不重算）。 */
   readonly hash: string;
+  /** 逻辑内容指纹（剥 BOM/CRLF 规范化），仅用于跨路径查重；与原件 hash 分开保存。 */
+  readonly fingerprint?: string;
   readonly text: string;
+  readonly createdAt: string;
+}
+
+/** 论文条目：题录身份 ≠ 上传文件；同一论文可有正文/补充材料/版本多个附件（5A/5C）。 */
+export interface PaperEntry {
+  readonly id: string;
+  readonly title: string;
+  readonly authors: string[];
+  readonly year: string;
+  readonly doi: string;
+  /** 来源说明（期刊/URL/手填等）；未提供留空，不补造。 */
+  readonly source: string;
+  /** 许可声明；未提供留空并明示。 */
+  readonly license: string;
+  /** 多课题可引用同一来源；空=未归属（收藏不强制归属）。 */
+  readonly topicIds: string[];
+  readonly note: string;
+  readonly revision: number;
+  readonly history: RevisionEntry[];
+  readonly createdAt: string;
+  readonly updatedAt: string;
+}
+
+/** 论文附件：指向原件 assetId；角色/版本明确；同 DOI 不同附件/版本不互拒。 */
+export interface PaperAttachment {
+  readonly id: string;
+  readonly paperId: string;
+  readonly assetId: string;
+  readonly role: "fulltext" | "supplement" | "other";
+  readonly version: string;
   readonly createdAt: string;
 }
 
@@ -61,6 +98,17 @@ export interface LitCardRecord {
   readonly note: string;
   readonly reason: string;
   readonly extraction: Extraction;
+  /** 语义卡（5C）：单位是研究意义。旧片段卡无 kind；数据/论据/方法/思路分开。 */
+  readonly paperId?: string;
+  readonly kind?: "data" | "argument" | "method" | "idea";
+  /** 适用范围；原文未写明则留空并入 unknowns，不补造。 */
+  readonly scope?: string;
+  /** 作者解释（与数据、模型建议/研究思路分开保存）。 */
+  readonly interpretation?: string;
+  /** 多段来源：一卡可引多段文字/表/图；matched=false 明示定位不足。 */
+  readonly spans?: { readonly assetId: string; readonly quote: string; readonly matched: boolean }[];
+  /** 机械草稿（开发调试保留）：明确标记，不与真实 AI 语义提取混淆。 */
+  readonly mechanical?: boolean;
   readonly revision: number;
   readonly history: RevisionEntry[];
   readonly createdAt: string;
@@ -236,12 +284,24 @@ export interface ExecEvent {
   readonly history: RevisionEntry[];
 }
 
+/** 执行准备稿（5D）：基础方案固定版本引用 + 本次差异；确认快照后才进入待补记录状态。 */
+export interface ExecutionPreparation {
+  readonly baseRevision: number;
+  readonly adjustments: { readonly stepId: string; readonly field: string; readonly before: string; readonly after: string; readonly reason: string }[];
+  readonly notes: string;
+  readonly confirmedAt?: string;
+  readonly snapshot?: ProtocolRevisionSnapshot;
+}
+
 export interface ExecutionRecord {
   readonly id: string;
   readonly topicId: string;
   readonly protocolId: string;
   readonly protocolRevision: number;
   readonly templateId?: string;
+  /** preparing=准备稿未确认；recording=已确认快照、待补/持续补记录。存量执行视为 recording。 */
+  readonly phase?: "preparing" | "recording";
+  readonly preparation?: ExecutionPreparation | null;
   readonly status: "active" | "paused" | "done";
   readonly events: ExecEvent[];
   readonly pausedState?: {
@@ -355,6 +415,8 @@ export interface LocusState {
   readonly topics: TopicRecord[];
   readonly subquestions: SubquestionRecord[];
   readonly assets: AssetRecord[];
+  readonly papers: PaperEntry[];
+  readonly attachments: PaperAttachment[];
   readonly cards: LitCardRecord[];
   readonly tables: MeasurementTableRecord[];
   readonly adoptions: AdoptionRecord[];
@@ -369,10 +431,10 @@ export interface LocusState {
   readonly ocrs: OcrRecord[];
 }
 
-export const STATE_VERSION = 5;
+export const STATE_VERSION = 6;
 
 export function emptyState(): LocusState {
-  return { version: STATE_VERSION, topics: [], subquestions: [], assets: [], cards: [], tables: [], adoptions: [], mappings: [], comparisons: [], protocols: [], templates: [], executions: [], samples: [], measurements: [], impacts: [], ocrs: [] };
+  return { version: STATE_VERSION, topics: [], subquestions: [], assets: [], papers: [], attachments: [], cards: [], tables: [], adoptions: [], mappings: [], comparisons: [], protocols: [], templates: [], executions: [], samples: [], measurements: [], impacts: [], ocrs: [] };
 }
 
 export interface Store {
@@ -400,19 +462,40 @@ export class JsonFileStore implements Store {
     try {
       const p = JSON.parse(readFileSync(this.#path, "utf8")) as Partial<LocusState> & { version?: number };
       const v = p.version ?? 0;
-      if (v !== 2 && v !== 3 && v !== 4 && v !== STATE_VERSION) return emptyState();
-      // v2/v3/v4 → v5：保留既有数据，补空新实体；旧卡补默认抽取结构（不丢用户数据）
-      // hash 统一为逻辑内容口径（旧记录按 canonical 重算，保持跨路径拒重一致）
+      if (v !== 2 && v !== 3 && v !== 4 && v !== 5 && v !== STATE_VERSION) return emptyState();
+      // v2–v5 → v6：保留既有数据，补空新实体。
+      // 原件 hash **不再加载重算**（5C）：历史 hash 原样保留；查重指纹另存（旧记录指纹=既有 hash 口径）。
+      const assets = (p.assets ?? []).map((a) => ({ ...a, fingerprint: a.fingerprint ?? a.hash }));
+      // 存量文献原件 → 论文条目 + 正文附件（题录未提供处留空，不补造）；已有附件的原件不重复建。
+      const papers: PaperEntry[] = [...(p.papers ?? [])];
+      const attachments: PaperAttachment[] = [...(p.attachments ?? [])];
+      const at = new Date().toISOString();
+      for (const a of assets) {
+        if (a.kind !== "literature" || attachments.some((x) => x.assetId === a.id)) continue;
+        const paper: PaperEntry = {
+          id: `paper_${randomUUID()}`, title: a.name, authors: [], year: "", doi: "",
+          source: "由存量文献原件迁移建立（题录未提供）", license: "",
+          topicIds: a.topicId ? [a.topicId] : [], note: "", revision: 1, history: [], createdAt: a.createdAt, updatedAt: at,
+        };
+        papers.push(paper);
+        attachments.push({ id: `att_${randomUUID()}`, paperId: paper.id, assetId: a.id, role: "fulltext", version: "", createdAt: at });
+      }
+      const paperOfAsset = new Map(attachments.map((x) => [x.assetId, x.paperId]));
       return {
         version: STATE_VERSION,
         topics: p.topics ?? [],
         subquestions: p.subquestions ?? [],
-        assets: (p.assets ?? []).map((a) => ({ ...a, hash: contentHash(a.text) })),
+        assets,
+        papers,
+        attachments,
         cards: (p.cards ?? []).map((c) => ({
           ...c,
           extracted: c.extracted ?? { fields: {}, units: [], conditions: [] },
           unknowns: c.unknowns ?? [],
           secondaryCitation: c.secondaryCitation ?? false,
+          // 机械草稿明确标记（5C）；旧卡补论文关联（经附件）。
+          mechanical: c.mechanical ?? c.extraction === "draft",
+          paperId: c.paperId ?? paperOfAsset.get(c.assetId),
         })),
         tables: p.tables ?? [],
         adoptions: p.adoptions ?? [],
@@ -420,7 +503,7 @@ export class JsonFileStore implements Store {
         comparisons: p.comparisons ?? [],
         protocols: p.protocols ?? [],
         templates: p.templates ?? [],
-        executions: p.executions ?? [],
+        executions: (p.executions ?? []).map((e) => ({ ...e, phase: e.phase ?? "recording", preparation: e.preparation ?? null })),
         samples: p.samples ?? [],
         measurements: p.measurements ?? [],
         impacts: p.impacts ?? [],

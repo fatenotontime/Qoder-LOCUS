@@ -13,7 +13,7 @@ export interface AiConfig {
   readonly timeoutMs?: number;
 }
 
-export type TaskName = "literature_extract" | "protocol_parse" | "handwriting_ocr" | "impact_assess" | "pause_assist";
+export type TaskName = "literature_extract" | "knowledge_extract" | "protocol_parse" | "handwriting_ocr" | "impact_assess" | "pause_assist";
 
 export interface TaskDef {
   readonly name: TaskName;
@@ -30,6 +30,18 @@ export const TASKS: Record<TaskName, TaskDef> = {
       "若片段是综述转引他人结果（二手），secondaryCitation 置 true。只返回 JSON，键必须用双引号。",
     schema:
       '{"cards":[{"rawText":"原文片段","locator":{"sectionQuote":"用于回查的原文短引"},"extracted":{"fields":{"键":"值"},"units":["单位"],"conditions":["条件"]},"unknowns":["未知项"],"secondaryCitation":false}]}',
+  },
+  knowledge_extract: {
+    name: "knowledge_extract",
+    system:
+      "你是科研文献知识提取助手。抽取单位是**研究意义**，不是段落：一组有条件和方法的数据、一个有依据的命名、一个结论及其观察、一个适用范围明确的研究思路。" +
+      "禁止逐行/逐段拆文本；只提取对给定研究目的确有价值的少量内容，没有则返回空数组。" +
+      "数据、作者解释、模型建议/思路分开：数据放 extracted（保留原始术语、数值、单位、条件），作者的解释放 interpretation，思路类 kind=idea 且必须写明依据。" +
+      "适用范围 scope 只写原文写明的；原文未写则留空并列入 unknowns，不得补造。" +
+      "每张卡可引用多段原文（spans），引文必须是原文中**逐字连续**的片段，供人工回查。" +
+      "综述转引他人结果（二手）时 secondaryCitation 置 true。只返回 JSON，键必须用双引号。",
+    schema:
+      '{"cards":[{"kind":"data|argument|method|idea","rawText":"研究意义概述（数据值须与原文一致）","spans":[{"quote":"原文逐字连续片段"}],"extracted":{"fields":{"键":"值"},"units":["单位"],"conditions":["条件"]},"scope":"适用范围（未写明则空）","interpretation":"作者解释（无则空）","unknowns":["未知项"],"secondaryCitation":false}]}',
   },
   protocol_parse: {
     name: "protocol_parse",
@@ -224,6 +236,31 @@ export async function extractLiterature(
     raws.push({ index: i, content: raw });
     const obj = value as { cards?: unknown };
     if (!obj || !Array.isArray(obj.cards)) throw new AiError(`第 ${i + 1}/${total} 块抽取结果结构不符：缺少 cards。`);
+    cards.push(...obj.cards);
+    onProgress?.(i + 1, total);
+  }
+  return { cards, raws };
+}
+
+/** 语义知识提取（5C）：按研究意义抽取，带研究目的；分块进度与原始响应回传同文献任务。 */
+export async function extractKnowledge(
+  cfg: AiConfig,
+  text: string,
+  purpose: string,
+  onProgress?: (done: number, total: number) => void,
+): Promise<LiteratureExtractResult> {
+  const chunks = chunkText(text);
+  if (chunks.length === 0) throw new AiError("所选附件为空。");
+  if (chunks.length > MAX_CHUNKS) throw new AiError(`材料过长：需分 ${chunks.length} 块，超过上限 ${MAX_CHUNKS} 块。请缩小选择范围。`);
+  const total = chunks.length;
+  const cards: unknown[] = [];
+  const raws: { index: number; content: string }[] = [];
+  for (let i = 0; i < total; i++) {
+    const input = `研究目的：${purpose}\n\n文献材料（第 ${i + 1}/${total} 部分）：\n${chunks[i]}`;
+    const { value, raw } = await runTask(cfg, "knowledge_extract", input);
+    raws.push({ index: i, content: raw });
+    const obj = value as { cards?: unknown };
+    if (!obj || !Array.isArray(obj.cards)) throw new AiError(`第 ${i + 1}/${total} 块提取结果结构不符：缺少 cards。`);
     cards.push(...obj.cards);
     onProgress?.(i + 1, total);
   }

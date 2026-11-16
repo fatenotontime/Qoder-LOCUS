@@ -55,7 +55,9 @@ import {
   startExecution,
   templateProtocolCheck,
 } from "./services/experiment.ts";
-import { extractLiterature, runTask } from "./services/ai.ts";
+import { extractKnowledge, extractLiterature, runTask } from "./services/ai.ts";
+import { addPaperAttachment, createPaper, importBibliography, linkPaperTopic, updatePaper } from "./services/papers.ts";
+import { applyKnowledge, mapKnowledgeCards, prepareKnowledge } from "./services/knowledge.ts";
 
 const HERE = fileURLToPath(new URL(".", import.meta.url));
 const PUBLIC_DIR = join(HERE, "public");
@@ -93,7 +95,7 @@ export interface Job {
   done: number;
   total: number;
   message: string;
-  result?: { assetId?: string; created?: number; reminder?: boolean; protocolId?: string; impactId?: string; ocrIds?: string[]; discarded?: boolean };
+  result?: { assetId?: string; created?: number; reminder?: boolean; protocolId?: string; impactId?: string; ocrIds?: string[]; discarded?: boolean; paperId?: string; skipped?: number };
   error?: string;
 }
 
@@ -179,6 +181,78 @@ export async function createApp(store: Store) {
           const r = createSubquestion(state, { topicId: decodeURIComponent(subMatch[1]), question: String(body.question ?? ""), kind: body.kind as "declared" | "exploratory" | undefined });
           state = r.state; await store.save(state);
           send(res, 200, { ok: true, subquestionId: r.subquestion.id });
+          return;
+        }
+        // ── 文献整理（5A/5C）：条目/附件管理，不触发强制解析 ──
+        if (path === "/api/papers") {
+          const r = createPaper(state, {
+            title: String(body.title ?? ""), authors: body.authors as string[] | string | undefined,
+            year: body.year as string | undefined, doi: body.doi as string | undefined,
+            source: body.source as string | undefined, license: body.license as string | undefined,
+            topicIds: body.topicIds as string[] | undefined, note: body.note as string | undefined,
+          });
+          state = r.state; await store.save(state);
+          send(res, 200, { ok: true, paperId: r.paper.id });
+          return;
+        }
+        if (path === "/api/papers/import-bibliography") {
+          const fmt = body.format === "csl-json" ? "csl-json" : "bibtex";
+          const r = importBibliography(state, { format: fmt, text: String(body.text ?? "") });
+          state = r.state; await store.save(state);
+          send(res, 200, { ok: true, created: r.created.map((p) => p.id), skipped: r.skipped });
+          return;
+        }
+        const paperUpd = path.match(/^\/api\/papers\/([^/]+)\/update$/);
+        if (paperUpd) {
+          const r = updatePaper(state, decodeURIComponent(paperUpd[1]), body as Parameters<typeof updatePaper>[2]);
+          state = r.state; await store.save(state);
+          send(res, 200, { ok: true, paperId: r.paper.id, revision: r.paper.revision });
+          return;
+        }
+        const paperAtt = path.match(/^\/api\/papers\/([^/]+)\/attachments$/);
+        if (paperAtt) {
+          const r = addPaperAttachment(state, {
+            paperId: decodeURIComponent(paperAtt[1]), name: String(body.name ?? ""), text: String(body.text ?? ""),
+            role: body.role as "fulltext" | "supplement" | "other" | undefined, version: body.version as string | undefined,
+          });
+          state = r.state; await store.save(state);
+          send(res, 200, { ok: true, attachmentId: r.attachment.id, assetId: r.assetId });
+          return;
+        }
+        const paperTopic = path.match(/^\/api\/papers\/([^/]+)\/topics$/);
+        if (paperTopic) {
+          const r = linkPaperTopic(state, decodeURIComponent(paperTopic[1]), String(body.topicId ?? ""), body.link !== false);
+          state = r.state; await store.save(state);
+          send(res, 200, { ok: true, topicIds: r.paper.topicIds });
+          return;
+        }
+        // ── 领域知识积累（5C）：选文献+目的 → 语义提取 job → 待审卡 ──
+        if (path === "/api/knowledge/jobs") {
+          const cfg = getAiConfig();
+          if (!cfg) { send(res, 400, { error: "未配置 AI：请在页面「AI 配置」填写 baseUrl / 模型 / Key。" }); return; }
+          const { jobInput, assets, snapshotHash } = prepareKnowledge(state, {
+            paperId: String(body.paperId ?? ""), attachmentIds: body.attachmentIds as string[] | undefined,
+            purpose: String(body.purpose ?? ""), topicId: body.topicId as string | undefined, subquestionId: body.subquestionId as string | undefined,
+          });
+          const paper = state.papers.find((p) => p.id === jobInput.paperId)!;
+          const text = assets.map((a) => a.text).join("\n\n");
+          const id = `job_${randomUUID()}`;
+          const job: Job = { id, status: "running", done: 0, total: 0, message: "语义提取中…" };
+          jobs.set(id, job); trimJobs();
+          void (async () => {
+            try {
+              const result = await extractKnowledge(cfg, text, jobInput.purpose, (done, total) => { job.done = done; job.total = total; job.message = `第 ${done}/${total} 块`; });
+              const cards = mapKnowledgeCards(paper, assets, result.cards);
+              // 合并写回：完成时对最新 state 只追加新卡；重复概述跳过，不覆盖等待期编辑。
+              const r = applyKnowledge(state, paper.id, cards);
+              state = r.state; await store.save(state);
+              writeAudit(paper.id, { raws: result.raws, model: cfg.model }, "knowledge_extract");
+              job.status = "done";
+              job.result = { paperId: paper.id, created: r.created, skipped: r.skipped };
+              job.message = `完成：新增 ${r.created} 张待审知识卡${r.skipped ? `，跳过重复 ${r.skipped}` : ""}（输入快照 ${snapshotHash.slice(0, 12)}）`;
+            } catch (e) { job.status = "error"; job.error = (e as Error).message ?? "失败"; }
+          })();
+          send(res, 202, { ok: true, jobId: id, snapshotHash });
           return;
         }
         if (path === "/api/import/literature") {
