@@ -2,23 +2,23 @@
   "files": [
     {
       "path": "00_START_HERE.md",
-      "bytes": 3826,
-      "sha256": "db732b91ba50193aec099dea900e777e23193e811775f76e8c4119ff5ed2636b"
+      "bytes": 4009,
+      "sha256": "35bb1fb6306915c3fc4abbbc254f15a0d04cee2475daa4f9683cf569e4ae88e2"
     },
     {
       "path": "01_SYSTEM_PROMPT.md",
-      "bytes": 3606,
-      "sha256": "01a5885957b51c89bfeb6d6abcfe67e4f31470d29bfb6af10fa3dec7b470ca86"
+      "bytes": 3798,
+      "sha256": "1761c91a623050c3921055c03c5c82b7b8af47d11caf9da9ef5474eee09331ab"
     },
     {
       "path": "02_CURRENT_DECISIONS.md",
-      "bytes": 12748,
-      "sha256": "c489d9c39b3b7d33e70241cbfc55151f55935c3c364e98369177ddc2bad0453c"
+      "bytes": 13192,
+      "sha256": "2ed73eca4827cd12444f4dc032f7c357708525f52f2dfa3cbe9f8c7365dac4e1"
     },
     {
       "path": "03_DOMAIN_RUNTIME.md",
-      "bytes": 7240,
-      "sha256": "f2721e00dde81fa49eebe41533c308ac13ff4ea6f92bc357dd93ca3490289f36"
+      "bytes": 8491,
+      "sha256": "f7e76e31a7dbc3c73b50c3f1016f4ed30f641ed4ad7b27688e3d285b2d6340e9"
     },
     {
       "path": "04_ENVIRONMENT_ACCEPTANCE.md",
@@ -27,18 +27,18 @@
     },
     {
       "path": "05_TESTS_TRACEABILITY.md",
-      "bytes": 6003,
-      "sha256": "ca0540274cacfaeab571e7c18e3558ed9cd64ae367aeb049bdec9f6bae11a6ad"
+      "bytes": 6540,
+      "sha256": "c477a0f8386d7a2a960198e8570231741975a632c34cab886d60696545f29e2c"
     },
     {
       "path": "06_STAGE_PROMPTS.md",
-      "bytes": 5131,
-      "sha256": "3e90377997edaeeb6183c60a89e15d0feefb538022b5637023fe7eadbeea8151"
+      "bytes": 5346,
+      "sha256": "a9e7e8b164273f9cdac835ea64141f6a5531706e44bd7b6751bc19c91c0027fb"
     },
     {
       "path": "07_REVIEW_STATUS.md",
-      "bytes": 3621,
-      "sha256": "e9b368946e45eed24ad7f50f0f1116baed1345959ef8a92ad9310d4622a6c8e3"
+      "bytes": 4016,
+      "sha256": "c3ad8e82de6cfe3ad195124fce4a622775b9126ed64cf6eead9861abc7c2e626"
     },
     {
       "path": "08_REQUIREMENT_COVERAGE.md",
@@ -52,8 +52,8 @@
     },
     {
       "path": "10_PRODUCT_DESIGN_NARRATIVE.md",
-      "bytes": 39854,
-      "sha256": "7f6c97295532f19d690379dba54b75a66f3ed4f2e201140d4a083a5357c275bb"
+      "bytes": 41135,
+      "sha256": "192c1b14648d50c21ce4d76ff67d57eaf9e7078936e0aed342b4396abe948fa9"
     },
     {
       "path": "11_HANDWRITING_STATUS.md",
@@ -107,13 +107,13 @@
     },
     {
       "path": "stages/03_PROMPT.md",
-      "bytes": 806,
-      "sha256": "ee2d72111c5737f413f2731af29ccf8af031a9c07b84514e24a071f750e297f3"
+      "bytes": 1021,
+      "sha256": "2f3b1bcf57eeac6e4c47e71c5653726d1080032f9f21b27a4ee01c055d21ede8"
     },
     {
       "path": "stages/04_PROMPT.md",
-      "bytes": 941,
-      "sha256": "f1b866e5330992ede1a8daf7c6510e1f04c8c0a71216e2669528ecab34f9a140"
+      "bytes": 1120,
+      "sha256": "4877b2d219cf0fed00b5f5003c59c300da97813a890b1cb9e3c798435e04e725"
     },
     {
       "path": "stages/05_PROMPT.md",

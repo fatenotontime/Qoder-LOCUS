@@ -1,7 +1,7 @@
 # 阶段2 · 领域 Schema 与字段字典
 
 > 行为契约来自 03；本文给出可实现的最小 schema。骨架实现见 `sciworkbench/domain/`。**概念** ≠ 已实现 API；具体路由可变。
-> **领域边界以 `prompt/…/12_DOMAIN_BOUNDARIES.md` 为准**（三条路径分开；`EvidenceCard` 为**文献专用**；外部结果允许无内部 Run）。
+> **领域边界见指令包 `02/03/10`**（三条路径分开；`EvidenceCard` 为**文献专用**；外部结果允许无内部 Run）。
 
 ## 1. 通用规则
 
