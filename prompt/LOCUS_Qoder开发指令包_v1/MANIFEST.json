@@ -32,8 +32,8 @@
     },
     {
       "path": "06_STAGE_PROMPTS.md",
-      "bytes": 21731,
-      "sha256": "e8dd6ff68a6e0cf29f692f01bb12ea70edb14ef02e46b3ab13c0580641b30c0e"
+      "bytes": 37320,
+      "sha256": "d2098d063e9caa233eaced7edc5ee2c1a5827ac0b14b40ee37214b8640c7e37c"
     },
     {
       "path": "07_REVIEW_STATUS.md",
@@ -117,18 +117,18 @@
     },
     {
       "path": "stages/05_PROMPT.md",
-      "bytes": 2689,
-      "sha256": "70aadfc863261d59006410d42d851400acf48358b825788761dc6f1fbe1b06ec"
+      "bytes": 17016,
+      "sha256": "acd0423625807bd836ed1f0bcb8af7be554073cf9afcaee2761265c7fefa0f8e"
     },
     {
       "path": "stages/06_PROMPT.md",
-      "bytes": 2901,
-      "sha256": "eabebb6028a09d9d30d504accc267bb028e06307c7dc663cfd1bb78c4358303a"
+      "bytes": 4062,
+      "sha256": "c1f02f002c0343d95c281d036b4d0879b7ca52e8f6d3b8705654959913a235b3"
     },
     {
       "path": "stages/07_PROMPT.md",
-      "bytes": 3806,
-      "sha256": "ff6c747bb3f072bd2e2cc6bc8116350eaa71da346a9849ad002da622405cece2"
+      "bytes": 4092,
+      "sha256": "568b5312dc687abf738a177e060d3125f93570072569ef2c5bb68329b512c15f"
     }
   ]
 }
