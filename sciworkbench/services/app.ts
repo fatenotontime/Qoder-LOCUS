@@ -11,6 +11,8 @@ import type {
   LocusState,
   MeasurementTableRecord,
   RevisionEntry,
+  SubquestionRecord,
+  TopicRecord,
 } from "../store.ts";
 import { AiError, runTask, type AiConfig } from "./ai.ts";
 
@@ -28,12 +30,39 @@ export class AppError extends Error {
 const now = () => new Date().toISOString();
 const sha256 = (t: string) => createHash("sha256").update(t, "utf8").digest("hex");
 
-function makeAsset(kind: AssetRecord["kind"], name: string, text: string): AssetRecord {
+function makeAsset(kind: AssetRecord["kind"], name: string, text: string, topicId?: string): AssetRecord {
   const bytes = Buffer.byteLength(text, "utf8");
   if (bytes > MAX_IMPORT_BYTES) {
     throw new AppError(413, `文件超过上限 ${MAX_IMPORT_BYTES} 字节，已拒绝导入（不截断）。请缩减后再试。`);
   }
-  return { id: `ast_${randomUUID()}`, kind, name: name.trim() || "未命名", bytes, hash: sha256(text), text, createdAt: now() };
+  return { id: `ast_${randomUUID()}`, kind, name: name.trim() || "未命名", topicId: topicId || undefined, bytes, hash: sha256(text), text, createdAt: now() };
+}
+
+// ── 课题 / 子问题（TOP01）────────────────────────────────────
+export function createTopic(state: LocusState, input: { name: string; researchQuestion: string }): { state: LocusState; topic: TopicRecord } {
+  const name = (input.name ?? "").trim();
+  const q = (input.researchQuestion ?? "").trim();
+  if (!name) throw new AppError(422, "课题名称不能为空。");
+  if (!q) throw new AppError(422, "研究问题不能为空。");
+  const topic: TopicRecord = { id: `topic_${randomUUID()}`, name, researchQuestion: q, createdAt: now() };
+  return { state: { ...state, topics: [...state.topics, topic] }, topic };
+}
+
+export function createSubquestion(
+  state: LocusState,
+  input: { topicId: string; question: string; kind?: "declared" | "exploratory" },
+): { state: LocusState; subquestion: SubquestionRecord } {
+  if (!state.topics.some((t) => t.id === input.topicId)) throw new AppError(404, `课题不存在：${input.topicId}`);
+  const question = (input.question ?? "").trim();
+  if (!question) throw new AppError(422, "子问题不能为空。");
+  const subquestion: SubquestionRecord = {
+    id: `subq_${randomUUID()}`,
+    topicId: input.topicId,
+    question,
+    kind: input.kind === "exploratory" ? "exploratory" : "declared",
+    createdAt: now(),
+  };
+  return { state: { ...state, subquestions: [...state.subquestions, subquestion] }, subquestion };
 }
 
 // ── 路径①：文献证据 ─────────────────────────────────────────
@@ -83,10 +112,10 @@ function newCard(
  */
 export async function importLiterature(
   state: LocusState,
-  input: { name: string; text: string; mode?: "draft" | "ai" },
+  input: { name: string; text: string; mode?: "draft" | "ai"; topicId?: string },
   ai: AiConfig | null,
 ): Promise<ImportResult> {
-  const asset = makeAsset("literature", input.name ?? "", input.text ?? "");
+  const asset = makeAsset("literature", input.name ?? "", input.text ?? "", input.topicId);
   let cards: LitCardRecord[];
   if (input.mode === "ai") {
     if (!ai) throw new AppError(400, "未配置 AI（需设置 LOCUS_AI_BASE_URL / LOCUS_AI_MODEL / LOCUS_AI_KEY）。");
@@ -184,8 +213,8 @@ export function parseCsv(text: string): string[][] {
 }
 
 /** 导入 CSV → **一张表格**（保留行列结构），供按表/列核对。 */
-export function importMeasurements(state: LocusState, input: { name: string; csv: string }): ImportResult {
-  const asset = makeAsset("measurement", input.name ?? "", input.csv ?? "");
+export function importMeasurements(state: LocusState, input: { name: string; csv: string; topicId?: string }): ImportResult {
+  const asset = makeAsset("measurement", input.name ?? "", input.csv ?? "", input.topicId);
   const rows = parseCsv(asset.text);
   if (rows.length < 2) throw new AppError(422, "CSV 至少需要表头 + 一行数据。");
   const width = Math.max(...rows.map((r) => r.length));

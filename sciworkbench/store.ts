@@ -21,6 +21,7 @@ export interface AssetRecord {
   readonly id: string;
   readonly kind: "literature" | "measurement";
   readonly name: string;
+  readonly topicId?: string;
   readonly bytes: number;
   readonly hash: string;
   readonly text: string;
@@ -71,17 +72,36 @@ export interface MeasurementTableRecord {
   readonly updatedAt: string;
 }
 
+/** 课题：仅名称+研究问题即可建（TOP01）。 */
+export interface TopicRecord {
+  readonly id: string;
+  readonly name: string;
+  readonly researchQuestion: string;
+  readonly createdAt: string;
+}
+
+/** 子问题：可探索性建立，实际任务再查缺项。 */
+export interface SubquestionRecord {
+  readonly id: string;
+  readonly topicId: string;
+  readonly question: string;
+  readonly kind: "declared" | "exploratory";
+  readonly createdAt: string;
+}
+
 export interface LocusState {
   readonly version: number;
+  readonly topics: TopicRecord[];
+  readonly subquestions: SubquestionRecord[];
   readonly assets: AssetRecord[];
   readonly cards: LitCardRecord[];
   readonly tables: MeasurementTableRecord[];
 }
 
-export const STATE_VERSION = 2;
+export const STATE_VERSION = 3;
 
 export function emptyState(): LocusState {
-  return { version: STATE_VERSION, assets: [], cards: [], tables: [] };
+  return { version: STATE_VERSION, topics: [], subquestions: [], assets: [], cards: [], tables: [] };
 }
 
 export interface Store {
@@ -107,9 +127,18 @@ export class JsonFileStore implements Store {
   async load(): Promise<LocusState> {
     if (!existsSync(this.#path)) return emptyState();
     try {
-      const p = JSON.parse(readFileSync(this.#path, "utf8")) as Partial<LocusState>;
-      if ((p.version ?? 0) !== STATE_VERSION) return emptyState(); // 旧结构不自动迁移
-      return { version: STATE_VERSION, assets: p.assets ?? [], cards: p.cards ?? [], tables: p.tables ?? [] };
+      const p = JSON.parse(readFileSync(this.#path, "utf8")) as Partial<LocusState> & { version?: number };
+      const v = p.version ?? 0;
+      if (v !== 2 && v !== STATE_VERSION) return emptyState();
+      // v2 → v3：保留既有数据，补空 topics/subquestions（不丢用户数据）
+      return {
+        version: STATE_VERSION,
+        topics: p.topics ?? [],
+        subquestions: p.subquestions ?? [],
+        assets: p.assets ?? [],
+        cards: p.cards ?? [],
+        tables: p.tables ?? [],
+      };
     } catch {
       return emptyState();
     }

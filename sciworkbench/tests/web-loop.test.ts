@@ -8,6 +8,8 @@ import { emptyState, JsonFileStore, MemoryStore } from "../store.ts";
 import {
   AppError,
   MAX_IMPORT_BYTES,
+  createSubquestion,
+  createTopic,
   importLiterature,
   importMeasurements,
   parseCsv,
@@ -113,6 +115,18 @@ test("旧版本状态不迁移（返回空）", async () => {
   rmSync(path, { force: true });
 });
 
+test("v2 → v3 迁移：保留既有数据，补空 topics/subquestions", async () => {
+  const path = join(tmpdir(), `locus-v2-${Date.now()}.json`);
+  const r = importMeasurements(emptyState(), { name: "d.csv", csv: "t,v\n0,1" });
+  await new JsonFileStore(path).save({ version: 2, assets: r.state.assets, cards: [], tables: r.state.tables } as never);
+  const back = await new JsonFileStore(path).load();
+  assert.equal(back.version, 3);
+  assert.equal(back.tables.length, 1);
+  assert.deepEqual(back.topics, []);
+  assert.deepEqual(back.subquestions, []);
+  rmSync(path, { force: true });
+});
+
 // ── AI：独立任务 + 进程内配置 ───────────────────────────────
 test("三个任务提示词与输出结构互不相同（不混用）", () => {
   const names = Object.keys(TASKS);
@@ -164,6 +178,28 @@ test("MemoryStore 基本往返", async () => {
   const r = await importLiterature(emptyState(), { name: "s", text: "一段" });
   await mem.save(r.state);
   assert.equal((await mem.load()).cards.length, 1);
+});
+
+// ── 4A：课题/子问题 + 材料归属 ──────────────────────────────
+test("课题最小创建：仅名称+研究问题；空值 422", () => {
+  const r = createTopic(emptyState(), { name: "酶动力学", researchQuestion: "温度与pH如何影响活性" });
+  assert.equal(r.state.topics.length, 1);
+  assert.throws(() => createTopic(emptyState(), { name: "", researchQuestion: "q" }), (e: unknown) => e instanceof AppError && e.status === 422);
+});
+
+test("子问题须挂在存在的课题下；可探索性", () => {
+  const t = createTopic(emptyState(), { name: "T", researchQuestion: "Q" });
+  const s = createSubquestion(t.state, { topicId: t.topic.id, question: "是否存在阈值", kind: "exploratory" });
+  assert.equal(s.subquestion.kind, "exploratory");
+  assert.throws(() => createSubquestion(emptyState(), { topicId: "nope", question: "x" }), (e: unknown) => e instanceof AppError && e.status === 404);
+});
+
+test("导入材料可归属课题（topicId）", async () => {
+  const t = createTopic(emptyState(), { name: "T", researchQuestion: "Q" });
+  const r = await importLiterature(t.state, { name: "l", text: "一段", topicId: t.topic.id });
+  assert.equal(r.asset.topicId, t.topic.id);
+  const m = importMeasurements(t.state, { name: "d.csv", csv: "a,b\n1,2", topicId: t.topic.id });
+  assert.equal(m.asset.topicId, t.topic.id);
 });
 
 // ── AI 配置内置到网页（运行时内存，不落盘）──────────────────

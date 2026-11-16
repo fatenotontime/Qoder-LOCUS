@@ -3,18 +3,18 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>LOCUS · 最小闭环（本地开发版）</title>
+  <title>LOCUS · 科研上下文工作台</title>
   <link rel="stylesheet" href="/styles.css" />
-  <meta name="locus-note" content="本地开发版：AI 解析需启动时用环境变量配置；存储=本地文件，可替换；样例须为 approved 公开材料" />
+  <meta name="locus-note" content="本地开发版：左栏 课题/材料 · 中栏 原始材料 · 右栏 结构化结果；AI 配置仅进程内存；样例须为 approved 公开材料" />
 </head>
 <body>
   <header class="topbar">
-    <div class="brand"><span class="mark">LOCUS</span><span class="sub">科研上下文工作台 · 最小闭环</span></div>
+    <div class="brand"><span class="mark">LOCUS</span><span class="sub">科研上下文工作台</span></div>
     <div class="status" id="status">连接中…</div>
   </header>
 
-  <section class="aiconfig" id="aiconfig">
-    <div class="aiconfig-head"><strong>AI 配置</strong><span class="hint" id="ai-state">读取中…</span></div>
+  <details class="aiconfig" id="aiconfig">
+    <summary><strong>AI 配置</strong> <span class="hint" id="ai-state">读取中…</span></summary>
     <div class="row">
       <input id="ai-base" placeholder="接口地址 baseUrl（如 https://api.agnes-ai.cn/v1）" />
       <input id="ai-model" placeholder="模型名" />
@@ -22,54 +22,61 @@
       <button class="primary" id="ai-save">保存配置</button>
       <button id="ai-clear">清除</button>
     </div>
-    <p class="hint">仅当前服务进程内存，重启失效；不写文件、不写浏览器持久存储、不进日志、不进 Git。配好后「文献证据流程」可选 AI 抽取。</p>
-  </section>
+    <p class="hint">仅当前服务进程内存，重启失效；保存后清空 Key 输入，页面只显示非敏感状态。</p>
+  </details>
 
-  <nav class="tabs" role="tablist">
-    <button class="tab active" data-tab="literature" role="tab">文献证据流程</button>
-    <button class="tab" data-tab="measurement" role="tab">实验数据流程</button>
-  </nav>
+  <div class="app">
+    <!-- 左：课题 / 子问题 / 材料 -->
+    <aside class="pane left">
+      <nav class="nav" id="nav">
+        <button class="navitem active" data-nav="literature">文献证据</button>
+        <button class="navitem" data-nav="measurement">实验数据</button>
+        <button class="navitem disabled" disabled title="未实现（阶段4C）">方案 <em>未实现</em></button>
+        <button class="navitem disabled" disabled title="未实现（阶段5）">分析 <em>未实现</em></button>
+        <button class="navitem disabled" disabled title="未实现（阶段6）">产出 <em>未实现</em></button>
+      </nav>
 
-  <main>
-    <!-- 文献证据路径 -->
-    <section id="panel-literature" class="panel active">
-      <div class="import card">
-        <h2>导入文献摘录</h2>
-        <p class="hint">导入文本 → 生成证据卡。<strong>draft</strong>=按行草稿；<strong>AI</strong>=调用文献抽取任务（独立提示词/结构）。公开材料须为 approved 且署名来源。</p>
-        <input id="lit-name" type="text" placeholder="来源名称（如 SLAC methods-source）" />
-        <textarea id="lit-text" rows="5" placeholder="粘贴文献摘录 / 方法节选文本…"></textarea>
-        <div class="row">
-          <label>抽取方式</label>
-          <select id="lit-mode"><option value="draft">draft（按行草稿）</option><option value="ai">AI（文献抽取任务）</option></select>
-          <button class="primary" id="lit-import">导入并生成证据卡</button>
-        </div>
-      </div>
-      <div class="list" id="lit-list"></div>
-    </section>
+      <div class="pane-title">课题</div>
+      <select id="topic-select"></select>
+      <details class="mini">
+        <summary>新建课题（仅名称＋研究问题）</summary>
+        <input id="topic-name" placeholder="课题名称" />
+        <input id="topic-q" placeholder="研究问题" />
+        <button id="topic-create">创建课题</button>
+      </details>
 
-    <!-- 实验数据路径 -->
-    <section id="panel-measurement" class="panel">
-      <div class="import card">
-        <h2>导入实验数据（CSV）</h2>
-        <p class="hint">导入后保留<strong>表格结构</strong>，按列核对单位/结论；单元格可更正但需原因。超上限的文件将被<strong>拒绝</strong>（不截断）。</p>
-        <input id="meas-name" type="text" placeholder="文件名（如 EnzymeML_SLAC_pH3__Data.csv）" />
-        <input id="meas-file" type="file" accept=".csv,text/csv,text/plain" />
-        <textarea id="meas-text" rows="3" placeholder="或直接粘贴 CSV 内容…"></textarea>
-        <button class="primary" id="meas-import">导入并生成表格</button>
-      </div>
-      <div class="list" id="meas-list"></div>
-    </section>
-  </main>
+      <div class="pane-title">子问题</div>
+      <ul class="subq" id="subq-list"></ul>
+      <details class="mini">
+        <summary>新建子问题</summary>
+        <input id="subq-q" placeholder="子问题" />
+        <select id="subq-kind"><option value="declared">已声明</option><option value="exploratory">探索性</option></select>
+        <button id="subq-create">创建子问题</button>
+      </details>
 
-  <!-- 抽屉：原件回查 / 历史 -->
+      <div class="pane-title">材料</div>
+      <div id="import-box"></div>
+      <div class="materials" id="material-list"></div>
+    </aside>
+
+    <!-- 中：原始材料 -->
+    <main class="pane mid">
+      <div class="pane-title" id="mid-title">原始材料</div>
+      <div class="pane-note" id="mid-note" hidden></div>
+      <pre class="source" id="mid-content">在左栏选择或导入材料。</pre>
+    </main>
+
+    <!-- 右：结构化结果 -->
+    <aside class="pane right">
+      <div class="pane-title" id="right-title">结构化结果</div>
+      <div id="right-content"><p class="hint">选中材料后，这里显示对应的结构化草稿与核对操作。</p></div>
+    </aside>
+  </div>
+
   <aside class="drawer" id="drawer" hidden>
-    <div class="drawer-head">
-      <strong id="drawer-title">原件回查</strong>
-      <button id="drawer-close">关闭</button>
-    </div>
+    <div class="drawer-head"><strong id="drawer-title">修订历史</strong><button id="drawer-close">关闭</button></div>
     <div class="drawer-meta" id="drawer-meta"></div>
-    <pre class="source" id="drawer-source"></pre>
-    <div id="drawer-history"></div>
+    <div id="drawer-body"></div>
   </aside>
 
   <script type="module" src="/app.js"></script>

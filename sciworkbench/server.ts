@@ -11,6 +11,8 @@ import { JsonFileStore, type LocusState, type Store } from "./store.ts";
 import { AiError, clearAiConfig, describeConfig, getAiConfig, setAiConfig } from "./services/ai.ts";
 import {
   AppError,
+  createSubquestion,
+  createTopic,
   importLiterature,
   importMeasurements,
   reviewCard,
@@ -92,14 +94,27 @@ export async function createApp(store: Store) {
           send(res, 200, describeConfig(getAiConfig()));
           return;
         }
+        if (path === "/api/topics") {
+          const r = createTopic(state, { name: String(body.name ?? ""), researchQuestion: String(body.researchQuestion ?? "") });
+          state = r.state; await store.save(state);
+          send(res, 200, { ok: true, topicId: r.topic.id });
+          return;
+        }
+        const subMatch = path.match(/^\/api\/topics\/([^/]+)\/subquestions$/);
+        if (subMatch) {
+          const r = createSubquestion(state, { topicId: decodeURIComponent(subMatch[1]), question: String(body.question ?? ""), kind: body.kind as "declared" | "exploratory" | undefined });
+          state = r.state; await store.save(state);
+          send(res, 200, { ok: true, subquestionId: r.subquestion.id });
+          return;
+        }
         if (path === "/api/import/literature") {
-          const r = await importLiterature(state, { name: String(body.name ?? ""), text: String(body.text ?? ""), mode: (body.mode as "draft" | "ai") ?? "draft" }, getAiConfig());
+          const r = await importLiterature(state, { name: String(body.name ?? ""), text: String(body.text ?? ""), mode: (body.mode as "draft" | "ai") ?? "draft", topicId: body.topicId as string | undefined }, getAiConfig());
           state = r.state; await store.save(state);
           send(res, 200, { ok: true, created: r.created, assetId: r.asset.id, mode: body.mode ?? "draft" });
           return;
         }
         if (path === "/api/import/measurements") {
-          const r = importMeasurements(state, { name: String(body.name ?? ""), csv: String(body.csv ?? "") });
+          const r = importMeasurements(state, { name: String(body.name ?? ""), csv: String(body.csv ?? ""), topicId: body.topicId as string | undefined });
           state = r.state; await store.save(state);
           send(res, 200, { ok: true, created: r.created, assetId: r.asset.id });
           return;

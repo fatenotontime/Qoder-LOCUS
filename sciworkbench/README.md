@@ -1,13 +1,15 @@
-# sciworkbench — LOCUS（阶段2 领域骨架 + 阶段3 最小 Web 闭环）
+# sciworkbench — LOCUS（三栏结构化 Web · 本地开发版）
 
-零依赖工程。设计见 [`docs/architecture/`](../docs/architecture/)；最小闭环说明见 [`docs/stage3/01_WEB_LOOP.md`](../docs/stage3/01_WEB_LOOP.md)。
+零依赖工程。设计见 [`docs/architecture/`](../docs/architecture/)；**三栏页面与协作交接见 [`docs/stage4/10_FRONTEND_HANDOFF.md`](../docs/stage4/10_FRONTEND_HANDOFF.md)**；阶段3 闭环见 [`docs/stage3/01_WEB_LOOP.md`](../docs/stage3/01_WEB_LOOP.md)。
+
+界面：**左栏** 课题/子问题/材料与导入 · **中栏** 原始材料（可高亮定位）· **右栏** 结构化结果与核对。
 
 ## 运行
 
 ```bash
 cd sciworkbench
 node server.ts                 # 最小 Web 闭环 → http://127.0.0.1:5173
-node --test "tests/*.test.ts"  # 契约测试（55 项）
+node --test "tests/*.test.ts"  # 契约测试（59 项）
 ```
 
 要求 Node ≥ 22（本项目 Node 24 实测）：原生 TypeScript 类型剥离 + `node:test`，**无需安装依赖、无需构建**。
@@ -28,7 +30,7 @@ node --test "tests/*.test.ts"  # 契约测试（55 项）
 | `domain/backtrace.ts` | **按类型的回查链原型**（不是一条固定串联链） |
 | `domain/topic.ts` | 课题/子问题最小创建、按任务查缺项 |
 | `domain/literature.ts` | 文献证据卡四维审阅、候选库状态、组审、查重、命名映射、比较快照、汇总分层 |
-| `tests/*.test.ts` | 契约测试（55 项） |
+| `tests/*.test.ts` | 契约测试（59 项） |
 
 ## 边界
 
