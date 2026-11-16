@@ -3,15 +3,15 @@
 // 防护：所有写操作禁用按钮 + 处理中提示 + 内联错误 + 可重试；离开前脏检查。
 import { api } from "./lib/api.js";
 
-let state = { topics: [], subquestions: [], assets: [], cards: [], tables: [] };
-const ui = { nav: "literature", topicId: "", assetId: null, tableId: null, highlight: null, cell: null, dirty: false, busy: false };
+let state = { topics: [], subquestions: [], assets: [], cards: [], tables: [], adoptions: [], mappings: [], comparisons: [] };
+const ui = { nav: "literature", topicId: "", assetId: null, tableId: null, highlight: null, cell: null, dirty: false, busy: false, cardFilter: "all", groupSel: new Set(), batch: null, ack: false };
 let lastAction = null; // { label, run }
 
 // 选择态持久（仅非敏感 UI 选择：页签/课题/材料/表块），刷新后归属正确。
 const UI_KEY = "locus.ui.v1";
 let uiRestored = false;
 function saveUi() {
-  try { localStorage.setItem(UI_KEY, JSON.stringify({ nav: ui.nav, topicId: ui.topicId, assetId: ui.assetId, tableId: ui.tableId })); } catch {}
+  try { localStorage.setItem(UI_KEY, JSON.stringify({ nav: ui.nav, topicId: ui.topicId, assetId: ui.assetId, tableId: ui.tableId, cardFilter: ui.cardFilter })); } catch {}
 }
 function restoreUi() {
   if (uiRestored) return;
@@ -20,6 +20,7 @@ function restoreUi() {
     const s = JSON.parse(localStorage.getItem(UI_KEY) ?? "null");
     if (!s) return;
     if (s.nav === "literature" || s.nav === "measurement") ui.nav = s.nav;
+    if (s.cardFilter === "all" || s.cardFilter === "pending" || s.cardFilter === "reviewed") ui.cardFilter = s.cardFilter;
     if (state.topics.some((t) => t.id === s.topicId)) ui.topicId = s.topicId;
     if (state.assets.some((a) => a.id === s.assetId)) ui.assetId = s.assetId;
     if (state.tables.some((t) => t.id === s.tableId)) ui.tableId = s.tableId;
@@ -89,7 +90,7 @@ function guardLeave() {
 function renderAll() {
   setStatus(`课题 ${state.topics.length} · 子问题 ${state.subquestions.length} · 材料 ${state.assets.length} · 证据卡 ${state.cards.length} · 表格 ${state.tables.length}`);
   $$(".navitem").forEach((x) => x.classList.toggle("active", x.dataset.nav === ui.nav));
-  renderTopics(); renderSubq(); renderImportBox(); renderMaterials(); renderMiddle(); renderRight();
+  renderTopics(); renderSubq(); renderImportBox(); renderMaterials(); renderLitTools(); renderMiddle(); renderRight();
   saveUi();
 }
 
@@ -129,7 +130,7 @@ function renderImportBox() {
         for (let i = 0; i < 1200; i++) {
           const job = await api.getJob(r.jobId);
           setStatus(`AI 抽取：${job.message}`);
-          if (job.status === "done") { ui.assetId = job.result.assetId; await refresh(); setStatus(`AI 导入成功：${job.result.created} 张证据卡`); return; }
+          if (job.status === "done") { ui.assetId = job.result.assetId; await refresh(); setStatus(`AI 导入成功：${job.result.created} 张证据卡`); if (job.result.reminder) showReminder(); return; }
           if (job.status === "error") throw new Error(job.error || "AI 抽取失败");
           await new Promise((res) => setTimeout(res, 700));
         }
@@ -137,6 +138,7 @@ function renderImportBox() {
       }
       await refresh(); ui.assetId = r.assetId; renderAll();
       setStatus(`导入成功：${r.created} 张证据卡（draft）`);
+      if (r.reminder) showReminder();
     }));
   } else {
     box.innerHTML = `
@@ -186,22 +188,140 @@ function renderRight() {
   if (a.kind === "literature") { $("#right-title").textContent = "证据卡"; $("#right-content").innerHTML = cardsHtml(a.id); }
   else { $("#right-title").textContent = "数据表格"; $("#right-content").innerHTML = tableHtml(a.id); }
 }
+/** 候选库状态（与后端 candidateStateOf 同口径）：跳过保未复核；采用独立于核对。 */
+function candState(c) {
+  if (state.adoptions.some((a) => a.cardId === c.id && a.decision === "adopt")) return "adopted";
+  if (c.audit === "need_info") return "pending";
+  if (c.audit === "confirm" || c.audit === "exclude") return "reviewed";
+  return "unreviewed";
+}
+const CAND_LABEL = { unreviewed: "未复核", pending: "待补信息", reviewed: "已审候选", adopted: "已采用" };
+
 function cardsHtml(assetId) {
-  const cards = state.cards.filter((c) => c.assetId === assetId);
-  if (!cards.length) return `<p class="hint">暂无证据卡。</p>`;
-  return cards.map((c) => `
+  const all = state.cards.filter((c) => c.assetId === assetId);
+  const inFilter = (c) => ui.cardFilter === "all" ? true
+    : ui.cardFilter === "pending" ? ["unreviewed", "pending"].includes(candState(c))
+    : ["reviewed", "adopted"].includes(candState(c));
+  const cards = all.filter(inFilter);
+  const nPend = all.filter((c) => ["unreviewed", "pending"].includes(candState(c))).length;
+  const nRev = all.length - nPend;
+  const asset = state.assets.find((a) => a.id === assetId);
+  const subqs = state.subquestions.filter((q) => !asset?.topicId || q.topicId === asset.topicId);
+  const independent = all.filter((c) => c.audit === "confirm" && !c.secondaryCitation).length;
+
+  const tabs = `<div class="tabs">
+    ${[["all", `全部 ${all.length}`], ["pending", `待审 ${nPend}`], ["reviewed", `已审候选 ${nRev}`]].map(([k, label]) => `<button class="tab ${ui.cardFilter === k ? "active" : ""}" data-filter="${k}">${label}</button>`).join("")}
+    <span class="hint">独立证据 ${independent}（不含转引/未确认）</span>
+  </div>`;
+
+  const batchBar = `<div class="row batchbar">
+    <button class="batch-preview" ${ui.groupSel.size ? "" : "disabled"}>组审预览（已选 ${ui.groupSel.size}）</button>
+    <button class="batch-clear" ${ui.groupSel.size ? "" : "disabled"}>清空选择</button>
+  </div>`;
+  const batchPanel = ui.batch ? `<div class="item batchpanel">
+    <div class="meta">组审预览 · ${ui.batch.count} 张（先呈现共享条件，确认后才整组通过）</div>
+    <div>共享条件：${ui.batch.sharedConditions.length ? ui.batch.sharedConditions.map(esc).join("、") : "（无）"}</div>
+    <div>缺定位：${ui.batch.missing.length ? ui.batch.missing.map((id) => esc(id)).join("、") : "（无）"}</div>
+    <div>缺项/异常：${ui.batch.anomalies.length ? ui.batch.anomalies.map((id) => esc(id)).join("、") : "（无）"}</div>
+    <div class="row"><label><input type="checkbox" id="batch-ack" ${ui.ack ? "checked" : ""}/> 我已查看上述共享条件/缺项/异常</label>
+      <button class="primary batch-confirm" ${ui.ack ? "" : "disabled"}>整组确认</button>
+      <button class="batch-cancel">取消</button></div>
+  </div>` : "";
+
+  const manualForm = `<details class="mini">
+    <summary>手动补卡（人工观察/摘录，标注 manual）</summary>
+    <textarea id="mc-raw" rows="2" placeholder="证据内容（必填）"></textarea>
+    <input id="mc-quote" placeholder="定位引文：粘贴原件中的连续片段（可留空＝定位不足，不得正式采用）" />
+    <textarea id="mc-fields" rows="2" placeholder="字段，每行 键=值（如 Km=0.5）"></textarea>
+    <div class="row"><input id="mc-units" placeholder="单位（逗号分隔）" /><input id="mc-conditions" placeholder="条件（逗号分隔）" /></div>
+    <div class="row"><input id="mc-unknowns" placeholder="缺项（逗号分隔）" /><input id="mc-reason" placeholder="原因（标转引时必填）" /></div>
+    <div class="row"><label><input type="checkbox" id="mc-secondary" /> 综述转引（二手）</label><button class="primary" id="mc-add">补卡</button></div>
+  </details>`;
+
+  const body = cards.length ? cards.map((c) => {
+    const cs = candState(c);
+    const adps = state.adoptions.filter((a) => a.cardId === c.id);
+    const fields = Object.entries(c.extracted?.fields ?? {});
+    return `
     <div class="item" data-id="${c.id}">
-      <div class="meta">抽取 <span class="badge ${c.extraction === "ai" ? "ai" : ""}">${c.extraction}</span> · 核对 <span class="badge ${c.audit}">${c.audit}</span> · rev ${c.revision}</div>
+      <div class="meta"><label class="grpwrap"><input type="checkbox" class="grp" data-id="${c.id}" ${ui.groupSel.has(c.id) ? "checked" : ""}/></label>
+        抽取 <span class="badge ${c.extraction === "ai" ? "ai" : ""}">${c.extraction}</span> · 核对 <span class="badge ${c.audit}">${c.audit}</span> · 候选 <span class="badge cand-${cs}">${CAND_LABEL[cs]}</span>${c.secondaryCitation ? ` · <span class="badge secondary">转引(二手)</span>` : ""} · rev ${c.revision}</div>
       <div class="raw linkable" title="点击在原文件中定位">${esc(c.rawText)}</div>
+      ${!c.locator.sectionQuote ? `<div class="hint warn">定位不足：无原文定位，不得用于正式采用。</div>` : ""}
+      <details class="mini ex"><summary>字段/条件/缺项${c.unknowns.length ? `（缺项 ${c.unknowns.length}）` : ""}</summary>
+        ${fields.map(([k, v]) => `<div class="row"><label>${esc(k)}</label><input data-fkey="${esc(k)}" value="${esc(v)}" /></div>`).join("") || `<p class="hint">暂无抽取字段。</p>`}
+        <div class="row"><input data-field="newkey" placeholder="新字段名" /><input data-field="newval" placeholder="值" /></div>
+        <div class="row"><label>单位</label><input data-field="units" value="${esc((c.extracted?.units ?? []).join(","))}" /></div>
+        <div class="row"><label>条件</label><input data-field="conditions" value="${esc((c.extracted?.conditions ?? []).join(","))}" /></div>
+        ${c.unknowns.length ? `<div class="hint warn">缺项：${c.unknowns.map(esc).join("、")}</div>` : ""}
+        <div class="row"><button class="save-fields">保存字段/单位/条件</button></div>
+      </details>
       <div class="row"><label>核对</label>
         <select data-field="audit">${["unreviewed", "confirm", "need_info", "exclude", "skip"].map((v) => `<option ${v === c.audit ? "selected" : ""}>${v}</option>`).join("")}</select>
         <label>重要</label>
         <select data-field="importance">${["", "high", "medium", "low"].map((v) => `<option value="${v}" ${(c.importance ?? "") === v ? "selected" : ""}>${v || "—"}</option>`).join("")}</select>
+        <button class="sec-toggle">${c.secondaryCitation ? "取消转引标记" : "标记转引(二手)"}</button>
       </div>
       <div class="row"><label>备注</label><input data-field="note" value="${esc(c.note)}" /></div>
-      <div class="row"><label>原因</label><input data-field="reason" value="${esc(c.reason)}" placeholder="排除/改关键文本时必填" />
+      <div class="row"><label>原因</label><input data-field="reason" value="${esc(c.reason)}" placeholder="排除/改关键文本/标转引时必填" />
         <button class="save">保存</button><button class="history-btn">历史(${c.history.length})</button></div>
-    </div>`).join("");
+      <div class="row adopt">
+        <label>任务</label>
+        ${subqs.length ? `<select data-field="adoptSubq">${subqs.map((q) => `<option value="${q.id}">${esc(q.question)}</option>`).join("")}</select>
+        <select data-field="adoptDecision"><option value="adopt">采用</option><option value="exclude">排除</option></select>
+        <input data-field="adoptReason" placeholder="原因（排除必填）" />
+        <button class="adopt-btn">记录</button>` : `<span class="hint">先在左栏创建子问题，才能按任务采用。</span>`}
+      </div>
+      ${adps.length ? `<div class="adoptlist">${adps.map((a) => `<span class="badge ${a.decision === "adopt" ? "adopted" : "exclude"}" title="${esc(a.reason)}">${a.decision === "adopt" ? "采用" : "排除"} · ${esc(state.subquestions.find((q) => q.id === a.subquestionId)?.question ?? a.subquestionId)}（卡 rev ${a.cardRevision}）</span>`).join("")}</div>` : ""}
+    </div>`;
+  }).join("") : `<p class="hint">${all.length ? "当前筛选下无证据卡。" : "暂无证据卡。"}</p>`;
+
+  return tabs + batchBar + batchPanel + manualForm + body;
+}
+
+/** 左栏文献工具：命名映射 + 条件比较（仅文献导航显示）。 */
+function renderLitTools() {
+  const box = $("#lit-tools");
+  if (ui.nav !== "literature") { box.innerHTML = ""; return; }
+  const maps = state.mappings.filter((m) => !ui.topicId || !m.topicId || m.topicId === ui.topicId);
+  const cmps = state.comparisons.filter((c) => !ui.topicId || c.topicId === ui.topicId);
+  const confirmed = state.cards.filter((c) => c.audit === "confirm" && (!ui.topicId || state.assets.find((a) => a.id === c.assetId)?.topicId === ui.topicId));
+  const DIV = { single: "单源", consistent: "一致", value_diff: "值分歧", conditions_diff: "条件差异" };
+  box.innerHTML = `
+    <details class="mini" id="map-box">
+      <summary>命名映射（${maps.length}）</summary>
+      ${maps.map((m) => `<div class="hint">${esc(m.original)} → ${esc(m.mapped)}（依据：${esc(m.basis)}）</div>`).join("") || `<p class="hint">暂无映射。原名保留，映射须有依据。</p>`}
+      <div class="row"><input id="map-original" placeholder="原名" /><input id="map-mapped" placeholder="映射名" /></div>
+      <div class="row"><input id="map-basis" placeholder="来源依据（必填）" /><button id="map-create">添加映射</button></div>
+    </details>
+    <details class="mini" id="cmp-box">
+      <summary>条件比较（${cmps.length}）</summary>
+      ${ui.topicId ? `
+        <div class="hint">仅已确认证据卡可入比较；快照固定卡版本，不自动合并/平均。</div>
+        ${confirmed.length ? confirmed.map((c) => `<label class="cmppick"><input type="checkbox" class="cmp-card" value="${c.id}" /> ${esc(c.rawText.slice(0, 40))}（rev ${c.revision}）</label>`).join("") : `<p class="hint">本课题暂无已确认证据卡。</p>`}
+        <div class="row"><input id="cmp-filters" placeholder="筛选（逗号分隔）" /><input id="cmp-conversions" placeholder="换算（逗号分隔）" /></div>
+        <div class="row"><input id="cmp-exclusions" placeholder="排除（逗号分隔）" /><button class="primary" id="cmp-create">固定快照比较</button></div>
+      ` : `<p class="hint">先选课题。</p>`}
+      ${cmps.map((cmp) => `
+        <div class="item cmp" data-id="${cmp.id}">
+          <div class="meta">快照 ${esc(cmp.snapshot.dataRevision.slice(0, 10))} · ${esc(cmp.snapshot.pinnedAt)}${cmp.reviewFlags.length ? ` · <span class="badge warn">需复核（${cmp.reviewFlags.length} 张卡已修改）</span>` : ""}</div>
+          <div class="hint">口径：筛选[${cmp.snapshot.filters.map(esc).join("、") || "—"}] 换算[${cmp.snapshot.conversions.map(esc).join("、") || "—"}] 排除[${cmp.snapshot.exclusions.map(esc).join("、") || "—"}]</div>
+          ${cmp.groups.map((g) => `<div class="cmpgroup">
+            <strong>${esc(g.name)}</strong> <span class="badge div-${g.divergence}">${DIV[g.divergence]}</span>
+            ${g.entries.map((e) => `<div class="hint">${esc(e.value)}${e.unit ? " " + esc(e.unit) : ""} · 条件[${e.conditions.map(esc).join("、") || "—"}] · 卡${esc(e.cardId.slice(5, 13))} rev${e.cardRevision}${e.originalName !== e.mappedName ? `（原名 ${esc(e.originalName)}）` : ""}</div>`).join("")}
+            ${g.unresolved.map((u) => `<div class="hint warn">${esc(u)}</div>`).join("")}
+          </div>`).join("")}
+          <div class="row"><button class="cmp-again" data-id="${cmp.id}">按当前版本重新比较（新快照）</button></div>
+        </div>`).join("")}
+    </details>`;
+}
+
+function showReminder() {
+  const b = $("#banner"); b.hidden = false; b.className = "banner info";
+  b.innerHTML = `<span>新文献已入库：既有比较快照保持不变。是否按新版本重新比较？</span>`;
+  const btn = document.createElement("button"); btn.textContent = "打开比较"; btn.className = "primary";
+  btn.addEventListener("click", () => { hideBanner(); const d = $("#cmp-box"); if (d) d.open = true; });
+  b.appendChild(btn);
 }
 function tableHtml(assetId) {
   const ts = state.tables.filter((x) => x.assetId === assetId);
@@ -233,11 +353,11 @@ function tableHtml(assetId) {
 $("#nav").addEventListener("click", (ev) => {
   const b = ev.target.closest(".navitem"); if (!b || b.disabled) return;
   if (!guardLeave()) return;
-  ui.nav = b.dataset.nav; ui.highlight = null; ui.cell = null; ui.tableId = null;
+  ui.nav = b.dataset.nav; ui.highlight = null; ui.cell = null; ui.tableId = null; ui.groupSel.clear(); ui.batch = null; ui.ack = false;
   $$(".navitem").forEach((x) => x.classList.toggle("active", x === b));
   renderAll();
 });
-$("#topic-select").addEventListener("change", (e) => { if (!guardLeave()) { renderTopics(); return; } ui.topicId = e.target.value; ui.assetId = null; ui.highlight = null; renderAll(); });
+$("#topic-select").addEventListener("change", (e) => { if (!guardLeave()) { renderTopics(); return; } ui.topicId = e.target.value; ui.assetId = null; ui.highlight = null; ui.groupSel.clear(); ui.batch = null; renderAll(); });
 $("#topic-create").addEventListener("click", (ev) => runBusy(ev.target, "创建课题", async () => {
   const r = await api.createTopic($("#topic-name").value, $("#topic-q").value);
   ui.topicId = r.topicId; await refresh(); setStatus("课题已创建");
@@ -250,22 +370,81 @@ $("#material-list").addEventListener("click", (ev) => {
   const el = ev.target.closest(".material"); if (!el) return;
   if (el.dataset.id === ui.assetId) return;
   if (!guardLeave()) return;
-  ui.assetId = el.dataset.id; ui.highlight = null; ui.cell = null; ui.tableId = null; renderAll();
+  ui.assetId = el.dataset.id; ui.highlight = null; ui.cell = null; ui.tableId = null; ui.groupSel.clear(); ui.batch = null; ui.ack = false; renderAll();
 });
 $("#right-content").addEventListener("change", (ev) => {
   if (ev.target.id === "table-pick") { ui.tableId = ev.target.value; ui.cell = null; renderRight(); }
+  if (ev.target.classList.contains("grp")) {
+    const id = ev.target.dataset.id;
+    if (ev.target.checked) ui.groupSel.add(id); else ui.groupSel.delete(id);
+    renderRight();
+  }
+  if (ev.target.id === "batch-ack") { ui.ack = ev.target.checked; renderRight(); }
 });
 $("#right-content").addEventListener("input", (ev) => { if (ev.target.closest(".item")) ui.dirty = true; });
 $("#right-content").addEventListener("click", async (ev) => {
-  const item = ev.target.closest(".item"); if (!item) return;
-  const val = (f) => item.querySelector(`[data-field="${f}"]`)?.value ?? "";
+  const item = ev.target.closest(".item");
+  const val = (f) => item?.querySelector(`[data-field="${f}"]`)?.value ?? "";
+  const splitList = (s) => String(s ?? "").split(/[,，]/).map((x) => x.trim()).filter(Boolean);
   try {
+    if (ev.target.classList.contains("tab")) { ui.cardFilter = ev.target.dataset.filter; renderRight(); saveUi(); return; }
+    if (ev.target.classList.contains("batch-preview")) {
+      ui.batch = await api.batchPreview([...ui.groupSel]); ui.ack = false; renderRight(); return;
+    }
+    if (ev.target.classList.contains("batch-clear")) { ui.groupSel.clear(); ui.batch = null; ui.ack = false; renderRight(); return; }
+    if (ev.target.classList.contains("batch-cancel")) { ui.batch = null; ui.ack = false; renderRight(); return; }
+    if (ev.target.classList.contains("batch-confirm")) {
+      await runBusy(ev.target, "整组确认", async () => {
+        await api.batchConfirm([...ui.groupSel], ui.ack);
+        ui.groupSel.clear(); ui.batch = null; ui.ack = false; ui.dirty = false;
+        await refresh(); setStatus("整组已确认（含修订历史）");
+      }); return;
+    }
+    if (ev.target.id === "mc-add") {
+      await runBusy(ev.target, "手动补卡", async () => {
+        const fields = {};
+        for (const line of $("#mc-fields").value.split(/\n/)) {
+          const i = line.indexOf("=");
+          if (i > 0) fields[line.slice(0, i).trim()] = line.slice(i + 1).trim();
+        }
+        await api.addCard({
+          assetId: ui.assetId, rawText: $("#mc-raw").value, sectionQuote: $("#mc-quote").value,
+          fields, units: splitList($("#mc-units").value), conditions: splitList($("#mc-conditions").value),
+          unknowns: splitList($("#mc-unknowns").value), secondaryCitation: $("#mc-secondary").checked, reason: $("#mc-reason").value,
+        });
+        ui.dirty = false; await refresh(); setStatus("补卡成功（manual，待核对）");
+      }); return;
+    }
+    if (!item) return;
     if (ev.target.classList.contains("history-btn")) {
       const isCard = item.querySelector("select[data-field=audit]");
       openHistory(isCard ? state.cards.find((c) => c.id === item.dataset.id) : state.tables.find((t) => t.id === item.dataset.id)); return;
     }
     if (ev.target.classList.contains("raw") && ev.target.classList.contains("linkable")) {
       const c = state.cards.find((x) => x.id === item.dataset.id); ui.highlight = c?.locator.sectionQuote || c?.rawText || null; renderMiddle(); return;
+    }
+    if (ev.target.classList.contains("save-fields")) {
+      const fields = {};
+      item.querySelectorAll("[data-fkey]").forEach((inp) => { fields[inp.dataset.fkey] = inp.value; });
+      const nk = val("newkey").trim();
+      if (nk) fields[nk] = val("newval");
+      await runBusy(ev.target, "保存字段", async () => {
+        await api.reviewCard(item.dataset.id, { extracted: { fields, units: splitList(val("units")), conditions: splitList(val("conditions")) }, reason: val("reason") });
+        ui.dirty = false; await refresh(); setStatus("字段/单位/条件已保存（含修订历史）");
+      }); return;
+    }
+    if (ev.target.classList.contains("sec-toggle")) {
+      const c = state.cards.find((x) => x.id === item.dataset.id);
+      await runBusy(ev.target, "转引标记", async () => {
+        await api.reviewCard(item.dataset.id, { secondaryCitation: !c.secondaryCitation, reason: val("reason") });
+        ui.dirty = false; await refresh(); setStatus(c.secondaryCitation ? "已取消转引标记" : "已标记转引（二手，不计独立证据）");
+      }); return;
+    }
+    if (ev.target.classList.contains("adopt-btn")) {
+      await runBusy(ev.target, "记录采用", async () => {
+        await api.adopt(item.dataset.id, val("adoptSubq"), val("adoptDecision"), val("adoptReason"));
+        ui.dirty = false; await refresh(); setStatus("任务采用/排除已记录（独立于核对）");
+      }); return;
     }
     if (ev.target.classList.contains("cell")) {
       const t = state.tables.find((x) => x.id === item.dataset.id);
@@ -299,6 +478,32 @@ function lineOf(t, ri) {
   const lines = currentAsset().text.split(/\r?\n/).filter((l) => l.trim() !== "");
   return (lines[ri + 1] ?? "").trim() || null;
 }
+const splitList = (s) => String(s ?? "").split(/[,，]/).map((x) => x.trim()).filter(Boolean);
+$("#lit-tools").addEventListener("click", (ev) => {
+  const t = ev.target;
+  if (t.id === "map-create") {
+    runBusy(t, "添加映射", async () => {
+      await api.createMapping($("#map-original").value, $("#map-mapped").value, $("#map-basis").value, ui.topicId || undefined);
+      await refresh(); setStatus("映射已添加（原名保留，依据必填）");
+    }); return;
+  }
+  if (t.id === "cmp-create") {
+    runBusy(t, "固定快照比较", async () => {
+      const cardIds = [...$$(".cmp-card")].filter((x) => x.checked).map((x) => x.value);
+      if (!cardIds.length) throw new Error("请先勾选已确认证据卡。");
+      await api.createComparison({ topicId: ui.topicId, cardIds, filters: splitList($("#cmp-filters").value), conversions: splitList($("#cmp-conversions").value), exclusions: splitList($("#cmp-exclusions").value) });
+      await refresh(); setStatus("比较快照已固定（追加式，不覆盖旧结论）");
+    }); return;
+  }
+  if (t.classList.contains("cmp-again")) {
+    runBusy(t, "重新比较", async () => {
+      const cmp = state.comparisons.find((c) => c.id === t.dataset.id);
+      const cardIds = [...new Set(cmp.groups.flatMap((g) => g.entries.map((e) => e.cardId)))];
+      await api.createComparison({ topicId: cmp.topicId, subquestionId: cmp.subquestionId, cardIds, filters: cmp.snapshot.filters, conversions: cmp.snapshot.conversions, exclusions: cmp.snapshot.exclusions });
+      await refresh(); setStatus("已按当前卡版本生成新快照（旧快照保留）");
+    });
+  }
+});
 function openHistory(obj) {
   if (!obj) return;
   $("#drawer-title").textContent = "修订历史";

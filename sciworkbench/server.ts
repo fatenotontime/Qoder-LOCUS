@@ -12,6 +12,11 @@ import { JsonFileStore, type LocusState, type Store } from "./store.ts";
 import { AiError, clearAiConfig, describeConfig, getAiConfig, setAiConfig } from "./services/ai.ts";
 import {
   AppError,
+  addManualCard,
+  batchConfirm,
+  batchPreview,
+  createComparison,
+  createMapping,
   createSubquestion,
   createTopic,
   importLiterature,
@@ -19,6 +24,7 @@ import {
   reviewCard,
   reviewTable,
   sourceView,
+  upsertAdoption,
 } from "./services/app.ts";
 
 const HERE = fileURLToPath(new URL(".", import.meta.url));
@@ -54,7 +60,7 @@ export interface Job {
   done: number;
   total: number;
   message: string;
-  result?: { assetId: string; created: number };
+  result?: { assetId: string; created: number; reminder?: boolean };
   error?: string;
 }
 
@@ -149,7 +155,7 @@ export async function createApp(store: Store) {
                 const r = await importLiterature(state, input, getAiConfig(), (done, total) => { job.done = done; job.total = total; job.message = `第 ${done}/${total} 块`; });
                 state = r.state; await store.save(state);
                 if (r.audit) writeAudit(r.asset.id, r.audit);
-                job.status = "done"; job.result = { assetId: r.asset.id, created: r.created }; job.message = "完成";
+                job.status = "done"; job.result = { assetId: r.asset.id, created: r.created, reminder: r.reminder }; job.message = "完成";
               } catch (e) { job.status = "error"; job.error = (e as Error).message ?? "失败"; }
             })();
             send(res, 202, { ok: true, jobId: id });
@@ -157,7 +163,7 @@ export async function createApp(store: Store) {
           }
           const r = await importLiterature(state, input, getAiConfig());
           state = r.state; await store.save(state);
-          send(res, 200, { ok: true, created: r.created, assetId: r.asset.id, mode: "draft" });
+          send(res, 200, { ok: true, created: r.created, assetId: r.asset.id, mode: "draft", reminder: r.reminder });
           return;
         }
         if (path === "/api/import/measurements") {
@@ -176,8 +182,65 @@ export async function createApp(store: Store) {
             note: body.note as string | undefined,
             reason: body.reason as string | undefined,
             rawText: body.rawText as string | undefined,
+            secondaryCitation: body.secondaryCitation as boolean | undefined,
+            extracted: body.extracted as never,
           });
           await store.save(state); send(res, 200, { ok: true }); return;
+        }
+        if (path === "/api/cards") {
+          const r = addManualCard(state, {
+            assetId: String(body.assetId ?? ""),
+            rawText: String(body.rawText ?? ""),
+            sectionQuote: body.sectionQuote as string | undefined,
+            fields: body.fields as Record<string, string> | undefined,
+            units: body.units as string[] | undefined,
+            conditions: body.conditions as string[] | undefined,
+            unknowns: body.unknowns as string[] | undefined,
+            secondaryCitation: body.secondaryCitation === true,
+            reason: body.reason as string | undefined,
+          });
+          state = r.state; await store.save(state);
+          send(res, 200, { ok: true, cardId: r.card.id }); return;
+        }
+        if (path === "/api/cards/batch-preview") {
+          send(res, 200, batchPreview(state, (body.ids as string[]) ?? [])); return;
+        }
+        if (path === "/api/cards/batch-confirm") {
+          state = batchConfirm(state, (body.ids as string[]) ?? [], body.ack === true);
+          await store.save(state); send(res, 200, { ok: true }); return;
+        }
+        if (path === "/api/adoptions") {
+          const r = upsertAdoption(state, {
+            cardId: String(body.cardId ?? ""),
+            subquestionId: String(body.subquestionId ?? ""),
+            decision: body.decision as "adopt" | "exclude",
+            reason: body.reason as string | undefined,
+          });
+          state = r.state; await store.save(state);
+          send(res, 200, { ok: true, adoptionId: r.adoption.id }); return;
+        }
+        if (path === "/api/mappings") {
+          const r = createMapping(state, {
+            original: String(body.original ?? ""),
+            mapped: String(body.mapped ?? ""),
+            basis: String(body.basis ?? ""),
+            topicId: body.topicId as string | undefined,
+          });
+          state = r.state; await store.save(state);
+          send(res, 200, { ok: true, mappingId: r.mapping.id }); return;
+        }
+        if (path === "/api/comparisons") {
+          const r = createComparison(state, {
+            topicId: String(body.topicId ?? ""),
+            subquestionId: body.subquestionId as string | undefined,
+            cardIds: (body.cardIds as string[]) ?? [],
+            filters: body.filters as string[] | undefined,
+            conversions: body.conversions as string[] | undefined,
+            exclusions: body.exclusions as string[] | undefined,
+            note: body.note as string | undefined,
+          });
+          state = r.state; await store.save(state);
+          send(res, 200, { ok: true, comparisonId: r.comparison.id }); return;
         }
         const tblMatch = path.match(/^\/api\/tables\/([^/]+)\/review$/);
         if (tblMatch) {

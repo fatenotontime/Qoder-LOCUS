@@ -26,9 +26,10 @@ export const TASKS: Record<TaskName, TaskDef> = {
     name: "literature_extract",
     system:
       "你是文献证据抽取助手。只从给定文本中抽取可逐项核查的内容片段，生成结构化证据卡草稿；" +
-      "不得补造文本中不存在的数据；不确定处列入 unknowns。只返回 JSON，键必须用双引号。",
+      "不得补造文本中不存在的数据；不确定处列入 unknowns；条件（温度/pH/缓冲液等）单列 conditions；" +
+      "若片段是综述转引他人结果（二手），secondaryCitation 置 true。只返回 JSON，键必须用双引号。",
     schema:
-      '{"cards":[{"rawText":"原文片段","locator":{"sectionQuote":"用于回查的原文短引"},"extracted":{"fields":{"键":"值"},"units":["单位"]},"unknowns":["未知项"]}]}',
+      '{"cards":[{"rawText":"原文片段","locator":{"sectionQuote":"用于回查的原文短引"},"extracted":{"fields":{"键":"值"},"units":["单位"],"conditions":["条件"]},"unknowns":["未知项"],"secondaryCitation":false}]}',
   },
   protocol_parse: {
     name: "protocol_parse",

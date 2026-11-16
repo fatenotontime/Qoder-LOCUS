@@ -136,7 +136,7 @@ export function batchConfirm(cards: readonly LiteratureEvidenceCard[], ack: bool
 }
 
 // ── 查重（LIT07）────────────────────────────────────────────
-export type DedupAction = "reject_exact" | "same_doi_new_version" | "title_similar_hint" | "distinct";
+export type DedupAction = "reject_exact" | "same_doi_new_version" | "same_doi_unverified" | "title_similar_hint" | "distinct";
 
 export interface SourceFingerprint {
   readonly fileHash: string;
@@ -148,7 +148,9 @@ export interface SourceFingerprint {
 export function dedupAction(a: SourceFingerprint, b: SourceFingerprint): DedupAction {
   if (a.fileHash && a.fileHash === b.fileHash) return "reject_exact";
   if (a.doi && a.doi === b.doi) {
-    if (a.contentHash && b.contentHash && a.contentHash !== b.contentHash) return "same_doi_new_version";
+    // P3 反例：同 DOI 但内容 hash 未知 → 不得误拒（可能是修订版/补充材料），只提示待核实。
+    if (!a.contentHash || !b.contentHash) return "same_doi_unverified";
+    if (a.contentHash !== b.contentHash) return "same_doi_new_version";
     return "reject_exact";
   }
   if (a.title && b.title && normalise(a.title) === normalise(b.title)) return "title_similar_hint";
@@ -185,7 +187,11 @@ export interface ComparisonSnapshot extends ComparisonInput {
 }
 
 export function freezeComparison(input: ComparisonInput): ComparisonSnapshot {
-  return { ...input, snapshotId: `cmp_${input.dataRevision}_${input.filters.join("|")}` };
+  // P4 反例：快照 id 必须覆盖全部输入（筛选/换算/排除/映射），否则不同口径共用同一 id。
+  const payload = JSON.stringify([input.dataRevision, input.filters, input.conversions, input.exclusions, input.nameMappings]);
+  let h = 0;
+  for (let i = 0; i < payload.length; i++) h = (h * 31 + payload.charCodeAt(i)) | 0;
+  return { ...input, snapshotId: `cmp_${input.dataRevision}_${(h >>> 0).toString(36)}` };
 }
 
 /** 新文献进入库：只提醒是否重比，不自动推翻旧结论。 */

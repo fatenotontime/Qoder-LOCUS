@@ -103,6 +103,8 @@ test("T12 同 hash 拒收；同 DOI 不同内容=新版本；题名相似仅提�
   );
   assert.equal(dedupAction({ fileHash: "h1", title: "Study of X" }, { fileHash: "h2", title: "study of x" }), "title_similar_hint");
   assert.equal(dedupAction({ fileHash: "h1", doi: "10.1/a" }, { fileHash: "h2", doi: "10.1/b" }), "distinct");
+  // P3 反例（4B 修正）：同 DOI 内容 hash 未知 → 不误拒，提示待核实。
+  assert.equal(dedupAction({ fileHash: "h1", doi: "10.1/x" }, { fileHash: "h2", doi: "10.1/x" }), "same_doi_unverified");
 });
 
 // T13 同源转引
@@ -125,7 +127,16 @@ test("T15 比较固定快照；新文献只提醒不自动重比", () => {
   const snap = freezeComparison({
     dataRevision: "r1", filters: ["pH=7"], conversions: ["mM→M"], exclusions: [], nameMappings: [],
   });
-  assert.equal(snap.snapshotId, "cmp_r1_pH=7");
+  assert.equal(snap.snapshotId.startsWith("cmp_r1_"), true);
+  // P4 反例（4B 修正）：筛选相同但换算/排除不同 → 快照 id 必须不同。
+  const snap2 = freezeComparison({
+    dataRevision: "r1", filters: ["pH=7"], conversions: ["M→mM"], exclusions: [], nameMappings: [],
+  });
+  const snap3 = freezeComparison({
+    dataRevision: "r1", filters: ["pH=7"], conversions: ["mM→M"], exclusions: ["异常批"], nameMappings: [],
+  });
+  assert.notEqual(snap.snapshotId, snap2.snapshotId);
+  assert.notEqual(snap.snapshotId, snap3.snapshotId);
   assert.equal(newMaterialReminder([snap], [card("C1", { audit: "confirm" })]), true);
   assert.equal(newMaterialReminder([], [card("C1", { audit: "confirm" })]), false);
 });

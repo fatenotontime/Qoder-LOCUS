@@ -37,7 +37,14 @@ export interface AssetRecord {
   readonly createdAt: string;
 }
 
-export type Extraction = "draft" | "ai";
+export type Extraction = "draft" | "ai" | "manual";
+
+/** 抽取内容：字段/单位/条件分开；缺项单列，不补造。 */
+export interface CardExtracted {
+  readonly fields: Record<string, string>;
+  readonly units: string[];
+  readonly conditions: string[];
+}
 
 /** 文献证据卡。 */
 export interface LitCardRecord {
@@ -45,6 +52,10 @@ export interface LitCardRecord {
   readonly assetId: string;
   readonly rawText: string;
   readonly locator: { readonly sectionQuote: string };
+  readonly extracted: CardExtracted;
+  readonly unknowns: string[];
+  /** 综述转引（二手）：不计多份独立证据（LIT08）。 */
+  readonly secondaryCitation: boolean;
   readonly audit: "unreviewed" | "confirm" | "need_info" | "exclude" | "skip";
   readonly importance: "high" | "medium" | "low" | null;
   readonly note: string;
@@ -54,6 +65,68 @@ export interface LitCardRecord {
   readonly history: RevisionEntry[];
   readonly createdAt: string;
   readonly updatedAt: string;
+}
+
+/** 任务采用/排除：独立于核对；一卡可被多任务引用（LIT01–04）。 */
+export interface AdoptionRecord {
+  readonly id: string;
+  readonly cardId: string;
+  readonly subquestionId: string;
+  readonly decision: "adopt" | "exclude";
+  readonly reason: string;
+  readonly cardRevision: number;
+  readonly revision: number;
+  readonly history: RevisionEntry[];
+  readonly createdAt: string;
+  readonly updatedAt: string;
+}
+
+/** 命名映射：原名保留，映射必须有依据（LIT09）。 */
+export interface NameMappingRecord {
+  readonly id: string;
+  readonly topicId?: string;
+  readonly original: string;
+  readonly mapped: string;
+  readonly basis: string;
+  readonly createdAt: string;
+}
+
+/** 比较快照条目：固定卡 revision，不指向 latest。 */
+export interface ComparisonEntry {
+  readonly cardId: string;
+  readonly cardRevision: number;
+  readonly originalName: string;
+  readonly mappedName: string;
+  readonly value: string;
+  readonly unit: string;
+  readonly conditions: string[];
+}
+
+export interface ComparisonGroup {
+  readonly name: string;
+  readonly entries: ComparisonEntry[];
+  readonly divergence: "single" | "consistent" | "value_diff" | "conditions_diff";
+  readonly unresolved: string[];
+}
+
+/** 条件差异/分歧比较：输入快照固定，追加式不覆盖（LIT10）。 */
+export interface ComparisonRecord {
+  readonly id: string;
+  readonly topicId: string;
+  readonly subquestionId?: string;
+  readonly snapshot: {
+    readonly dataRevision: string;
+    readonly filters: string[];
+    readonly conversions: string[];
+    readonly exclusions: string[];
+    readonly mappingIds: string[];
+    readonly pinnedAt: string;
+  };
+  readonly groups: ComparisonGroup[];
+  /** 已采用/已入快照的卡被修改 → 标复核，不自动改快照。 */
+  readonly reviewFlags: { readonly cardId: string; readonly cardRevision: number; readonly at: string }[];
+  readonly note: string;
+  readonly createdAt: string;
 }
 
 /** 列级核对信息（单位、结论）。 */
@@ -107,12 +180,15 @@ export interface LocusState {
   readonly assets: AssetRecord[];
   readonly cards: LitCardRecord[];
   readonly tables: MeasurementTableRecord[];
+  readonly adoptions: AdoptionRecord[];
+  readonly mappings: NameMappingRecord[];
+  readonly comparisons: ComparisonRecord[];
 }
 
-export const STATE_VERSION = 3;
+export const STATE_VERSION = 4;
 
 export function emptyState(): LocusState {
-  return { version: STATE_VERSION, topics: [], subquestions: [], assets: [], cards: [], tables: [] };
+  return { version: STATE_VERSION, topics: [], subquestions: [], assets: [], cards: [], tables: [], adoptions: [], mappings: [], comparisons: [] };
 }
 
 export interface Store {
@@ -140,16 +216,24 @@ export class JsonFileStore implements Store {
     try {
       const p = JSON.parse(readFileSync(this.#path, "utf8")) as Partial<LocusState> & { version?: number };
       const v = p.version ?? 0;
-      if (v !== 2 && v !== STATE_VERSION) return emptyState();
-      // v2 → v3：保留既有数据，补空 topics/subquestions（不丢用户数据）
+      if (v !== 2 && v !== 3 && v !== STATE_VERSION) return emptyState();
+      // v2/v3 → v4：保留既有数据，补空新实体；旧卡补默认抽取结构（不丢用户数据）
       // hash 统一为逻辑内容口径（旧记录按 canonical 重算，保持跨路径拒重一致）
       return {
         version: STATE_VERSION,
         topics: p.topics ?? [],
         subquestions: p.subquestions ?? [],
         assets: (p.assets ?? []).map((a) => ({ ...a, hash: contentHash(a.text) })),
-        cards: p.cards ?? [],
+        cards: (p.cards ?? []).map((c) => ({
+          ...c,
+          extracted: c.extracted ?? { fields: {}, units: [], conditions: [] },
+          unknowns: c.unknowns ?? [],
+          secondaryCitation: c.secondaryCitation ?? false,
+        })),
         tables: p.tables ?? [],
+        adoptions: p.adoptions ?? [],
+        mappings: p.mappings ?? [],
+        comparisons: p.comparisons ?? [],
       };
     } catch {
       return emptyState();

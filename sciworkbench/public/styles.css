@@ -184,5 +184,28 @@ table.grid tr.marker td { color: var(--muted); font-style: italic; background: v
 table.grid th select, table.grid th input { min-width: 84px; }
 table.grid .celledit input { width: auto; }
 
+/* ── 4B：候选库 / 组审 / 采用 / 映射 / 比较 ── */
+.banner.info { background: #eef3ef; color: var(--accent); border-bottom: 1px solid var(--line); }
+.pane.right .tabs { padding: 0 0 var(--space-2); flex-wrap: wrap; align-items: center; }
+.pane.right .tab { padding: var(--space-1) var(--space-3); border-radius: var(--radius-sm); }
+.pane.right .tab.active { background: #eef3ef; border-color: var(--accent); }
+.badge.cand-unreviewed, .badge.cand-pending { color: var(--warn); border-color: var(--warn); }
+.badge.cand-reviewed { color: var(--accent); border-color: var(--accent); }
+.badge.cand-adopted, .badge.adopted { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
+.badge.secondary { color: #2f5f8f; border-color: #2f5f8f; }
+.badge.warn { color: var(--warn); border-color: var(--warn); }
+.hint.warn { color: var(--warn); }
+.badge.div-value_diff { color: var(--danger); border-color: var(--danger); }
+.badge.div-conditions_diff { color: var(--warn); border-color: var(--warn); }
+.badge.div-consistent { color: var(--accent); border-color: var(--accent); }
+.batchbar { margin-bottom: var(--space-2); }
+.batchpanel { background: var(--bg); margin-bottom: var(--space-2); }
+.grpwrap { margin-right: var(--space-1); }
+.adoptlist { display: flex; gap: var(--space-1); flex-wrap: wrap; margin-top: var(--space-1); }
+.cmppick { display: block; font-size: var(--text-sm); margin: 2px 0; }
+.cmpgroup { border-top: 1px dashed var(--line); padding: var(--space-1) 0; }
+.item.cmp { margin-bottom: var(--space-2); }
+#lit-tools { margin-top: var(--space-3); border-top: 1px solid var(--line); padding-top: var(--space-2); }
+
 
 

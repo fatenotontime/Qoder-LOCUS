@@ -10,6 +10,12 @@ export const api = {
   async importLiterature(name, text, mode, topicId) { return json("/api/import/literature", { name, text, mode, topicId }); },
   async importMeasurements(name, csv, topicId, headerRows, profile) { return json("/api/import/measurements", { name, csv, topicId, headerRows, profile }); },
   async reviewCard(id, patch) { return json(`/api/cards/${encodeURIComponent(id)}/review`, patch); },
+  async addCard(input) { return json("/api/cards", input); },
+  async batchPreview(ids) { return json("/api/cards/batch-preview", { ids }); },
+  async batchConfirm(ids, ack) { return json("/api/cards/batch-confirm", { ids, ack }); },
+  async adopt(cardId, subquestionId, decision, reason) { return json("/api/adoptions", { cardId, subquestionId, decision, reason }); },
+  async createMapping(original, mapped, basis, topicId) { return json("/api/mappings", { original, mapped, basis, topicId }); },
+  async createComparison(input) { return json("/api/comparisons", input); },
   async reviewTable(id, patch) { return json(`/api/tables/${encodeURIComponent(id)}/review`, patch); },
   async getSource(assetId) { return json(`/api/source/${encodeURIComponent(assetId)}`); },
 };

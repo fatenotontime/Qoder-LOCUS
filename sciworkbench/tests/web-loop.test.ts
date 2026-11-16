@@ -117,16 +117,30 @@ test("旧版本状态不迁移（返回空）", async () => {
   rmSync(path, { force: true });
 });
 
-test("v2 → v3 迁移：保留既有数据，补空 topics/subquestions", async () => {
+test("v2/v3 → v4 迁移：保留既有数据，补空新实体与卡默认结构", async () => {
   const path = join(tmpdir(), `locus-v2-${Date.now()}.json`);
   const r = importMeasurements(emptyState(), { name: "d.csv", csv: "t,v\n0,1" });
   await new JsonFileStore(path).save({ version: 2, assets: r.state.assets, cards: [], tables: r.state.tables } as never);
   const back = await new JsonFileStore(path).load();
-  assert.equal(back.version, 3);
+  assert.equal(back.version, 4);
   assert.equal(back.tables.length, 1);
   assert.deepEqual(back.topics, []);
   assert.deepEqual(back.subquestions, []);
+  assert.deepEqual(back.adoptions, []);
+  assert.deepEqual(back.mappings, []);
+  assert.deepEqual(back.comparisons, []);
   rmSync(path, { force: true });
+  // v3 旧卡（无 extracted/unknowns/secondaryCitation）→ 补默认，不丢 note/history
+  const path3 = join(tmpdir(), `locus-v3-${Date.now()}.json`);
+  const oldCard = { id: "card_old", assetId: "ast_x", rawText: "x", locator: { sectionQuote: "x" }, audit: "confirm", importance: null, note: "旧备注", reason: "", extraction: "draft", revision: 2, history: [], createdAt: "t", updatedAt: "t" };
+  await new JsonFileStore(path3).save({ version: 3, assets: [], cards: [oldCard], tables: [] } as never);
+  const back3 = await new JsonFileStore(path3).load();
+  assert.equal(back3.version, 4);
+  assert.deepEqual(back3.cards[0].extracted, { fields: {}, units: [], conditions: [] });
+  assert.deepEqual(back3.cards[0].unknowns, []);
+  assert.equal(back3.cards[0].secondaryCitation, false);
+  assert.equal(back3.cards[0].note, "旧备注");
+  rmSync(path3, { force: true });
 });
 
 // ── AI：独立任务 + 进程内配置 ───────────────────────────────
