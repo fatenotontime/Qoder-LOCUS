@@ -1,0 +1,10 @@
+{
+  "name": "locus-domain",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "LOCUS 领域层骨架（阶段2）：纯函数、零依赖、可单测。行为契约见 docs/architecture/。",
+  "scripts": {
+    "test": "node --test \"tests/*.test.ts\""
+  }
+}
