@@ -20,6 +20,8 @@
 | ADR-0014 | 导出恢复：固定快照 + 依赖索引/复核状态 + 许可过滤附件；**隔离恢复验证待做** | proposed | REP04；M07 |
 | ADR-0015 | 公开数据许可策略：**逐附件**核许可；DaRUS 三案 CC BY 4.0 且 approved 限范围；**不得以项目默认许可覆盖 All Rights Reserved** | accepted | 09/SAMPLE_REVIEW；OSM 教训 |
 | ADR-0016 | 三业务路径/两事件在应用服务层分离；共领域模型，不共"导入"入口 | accepted | 用户纠正；`05_DATAFLOW_WALKTHROUGH.md` |
+| ADR-0017 | 实验图=**横向时间泳道**：支路加 `branchFrom`/`mergeInto` 锚点（追加式可选字段，须指向同快照主线步骤、分叉在汇合前）；未指定锚点明示不猜；**未知时长不按零累计**，其后偏移为下界 t≥；布局模型为纯函数 `public/lib/lanes.js`（浏览器/测试共用） | accepted（用户 2026-11-16 实测反馈） | S02-T10；`tests/diagram-lanes.test.ts` |
+| ADR-0018 | AI 后台 job **合并写回**：请求时同步校验/查重，AI 计算与 state 写回分离；完成时对**最新** state 只追加本 job 新实体，查重复检，等待期同内容已入库则丢弃结果并指向已有原件；409 附 `existingAssetId` | accepted（用户 2026-11-16 实测反馈） | S02-T10 反例复现；`tests/job-race.test.ts` |
 
 ## 待补 ADR（阶段2 之后）
 

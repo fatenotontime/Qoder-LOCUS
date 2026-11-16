@@ -60,19 +60,43 @@ function cleanSteps(steps: unknown): ProtocolStep[] {
       durationMin,
       estimated: o.estimated === true,
       branch: str(o.branch) || null,
+      branchFrom: str(o.branchFrom) || null,
+      mergeInto: str(o.mergeInto) || null,
       observeEnd: str(o.observeEnd),
     };
   });
 }
 
+/** 支路锚点校验：须指向同快照主线步骤；分叉在汇合之前（主线顺序）。未指定不猜。 */
+function validateAnchors(steps: ProtocolStep[]): void {
+  const mainIdx = new Map(steps.filter((s) => !s.branch).map((s, i) => [s.id, i]));
+  for (const s of steps) {
+    if (!s.branch) continue;
+    for (const [field, anchor] of [["branchFrom", s.branchFrom], ["mergeInto", s.mergeInto]] as const) {
+      if (anchor && !mainIdx.has(anchor)) throw new AppError(422, `支路「${s.branch}」的 ${field === "branchFrom" ? "分叉" : "汇合"}锚点须指向主线步骤。`);
+    }
+  }
+  const lanes = [...new Set(steps.filter((s) => s.branch).map((s) => s.branch as string))];
+  for (const name of lanes) {
+    const ls = steps.filter((s) => s.branch === name);
+    const fork = ls.map((s) => s.branchFrom).find(Boolean);
+    const merge = [...ls].reverse().map((s) => s.mergeInto).find(Boolean);
+    if (fork && merge && mainIdx.get(fork)! >= mainIdx.get(merge)!) {
+      throw new AppError(422, `支路「${name}」的分叉须在汇合之前（按主线顺序）。`);
+    }
+  }
+}
+
 function snapshot(input: ProtocolInput, revision: number, reason: string): ProtocolRevisionSnapshot {
+  const steps = cleanSteps(input.steps);
+  validateAnchors(steps);
   return {
     revision,
     at: now(),
     reason,
     purpose: str(input.purpose),
     inputs: (input.inputs ?? []).map(str).filter(Boolean),
-    steps: cleanSteps(input.steps),
+    steps,
     conditions: (input.conditions ?? []).map(str).filter(Boolean),
     criteria: str(input.criteria),
     unknowns: (input.unknowns ?? []).map(str).filter(Boolean),
@@ -754,7 +778,8 @@ export function importImage(state: LocusState, input: { name: string; dataUrl: s
   const bytes = Buffer.byteLength(dataUrl, "utf8");
   if (bytes > MAX_IMPORT_BYTES) throw new AppError(413, `图片超过上限 ${MAX_IMPORT_BYTES} 字节，已拒绝（不截断）。`);
   const hash = contentHash(dataUrl);
-  if (state.assets.some((a) => a.hash === hash)) throw new AppError(409, "已导入相同图片（内容 hash 相同），已拒收。");
+  const existing = state.assets.find((a) => a.hash === hash);
+  if (existing) throw new AppError(409, `已导入相同图片（内容 hash 相同），已拒收。已有原件：${existing.name}`, { existingAssetId: existing.id, existingName: existing.name });
   const asset: AssetRecord = {
     id: `ast_${randomUUID()}`,
     kind: "image",

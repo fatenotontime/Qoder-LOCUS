@@ -29,9 +29,11 @@ export const MAX_IMPORT_BYTES = 2 * 1024 * 1024;
 
 export class AppError extends Error {
   readonly status: number;
-  constructor(status: number, message: string) {
+  readonly details?: Record<string, unknown>;
+  constructor(status: number, message: string, details?: Record<string, unknown>) {
     super(message);
     this.status = status;
+    this.details = details;
   }
 }
 
@@ -53,9 +55,10 @@ function assertCsvName(name: string): void {
 function assertTextual(text: string): void {
   if (text.includes("\u0000")) throw new AppError(422, "文件疑似二进制/含不支持内容，已拒绝。请提供文本类文件。");
 }
-/** 内容 hash 拒重（LIT07）。 */
+/** 内容 hash 拒重（LIT07）；附已有原件 id，重导时可定位既有引用。 */
 function assertUniqueHash(state: LocusState, hash: string): void {
-  if (state.assets.some((a) => a.hash === hash)) throw new AppError(409, "已导入相同内容（文件 hash 相同），已拒收。");
+  const existing = state.assets.find((a) => a.hash === hash);
+  if (existing) throw new AppError(409, `已导入相同内容（文件 hash 相同），已拒收。已有原件：${existing.name}`, { existingAssetId: existing.id, existingName: existing.name });
 }
 /** 判断分隔符：以**首个非空行**为准（表头在首行才算常规表格）。返回 "," / "\t" / null。 */
 export function detectDelimiter(text: string): "," | "\t" | null {
@@ -260,33 +263,44 @@ function newCard(
  * mode="ai"：调用文献抽取任务（独立提示词/结构）；失败抛 AiError（不冒充成功、不降级为假 AI）。
  * mode="draft"：按行生成草稿（明确标注 extraction="draft"）。
  */
+/** 导入第一阶段（同步）：校验 + 建原件 + 查重。AI job 在请求时先跑此步，早拒 409/413/422。 */
+export function prepareLiterature(state: LocusState, input: { name: string; text: string; topicId?: string }): { asset: AssetRecord } {
+  assertLiteratureName(input.name ?? "");
+  const text = stripBom(input.text ?? "");
+  const asset = makeAsset("literature", input.name ?? "", text, input.topicId);
+  assertUniqueHash(state, asset.hash);
+  return { asset };
+}
+
+/** 导入第二阶段：把已算好的卡追加到**传入的** state。AI job 完成时对最新 state 调用，不覆盖等待期编辑；查重复检。 */
+export function applyLiterature(state: LocusState, asset: AssetRecord, cards: LitCardRecord[], topicId?: string, audit?: ImportResult["audit"]): ImportResult {
+  assertUniqueHash(state, asset.hash);
+  const reminder = state.comparisons.some((c) => !topicId || c.topicId === topicId);
+  return { state: { ...state, assets: [...state.assets, asset], cards: [...state.cards, ...cards] }, asset, created: cards.length, audit, reminder };
+}
+
 export async function importLiterature(
   state: LocusState,
   input: { name: string; text: string; mode?: "draft" | "ai"; topicId?: string },
   ai: AiConfig | null,
   onProgress?: (done: number, total: number) => void,
 ): Promise<ImportResult> {
-  const name = input.name ?? "";
-  assertLiteratureName(name);
-  const text = stripBom(input.text ?? "");
-  const asset = makeAsset("literature", name, text, input.topicId);
-  assertUniqueHash(state, asset.hash);
+  const { asset } = prepareLiterature(state, input);
   let cards: LitCardRecord[];
   let audit: ImportResult["audit"];
   if (input.mode === "ai") {
     if (!ai) throw new AppError(400, "未配置 AI：请在页面「AI 配置」填写 baseUrl / 模型 / Key。");
     const result = await extractLiterature(ai, asset.text, onProgress);
-    cards = mapAiCards(asset, result.cards);
+    cards = mapAiLiteratureCards(asset, result.cards);
     audit = { raws: result.raws, model: ai.model };
   } else {
     cards = draftCards(asset.id, asset.text);
   }
-  const reminder = state.comparisons.some((c) => !input.topicId || c.topicId === input.topicId);
-  return { state: { ...state, assets: [...state.assets, asset], cards: [...state.cards, ...cards] }, asset, created: cards.length, audit, reminder };
+  return applyLiterature(state, asset, cards, input.topicId, audit);
 }
 
 /** 校验并映射文献抽取输出；结构不符即报错（不静默补造）；定位/片段须在原件中可匹配，否则明示不足。 */
-function mapAiCards(asset: AssetRecord, cards: unknown[]): LitCardRecord[] {
+export function mapAiLiteratureCards(asset: AssetRecord, cards: unknown[]): LitCardRecord[] {
   if (!Array.isArray(cards) || cards.length === 0) throw new AiError("文献抽取结果为空；未生成任何证据卡。");
   return cards.map((c) => {
     const card = c as {

@@ -207,20 +207,25 @@ table.grid .celledit input { width: auto; }
 .item.cmp { margin-bottom: var(--space-2); }
 #lit-tools { margin-top: var(--space-3); border-top: 1px solid var(--line); padding-top: var(--space-2); }
 
-/* ── 4C：实验图 / 步骤编辑器 / 影响面板 / 执行记录 / OCR ── */
-.diagram { padding: var(--space-2) 0; }
+/* ── 4C：实验图（横向时间泳道）/ 步骤编辑器 / 影响面板 / 执行记录 / OCR ── */
+.diagram { display: grid; gap: var(--space-3) 16px; align-items: start; padding: var(--space-2) 0; overflow-x: auto; }
+.dcell { position: relative; min-width: 0; }
 .dnode {
   border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--surface);
-  padding: var(--space-2) var(--space-3); cursor: pointer; max-width: 420px;
+  padding: var(--space-2) var(--space-3); cursor: pointer; min-width: 0;
 }
 .dnode:hover { border-color: var(--accent); }
 .dnode.sel { border-color: var(--accent); background: #eef3ef; box-shadow: 0 0 0 1px var(--accent); }
-.dnode .dop { font-weight: 600; }
+.dnode .dop { font-weight: 600; overflow-wrap: anywhere; }
 .dnode .dmeta { display: flex; gap: var(--space-2); align-items: center; flex-wrap: wrap; font-size: var(--text-sm); color: var(--muted); }
 .dtime { font-family: var(--font-mono); font-size: 12px; }
-.darrow { color: var(--muted); padding: 0 0 0 var(--space-4); line-height: 1.2; }
-.dbranch { margin: var(--space-2) 0 var(--space-2) var(--space-5); border-left: 2px dashed var(--warn); padding-left: var(--space-3); }
-.dbranch-title { color: var(--warn); font-size: var(--text-sm); margin-bottom: var(--space-1); }
+.darrow-h { position: absolute; right: -14px; top: 42%; color: var(--muted); z-index: 1; }
+.dlane { border: 1px dashed var(--accent); border-radius: var(--radius-sm); padding: var(--space-2); min-width: 0; background: var(--surface); }
+.dlane.unanchored { border-color: var(--warn); }
+.dlane-title { font-size: var(--text-sm); color: var(--muted); margin-bottom: var(--space-1); overflow-wrap: anywhere; }
+.dlane-nodes { display: flex; gap: 16px; align-items: stretch; flex-wrap: wrap; }
+.dlane-nodes .dnode { flex: 1 1 110px; }
+.dlane-nodes .darrow-h { position: static; align-self: center; }
 .stepeditor {
   position: sticky; bottom: 0; background: var(--bg); border: 1px dashed var(--accent);
   border-radius: var(--radius-sm); padding: var(--space-2); margin-top: var(--space-2);

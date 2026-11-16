@@ -13,6 +13,7 @@ import { AiError, clearAiConfig, describeConfig, getAiConfig, setAiConfig } from
 import {
   AppError,
   addManualCard,
+  applyLiterature,
   batchConfirm,
   batchPreview,
   createComparison,
@@ -21,6 +22,8 @@ import {
   createTopic,
   importLiterature,
   importMeasurements,
+  mapAiLiteratureCards,
+  prepareLiterature,
   reviewCard,
   reviewTable,
   sourceView,
@@ -52,7 +55,7 @@ import {
   startExecution,
   templateProtocolCheck,
 } from "./services/experiment.ts";
-import { runTask } from "./services/ai.ts";
+import { extractLiterature, runTask } from "./services/ai.ts";
 
 const HERE = fileURLToPath(new URL(".", import.meta.url));
 const PUBLIC_DIR = join(HERE, "public");
@@ -179,15 +182,30 @@ export async function createApp(store: Store) {
           const mode = (body.mode as "draft" | "ai") ?? "draft";
           const input = { name: String(body.name ?? ""), text: String(body.text ?? ""), mode, topicId: body.topicId as string | undefined };
           if (mode === "ai") {
+            const cfg = getAiConfig();
+            if (!cfg) { send(res, 400, { error: "未配置 AI：请在页面「AI 配置」填写 baseUrl / 模型 / Key。" }); return; }
+            // 第一阶段同步完成：校验/查重早拒；AI 计算与 state 写回分离，
+            // 完成时对**最新** state 只追加本 job 的新实体，不覆盖等待期编辑。
+            const { asset } = prepareLiterature(state, input);
             const id = `job_${randomUUID()}`;
             const job: Job = { id, status: "running", done: 0, total: 0, message: "处理中…" };
             jobs.set(id, job); trimJobs();
             void (async () => {
               try {
-                const r = await importLiterature(state, input, getAiConfig(), (done, total) => { job.done = done; job.total = total; job.message = `第 ${done}/${total} 块`; });
-                state = r.state; await store.save(state);
-                if (r.audit) writeAudit(r.asset.id, r.audit);
-                job.status = "done"; job.result = { assetId: r.asset.id, created: r.created, reminder: r.reminder }; job.message = "完成";
+                const result = await extractLiterature(cfg, asset.text, (done, total) => { job.done = done; job.total = total; job.message = `第 ${done}/${total} 块`; });
+                const cards = mapAiLiteratureCards(asset, result.cards);
+                const audit = { raws: result.raws, model: cfg.model };
+                try {
+                  const r = applyLiterature(state, asset, cards, input.topicId, audit);
+                  state = r.state; await store.save(state);
+                  writeAudit(asset.id, audit);
+                  job.status = "done"; job.result = { assetId: asset.id, created: r.created, reminder: r.reminder }; job.message = "完成";
+                } catch (e) {
+                  if (e instanceof AppError && e.status === 409) {
+                    // 等待期间同内容已从别路入库：丢弃本次结果，不产生重复原件
+                    job.status = "done"; job.result = { assetId: (e.details?.existingAssetId as string) ?? undefined, discarded: true }; job.message = "等待期间同内容已入库，本次 AI 结果已丢弃（未重复入库）。";
+                  } else throw e;
+                }
               } catch (e) { job.status = "error"; job.error = (e as Error).message ?? "失败"; }
             })();
             send(res, 202, { ok: true, jobId: id });
@@ -564,7 +582,7 @@ export async function createApp(store: Store) {
       send(res, 404, { error: "未知接口" });
     } catch (err) {
       if (err instanceof AiError) send(res, 502, { error: err.message });
-      else if (err instanceof AppError) send(res, err.status, { error: err.message });
+      else if (err instanceof AppError) send(res, err.status, { error: err.message, ...(err.details ?? {}) });
       else if (err instanceof SyntaxError) send(res, 400, { error: "JSON 解析失败" });
       else send(res, 500, { error: (err as Error).message ?? "内部错误" });
     }

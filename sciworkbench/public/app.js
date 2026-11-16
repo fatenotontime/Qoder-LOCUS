@@ -2,6 +2,7 @@
 // 左：课题/子问题/材料与导入；中：原始材料（可高亮定位）；右：结构化结果与核对。
 // 防护：所有写操作禁用按钮 + 处理中提示 + 内联错误 + 可重试；离开前脏检查。
 import { api } from "./lib/api.js";
+import { computeLanes, timeLabel } from "./lib/lanes.js";
 
 let state = { topics: [], subquestions: [], assets: [], cards: [], tables: [], adoptions: [], mappings: [], comparisons: [], protocols: [], templates: [], executions: [], samples: [], measurements: [], impacts: [], ocrs: [] };
 const ui = { nav: "literature", topicId: "", assetId: null, tableId: null, highlight: null, cell: null, dirty: false, busy: false, cardFilter: "all", groupSel: new Set(), batch: null, ack: false, protocolId: null, executionId: null, stepSel: null, viewRev: null, editEventId: null, pauseSuggest: null };
@@ -428,15 +429,22 @@ function viewSnapshot(p) { return p.revisions.find((r) => r.revision === (ui.vie
 
 function fmtSnapshot(s) {
   const lines = [`目的：${s.purpose || "（未写）"}`, `输入：${s.inputs.join("、") || "（未写）"}`, "步骤："];
-  let t = 0;
+  const L = computeLanes(s.steps);
+  const mainById = new Map(L.main.map((m) => [m.step.id, m]));
   for (const st of s.steps) {
     const dur = st.durationMin === null ? "时长未知" : `${st.durationMin}min${st.estimated ? "（估计）" : ""}`;
     const branch = st.branch ? `［支路:${st.branch}］` : "";
-    if (!st.branch) { lines.push(`  t≈${t}min  ${st.op}  ${dur}${branch}${st.observeEnd ? `  终点:${st.observeEnd}` : ""}`); t += st.durationMin ?? 0; }
-    else lines.push(`  ${st.op}  ${dur}${branch}${st.observeEnd ? `  终点:${st.observeEnd}` : ""}`);
+    if (!st.branch) {
+      const m = mainById.get(st.id);
+      lines.push(`  ${timeLabel(m.offset, m.approx)}  ${st.op}  ${dur}${st.observeEnd ? `  终点:${st.observeEnd}` : ""}`);
+    } else {
+      const anchors = st.branchFrom || st.mergeInto ? `［分叉自:${st.branchFrom ?? "未指定"} / 汇合入:${st.mergeInto ?? "未指定"}］` : "";
+      lines.push(`  ${st.op}  ${dur}${branch}${anchors}${st.observeEnd ? `  终点:${st.observeEnd}` : ""}`);
+    }
     for (const [k, v] of Object.entries(st.params)) lines.push(`      ${k}=${v}`);
     if (st.note) lines.push(`      注：${st.note}`);
   }
+  if (L.unknownCount) lines.push(`（主线有 ${L.unknownCount} 步时长未知：其后偏移为下界 t≥，未按零累计；已知总时长 ${L.totalKnown}min）`);
   lines.push(`条件：${s.conditions.join("、") || "（未写）"}`, `判据：${s.criteria || "（未写）"}`);
   if (s.unknowns.length) lines.push(`未知项：${s.unknowns.join("、")}`);
   if (s.sourceFragments.length) lines.push("方法来源片段：", ...s.sourceFragments.map((f) => `  「${f}」`));
@@ -522,28 +530,33 @@ function renderRecordImport(box) {
   }));
 }
 
-/** 实验图：主线＋必要支路；相对时间；估计标记；点击节点 → 下方固定编辑器。 */
+/** 实验图：横向时间泳道——主线一条泳道，支路在分叉/汇合锚点间平行展开；
+ * 未知时长不按零累计（其后 t≥ 下界）；无锚点明示不猜；点击节点 → 下方固定编辑器。 */
 function diagramHtml(p, snap) {
-  const main = snap.steps.filter((s) => !s.branch);
-  const branches = [...new Set(snap.steps.filter((s) => s.branch).map((s) => s.branch))];
-  let t = 0;
-  const node = (s, offset) => {
+  const L = computeLanes(snap.steps);
+  const node = (s, offset, approx) => {
     const dur = s.durationMin === null ? `<span class="badge warn">时长未知</span>` : `<span class="badge ${s.estimated ? "warn" : "confirm"}">${s.durationMin}min${s.estimated ? "·估计" : ""}</span>`;
     return `<div class="dnode ${ui.stepSel === s.id ? "sel" : ""}" data-step="${s.id}">
       <div class="dop">${esc(s.op)}</div>
-      <div class="dmeta">${offset !== null ? `<span class="dtime">t≈${offset}min</span>` : ""}${dur}${s.observeEnd ? `<span class="hint">终点:${esc(s.observeEnd)}</span>` : ""}</div>
+      <div class="dmeta">${offset !== null ? `<span class="dtime">${timeLabel(offset, approx)}</span>` : ""}${dur}${s.observeEnd ? `<span class="hint">终点:${esc(s.observeEnd)}</span>` : ""}</div>
     </div>`;
   };
-  let html = `<div class="diagram">`;
-  main.forEach((s, i) => {
-    html += node(s, t);
-    t += s.durationMin ?? 0;
-    if (i < main.length - 1) html += `<div class="darrow">↓</div>`;
+  let html = `<div class="diagram" style="grid-template-columns:repeat(${L.cols},minmax(110px,1fr))">`;
+  L.main.forEach((m, i) => {
+    html += `<div class="dcell" style="grid-column:${i + 1};grid-row:1">${node(m.step, m.offset, m.approx)}${i < L.main.length - 1 ? `<span class="darrow-h">→</span>` : ""}</div>`;
   });
-  for (const b of branches) {
-    html += `<div class="dbranch"><div class="dbranch-title">支路 · ${esc(b)}</div>${snap.steps.filter((s) => s.branch === b).map((s) => node(s, null)).join(`<div class="darrow">↓</div>`)}</div>`;
-  }
-  html += `</div>`;
+  L.lanes.forEach((lane, li) => {
+    const forkOp = lane.forkIdx !== null ? L.main[lane.forkIdx].step.op : null;
+    const mergeOp = lane.mergeIdx !== null ? L.main[lane.mergeIdx].step.op : null;
+    const anchorText = lane.anchored
+      ? `分叉自「${esc(forkOp)}」之后 · 汇合入「${esc(mergeOp)}」之前`
+      : `<span class="badge warn">锚点未指定（横跨全程，不猜）</span>`;
+    html += `<div class="dlane ${lane.anchored ? "" : "unanchored"}" style="grid-column:${lane.start + 1}/${lane.end + 2};grid-row:${li + 2}">
+      <div class="dlane-title">支路 · ${esc(lane.name)} · ${anchorText}</div>
+      <div class="dlane-nodes">${lane.steps.map((s) => node(s, null, false)).join(`<span class="darrow-h">→</span>`)}</div>
+    </div>`;
+  });
+  html += `</div><p class="hint">横向为时间推进方向；列宽等分（非时间比例），时间以 t≈/t≥ 标记。${L.unknownCount ? `主线有 ${L.unknownCount} 步时长未知：其后偏移为下界 t≥，未按零累计。` : ""}已知主线总时长 ${L.totalKnown}min。</p>`;
   return html;
 }
 
@@ -552,12 +565,16 @@ function stepEditorHtml(p, snap) {
   if (!s) return `<div class="stepeditor"><p class="hint">点击图中节点编辑步骤；保存将追加方案新快照（旧版本不动）。</p>
     <div class="row"><input id="newstep-op" placeholder="新步骤操作名" /><button id="step-add">添加步骤</button></div></div>`;
   const paramsText = Object.entries(s.params).map(([k, v]) => `${k}=${v}`).join("\n");
+  const mainOpts = (cur) => snap.steps.filter((x) => !x.branch).map((x) => `<option value="${x.id}" ${x.id === cur ? "selected" : ""}>${esc(x.op)}</option>`).join("");
   return `<div class="stepeditor">
     <div class="meta">${ui.stepSel === "new" ? "新步骤" : `编辑步骤 · ${esc(s.op)}`}（保存 → 方案 r${p.revision + 1}）</div>
     <div class="row"><label>操作</label><input id="se-op" value="${esc(s.op)}" /></div>
     <div class="row"><label>时长(分)</label><input id="se-dur" type="number" min="0" value="${s.durationMin ?? ""}" placeholder="空=未知" />
       <label><input id="se-est" type="checkbox" ${s.estimated ? "checked" : ""}/> 估计</label>
       <label>支路</label><input id="se-branch" value="${esc(s.branch ?? "")}" placeholder="空=主线" /></div>
+    <div class="row"><label>分叉自</label><select id="se-fork"><option value="">（未指定）</option>${mainOpts(s.branchFrom)}</select>
+      <label>汇合入</label><select id="se-merge"><option value="">（未指定）</option>${mainOpts(s.mergeInto)}</select>
+      <span class="hint">支路锚点：仅支路步骤生效；未指定则图中明示不猜</span></div>
     <div class="row"><label>观察终点</label><input id="se-end" value="${esc(s.observeEnd)}" /></div>
     <textarea id="se-params" rows="2" placeholder="参数，每行 键=值">${esc(paramsText)}</textarea>
     <div class="row"><label>备注</label><input id="se-note" value="${esc(s.note)}" /></div>
@@ -932,6 +949,7 @@ $("#right-content").addEventListener("click", async (ev) => {
         op: $("#se-op").value, params, note: $("#se-note").value,
         durationMin: durRaw === "" ? null : Number(durRaw),
         estimated: $("#se-est").checked, branch: $("#se-branch").value.trim() || null, observeEnd: $("#se-end").value,
+        branchFrom: $("#se-fork")?.value || null, mergeInto: $("#se-merge")?.value || null,
       };
       const steps = ui.stepSel === "new" ? [...latest.steps, edited] : latest.steps.map((s) => (s.id === ui.stepSel ? { ...s, ...edited, id: s.id } : s));
       await runBusy(ev.target, "保存步骤", async () => {

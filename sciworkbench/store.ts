@@ -175,6 +175,9 @@ export interface ProtocolStep {
   readonly durationMin: number | null;
   readonly estimated: boolean;
   readonly branch: string | null;
+  /** 支路锚点（可选，追加式）：分叉自主线哪一步之后、汇合入主线哪一步之前。未指定则明示不猜。 */
+  readonly branchFrom?: string | null;
+  readonly mergeInto?: string | null;
   readonly observeEnd: string;
 }
 
