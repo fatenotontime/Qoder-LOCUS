@@ -21,7 +21,9 @@ node --test "tests/*.test.ts"     # 或 npm test
 | `domain/graph.ts` | 关系网络：lineage / support / provenance / affiliation；下游查询 |
 | `domain/impact.ts` | **确定性传播**（按变更类型分流）+ **影响分析状态机**（失败≠无影响、stale 不覆盖） |
 | `domain/backtrace.ts` | **按类型的回查链原型**（不是一条固定串联链） |
-| `tests/*.test.ts` | 契约测试（26 项） |
+| `domain/topic.ts` | 课题/子问题最小创建、按任务查缺项（阶段3） |
+| `domain/literature.ts` | 文献证据卡四维审阅、候选库状态、组审、查重、命名映射、比较快照、汇总分层（阶段3） |
+| `tests/*.test.ts` | 契约测试（37 项） |
 
 ## 边界
 

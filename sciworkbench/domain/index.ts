@@ -3,3 +3,5 @@ export * from "./paths.ts";
 export * from "./graph.ts";
 export * from "./impact.ts";
 export * from "./backtrace.ts";
+export * from "./topic.ts";
+export * from "./literature.ts";
