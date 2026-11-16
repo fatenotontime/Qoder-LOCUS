@@ -1,0 +1,6 @@
+01_SLAC/evaluator-safe-input.zip : OK
+02_chymotrypsin/evaluator.zip : OK
+03_CotA/evaluator.zip : OK
+developer-reference/chymotrypsin-developer-reference.zip : OK
+developer-reference/CotA-developer-reference.zip : OK
+developer-reference/SLAC-developer-reference.zip : OK

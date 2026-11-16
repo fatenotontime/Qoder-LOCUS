@@ -1,0 +1,6 @@
+08856945aa1fa2a0b19e36443dc65f56a9d88f3aba7790d9ca3e802d14b91ee4  01_SLAC/evaluator-safe-input.zip  589559 bytes
+74e40850e62d35e46119a8143373ffcbcafd79a7feb8bffdaee86e11a4005eca  02_chymotrypsin/evaluator.zip  294213 bytes
+2bb3296d0220f9eb380d39e9ee9cc3c576cadd68f379690bb337f4d8b44dbbb4  03_CotA/evaluator.zip  90018 bytes
+8fcf89427770a95008c95008b86ac775bffdcbb183efecde63ab891073773b94  developer-reference/chymotrypsin-developer-reference.zip  128813 bytes
+92120211825377fa5f9bd77ffb090d08cb10c295693a2c72dfb2ed64a2922850  developer-reference/CotA-developer-reference.zip  1001875 bytes
+773a0a7ef37bdb82e477c3b1e7c70f9b46bf20acc01f8169b5fe2dcd3b56290f  developer-reference/SLAC-developer-reference.zip  517990 bytes
