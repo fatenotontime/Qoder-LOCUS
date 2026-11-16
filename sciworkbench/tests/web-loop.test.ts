@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { rmSync } from "node:fs";
 import type { AddressInfo } from "node:net";
-import { emptyState, JsonFileStore, MemoryStore } from "../store.ts";
+import { contentHash, emptyState, JsonFileStore, MemoryStore } from "../store.ts";
 import {
   AppError,
   MAX_IMPORT_BYTES,
@@ -242,6 +242,15 @@ test("TSV 导入可用（按制表符解析）", () => {
   const r = importMeasurements(emptyState(), { name: "t.tsv", csv: "a\tb\tc\n1\t2\t3\n4\t5\t6\n" });
   assert.deepEqual(r.state.tables[0].columns, ["a", "b", "c"]);
   assert.equal(r.state.tables[0].rows.length, 2);
+});
+
+test("D1 反例：上传(CRLF) 与粘贴(LF) 同内容 → 同 hash 跨路径互拒", () => {
+  const crlf = "a,b\r\n1,2\r\n";
+  const lf = "a,b\n1,2\n";
+  const r1 = importMeasurements(emptyState(), { name: "up.csv", csv: crlf });
+  assert.equal(r1.asset.hash, contentHash(lf));
+  assert.throws(() => importMeasurements(r1.state, { name: "paste.csv", csv: lf }), (e: unknown) => e instanceof AppError && e.status === 409);
+  assert.equal(r1.asset.text, crlf); // 原件逐字保留，规范化只用于查重口径
 });
 
 test("仪器导出（前言+制表符块，首行无分隔符）→ 明确拒绝，不硬解析", () => {

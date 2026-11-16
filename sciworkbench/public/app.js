@@ -7,6 +7,25 @@ let state = { topics: [], subquestions: [], assets: [], cards: [], tables: [] };
 const ui = { nav: "literature", topicId: "", assetId: null, tableId: null, highlight: null, cell: null, dirty: false, busy: false };
 let lastAction = null; // { label, run }
 
+// 选择态持久（仅非敏感 UI 选择：页签/课题/材料/表块），刷新后归属正确。
+const UI_KEY = "locus.ui.v1";
+let uiRestored = false;
+function saveUi() {
+  try { localStorage.setItem(UI_KEY, JSON.stringify({ nav: ui.nav, topicId: ui.topicId, assetId: ui.assetId, tableId: ui.tableId })); } catch {}
+}
+function restoreUi() {
+  if (uiRestored) return;
+  uiRestored = true;
+  try {
+    const s = JSON.parse(localStorage.getItem(UI_KEY) ?? "null");
+    if (!s) return;
+    if (s.nav === "literature" || s.nav === "measurement") ui.nav = s.nav;
+    if (state.topics.some((t) => t.id === s.topicId)) ui.topicId = s.topicId;
+    if (state.assets.some((a) => a.id === s.assetId)) ui.assetId = s.assetId;
+    if (state.tables.some((t) => t.id === s.tableId)) ui.tableId = s.tableId;
+  } catch {}
+}
+
 const $ = (s) => document.querySelector(s);
 const $$ = (s) => document.querySelectorAll(s);
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -14,6 +33,7 @@ const topicName = (id) => state.topics.find((t) => t.id === id)?.name;
 
 async function refresh() {
   state = await api.getState();
+  restoreUi();
   if (ui.assetId && !state.assets.some((a) => a.id === ui.assetId)) ui.assetId = null;
   if (ui.tableId && !state.tables.some((t) => t.id === ui.tableId)) ui.tableId = null;
   if (ui.topicId && !state.topics.some((t) => t.id === ui.topicId)) ui.topicId = "";
@@ -68,7 +88,9 @@ function guardLeave() {
 
 function renderAll() {
   setStatus(`课题 ${state.topics.length} · 子问题 ${state.subquestions.length} · 材料 ${state.assets.length} · 证据卡 ${state.cards.length} · 表格 ${state.tables.length}`);
+  $$(".navitem").forEach((x) => x.classList.toggle("active", x.dataset.nav === ui.nav));
   renderTopics(); renderSubq(); renderImportBox(); renderMaterials(); renderMiddle(); renderRight();
+  saveUi();
 }
 
 function renderTopics() {

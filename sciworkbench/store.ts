@@ -4,8 +4,16 @@
  * 现在：JsonFileStore（本地文件）/ MemoryStore（测试）。将来：Sites DB（同一 Store 接口）。
  */
 import { existsSync, mkdirSync, readFileSync, writeFileSync, renameSync } from "node:fs";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { dirname } from "node:path";
+
+/** 查重口径：逻辑内容（剥 BOM + CRLF→LF），与传输编码无关；原件文本仍逐字保存。 */
+export function canonicalText(t: string): string {
+  return t.replace(/^\uFEFF/, "").replace(/\r\n/g, "\n");
+}
+export function contentHash(t: string): string {
+  return createHash("sha256").update(canonicalText(t), "utf8").digest("hex");
+}
 
 /** 一条修订：记录字段前后值、原因与修订号（更正留历史）。 */
 export interface RevisionEntry {
@@ -134,11 +142,12 @@ export class JsonFileStore implements Store {
       const v = p.version ?? 0;
       if (v !== 2 && v !== STATE_VERSION) return emptyState();
       // v2 → v3：保留既有数据，补空 topics/subquestions（不丢用户数据）
+      // hash 统一为逻辑内容口径（旧记录按 canonical 重算，保持跨路径拒重一致）
       return {
         version: STATE_VERSION,
         topics: p.topics ?? [],
         subquestions: p.subquestions ?? [],
-        assets: p.assets ?? [],
+        assets: (p.assets ?? []).map((a) => ({ ...a, hash: contentHash(a.text) })),
         cards: p.cards ?? [],
         tables: p.tables ?? [],
       };

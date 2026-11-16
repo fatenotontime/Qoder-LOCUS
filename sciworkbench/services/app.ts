@@ -3,7 +3,7 @@
  * v2：实验数据导入为**表格**；所有更正写**修订历史**；原件超限**拒绝**不截断。
  * AI：文献抽取走独立任务（services/ai.ts）；失败不冒充成功。
  */
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { extname } from "node:path";
 import type {
   AssetRecord,
@@ -15,6 +15,7 @@ import type {
   SubquestionRecord,
   TopicRecord,
 } from "../store.ts";
+import { contentHash } from "../store.ts";
 import { AiError, extractLiterature, type AiConfig } from "./ai.ts";
 
 /** 原件大小上限（字节）。超过即拒绝导入，绝不静默截断。 */
@@ -29,7 +30,6 @@ export class AppError extends Error {
 }
 
 const now = () => new Date().toISOString();
-const sha256 = (t: string) => createHash("sha256").update(t, "utf8").digest("hex");
 const stripBom = (t: string) => t.replace(/^\uFEFF/, "");
 
 /** 文献暂只支持 Markdown / 纯文本；其他格式解析器未配置，明确拒绝。 */
@@ -168,7 +168,7 @@ function makeAsset(kind: AssetRecord["kind"], name: string, text: string, topicI
   if (bytes > MAX_IMPORT_BYTES) {
     throw new AppError(413, `文件超过上限 ${MAX_IMPORT_BYTES} 字节，已拒绝导入（不截断）。请缩减后再试。`);
   }
-  return { id: `ast_${randomUUID()}`, kind, name: name.trim() || "未命名", topicId: topicId || undefined, bytes, hash: sha256(text), text, createdAt: now() };
+  return { id: `ast_${randomUUID()}`, kind, name: name.trim() || "未命名", topicId: topicId || undefined, bytes, hash: contentHash(text), text, createdAt: now() };
 }
 
 // ── 课题 / 子问题（TOP01）────────────────────────────────────
