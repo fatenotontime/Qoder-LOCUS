@@ -24,6 +24,7 @@
 
 - 路径 = 应用服务层的**三个用例族**：`lit.*`（文献建库）、`protocol.*`（方案解析）、`data.*`（实验数据核对）。三者共用 Domain，不共用同一个"导入"入口。
 - 事件 = `data.importPublic()`（产来源/证据）与 `exec.start()`（产 Execution/Session）。**不同用例、不同产物**。
+- 边界细节以 `prompt/…/12_DOMAIN_BOUNDARIES.md` 为准：`EvidenceCard` **文献专用**；导入公开数据**不伪造**本地执行/样品。
 
 ## 4. 关键机制（见 03 契约）
 

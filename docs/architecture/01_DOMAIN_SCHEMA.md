@@ -1,6 +1,7 @@
 # 阶段2 · 领域 Schema 与字段字典
 
 > 行为契约来自 03；本文给出可实现的最小 schema。骨架实现见 `sciworkbench/domain/`。**概念** ≠ 已实现 API；具体路由可变。
+> **领域边界以 `prompt/…/12_DOMAIN_BOUNDARIES.md` 为准**（三条路径分开；`EvidenceCard` 为**文献专用**；外部结果允许无内部 Run）。
 
 ## 1. 通用规则
 
@@ -17,7 +18,7 @@
 | `Topic` | name, researchQuestion, (basis/goal/unknown/design 可选), parentId? | 仅 name+question 即可建（TOP01） |
 | `Subquestion` | topicId, question, kind(declared/exploratory) | 分析**必选**子问题，可现场新建（ANA02） |
 | `SourceAsset` | fileHash, mime, bytes, originUrl?/version?/license, scope, privatePath, parseStatus | 原件**不覆盖**（OCR01） |
-| `EvidenceCard` | sourceRef{assetId,revision}, locator, rawText, extracted{fields,conditions,units}, unknowns[], reviewStatus | 抽取≠核对≠采用 |
+| `EvidenceCard` | sourceRef{assetId,revision}, locator, rawText, extracted{fields,conditions,units}, unknowns[], reviewStatus | **文献证据专用**；抽取≠核对≠采用；**非所有实验测量的统一容器** |
 | `TopicEvidence` | cardRef, topicId, importance?, note? | 重要程度可空；非全局事实（LIT01） |
 | `EvidenceAdoption` | cardRef, taskRef, decision(adopt/exclude), reason?, fixedRevision | 采用/排除独立于核对 |
 | `NameMapping` / `Comparison` | originalName, mappedName, basis, inputSnapshot{filters,conversions,exclusions}, divergenceClass, unresolved | 不自动合并/平均（LIT09） |
@@ -28,7 +29,7 @@
 | `Measurement` | sampleStateRef, time/method/instrument, sourceFileRef, rawData/confirmedData, replicateGroup | 独立测量，独立批次（TOP04） |
 | `ContextSnapshot` | scopeRefs[], sentFragments[], purpose, promptVersion, snapshotHash, sensitivityBoundary | 固定本次输入（ANA03） |
 | `AnalysisTask` / `Run` | subquestionRef, contextSnapshotRef, suggested{method,software}, actual{method,software,version,params}, inputs[], outputs[], status, failure | 多次提交=多版本；不覆盖（ANA05） |
-| `ResultRevision` | authorKind(author/user/reproduced), figures/tables/data/projectFiles[], runRef?, verificationScope, pendingItems[] | 区分作者/用户/复现（ANA05） |
+| `ResultRevision` | authorKind(author/user/reproduced), figures/tables/data/projectFiles[], runRef?, verificationScope, pendingItems[] | 区分作者/用户/复现；**外部结果允许无内部 Run**（`runRef` 可空，回查到作者文件/已知处理说明） |
 | `ReportBlock` / `Revision` | content, order, explicitRefs[], contextList[], draftOrAssumptionOrHuman, localEditHistory[] | 明确引用 ≠ 上下文清单（REP02） |
 | `DependencyEdge` | fromRef, toRef, edgeKind, locator, establishedBy(run/human) | **非全靠 LLM**（LIN01） |
 | `ChangeSet` / `Review` | before/after, reason, affectedRefs[], reviewStatus, humanAction, version | 复核针对具体变更与版本（LIN04） |
