@@ -44,10 +44,10 @@
 
   <section class="card">
     <h2>环境说明</h2>
-    <p class="hint">本验收台使用独立数据文件 <code>data/acceptance.json</code>（建议端口 5180），与你主实例 5173 的数据完全隔离——「删去之前的记录」在此以全新环境实现，主实例数据未被改动。</p>
-    <p class="hint">重建验收环境：<code>node scripts/acceptance-seed.ts data/acceptance.json --force</code>（仅清验收环境）。启动：<code>PORT=5180 LOCUS_DATA=data/acceptance.json node server.ts</code>。</p>
+    <p class="hint">本验收台使用独立数据文件（启动时由 <code>LOCUS_DATA</code> 指定，例如 <code>data/acceptance-v5.json</code>，建议端口 5184），与你主实例 5173 的数据完全隔离——「删去之前的记录」在此以全新环境实现，主实例数据未被改动。</p>
+    <p class="hint">重建验收环境：<code>node scripts/acceptance-seed.ts &lt;数据文件&gt; --force</code>（仅清该验收文件）。启动：<code>PORT=5184 LOCUS_DATA=&lt;数据文件&gt; node server.ts</code>。</p>
     <p class="hint">真实样本来源：论文为 Europe PMC PMC13566542 · DOI 10.3390/ijms27177767 · CC BY 4.0 全文（署名与许可在文件头，经 <code>scripts/fetch-paper.ts</code> 自公开 JATS 转换）；实验数据与方案节选来自 DaRUS DOI 10.18419/DARUS-3337 · CC BY 4.0。<strong>手写专项未进入本演示包</strong>：无授权的网络手写图不纳入公开材料，当前无逐附件许可清楚的真实手写样本，手写识别能力<strong>未验证</strong>；如需评测，请自行上传有授权的记录照片，并由视觉模型实测后再评价。</p>
-    <p class="hint"><strong>干净模式 vs 一键演示</strong>：本页是干净工作区——材料默认「待上传」，导入/解析/确认状态一律如实标注，不做预置结果冒充实时过程。本阶段<strong>不提供</strong>一键载入演示（避免预置已解析结果被误读为本次实时产出）；如需演示，可在独立数据文件上重复本页上传步骤。重建本验收环境（仅清验收数据）：<code>node scripts/acceptance-seed.ts data/acceptance.json --force</code>，不影响主实例。</p>
+    <p class="hint"><strong>干净模式 vs 一键演示</strong>：本页是干净工作区——材料默认「待上传」，导入/解析/确认状态一律如实标注，不做预置结果冒充实时过程。本阶段<strong>不提供</strong>一键载入演示（避免预置已解析结果被误读为本次实时产出）；如需演示，可在独立数据文件上重复本页上传步骤。重建验收环境只作用于该独立数据文件，不影响主实例与其它验收文件。</p>
   </section>
 </main>
 <script type="module" src="acceptance.js"></script>

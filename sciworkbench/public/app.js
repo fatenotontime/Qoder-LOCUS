@@ -1283,13 +1283,21 @@ function snapshotHtml(snap) {
 
 function contextMapHtml(t) {
   const q = t.subquestionId ? state.subquestions.find((x) => x.id === t.subquestionId) : null;
+  const refOpen = (r) => {
+    if (r.kind === "table") return ` <button class="tbl-open" data-tid="${r.id}">查看表格</button>`;
+    if (r.kind === "measurement") {
+      const tb = state.tables.find((x) => x.assetId === r.id);
+      return tb ? ` <button class="tbl-open" data-tid="${tb.id}">查看表格</button>` : ` <span class="hint">（该原件尚未构建数据表）</span>`;
+    }
+    return "";
+  };
   return `
     <p><b>课题「${esc(topicName(t.topicId) ?? t.topicId)}」${q ? ` → 子问题「${esc(q.question)}」` : ""} → 核心数据/记录</b></p>
     <p class="hint">核心（不可取消）：</p>
-    <ul>${t.core.map((r) => `<li>${esc(refLabel(r))} <span class="hint">${r.kind}:${r.id}</span></li>`).join("")}</ul>
+    <ul>${t.core.map((r) => `<li>${esc(refLabel(r))} <span class="hint">${r.kind}:${r.id}</span>${refOpen(r)}</li>`).join("")}</ul>
     <p class="hint">可选候选（勾选＝纳入上下文；保存后对下次推荐生效）：</p>
     ${t.optional.length
-      ? `<ul>${t.optional.map((o, i) => `<li><label><input type="checkbox" class="cand-toggle" data-idx="${i}" ${o.included ? "checked" : ""}/> ${esc(refLabel(o.ref))}</label> <span class="hint">${o.ref.kind}:${o.ref.id}</span></li>`).join("")}</ul><button id="cand-save">保存候选选择</button>`
+      ? `<ul>${t.optional.map((o, i) => `<li><label><input type="checkbox" class="cand-toggle" data-idx="${i}" ${o.included ? "checked" : ""}/> ${esc(refLabel(o.ref))}</label> <span class="hint">${o.ref.kind}:${o.ref.id}</span>${refOpen(o.ref)}</li>`).join("")}</ul><button id="cand-save">保存候选选择</button>`
       : `<p class="hint">无候选。创建任务时可勾选方案/知识卡作为补充。</p>`}
     ${t.snapshot ? snapshotHtml(t.snapshot) : ""}`;
 }
@@ -1514,6 +1522,7 @@ $("#material-list").addEventListener("click", (ev) => {
   ui.assetId = el.dataset.id; ui.highlight = null; ui.cell = null; ui.tableId = null; ui.groupSel.clear(); ui.batch = null; ui.ack = false; renderAll();
 });
 $("#mid-content").addEventListener("click", async (ev) => {
+  if (ev.target.classList.contains("tbl-open")) { openTableMax(ev.target.dataset.tid); return; }
   if (ev.target.id === "cand-save") {
     const t = currentTask(); if (!t) return;
     await runBusy(ev.target, "保存候选", async () => {

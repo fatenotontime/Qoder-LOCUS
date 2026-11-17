@@ -83,11 +83,11 @@ function statusOf(m) {
 function render() {
   const t = state.topics[0];
   topicId = t?.id ?? null;
-  $("#envnote").innerHTML = `验收环境：<code>data/acceptance.json</code> · 课题 ${state.topics.length} · 子问题 ${state.subquestions.length} · 原件 ${state.assets.length} · 表 ${state.tables.length} · 卡 ${state.cards.length} · 方案 ${state.protocols.length} · OCR ${state.ocrs.length}。<strong>不含你主实例的历史记录。</strong>`;
+  $("#envnote").innerHTML = `验收环境：独立数据文件（启动时由 <code>LOCUS_DATA</code> 指定，与主实例隔离）· 课题 ${state.topics.length} · 子问题 ${state.subquestions.length} · 原件 ${state.assets.length} · 表 ${state.tables.length} · 卡 ${state.cards.length} · 方案 ${state.protocols.length} · OCR ${state.ocrs.length}。<strong>不含你主实例的历史记录。</strong>`;
   $("#topic-body").innerHTML = t
     ? `<p><strong>${esc(t.name)}</strong></p><p class="hint">${esc(t.researchQuestion)}</p>
        <ul class="subq">${state.subquestions.filter((s) => s.topicId === t.id).map((s) => `<li class="${s.kind}">${esc(s.question)} <span class="badge ${s.kind === "exploratory" ? "warn" : "confirm"}">${s.kind === "exploratory" ? "探索性" : "已声明"}</span></li>`).join("")}</ul>`
-    : '<p class="hint warn">尚无课题：先运行 node scripts/acceptance-seed.ts data/acceptance.json</p>';
+    : '<p class="hint warn">尚无课题：先运行 node scripts/acceptance-seed.ts &lt;数据文件&gt;</p>';
   $("#mat-grid").innerHTML = MATS.map((m) => {
     const { a, badge } = statusOf(m);
     return `<div class="card matcard" id="mat-${m.key}">
