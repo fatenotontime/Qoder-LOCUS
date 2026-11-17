@@ -117,14 +117,14 @@ test("旧版本状态不迁移（返回空）", async () => {
   rmSync(path, { force: true });
 });
 
-test("v2–v5 → v6 迁移：保留既有数据与原件 hash，补论文/附件与机械草稿标记", async () => {
+test("v2–v6 → v7 迁移：保留既有数据与原件 hash，补论文/附件与机械草稿标记", async () => {
   const path = join(tmpdir(), `locus-v2-${Date.now()}.json`);
   const r = importMeasurements(emptyState(), { name: "d.csv", csv: "t,v\n0,1" });
   const oldHash = "legacy-hash-keep";
   const legacyAssets = r.state.assets.map((a) => ({ ...a, hash: oldHash, fingerprint: undefined })); // 真旧记录无指纹字段
   await new JsonFileStore(path).save({ version: 2, assets: legacyAssets, cards: [], tables: r.state.tables } as never);
   const back = await new JsonFileStore(path).load();
-  assert.equal(back.version, 6);
+  assert.equal(back.version, 7);
   assert.equal(back.tables.length, 1);
   assert.equal(back.assets[0].hash, oldHash); // 历史原件 hash 不被加载重算覆盖（5C）
   assert.equal(back.assets[0].fingerprint, oldHash); // 旧记录指纹=既有口径
@@ -140,13 +140,17 @@ test("v2–v5 → v6 迁移：保留既有数据与原件 hash，补论文/附�
   assert.deepEqual(back.measurements, []);
   assert.deepEqual(back.impacts, []);
   assert.deepEqual(back.ocrs, []);
+  assert.deepEqual(back.analysisTasks, []);
+  assert.deepEqual(back.analysisResults, []);
+  assert.deepEqual(back.reports, []);
+  assert.deepEqual(back.chats, []);
   rmSync(path, { force: true });
   // v3 旧卡（无 extracted/unknowns/secondaryCitation）→ 补默认，不丢 note/history；draft → 机械草稿标记
   const path3 = join(tmpdir(), `locus-v3-${Date.now()}.json`);
   const oldCard = { id: "card_old", assetId: "ast_x", rawText: "x", locator: { sectionQuote: "x" }, audit: "confirm", importance: null, note: "旧备注", reason: "", extraction: "draft", revision: 2, history: [], createdAt: "t", updatedAt: "t" };
   await new JsonFileStore(path3).save({ version: 3, assets: [], cards: [oldCard], tables: [] } as never);
   const back3 = await new JsonFileStore(path3).load();
-  assert.equal(back3.version, 6);
+  assert.equal(back3.version, 7);
   assert.deepEqual(back3.cards[0].extracted, { fields: {}, units: [], conditions: [] });
   assert.deepEqual(back3.cards[0].unknowns, []);
   assert.equal(back3.cards[0].secondaryCitation, false);
@@ -172,13 +176,13 @@ test("v2–v5 → v6 迁移：保留既有数据与原件 hash，补论文/附�
 });
 
 // ── AI：独立任务 + 进程内配置 ───────────────────────────────
-test("六个任务提示词与输出结构互不相同（不混用）", () => {
+test("八个任务提示词与输出结构互不相同（不混用）", () => {
   const names = Object.keys(TASKS);
-  assert.deepEqual(names.sort(), ["handwriting_ocr", "impact_assess", "knowledge_extract", "literature_extract", "pause_assist", "protocol_parse"]);
+  assert.deepEqual(names.sort(), ["analysis_recommend", "context_chat", "handwriting_ocr", "impact_assess", "knowledge_extract", "literature_extract", "pause_assist", "protocol_parse"]);
   const systems = new Set(Object.values(TASKS).map((t) => t.system));
   const schemas = new Set(Object.values(TASKS).map((t) => t.schema));
-  assert.equal(systems.size, 6);
-  assert.equal(schemas.size, 6);
+  assert.equal(systems.size, 8);
+  assert.equal(schemas.size, 8);
 });
 
 test("配置来自环境、缺项即 null；状态不泄露 key", () => {

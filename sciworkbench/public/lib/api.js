@@ -53,6 +53,19 @@ export const api = {
   async linkPaperTopic(id, topicId, link) { return json(`/api/papers/${encodeURIComponent(id)}/topics`, { topicId, link }); },
   async importBibliography(format, text) { return json("/api/papers/import-bibliography", { format, text }); },
   async knowledgeJob(input) { return json("/api/knowledge/jobs", input); },
+  // ── 5E：分析任务 / 方法推荐 / 结果提交 / 初步报告 / 上下文对话 ──
+  async createAnalysisTask(input) { return json("/api/analysis/tasks", input); },
+  async setTaskCandidates(id, optional) { return json(`/api/analysis/tasks/${encodeURIComponent(id)}/candidates`, { optional }); },
+  async recommendMethods(id, purpose) { return json(`/api/analysis/tasks/${encodeURIComponent(id)}/recommend`, { purpose }); },
+  async submitResult(taskId, input) { return json(`/api/analysis/tasks/${encodeURIComponent(taskId)}/result`, input); },
+  async editResult(id, patch) { return json(`/api/analysis/results/${encodeURIComponent(id)}/edit`, patch); },
+  async createReport(topicId, taskId) { return json("/api/reports", { topicId, taskId }); },
+  async updateReport(id, sections, reason) { return json(`/api/reports/${encodeURIComponent(id)}/update`, { sections, reason }); },
+  async createChat(input) { return json("/api/chats", input); },
+  async sendChat(id, text) { return json(`/api/chats/${encodeURIComponent(id)}/send`, { text }); },
+  async cancelChatMessage(chatId, messageId) { return json(`/api/chats/${encodeURIComponent(chatId)}/messages/${encodeURIComponent(messageId)}/cancel`, {}); },
+  async retryChatMessage(chatId, messageId) { return json(`/api/chats/${encodeURIComponent(chatId)}/messages/${encodeURIComponent(messageId)}/retry`, {}); },
+  async adoptChatProposal(chatId, messageId, index) { return json(`/api/chats/${encodeURIComponent(chatId)}/messages/${encodeURIComponent(messageId)}/adopt`, { index, confirmed: true }); },
 };
 
 async function json(url, body) {

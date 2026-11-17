@@ -60,6 +60,12 @@ import {
   uploadProtocolSource,
 } from "./services/experiment.ts";
 import { extractKnowledge, extractLiterature, runTask } from "./services/ai.ts";
+import {
+  createAnalysisTask, setTaskCandidates, buildSnapshot, snapshotInput, applyRecommendation,
+  submitResult, editResult, archiveResultFile, createReport, updateReport,
+  createChat, chatScopeSnapshot, chatHistoryInput, appendChatTurn, applyChatResponse,
+  failChat, cancelChat, retryChat, adoptProposal,
+} from "./services/analysis.ts";
 import { addPaperAttachment, createPaper, importBibliography, linkPaperTopic, updatePaper } from "./services/papers.ts";
 import { applyKnowledge, mapKnowledgeCards, prepareKnowledge } from "./services/knowledge.ts";
 
@@ -108,7 +114,38 @@ export async function createApp(store: Store) {
   const jobs = new Map<string, Job>();
   // 任务身份/重复提交守卫：同一原件的方案解析同时只允许一个在跑 job。
   const parsingAssets = new Set<string>();
+  const recommendingTasks = new Set<string>();
   const trimJobs = () => { if (jobs.size > 20) { for (const k of jobs.keys()) { if (jobs.size <= 20) break; jobs.delete(k); } } };
+
+  /** 5E 对话 job：发送时冻结快照；写回前检查取消（在途请求无法中止，结果丢弃不写回）。 */
+  const startChatJob = (chatId: string, messageId: string, userText: string): string => {
+    const chat = state.chats.find((c) => c.id === chatId)!;
+    const cfg = getAiConfig()!;
+    const snapshot = chatScopeSnapshot(state, chat, userText, cfg.model);
+    const input = `${snapshotInput(snapshot)}\n\n讨论历史：\n${chatHistoryInput(chat)}`;
+    const id = `job_${randomUUID()}`;
+    const job: Job = { id, status: "running", done: 0, total: 1, message: "上下文讨论中…" };
+    jobs.set(id, job); trimJobs();
+    void (async () => {
+      try {
+        const { value, raw } = await runTask(cfg, "context_chat", input);
+        const cur = state.chats.find((c) => c.id === chatId)?.messages.find((m) => m.id === messageId);
+        if (!cur || cur.status === "cancelled") {
+          job.status = "done"; job.result = { messageId, discarded: true }; job.message = "已取消：结果丢弃，未写回"; return;
+        }
+        state = applyChatResponse(state, chatId, messageId, value, snapshot);
+        await store.save(state);
+        writeAudit(chatId, { raws: [{ index: 0, content: raw }], model: cfg.model }, "context_chat");
+        job.status = "done"; job.result = { messageId, snapshotHash: snapshot.hash }; job.message = "完成";
+      } catch (e) {
+        const msg = (e as Error).message ?? "失败";
+        const cur = state.chats.find((c) => c.id === chatId)?.messages.find((m) => m.id === messageId);
+        if (cur && cur.status === "running") { state = failChat(state, chatId, messageId, msg); await store.save(state); }
+        job.status = "error"; job.error = msg;
+      }
+    })();
+    return id;
+  };
 
   const readBody = (req: IncomingMessage): Promise<string> =>
     new Promise((res, rej) => {
@@ -693,6 +730,130 @@ export async function createApp(store: Store) {
           });
           state = r.state; await store.save(state);
           send(res, 200, { ok: true }); return;
+        }
+        // ── 5E：分析任务 / 方法推荐 / 结果提交 / 初步报告 / 上下文对话 ──
+        if (path === "/api/analysis/tasks") {
+          const r = createAnalysisTask(state, {
+            topicId: String(body.topicId ?? ""), subquestionId: body.subquestionId as string | undefined,
+            title: String(body.title ?? ""), core: body.core as unknown[], optional: body.optional as unknown[] | undefined,
+          });
+          state = r.state; await store.save(state);
+          send(res, 200, { ok: true, taskId: r.task.id }); return;
+        }
+        const atCandidates = path.match(/^\/api\/analysis\/tasks\/([^/]+)\/candidates$/);
+        if (atCandidates) {
+          const r = setTaskCandidates(state, decodeURIComponent(atCandidates[1]), body.optional as { ref: unknown; included: boolean }[]);
+          state = r.state; await store.save(state);
+          send(res, 200, { ok: true }); return;
+        }
+        const atRecommend = path.match(/^\/api\/analysis\/tasks\/([^/]+)\/recommend$/);
+        if (atRecommend) {
+          const cfg = getAiConfig();
+          if (!cfg) { send(res, 422, { error: "AI 未配置：无法推荐方法。上下文地图仍可编辑。" }); return; }
+          const taskId = decodeURIComponent(atRecommend[1]);
+          const task = state.analysisTasks.find((t) => t.id === taskId);
+          if (!task) { send(res, 404, { error: `分析任务不存在：${taskId}` }); return; }
+          const purpose = String(body.purpose ?? "").trim();
+          if (!purpose) { send(res, 422, { error: "推荐须写明研究目的。" }); return; }
+          if (recommendingTasks.has(taskId)) { send(res, 409, { error: "该任务已有推荐在运行，请等待完成，勿重复提交。" }); return; }
+          const snapshot = buildSnapshot(state, task, purpose, cfg.model, "analysis_recommend/v1");
+          recommendingTasks.add(taskId);
+          const id = `job_${randomUUID()}`;
+          const job: Job = { id, status: "running", done: 0, total: 1, message: "方法推荐中…" };
+          jobs.set(id, job); trimJobs();
+          void (async () => {
+            try {
+              const { value, raw } = await runTask(cfg, "analysis_recommend", snapshotInput(snapshot));
+              const r = applyRecommendation(state, taskId, value, raw, snapshot);
+              state = r.state; await store.save(state);
+              writeAudit(taskId, { raws: [{ index: 0, content: raw }], model: cfg.model }, "analysis_recommend");
+              job.status = "done";
+              job.result = { taskId, methods: r.task.recommendation!.methods.length, snapshotHash: snapshot.hash };
+              job.message = "完成";
+            } catch (e) { job.status = "error"; job.error = (e as Error).message ?? "失败"; }
+            finally { recommendingTasks.delete(taskId); }
+          })();
+          send(res, 202, { ok: true, jobId: id, snapshotHash: snapshot.hash }); return;
+        }
+        const atResult = path.match(/^\/api\/analysis\/tasks\/([^/]+)\/result$/);
+        if (atResult) {
+          const taskId = decodeURIComponent(atResult[1]);
+          const task = state.analysisTasks.find((t) => t.id === taskId);
+          if (!task) { send(res, 404, { error: `分析任务不存在：${taskId}` }); return; }
+          const attachments = (body.attachments ?? []) as { name?: unknown; content?: unknown }[];
+          const assetIds: string[] = [];
+          for (const att of attachments) {
+            const r = archiveResultFile(state, { name: String(att.name ?? ""), content: String(att.content ?? ""), topicId: task.topicId });
+            state = r.state; assetIds.push(r.asset.id);
+          }
+          const r = submitResult(state, taskId, {
+            method: String(body.method ?? ""), params: body.params as string | undefined,
+            reason: body.reason as string | undefined, note: body.note as string | undefined,
+            assetIds, adoptedRecommendation: body.adoptedRecommendation as string | undefined,
+          });
+          state = r.state; await store.save(state);
+          send(res, 200, { ok: true, resultId: r.result.id, reproducible: r.result.reproducible, missing: r.result.missing, assetIds }); return;
+        }
+        const resEdit = path.match(/^\/api\/analysis\/results\/([^/]+)\/edit$/);
+        if (resEdit) {
+          const r = editResult(state, decodeURIComponent(resEdit[1]), {
+            method: body.method as string | undefined, params: body.params as string | undefined,
+            note: body.note as string | undefined, reason: String(body.reason ?? ""),
+          });
+          state = r.state; await store.save(state);
+          send(res, 200, { ok: true, revision: r.result.revision, reproducible: r.result.reproducible }); return;
+        }
+        if (path === "/api/reports") {
+          const r = createReport(state, { topicId: String(body.topicId ?? ""), taskId: body.taskId as string | undefined });
+          state = r.state; await store.save(state);
+          send(res, 200, { ok: true, reportId: r.report.id }); return;
+        }
+        const repUpdate = path.match(/^\/api\/reports\/([^/]+)\/update$/);
+        if (repUpdate) {
+          const r = updateReport(state, decodeURIComponent(repUpdate[1]), { sections: body.sections, reason: String(body.reason ?? "") });
+          state = r.state; await store.save(state);
+          send(res, 200, { ok: true, revision: r.report.revision }); return;
+        }
+        if (path === "/api/chats") {
+          const r = createChat(state, { topicId: String(body.topicId ?? ""), subquestionId: body.subquestionId as string | undefined, scope: body.scope as unknown[] | undefined });
+          state = r.state; await store.save(state);
+          send(res, 200, { ok: true, chatId: r.chat.id }); return;
+        }
+        const chatSend = path.match(/^\/api\/chats\/([^/]+)\/send$/);
+        if (chatSend) {
+          const cfg = getAiConfig();
+          if (!cfg) { send(res, 422, { error: "AI 未配置：无法讨论。范围与对象仍可查看。" }); return; }
+          const chatId = decodeURIComponent(chatSend[1]);
+          const r = appendChatTurn(state, chatId, String(body.text ?? ""));
+          state = r.state; await store.save(state);
+          const jobId = startChatJob(chatId, r.messageId, String(body.text ?? ""));
+          send(res, 202, { ok: true, jobId, messageId: r.messageId }); return;
+        }
+        const chatCancel = path.match(/^\/api\/chats\/([^/]+)\/messages\/([^/]+)\/cancel$/);
+        if (chatCancel) {
+          state = cancelChat(state, decodeURIComponent(chatCancel[1]), decodeURIComponent(chatCancel[2]));
+          await store.save(state);
+          send(res, 200, { ok: true }); return;
+        }
+        const chatRetry = path.match(/^\/api\/chats\/([^/]+)\/messages\/([^/]+)\/retry$/);
+        if (chatRetry) {
+          const cfg = getAiConfig();
+          if (!cfg) { send(res, 422, { error: "AI 未配置：无法重试。" }); return; }
+          const chatId = decodeURIComponent(chatRetry[1]);
+          const messageId = decodeURIComponent(chatRetry[2]);
+          state = retryChat(state, chatId, messageId);
+          await store.save(state);
+          const chat = state.chats.find((c) => c.id === chatId)!;
+          const idx = chat.messages.findIndex((m) => m.id === messageId);
+          const userText = idx > 0 ? chat.messages[idx - 1].content : "";
+          const jobId = startChatJob(chatId, messageId, userText);
+          send(res, 202, { ok: true, jobId, messageId }); return;
+        }
+        const chatAdopt = path.match(/^\/api\/chats\/([^/]+)\/messages\/([^/]+)\/adopt$/);
+        if (chatAdopt) {
+          const r = adoptProposal(state, decodeURIComponent(chatAdopt[1]), decodeURIComponent(chatAdopt[2]), Number(body.index), body.confirmed === true);
+          state = r.state; await store.save(state);
+          send(res, 200, { ok: true, applied: r.applied }); return;
         }
       }
 

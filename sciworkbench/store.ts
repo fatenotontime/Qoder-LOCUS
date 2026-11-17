@@ -32,7 +32,7 @@ export interface RevisionEntry {
 /** 一条原始素材（导入的文献摘录或实验数据文件）。原件**完整保存**；超限直接拒绝，不截断。 */
 export interface AssetRecord {
   readonly id: string;
-  readonly kind: "literature" | "measurement" | "image" | "protocol";
+  readonly kind: "literature" | "measurement" | "image" | "protocol" | "result";
   readonly name: string;
   readonly topicId?: string;
   readonly bytes: number;
@@ -410,6 +410,126 @@ export interface SubquestionRecord {
   readonly createdAt: string;
 }
 
+// ── 阶段5E：分析任务 / 上下文快照 / 处理结果 / 初步报告 / 上下文对话 ──
+
+/** 上下文对象引用：kind＋id，版本在快照碎片中固定。 */
+export interface ObjectRef {
+  readonly kind: "execution" | "protocol" | "measurement" | "table" | "card" | "asset" | "subquestion";
+  readonly id: string;
+}
+
+export interface ContextFragment {
+  readonly ref: ObjectRef;
+  readonly label: string;
+  readonly version: string;
+  readonly excerpt: string;
+}
+
+/** 冻结上下文快照：实际发送的碎片/版本/摘要/目的/模型/提示词版本/hash。 */
+export interface ContextSnapshot {
+  readonly at: string;
+  readonly purpose: string;
+  readonly summary: string;
+  readonly model: string;
+  readonly promptVersion: string;
+  readonly hash: string;
+  readonly fragments: ContextFragment[];
+}
+
+export interface MethodRecommendation {
+  readonly name: string;
+  readonly software: string;
+  readonly rationale: string;
+  readonly expectedArtifacts: string[];
+  readonly acceptanceItems: string[];
+}
+
+export interface AnalysisRecommendation {
+  readonly methods: MethodRecommendation[];
+  readonly unknowns: string[];
+  readonly raw: string;
+  readonly at: string;
+}
+
+export interface AnalysisTaskRecord {
+  readonly id: string;
+  readonly topicId: string;
+  readonly subquestionId?: string;
+  readonly title: string;
+  readonly core: ObjectRef[];
+  readonly optional: { ref: ObjectRef; included: boolean }[];
+  readonly snapshot?: ContextSnapshot;
+  readonly recommendation?: AnalysisRecommendation;
+  readonly resultIds: string[];
+  readonly createdAt: string;
+  readonly updatedAt: string;
+}
+
+export interface AnalysisResultRecord {
+  readonly id: string;
+  readonly taskId: string;
+  readonly topicId: string;
+  readonly method: string;
+  readonly params: string;
+  readonly reason: string;
+  readonly note: string;
+  readonly assetIds: string[];
+  readonly reproducible: boolean;
+  readonly missing: string[];
+  readonly adoptedRecommendation: string;
+  readonly revision: number;
+  readonly history: { revision: number; at: string; reason: string; method: string; params: string }[];
+  readonly createdAt: string;
+  readonly updatedAt: string;
+}
+
+export interface ReportItem { readonly text: string; readonly sources: string[]; }
+export interface ReportSections {
+  readonly observations: ReportItem[];
+  readonly hypotheses: ReportItem[];
+  readonly interpretations: ReportItem[];
+  readonly toVerify: ReportItem[];
+}
+export interface PreliminaryReportRecord {
+  readonly id: string;
+  readonly topicId: string;
+  readonly taskId?: string;
+  readonly pinned: { taskId?: string; resultIds: string[]; snapshotHash?: string };
+  readonly sections: ReportSections;
+  readonly revision: number;
+  readonly history: { revision: number; at: string; reason: string; sections: ReportSections }[];
+  readonly createdAt: string;
+  readonly updatedAt: string;
+}
+
+export interface ChatProposal {
+  readonly targetKind: "execution-note" | "report-toVerify";
+  readonly targetId: string;
+  readonly preview: string;
+  readonly confirmed: boolean;
+  readonly adoptedAt?: string;
+}
+export interface ChatMessage {
+  readonly id: string;
+  readonly role: "user" | "assistant";
+  readonly content: string;
+  readonly status: "running" | "done" | "failed" | "cancelled";
+  readonly error?: string;
+  readonly snapshot?: ContextSnapshot;
+  readonly proposals: ChatProposal[];
+  readonly sources: string[];
+  readonly at: string;
+}
+export interface ChatSessionRecord {
+  readonly id: string;
+  readonly topicId: string;
+  readonly subquestionId?: string;
+  readonly scope: ObjectRef[];
+  readonly messages: ChatMessage[];
+  readonly createdAt: string;
+  readonly updatedAt: string;
+}
+
 export interface LocusState {
   readonly version: number;
   readonly topics: TopicRecord[];
@@ -429,12 +549,16 @@ export interface LocusState {
   readonly measurements: MeasurementRecord[];
   readonly impacts: ImpactRecord[];
   readonly ocrs: OcrRecord[];
+  readonly analysisTasks: AnalysisTaskRecord[];
+  readonly analysisResults: AnalysisResultRecord[];
+  readonly reports: PreliminaryReportRecord[];
+  readonly chats: ChatSessionRecord[];
 }
 
-export const STATE_VERSION = 6;
+export const STATE_VERSION = 7;
 
 export function emptyState(): LocusState {
-  return { version: STATE_VERSION, topics: [], subquestions: [], assets: [], papers: [], attachments: [], cards: [], tables: [], adoptions: [], mappings: [], comparisons: [], protocols: [], templates: [], executions: [], samples: [], measurements: [], impacts: [], ocrs: [] };
+  return { version: STATE_VERSION, topics: [], subquestions: [], assets: [], papers: [], attachments: [], cards: [], tables: [], adoptions: [], mappings: [], comparisons: [], protocols: [], templates: [], executions: [], samples: [], measurements: [], impacts: [], ocrs: [], analysisTasks: [], analysisResults: [], reports: [], chats: [] };
 }
 
 export interface Store {
@@ -462,8 +586,8 @@ export class JsonFileStore implements Store {
     try {
       const p = JSON.parse(readFileSync(this.#path, "utf8")) as Partial<LocusState> & { version?: number };
       const v = p.version ?? 0;
-      if (v !== 2 && v !== 3 && v !== 4 && v !== 5 && v !== STATE_VERSION) return emptyState();
-      // v2–v5 → v6：保留既有数据，补空新实体。
+      if (v !== 2 && v !== 3 && v !== 4 && v !== 5 && v !== 6 && v !== STATE_VERSION) return emptyState();
+      // v2–v6 → v7：保留既有数据，补空新实体。
       // 原件 hash **不再加载重算**（5C）：历史 hash 原样保留；查重指纹另存（旧记录指纹=既有 hash 口径）。
       const assets = (p.assets ?? []).map((a) => ({ ...a, fingerprint: a.fingerprint ?? a.hash }));
       // 存量文献原件 → 论文条目 + 正文附件（题录未提供处留空，不补造）；已有附件的原件不重复建。
@@ -508,6 +632,10 @@ export class JsonFileStore implements Store {
         measurements: p.measurements ?? [],
         impacts: p.impacts ?? [],
         ocrs: p.ocrs ?? [],
+        analysisTasks: p.analysisTasks ?? [],
+        analysisResults: p.analysisResults ?? [],
+        reports: p.reports ?? [],
+        chats: p.chats ?? [],
       };
     } catch {
       return emptyState();

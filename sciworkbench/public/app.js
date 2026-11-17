@@ -4,15 +4,15 @@
 import { api } from "./lib/api.js";
 import { computeLanes, timeLabel } from "./lib/lanes.js";
 
-let state = { topics: [], subquestions: [], assets: [], papers: [], attachments: [], cards: [], tables: [], adoptions: [], mappings: [], comparisons: [], protocols: [], templates: [], executions: [], samples: [], measurements: [], impacts: [], ocrs: [] };
-const ui = { nav: "topic", topicId: "", assetId: null, paperId: null, attId: null, tableId: null, highlight: null, cell: null, dirty: false, busy: false, cardFilter: "all", groupSel: new Set(), batch: null, ack: false, protocolId: null, executionId: null, stepSel: null, viewRev: null, editEventId: null, pauseSuggest: null, prepExtra: 0 };
+let state = { topics: [], subquestions: [], assets: [], papers: [], attachments: [], cards: [], tables: [], adoptions: [], mappings: [], comparisons: [], protocols: [], templates: [], executions: [], samples: [], measurements: [], impacts: [], ocrs: [], analysisTasks: [], analysisResults: [], reports: [], chats: [] };
+const ui = { nav: "topic", topicId: "", assetId: null, paperId: null, attId: null, tableId: null, highlight: null, cell: null, dirty: false, busy: false, cardFilter: "all", groupSel: new Set(), batch: null, ack: false, protocolId: null, executionId: null, stepSel: null, viewRev: null, editEventId: null, pauseSuggest: null, prepExtra: 0, taskId: null, chatId: null, reportId: null };
 let lastAction = null; // { label, run }
 
 // 选择态持久（仅非敏感 UI 选择：页签/课题/材料/表块），刷新后归属正确。
 const UI_KEY = "locus.ui.v2"; // 阶段5 重构：七入口导航，旧选择态作废，默认落课题首页
 let uiRestored = false;
 function saveUi() {
-  try { localStorage.setItem(UI_KEY, JSON.stringify({ nav: ui.nav, topicId: ui.topicId, assetId: ui.assetId, paperId: ui.paperId, tableId: ui.tableId, cardFilter: ui.cardFilter, protocolId: ui.protocolId, executionId: ui.executionId })); } catch {}
+  try { localStorage.setItem(UI_KEY, JSON.stringify({ nav: ui.nav, topicId: ui.topicId, assetId: ui.assetId, paperId: ui.paperId, tableId: ui.tableId, cardFilter: ui.cardFilter, protocolId: ui.protocolId, executionId: ui.executionId, taskId: ui.taskId, chatId: ui.chatId, reportId: ui.reportId })); } catch {}
 }
 function restoreUi() {
   if (uiRestored) return;
@@ -20,7 +20,7 @@ function restoreUi() {
   try {
     const s = JSON.parse(localStorage.getItem(UI_KEY) ?? "null");
     if (!s) return;
-    if (["topic", "papers", "knowledge", "protocol", "record", "literature", "measurement"].includes(s.nav)) ui.nav = s.nav;
+    if (["topic", "papers", "knowledge", "protocol", "record", "analysis", "chat", "literature", "measurement"].includes(s.nav)) ui.nav = s.nav;
     if (s.cardFilter === "all" || s.cardFilter === "pending" || s.cardFilter === "reviewed") ui.cardFilter = s.cardFilter;
     if (state.topics.some((t) => t.id === s.topicId)) ui.topicId = s.topicId;
     if (state.assets.some((a) => a.id === s.assetId)) ui.assetId = s.assetId;
@@ -28,6 +28,9 @@ function restoreUi() {
     if (state.tables.some((t) => t.id === s.tableId)) ui.tableId = s.tableId;
     if (state.protocols.some((p) => p.id === s.protocolId)) ui.protocolId = s.protocolId;
     if (state.executions.some((e) => e.id === s.executionId)) ui.executionId = s.executionId;
+    if (state.analysisTasks.some((t) => t.id === s.taskId)) ui.taskId = s.taskId;
+    if (state.chats.some((c) => c.id === s.chatId)) ui.chatId = s.chatId;
+    if (state.reports.some((r) => r.id === s.reportId)) ui.reportId = s.reportId;
   } catch {}
 }
 
@@ -46,6 +49,9 @@ async function refresh() {
   if (ui.executionId && !state.executions.some((e) => e.id === ui.executionId)) ui.executionId = null;
   if (ui.paperId && !state.papers.some((p) => p.id === ui.paperId)) { ui.paperId = null; ui.attId = null; }
   if (ui.attId && !state.attachments.some((a) => a.id === ui.attId)) ui.attId = null;
+  if (ui.taskId && !state.analysisTasks.some((t) => t.id === ui.taskId)) ui.taskId = null;
+  if (ui.chatId && !state.chats.some((c) => c.id === ui.chatId)) ui.chatId = null;
+  if (ui.reportId && !state.reports.some((r) => r.id === ui.reportId)) ui.reportId = null;
   renderAll();
 }
 
@@ -111,7 +117,7 @@ function renderAll() {
   $("#sec-subq").hidden = ui.nav !== "topic";
   $("#topic-create-box").hidden = ui.nav !== "topic";
   $("#sec-materials").hidden = ui.nav === "topic";
-  $("#materials-title").textContent = { papers: "论文条目", knowledge: "选择文献", protocol: "方案", record: "执行", literature: "材料（旧版·开发调试）", measurement: "数据表" }[ui.nav] ?? "材料";
+  $("#materials-title").textContent = { papers: "论文条目", knowledge: "选择文献", protocol: "方案", record: "执行", analysis: "分析任务", chat: "对话会话", literature: "材料（旧版·开发调试）", measurement: "数据表" }[ui.nav] ?? "材料";
   renderTopics(); renderSubq(); renderImportBox(); renderMaterials(); renderLitTools(); renderMiddle(); renderRight();
   saveUi();
 }
@@ -135,6 +141,8 @@ function renderImportBox() {
     measurement: "实验数据：上传/粘贴 CSV（保留表格结构）",
     protocol: "方案：上传原件直接解析（不进文献库）；版本固定，编辑追加新快照",
     record: "记录：创建执行先进准备稿；确认快照后才补记录，实际层不改源方案",
+    analysis: "分析：从执行/数据建任务；上下文地图核心＋可取消候选；推荐含验收项；结果须写实际方法",
+    chat: "对话：限定课题/子问题＋显式选取对象；讨论不改对象；采纳须预览＋人工确认",
   };
   $("#nav-hint").textContent = hints[ui.nav] ?? "";
   const box = $("#import-box");
@@ -143,6 +151,8 @@ function renderImportBox() {
   if (ui.nav === "knowledge") { renderKnowledgeForm(box); return; }
   if (ui.nav === "protocol") { renderProtocolImport(box); return; }
   if (ui.nav === "record") { renderRecordImport(box); return; }
+  if (ui.nav === "analysis") { renderAnalysisForm(box); return; }
+  if (ui.nav === "chat") { renderChatForm(box); return; }
   if (ui.nav === "literature") {
     box.innerHTML = `
       <details class="mini" ${state.assets.length ? "" : "open"}>
@@ -240,6 +250,33 @@ function renderMaterials() {
       : `<p class="hint">暂无执行。选择方案（及已确认模板）后创建，进入准备稿。</p>`;
     return;
   }
+  if (ui.nav === "analysis") {
+    const ts = state.analysisTasks.filter((t) => !ui.topicId || t.topicId === ui.topicId);
+    box.innerHTML = ts.length
+      ? ts.map((t) => {
+          const inc = t.optional.filter((o) => o.included).length;
+          return `<div class="material ${t.id === ui.taskId ? "active" : ""}" data-atid="${t.id}">
+            <div class="m-title">${esc(t.title)} ${t.recommendation ? `<span class="badge confirm">已推荐</span>` : `<span class="badge cand-pending">待推荐</span>`}</div>
+            <div class="m-meta">核心 ${t.core.length} · 候选 ${inc}/${t.optional.length} · 结果 ${t.resultIds.length}${t.snapshot ? " · 快照已冻结" : ""}</div>
+          </div>`;
+        }).join("")
+      : `<p class="hint">暂无分析任务。先选课题，再从执行/测量/数据表建任务。</p>`;
+    return;
+  }
+  if (ui.nav === "chat") {
+    const cs = state.chats.filter((c) => !ui.topicId || c.topicId === ui.topicId);
+    box.innerHTML = cs.length
+      ? cs.map((c) => {
+          const q = state.subquestions.find((x) => x.id === c.subquestionId);
+          const running = c.messages.some((m) => m.status === "running");
+          return `<div class="material ${c.id === ui.chatId ? "active" : ""}" data-cid="${c.id}">
+            <div class="m-title">${esc(q ? q.question : topicName(c.topicId) ?? "课题对话")} ${running ? `<span class="badge warn">运行中</span>` : ""}</div>
+            <div class="m-meta">范围 ${c.scope.length} 对象${c.subquestionId ? " ＋ 子问题" : ""} · ${c.messages.length} 条消息</div>
+          </div>`;
+        }).join("")
+      : `<p class="hint">暂无对话。选课题后可加子问题与显式对象范围，再创建会话。</p>`;
+    return;
+  }
   const list = materials();
   box.innerHTML = list.length
     ? list.map((a) => `<div class="material ${a.id === ui.assetId ? "active" : ""}" data-id="${a.id}">
@@ -318,6 +355,26 @@ function renderMiddle() {
     content.textContent = snap ? fmtSnapshot(snap) : "（方案快照缺失）";
     return;
   }
+  if (ui.nav === "analysis") {
+    const t = currentTask();
+    $("#mid-title").textContent = t ? `上下文地图 · ${t.title}` : "上下文地图";
+    if (!t) { note.hidden = true; content.textContent = "在左栏选择或创建分析任务。"; return; }
+    note.hidden = false;
+    note.textContent = t.snapshot
+      ? `快照已在推荐时冻结（hash ${t.snapshot.hash.slice(0, 12)}…）；此后改候选不回改旧快照，重新推荐会生成新快照。`
+      : "尚未冻结快照：发起方法推荐时，按当前核心＋已勾选候选＋研究目的冻结实际发送内容。";
+    content.innerHTML = contextMapHtml(t);
+    return;
+  }
+  if (ui.nav === "chat") {
+    const c = currentChat();
+    $("#mid-title").textContent = c ? "上下文对话" : "上下文对话";
+    if (!c) { note.hidden = true; content.textContent = "在左栏选择或创建对话会话。"; return; }
+    note.hidden = false;
+    note.textContent = `范围：${c.subquestionId ? "子问题 ＋ " : ""}${c.scope.length} 个显式选取对象；每次发送冻结当时快照。讨论本身不修改任何对象，采纳须人工确认。`;
+    content.innerHTML = chatHtml(c);
+    return;
+  }
   const a = currentAsset();
   $("#mid-title").textContent = a ? `原始材料 · ${a.name}` : "原始材料";
   if (!a) { note.hidden = true; content.textContent = "在左栏选择或导入材料。"; return; }
@@ -336,6 +393,8 @@ function renderRight() {
   }
   if (ui.nav === "protocol") { $("#right-title").textContent = "方案与实验图"; $("#right-content").innerHTML = protocolHtml(); return; }
   if (ui.nav === "record") { $("#right-title").textContent = "实验记录"; $("#right-content").innerHTML = recordHtml(); return; }
+  if (ui.nav === "analysis") { $("#right-title").textContent = "推荐 · 结果 · 初步报告"; $("#right-content").innerHTML = analysisRightHtml(); return; }
+  if (ui.nav === "chat") { $("#right-title").textContent = "范围 · 来源 · 采纳"; $("#right-content").innerHTML = chatRightHtml(); return; }
   const a = currentAsset();
   if (!a) { $("#right-title").textContent = "结构化结果"; $("#right-content").innerHTML = `<p class="hint">选中材料后，这里显示结构化草稿与核对操作。</p>`; return; }
   if (a.kind === "literature") { $("#right-title").textContent = "证据卡"; $("#right-content").innerHTML = cardsHtml(a.id); }
@@ -1089,6 +1148,210 @@ function recordHtml() {
     ${impactHtml([e.id, ...samples.map((s) => s.id), ...meas.map((m) => m.id)])}`;
 }
 
+// ── 5E：数据处理与分析 / 上下文AI对话 ──────────────────────
+function currentTask() { return state.analysisTasks.find((t) => t.id === ui.taskId) ?? null; }
+function currentChat() { return state.chats.find((c) => c.id === ui.chatId) ?? null; }
+function refLabel(ref) {
+  switch (ref.kind) {
+    case "execution": { const e = state.executions.find((x) => x.id === ref.id); const p = e && state.protocols.find((x) => x.id === e.protocolId); return `执行 · ${p?.name ?? ref.id}`; }
+    case "protocol": return `方案 · ${state.protocols.find((x) => x.id === ref.id)?.name ?? ref.id}`;
+    case "measurement": return `测量原件 · ${state.assets.find((x) => x.id === ref.id)?.name ?? ref.id}`;
+    case "table": return `数据表 · ${state.tables.find((x) => x.id === ref.id)?.name ?? ref.id}`;
+    case "card": { const c = state.cards.find((x) => x.id === ref.id); return `知识卡 · ${c?.scope || Object.values(c?.extracted?.fields ?? {})[0] || ref.id}`; }
+    case "asset": return `原件 · ${state.assets.find((x) => x.id === ref.id)?.name ?? ref.id}`;
+    case "subquestion": return `子问题 · ${state.subquestions.find((x) => x.id === ref.id)?.question ?? ref.id}`;
+    default: return `${ref.kind}:${ref.id}`;
+  }
+}
+function topicObjects() {
+  const tid = ui.topicId;
+  const execs = state.executions.filter((e) => !tid || e.topicId === tid);
+  const tables = state.tables.filter((t) => { const a = state.assets.find((x) => x.id === t.assetId); return !tid || !a?.topicId || a.topicId === tid; });
+  const meas = state.assets.filter((a) => a.kind === "measurement" && (!tid || !a.topicId || a.topicId === tid));
+  const protos = state.protocols.filter((p) => !tid || p.topicId === tid);
+  const cards = state.cards.filter((c) => { const p = state.papers.find((x) => x.id === c.paperId); return !tid || !p || !p.topicIds.length || p.topicIds.includes(tid); });
+  return { execs, tables, meas, protos, cards };
+}
+const pickRow = (cls, kind, id, label) => `<label class="ctxpick"><input type="checkbox" class="${cls}" data-kind="${kind}" data-id="${id}"/> ${esc(label)}</label>`;
+const collectPicks = (cls) => [...$$(`.${cls}:checked`)].map((cb) => ({ kind: cb.dataset.kind, id: cb.dataset.id }));
+
+function renderAnalysisForm(box) {
+  if (!ui.topicId) { box.innerHTML = `<p class="hint">先在上方选择课题，再创建分析任务。</p>`; return; }
+  const { execs, tables, meas, protos, cards } = topicObjects();
+  const subqs = state.subquestions.filter((s) => s.topicId === ui.topicId);
+  const coreList = [
+    ...execs.map((e) => pickRow("an-core", "execution", e.id, `执行 · ${state.protocols.find((p) => p.id === e.protocolId)?.name ?? e.id}${(e.phase ?? "recording") === "preparing" ? "（准备稿）" : ""}`)),
+    ...meas.map((a) => pickRow("an-core", "measurement", a.id, `测量原件 · ${a.name}`)),
+    ...tables.map((t) => pickRow("an-core", "table", t.id, `数据表 · ${t.name}`)),
+  ].join("");
+  const optList = [
+    ...protos.map((p) => pickRow("an-opt", "protocol", p.id, `方案 · ${p.name} r${p.revision}`)),
+    ...cards.map((c) => pickRow("an-opt", "card", c.id, `知识卡 · ${c.scope || Object.values(c.extracted?.fields ?? {})[0] || c.id}`)),
+  ].join("");
+  box.innerHTML = `
+    <details class="mini" open>
+      <summary>新建分析任务</summary>
+      <input id="an-title" placeholder="任务标题（如 pH3 酶活衰减拟合）"/>
+      <select id="an-subq"><option value="">（不挂子问题）</option>${subqs.map((s) => `<option value="${s.id}">${esc(s.question)}</option>`).join("")}</select>
+      <p class="hint">核心对象（至少一项执行/测量/数据表，不可取消）：</p>
+      ${coreList || `<p class="hint">本课题暂无执行/测量/数据表。先到「实验执行与记录」或数据导入建立。</p>`}
+      <details class="mini"><summary>可选候选（方案/知识卡，默认纳入、可取消）</summary>${optList || `<p class="hint">暂无方案/知识卡。</p>`}</details>
+      <button class="primary" id="an-create">创建任务</button>
+    </details>`;
+  $("#an-create").addEventListener("click", (ev) => runBusy(ev.target, "创建分析任务", async () => {
+    const r = await api.createAnalysisTask({ topicId: ui.topicId, subquestionId: $("#an-subq").value || undefined, title: $("#an-title").value, core: collectPicks("an-core"), optional: collectPicks("an-opt") });
+    ui.taskId = r.taskId; await refresh(); setStatus("分析任务已创建：上下文地图在中栏");
+  }));
+}
+
+function renderChatForm(box) {
+  if (!ui.topicId) { box.innerHTML = `<p class="hint">先在上方选择课题，再创建对话。</p>`; return; }
+  const { execs, tables, meas, protos, cards } = topicObjects();
+  const subqs = state.subquestions.filter((s) => s.topicId === ui.topicId);
+  const scopeList = [
+    ...execs.map((e) => pickRow("ch-scope", "execution", e.id, `执行 · ${state.protocols.find((p) => p.id === e.protocolId)?.name ?? e.id}`)),
+    ...meas.map((a) => pickRow("ch-scope", "measurement", a.id, `测量原件 · ${a.name}`)),
+    ...tables.map((t) => pickRow("ch-scope", "table", t.id, `数据表 · ${t.name}`)),
+    ...protos.map((p) => pickRow("ch-scope", "protocol", p.id, `方案 · ${p.name}`)),
+    ...cards.map((c) => pickRow("ch-scope", "card", c.id, `知识卡 · ${c.scope || Object.values(c.extracted?.fields ?? {})[0] || c.id}`)),
+  ].join("");
+  box.innerHTML = `
+    <details class="mini" open>
+      <summary>新建对话会话</summary>
+      <select id="ch-subq"><option value="">（课题层，不挂子问题）</option>${subqs.map((s) => `<option value="${s.id}">${esc(s.question)}</option>`).join("")}</select>
+      <p class="hint">显式选取讨论对象（不选则只有课题/子问题层）：</p>
+      ${scopeList || `<p class="hint">本课题暂无可选对象。</p>`}
+      <button class="primary" id="ch-create">创建会话</button>
+    </details>`;
+  $("#ch-create").addEventListener("click", (ev) => runBusy(ev.target, "创建会话", async () => {
+    const r = await api.createChat({ topicId: ui.topicId, subquestionId: $("#ch-subq").value || undefined, scope: collectPicks("ch-scope") });
+    ui.chatId = r.chatId; await refresh(); setStatus("会话已创建：在中栏开始讨论");
+  }));
+}
+
+function snapshotHtml(snap) {
+  return `<details class="mini" open><summary>冻结上下文快照 · ${esc(snap.summary)}</summary>
+    <p class="hint">目的：${esc(snap.purpose)}<br/>模型：${esc(snap.model)} · 提示词 ${esc(snap.promptVersion)} · ${esc(snap.at)}<br/>hash：${esc(snap.hash)}</p>
+    ${snap.fragments.map((f, i) => `<details class="mini"><summary>碎片 ${i + 1} · ${esc(f.label)} · ${esc(f.version)} · ${f.ref.kind}:${f.ref.id}</summary><pre>${esc(f.excerpt)}</pre></details>`).join("")}
+  </details>`;
+}
+
+function contextMapHtml(t) {
+  const q = t.subquestionId ? state.subquestions.find((x) => x.id === t.subquestionId) : null;
+  return `
+    <p><b>课题「${esc(topicName(t.topicId) ?? t.topicId)}」${q ? ` → 子问题「${esc(q.question)}」` : ""} → 核心数据/记录</b></p>
+    <p class="hint">核心（不可取消）：</p>
+    <ul>${t.core.map((r) => `<li>${esc(refLabel(r))} <span class="hint">${r.kind}:${r.id}</span></li>`).join("")}</ul>
+    <p class="hint">可选候选（勾选＝纳入上下文；保存后对下次推荐生效）：</p>
+    ${t.optional.length
+      ? `<ul>${t.optional.map((o, i) => `<li><label><input type="checkbox" class="cand-toggle" data-idx="${i}" ${o.included ? "checked" : ""}/> ${esc(refLabel(o.ref))}</label> <span class="hint">${o.ref.kind}:${o.ref.id}</span></li>`).join("")}</ul><button id="cand-save">保存候选选择</button>`
+      : `<p class="hint">无候选。创建任务时可勾选方案/知识卡作为补充。</p>`}
+    ${t.snapshot ? snapshotHtml(t.snapshot) : ""}`;
+}
+
+const REPORT_SECTIONS = [["observations", "观察"], ["hypotheses", "假设"], ["interpretations", "解释"], ["toVerify", "待验证"]];
+
+function resultHtml(r) {
+  const atts = r.assetIds.map((id) => state.assets.find((a) => a.id === id)).filter(Boolean);
+  return `<details class="mini"><summary>结果 · ${esc(r.method)} ${r.reproducible ? `<span class="badge confirm">可复现</span>` : `<span class="badge warn">不可复现</span>`} · r${r.revision}</summary>
+    <p>参数：${esc(r.params) || "（未填）"}</p>
+    ${r.adoptedRecommendation ? `<p class="hint">采纳推荐：${esc(r.adoptedRecommendation)}</p>` : r.reason ? `<p class="hint">不采纳理由：${esc(r.reason)}</p>` : ""}
+    ${r.note ? `<p class="hint">备注：${esc(r.note)}</p>` : ""}
+    ${r.missing.length ? `<p class="hint">缺项：${r.missing.map(esc).join("；")}</p>` : ""}
+    <p class="hint">附件：${atts.map((a) => esc(a.name)).join("、") || "无"}</p>
+    <details class="mini"><summary>修订结果（留历史）</summary>
+      <div class="resedit" data-rid="${r.id}">
+        <input data-field="method" value="${esc(r.method)}"/>
+        <textarea data-field="params" rows="2">${esc(r.params)}</textarea>
+        <input data-field="note" value="${esc(r.note)}" placeholder="备注"/>
+        <input data-field="reason" placeholder="修订原因（必填）"/>
+        <button class="res-edit-save">保存修订</button>
+      </div></details>
+    ${r.history.length ? `<details class="mini"><summary>历史（${r.history.length}）</summary>${r.history.map((h) => `<p class="hint">r${h.revision} · ${esc(h.at)} · ${esc(h.reason)} · 方法 ${esc(h.method)}</p>`).join("")}</details>` : ""}
+  </details>`;
+}
+
+function reportHtml(r) {
+  return `<details class="mini rep" data-repid="${r.id}" ${r.id === ui.reportId ? "open" : ""}><summary>报告 r${r.revision} · 钉住 ${r.pinned.resultIds.length} 结果${r.pinned.snapshotHash ? ` · 快照 ${r.pinned.snapshotHash.slice(0, 8)}…` : ""}</summary>
+    ${REPORT_SECTIONS.map(([k, label]) => `<p class="hint"><b>${label}</b>（与其余三类分列，来源可溯）</p>
+      ${(r.sections[k] ?? []).map((it, i) => `<div class="reprow" data-sec="${k}" data-idx="${i}"><textarea data-field="text" rows="2">${esc(it.text)}</textarea><input data-field="sources" value="${esc(it.sources.join("；"))}" placeholder="来源（分号分隔）"/><button class="rep-del">删除</button></div>`).join("")}
+      <button class="rep-add" data-sec="${k}">＋ 添加${label}</button>`).join("")}
+    <input class="rep-reason" placeholder="修订原因（必填，留历史）"/>
+    <button class="primary rep-save">保存报告修订</button>
+    ${r.history.length ? `<details class="mini"><summary>历史（${r.history.length}）</summary>${r.history.map((h) => `<p class="hint">r${h.revision} · ${esc(h.at)} · ${esc(h.reason)}</p>`).join("")}</details>` : ""}
+  </details>`;
+}
+
+function analysisRightHtml() {
+  const t = currentTask();
+  if (!t) return `<p class="hint">选择分析任务后：这里发起方法推荐、提交处理结果、编辑初步报告。</p>`;
+  const rec = t.recommendation;
+  const results = t.resultIds.map((id) => state.analysisResults.find((r) => r.id === id)).filter(Boolean);
+  const reps = state.reports.filter((r) => r.taskId === t.id);
+  let h = `<details class="mini" open><summary>方法推荐（含验收项；预期产物≠预设结论）</summary>
+    <textarea id="an-purpose" rows="2" placeholder="研究目的（必填，如：估计 pH3 下酶活半衰期并比较 pH5）"></textarea>
+    <button class="primary" id="an-recommend">${rec ? "重新推荐（生成新快照）" : "发起方法推荐"}</button>`;
+  if (rec) {
+    h += rec.methods.map((m) => `<div class="item"><b>${esc(m.name)}</b> · 软件：${esc(m.software)}<p>${esc(m.rationale)}</p>
+      <p class="hint">预期产物：${m.expectedArtifacts.map(esc).join("；") || "（未列）"}</p>
+      <p class="hint">验收项：${m.acceptanceItems.map(esc).join("；") || "（未列）"}</p></div>`).join("");
+    if (rec.unknowns.length) h += `<p class="hint">未知/待补：${rec.unknowns.map(esc).join("；")}</p>`;
+    h += `<details class="mini"><summary>AI 原始返回</summary><pre>${esc(rec.raw)}</pre></details>`;
+  }
+  h += `</details>`;
+  h += `<details class="mini" ${results.length ? "" : "open"}><summary>提交处理结果（Origin/MATLAB 等外部工具允许）</summary>
+    <input id="res-method" placeholder="实际使用的方法（如 Origin 双指数衰减拟合）"/>
+    <textarea id="res-params" rows="2" placeholder="关键参数（拟合区间/初值/软件版本等；缺参数不标可复现）"></textarea>
+    <select id="res-adopt"><option value="">未采纳推荐（须填理由）</option>${(rec?.methods ?? []).map((m) => `<option value="${esc(m.name)}">采纳：${esc(m.name)}</option>`).join("")}</select>
+    <input id="res-reason" placeholder="不采纳理由（简短）"/>
+    <input id="res-note" placeholder="备注（可选）"/>
+    <input id="res-files" type="file" multiple accept=".csv,.tsv,.json,.txt,.md,.png,.jpg,.jpeg,.webp"/>
+    <p class="hint">只有图/脚本也可提交，但不标「可复现」；附数据文件（csv/tsv/json/txt/md）＋关键参数才可复现。</p>
+    <button class="primary" id="res-submit">提交结果</button></details>`;
+  h += results.map(resultHtml).join("");
+  h += `<details class="mini" open><summary>初步报告（观察/假设/解释/待验证分列）</summary>
+    <button id="rep-create">新建初步报告（钉住当前结果）</button>
+    ${reps.map(reportHtml).join("") || `<p class="hint">暂无报告。</p>`}</details>`;
+  return h;
+}
+
+function chatHtml(c) {
+  const msgs = c.messages.map((m) => {
+    if (m.role === "user") return `<div class="chatmsg user"><p>${esc(m.content)}</p></div>`;
+    const badge = { running: `<span class="badge warn">运行中</span>`, done: "", failed: `<span class="badge cand-pending">失败</span>`, cancelled: `<span class="badge">已取消</span>` }[m.status];
+    let body;
+    if (m.status === "running") body = `<p class="hint">等待 AI 返回… <button class="chat-cancel" data-mid="${m.id}">取消</button></p>`;
+    else if (m.status === "failed") body = `<p class="hint">失败：${esc(m.error ?? "")} <button class="chat-retry" data-mid="${m.id}">重试</button></p>`;
+    else if (m.status === "cancelled") body = `<p class="hint">已取消：返回内容被丢弃，不写入。 <button class="chat-retry" data-mid="${m.id}">重试</button></p>`;
+    else body = `<p>${esc(m.content)}</p>
+      ${m.sources.length ? `<details class="mini"><summary>来源（${m.sources.length}）</summary><ul>${m.sources.map((s) => `<li>${esc(s)}</li>`).join("")}</ul></details>` : ""}
+      ${m.snapshot ? `<details class="mini"><summary>本次冻结快照 · hash ${m.snapshot.hash.slice(0, 12)}…</summary>${snapshotHtml(m.snapshot)}</details>` : ""}`;
+    return `<div class="chatmsg assistant">${badge}${body}</div>`;
+  }).join("");
+  const running = c.messages.some((m) => m.status === "running");
+  return `<div class="chatlog">${msgs || `<p class="hint">还没有消息。输入问题开始讨论（范围与采纳见右栏）。</p>`}</div>
+    <div class="row"><textarea id="chat-text" rows="2" placeholder="围绕本课题/子问题与已选对象提问…"></textarea>
+    <button class="primary" id="chat-send" ${running ? "disabled" : ""}>${running ? "回答运行中…" : "发送"}</button></div>`;
+}
+
+function chatRightHtml() {
+  const c = currentChat();
+  if (!c) return `<p class="hint">选择会话后：这里显示范围、建议采纳与最近一次冻结快照。</p>`;
+  const q = c.subquestionId ? state.subquestions.find((x) => x.id === c.subquestionId) : null;
+  let h = `<p><b>范围</b>：课题「${esc(topicName(c.topicId) ?? c.topicId)}」${q ? ` → 子问题「${esc(q.question)}」` : ""}</p>
+    <ul>${c.scope.map((r) => `<li>${esc(refLabel(r))} <span class="hint">${r.kind}:${r.id}</span></li>`).join("") || `<li class="hint">未显式选取对象（仅课题/子问题层）。</li>`}</ul>
+    <p class="hint"><b>建议采纳</b>：讨论不修改对象；逐条预览＋人工确认后才写入目标。</p>`;
+  const proposals = c.messages.flatMap((m) => m.proposals.map((p, i) => ({ m, p, i })));
+  h += proposals.length
+    ? proposals.map(({ m, p, i }) => `<div class="item"><p>${esc(p.preview)}</p>
+        <p class="hint">目标：${p.targetKind === "execution-note" ? "执行备注" : "报告待验证"} · ${esc(p.targetId)}</p>
+        ${p.confirmed ? `<span class="badge confirm">已采纳 ${esc(p.adoptedAt ?? "")}</span>` : `<button class="chat-adopt" data-mid="${m.id}" data-idx="${i}">确认采纳</button>`}</div>`).join("")
+    : `<p class="hint">暂无建议。</p>`;
+  const last = [...c.messages].reverse().find((m) => m.role === "assistant" && m.status === "done" && m.snapshot);
+  if (last) h += snapshotHtml(last.snapshot);
+  return h;
+}
+
 function ocrHtml(asset) {
   const ocrs = state.ocrs.filter((o) => o.assetId === asset.id);
   return `
@@ -1165,7 +1428,7 @@ $("#nav").addEventListener("click", (ev) => {
   $$(".navitem").forEach((x) => x.classList.toggle("active", x === b));
   renderAll();
 });
-$("#topic-select").addEventListener("change", (e) => { if (!guardLeave()) { renderTopics(); return; } ui.topicId = e.target.value; ui.assetId = null; ui.highlight = null; ui.groupSel.clear(); ui.batch = null; ui.protocolId = null; ui.executionId = null; ui.stepSel = null; ui.viewRev = null; renderAll(); });
+$("#topic-select").addEventListener("change", (e) => { if (!guardLeave()) { renderTopics(); return; } ui.topicId = e.target.value; ui.assetId = null; ui.highlight = null; ui.groupSel.clear(); ui.batch = null; ui.protocolId = null; ui.executionId = null; ui.stepSel = null; ui.viewRev = null; ui.taskId = null; ui.chatId = null; ui.reportId = null; renderAll(); });
 $("#topic-create").addEventListener("click", (ev) => runBusy(ev.target, "创建课题", async () => {
   const r = await api.createTopic($("#topic-name").value, $("#topic-q").value);
   ui.topicId = r.topicId; await refresh(); setStatus("课题已创建");
@@ -1191,9 +1454,57 @@ $("#material-list").addEventListener("click", (ev) => {
     if (!guardLeave()) return;
     ui.executionId = el.dataset.eid; ui.editEventId = null; ui.pauseSuggest = null; ui.prepExtra = 0; ui.assetId = null; renderAll(); return;
   }
+  if (el.dataset.atid) {
+    if (el.dataset.atid === ui.taskId) return;
+    if (!guardLeave()) return;
+    ui.taskId = el.dataset.atid; ui.reportId = null; renderAll(); return;
+  }
+  if (el.dataset.cid) {
+    if (el.dataset.cid === ui.chatId) return;
+    if (!guardLeave()) return;
+    ui.chatId = el.dataset.cid; renderAll(); return;
+  }
   if (el.dataset.id === ui.assetId) return;
   if (!guardLeave()) return;
   ui.assetId = el.dataset.id; ui.highlight = null; ui.cell = null; ui.tableId = null; ui.groupSel.clear(); ui.batch = null; ui.ack = false; renderAll();
+});
+$("#mid-content").addEventListener("click", async (ev) => {
+  if (ev.target.id === "cand-save") {
+    const t = currentTask(); if (!t) return;
+    await runBusy(ev.target, "保存候选", async () => {
+      const optional = [...$$("#mid-content .cand-toggle")].map((cb) => ({ ref: t.optional[Number(cb.dataset.idx)].ref, included: cb.checked }));
+      await api.setTaskCandidates(t.id, optional);
+      await refresh(); setStatus("候选选择已保存（旧快照不受影响）");
+    }); return;
+  }
+  if (ev.target.id === "chat-send") {
+    const c = currentChat(); if (!c) return;
+    const text = $("#chat-text").value.trim();
+    if (!text) { setStatus("请输入讨论内容"); return; }
+    await runJob(ev.target, "上下文讨论", async () => {
+      const r = await api.sendChat(c.id, text);
+      $("#chat-text").value = "";
+      await refresh();
+      await pollJob(r.jobId, "上下文讨论");
+      await refresh(); setStatus("讨论完成（建议采纳见右栏）");
+    }); return;
+  }
+  if (ev.target.classList.contains("chat-cancel")) {
+    const c = currentChat(); if (!c) return;
+    await runBusy(ev.target, "取消回答", async () => {
+      await api.cancelChatMessage(c.id, ev.target.dataset.mid);
+      await refresh(); setStatus("已取消：若 AI 稍后返回，内容将被丢弃不写入");
+    }); return;
+  }
+  if (ev.target.classList.contains("chat-retry")) {
+    const c = currentChat(); if (!c) return;
+    await runJob(ev.target, "重试回答", async () => {
+      const r = await api.retryChatMessage(c.id, ev.target.dataset.mid);
+      await refresh();
+      await pollJob(r.jobId, "上下文讨论");
+      await refresh(); setStatus("重试完成");
+    }); return;
+  }
 });
 $("#right-content").addEventListener("change", (ev) => {
   if (ev.target.classList.contains("paper-topic")) {
@@ -1216,12 +1527,81 @@ $("#right-content").addEventListener("change", (ev) => {
   }
   if (ev.target.id === "batch-ack") { ui.ack = ev.target.checked; renderRight(); }
 });
-$("#right-content").addEventListener("input", (ev) => { if (ev.target.closest(".item")) ui.dirty = true; });
+$("#right-content").addEventListener("input", (ev) => { if (ev.target.closest(".item") || ev.target.closest(".resedit") || ev.target.closest(".reprow")) ui.dirty = true; });
 $("#right-content").addEventListener("click", async (ev) => {
   const item = ev.target.closest(".item");
   const val = (f) => item?.querySelector(`[data-field="${f}"]`)?.value ?? "";
   const splitList = (s) => String(s ?? "").split(/[,，]/).map((x) => x.trim()).filter(Boolean);
   try {
+    // ── 5E：推荐 / 结果 / 报告 / 采纳 ──
+    if (ev.target.id === "an-recommend") {
+      const t = currentTask(); if (!t) return;
+      const purpose = $("#an-purpose").value.trim();
+      if (!purpose) { showBanner("推荐须写明研究目的。"); return; }
+      await runJob(ev.target, "方法推荐", async () => {
+        const r = await api.recommendMethods(t.id, purpose);
+        setStatus(`快照已冻结 ${r.snapshotHash.slice(0, 12)}…`);
+        await pollJob(r.jobId, "方法推荐");
+        await refresh(); setStatus("方法推荐完成（含验收项）");
+      }); return;
+    }
+    if (ev.target.id === "res-submit") {
+      const t = currentTask(); if (!t) return;
+      await runBusy(ev.target, "提交结果", async () => {
+        const attachments = [];
+        for (const f of [...($("#res-files").files ?? [])]) {
+          const content = /^image\/(png|jpeg|webp)$/.test(f.type)
+            ? await new Promise((res, rej) => { const rd = new FileReader(); rd.onload = () => res(rd.result); rd.onerror = rej; rd.readAsDataURL(f); })
+            : await readTextFile(f);
+          attachments.push({ name: f.name, content });
+        }
+        const r = await api.submitResult(t.id, { method: $("#res-method").value, params: $("#res-params").value, reason: $("#res-reason").value, note: $("#res-note").value, adoptedRecommendation: $("#res-adopt").value || undefined, attachments });
+        await refresh(); setStatus(r.reproducible ? "结果已提交：可复现" : `结果已提交（不可复现：${r.missing.join("；")}）`);
+      }); return;
+    }
+    if (ev.target.classList.contains("res-edit-save")) {
+      const box = ev.target.closest(".resedit"); const rid = box.dataset.rid;
+      const v = (f) => box.querySelector(`[data-field="${f}"]`).value;
+      await runBusy(ev.target, "修订结果", async () => {
+        await api.editResult(rid, { method: v("method"), params: v("params"), note: v("note"), reason: v("reason") });
+        ui.dirty = false; await refresh(); setStatus("结果已修订（留历史，可复现性重算）");
+      }); return;
+    }
+    if (ev.target.id === "rep-create") {
+      const t = currentTask();
+      await runBusy(ev.target, "新建报告", async () => {
+        const r = await api.createReport(ui.topicId || t?.topicId, t?.id);
+        ui.reportId = r.reportId; await refresh(); setStatus("初步报告已创建（钉住当前结果与快照）");
+      }); return;
+    }
+    if (ev.target.classList.contains("rep-add")) {
+      const row = document.createElement("div"); row.className = "reprow"; row.dataset.sec = ev.target.dataset.sec; row.dataset.idx = "new";
+      row.innerHTML = `<textarea data-field="text" rows="2" placeholder="内容"></textarea><input data-field="sources" placeholder="来源（分号分隔）"/><button class="rep-del">删除</button>`;
+      ev.target.before(row); ui.dirty = true; return;
+    }
+    if (ev.target.classList.contains("rep-del")) { ev.target.closest(".reprow").remove(); ui.dirty = true; return; }
+    if (ev.target.classList.contains("rep-save")) {
+      const box = ev.target.closest(".rep"); const repId = box.dataset.repid;
+      const reason = box.querySelector(".rep-reason").value.trim();
+      if (!reason) { showBanner("报告修订必须填写原因（留历史）。"); return; }
+      const sections = { observations: [], hypotheses: [], interpretations: [], toVerify: [] };
+      for (const row of box.querySelectorAll(".reprow")) {
+        const text = row.querySelector('[data-field="text"]').value.trim();
+        if (!text) continue;
+        sections[row.dataset.sec].push({ text, sources: row.querySelector('[data-field="sources"]').value.split(/[;；]/).map((s) => s.trim()).filter(Boolean) });
+      }
+      await runBusy(ev.target, "保存报告", async () => {
+        await api.updateReport(repId, sections, reason);
+        ui.reportId = repId; ui.dirty = false; await refresh(); setStatus("报告已保存（修订留历史）");
+      }); return;
+    }
+    if (ev.target.classList.contains("chat-adopt")) {
+      const c = currentChat(); if (!c) return;
+      await runBusy(ev.target, "采纳建议", async () => {
+        await api.adoptChatProposal(c.id, ev.target.dataset.mid, Number(ev.target.dataset.idx));
+        await refresh(); setStatus("已采纳：写入目标对象（执行备注/报告待验证），来源可溯");
+      }); return;
+    }
     if (ev.target.classList.contains("span-link")) { ui.assetId = ev.target.dataset.asset; ui.highlight = ev.target.dataset.quote; renderMiddle(); return; }
     const attEl = ev.target.closest(".material[data-attid]");
     if (attEl) { ui.attId = attEl.dataset.attid; ui.highlight = null; renderMiddle(); renderRight(); return; }
