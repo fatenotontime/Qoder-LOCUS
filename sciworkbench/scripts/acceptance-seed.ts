@@ -27,4 +27,4 @@ const subs: { question: string; kind: "declared" | "exploratory" }[] = [
 for (const s of subs) state = createSubquestion(state, { topicId: t.topic.id, question: s.question, kind: s.kind }).state;
 await store.save(state);
 console.log(`已种子：课题 ${t.topic.id} + ${subs.length} 子问题 → ${file}`);
-console.log("材料均为待上传；启动：PORT=5180 LOCUS_DATA=" + file + " node server.ts，打开 /acceptance.html");
+console.log("材料未处理（样本文件已提交）；启动：PORT=5184 LOCUS_DATA=" + file + " node server.ts，打开 http://127.0.0.1:5184/ 直进主页面");

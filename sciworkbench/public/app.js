@@ -134,15 +134,15 @@ function renderSubq() {
 }
 function renderImportBox() {
   const hints = {
-    topic: "课题首页：总览、进度与待办；从这里进入各工作区",
-    papers: "文献整理：论文条目≠文件；收藏/导入附件不触发 AI 解析",
-    knowledge: "领域知识：选文献＋写研究目的，才发起语义提取；结果进待审区",
-    literature: "旧版材料视图（开发调试）：逐段机械草稿，明确标记，不作为正式知识提取",
-    measurement: "实验数据：上传/粘贴 CSV（保留表格结构）",
-    protocol: "方案：上传原件直接解析（不进文献库）；版本固定，编辑追加新快照",
-    record: "记录：创建执行先进准备稿；确认快照后才补记录，实际层不改源方案",
-    analysis: "分析：从执行/数据建任务；上下文地图核心＋可取消候选；推荐含验收项；结果须写实际方法",
-    chat: "对话：限定课题/子问题＋显式选取对象；讨论不改对象；采纳须预览＋人工确认",
+    topic: "研究问题与待办",
+    papers: "条目与附件；不强制解析",
+    knowledge: "选文献＋写目的，才提取",
+    literature: "旧版材料视图（开发调试）",
+    measurement: "上传/粘贴 CSV",
+    protocol: "上传原件直接解析；版本固定",
+    record: "先准备稿，确认快照后再记录",
+    analysis: "选上下文，推荐与验收项",
+    chat: "带上下文讨论；采纳需确认",
   };
   $("#nav-hint").textContent = hints[ui.nav] ?? "";
   const box = $("#import-box");
@@ -156,7 +156,7 @@ function renderImportBox() {
   if (ui.nav === "literature") {
     box.innerHTML = `
       <details class="mini" ${state.assets.length ? "" : "open"}>
-        <summary>导入文献（机械草稿·开发调试，非正式知识提取）</summary>
+        <summary>导入文献（开发调试）</summary>
         <input id="lit-name" placeholder="来源名称（如 SLAC methods-source.md）" />
         <input id="lit-file" type="file" accept=".md,.markdown,.txt,text/markdown,text/plain" />
         <textarea id="lit-text" rows="3" placeholder="或粘贴 Markdown/文本…"></textarea>
@@ -298,9 +298,9 @@ function renderMiddle() {
     const att = currentAttachment();
     $("#mid-title").textContent = att ? `附件原文 · ${state.assets.find((a) => a.id === att.assetId)?.name ?? ""}` : "附件原文";
     if (!p) { note.hidden = true; content.textContent = "在左栏选择或新建论文条目。"; return; }
-    if (!att) { note.hidden = false; note.textContent = "该条目暂无附件；在右栏导入附件（只归档，不触发解析）。"; content.textContent = ""; return; }
+    if (!att) { note.hidden = false; note.textContent = "无附件；右栏导入（只归档）。"; content.textContent = ""; return; }
     const asset = state.assets.find((a) => a.id === att.assetId);
-    note.hidden = false; note.textContent = `角色：${ROLE_LABEL[att.role]}${att.version ? " · 版本 " + att.version : ""} · 原件 ${asset?.bytes ?? 0}B（hash 固定，不随加载重算）`;
+    note.hidden = false; note.textContent = `角色：${ROLE_LABEL[att.role]}${att.version ? " · 版本 " + att.version : ""} · 原件 ${asset?.bytes ?? 0}B`;
     content.innerHTML = esc(asset?.text ?? "");
     return;
   }
@@ -310,9 +310,9 @@ function renderMiddle() {
     const asset = (ui.assetId && state.assets.find((a) => a.id === ui.assetId)) || state.assets.find((a) => a.id === atts[0]?.assetId);
     $("#mid-title").textContent = asset ? `原件 · ${asset.name}` : "原件";
     if (!p) { note.hidden = true; content.textContent = "在左栏选择文献条目。"; return; }
-    if (!asset) { note.hidden = false; note.textContent = "该条目暂无附件；先到「文献整理」导入。"; content.textContent = ""; return; }
+    if (!asset) { note.hidden = false; note.textContent = "无附件；先去「文献整理」导入。"; content.textContent = ""; return; }
     if (ui.highlight && asset.text.includes(ui.highlight)) { note.hidden = true; content.innerHTML = esc(asset.text).replace(esc(ui.highlight), `<mark>${esc(ui.highlight)}</mark>`); }
-    else if (ui.highlight) { note.hidden = false; note.textContent = "定位不足：未能在原件中精确匹配该引文，已展示完整原件。"; content.innerHTML = esc(asset.text); }
+    else if (ui.highlight) { note.hidden = false; note.textContent = "定位不足：显示完整原件。"; content.innerHTML = esc(asset.text); }
     else { note.hidden = true; content.innerHTML = esc(asset.text); }
     return;
   }
@@ -327,7 +327,7 @@ function renderMiddle() {
         ? esc(src.text).replace(esc(ui.highlight), `<mark>${esc(ui.highlight)}</mark>`)
         : esc(src.text);
     } else {
-      note.hidden = false; note.textContent = p.sourceKind === "user" ? "用户编写方案：无外部原件，下方为固定版本快照。" : "来源片段见快照 sourceFragments。";
+      note.hidden = false; note.textContent = p.sourceKind === "user" ? "无外部原件；下为版本快照。" : "来源见快照 sourceFragments。";
       content.textContent = fmtSnapshot(viewSnapshot(p));
     }
     return;
@@ -336,7 +336,7 @@ function renderMiddle() {
     const a = currentAsset();
     if (a && a.kind === "image") {
       $("#mid-title").textContent = `原始图片 · ${a.name}`;
-      note.hidden = false; note.textContent = "原图归档（不压缩转码）；识别结果在右栏，须人工确认。";
+      note.hidden = false; note.textContent = "原图归档；识别在右栏，须确认。";
       content.innerHTML = `<img class="ocrimg" src="${a.text}" alt="${esc(a.name)}" />`;
       return;
     }
@@ -348,10 +348,10 @@ function renderMiddle() {
     const snap = e.preparation?.snapshot ?? p?.revisions.find((r) => r.revision === (e.preparation?.baseRevision ?? e.protocolRevision));
     note.hidden = false;
     note.textContent = prep
-      ? `准备稿（未确认）：基础 r${e.preparation?.baseRevision ?? e.protocolRevision}，当前方案 r${p?.revision ?? "?"}；差异在右栏编辑，确认后才冻结。`
+      ? `准备稿（未确认）：基础 r${e.preparation?.baseRevision ?? e.protocolRevision}，当前方案 r${p?.revision ?? "?"}；差异在右栏，确认后冻结。`
       : e.preparation?.snapshot
-        ? `本次执行确认快照（基础 r${e.protocolRevision} ＋ ${e.preparation.adjustments.length} 条差异）；源方案当前 r${p?.revision ?? "?"}，不影响本次。`
-        : `执行固定引用 r${e.protocolRevision}（当前方案 r${p?.revision ?? "?"}）；实际层编辑不改此快照。`;
+        ? `本次快照：基础 r${e.protocolRevision} ＋ ${e.preparation.adjustments.length} 条差异；源方案 r${p?.revision ?? "?"} 不影响本次。`
+        : `固定引用 r${e.protocolRevision}（当前方案 r${p?.revision ?? "?"}）；记录不改此快照。`;
     content.textContent = snap ? fmtSnapshot(snap) : "（方案快照缺失）";
     return;
   }
@@ -361,8 +361,8 @@ function renderMiddle() {
     if (!t) { note.hidden = true; content.textContent = "在左栏选择或创建分析任务。"; return; }
     note.hidden = false;
     note.textContent = t.snapshot
-      ? `快照已在推荐时冻结（hash ${t.snapshot.hash.slice(0, 12)}…）；此后改候选不回改旧快照，重新推荐会生成新快照。`
-      : "尚未冻结快照：发起方法推荐时，按当前核心＋已勾选候选＋研究目的冻结实际发送内容。";
+      ? `快照已冻结（hash ${t.snapshot.hash.slice(0, 12)}…）；改候选不回改旧快照。`
+      : "未冻结：推荐时按核心＋候选＋目的冻结发送内容。";
     content.innerHTML = contextMapHtml(t);
     return;
   }
@@ -371,7 +371,7 @@ function renderMiddle() {
     $("#mid-title").textContent = c ? "上下文对话" : "上下文对话";
     if (!c) { note.hidden = true; content.textContent = "在左栏选择或创建对话会话。"; return; }
     note.hidden = false;
-    note.textContent = `范围：${c.subquestionId ? "子问题 ＋ " : ""}${c.scope.length} 个显式选取对象；每次发送冻结当时快照。讨论本身不修改任何对象，采纳须人工确认。`;
+    note.textContent = `范围：${c.subquestionId ? "子问题 ＋ " : ""}${c.scope.length} 对象；发送即冻结快照。讨论不改对象；采纳需确认。`;
     content.innerHTML = chatHtml(c);
     return;
   }
@@ -380,7 +380,7 @@ function renderMiddle() {
   if (!a) { note.hidden = true; content.textContent = "在左栏选择或导入材料。"; return; }
   if (!ui.highlight) { note.hidden = true; content.innerHTML = esc(a.text); return; }
   if (a.text.includes(ui.highlight)) { note.hidden = true; content.innerHTML = esc(a.text).replace(esc(ui.highlight), `<mark>${esc(ui.highlight)}</mark>`); }
-  else { note.hidden = false; note.textContent = "定位不足：未能在原件中精确匹配该条目，已展示完整原件。"; content.innerHTML = esc(a.text); }
+  else { note.hidden = false; note.textContent = "定位不足：显示完整原件。"; content.innerHTML = esc(a.text); }
 }
 function renderRight() {
   if (ui.nav === "topic") { $("#right-title").textContent = "待办与入口"; $("#right-content").innerHTML = topicTodosHtml(); return; }
@@ -447,7 +447,7 @@ function cardsHtml(assetId, paperId) {
   </div>` : "";
 
   const manualForm = !asset ? (paper ? `<p class="hint">该条目暂无附件：手动补卡需要可定位的原件，请先导入附件。</p>` : "") : `<details class="mini">
-    <summary>手动补卡（人工观察/摘录，标注 manual）</summary>
+    <summary>手动补卡</summary>
     <textarea id="mc-raw" rows="2" placeholder="证据内容（必填）"></textarea>
     <input id="mc-quote" placeholder="定位引文：粘贴原件中的连续片段（可留空＝定位不足，不得正式采用）" />
     <textarea id="mc-fields" rows="2" placeholder="字段，每行 键=值（如 Km=0.5）"></textarea>
@@ -477,7 +477,7 @@ function cardsHtml(assetId, paperId) {
         ${c.unknowns.length ? `<div class="hint warn">缺项：${c.unknowns.map(esc).join("、")}</div>` : ""}
         <div class="row"><button class="save-fields">保存字段/单位/条件</button></div>
       </details>
-      <details class="mini rev"><summary>核对与采用（按需展开）：核对 ${c.audit} · 候选 ${CAND_LABEL[cs]}${adps.length ? ` · 已记录 ${adps.length} 条任务采用` : ""}</summary>
+      <details class="mini rev"><summary>核对与采用 · 核对 ${c.audit} · 候选 ${CAND_LABEL[cs]}${adps.length ? ` · 已记录 ${adps.length} 条任务采用` : ""}</summary>
       <div class="row"><label>核对</label>
         <select data-field="audit">${["unreviewed", "confirm", "need_info", "exclude", "skip"].map((v) => `<option ${v === c.audit ? "selected" : ""}>${v}</option>`).join("")}</select>
         <label>重要</label>
@@ -551,15 +551,31 @@ function topicTodosHtml() {
   const liveExecs = state.executions.filter((e) => e.status !== "done" && (e.phase ?? "recording") !== "preparing" && inTopic(e.topicId));
   const prepExecs = state.executions.filter((e) => (e.phase ?? "recording") === "preparing" && inTopic(e.topicId));
   const rows = [];
-  if (pendingCards.length) rows.push(`<div class="item"><div class="meta">待审知识卡 ${pendingCards.length} 张</div><p class="hint">语义提取结果须人工核对后才算数。</p><button class="goto" data-goto="knowledge">去审阅</button></div>`);
+  if (pendingCards.length) rows.push(`<div class="item"><div class="meta">待审知识卡 ${pendingCards.length} 张</div><p class="hint">须人工核对。</p><button class="goto" data-goto="knowledge">去审阅</button></div>`);
   if (draftProtos.length) rows.push(`<div class="item"><div class="meta">AI 方案草稿 ${draftProtos.length} 份待确认</div><button class="goto" data-goto="protocol">去确认</button></div>`);
   if (unconfTmpls.length) rows.push(`<div class="item"><div class="meta">记录模板 ${unconfTmpls.length} 份待人工确认</div><button class="goto" data-goto="protocol">去确认</button></div>`);
-  if (prepExecs.length) rows.push(`<div class="item"><div class="meta">执行准备稿 ${prepExecs.length} 份待确认快照</div><p class="hint">准备≠已做实验：确认本次快照后才进入记录。</p><button class="goto" data-goto="record">去确认</button></div>`);
+  if (prepExecs.length) rows.push(`<div class="item"><div class="meta">执行准备稿 ${prepExecs.length} 份待确认快照</div><p class="hint">确认快照后再记录。</p><button class="goto" data-goto="record">去确认</button></div>`);
   if (liveExecs.length) rows.push(`<div class="item"><div class="meta">进行中/暂停的执行 ${liveExecs.length} 个</div><button class="goto" data-goto="record">去记录</button></div>`);
-  if (!rows.length) rows.push(`<div class="item"><p class="hint">当前没有待办。可新建课题、整理论文或发起知识提取。</p></div>`);
-  if (mechCount) rows.push(`<div class="item"><p class="hint">另有 ${mechCount} 张机械草稿（旧逐段拆分，开发调试产物），已明确标记，不计入语义知识。</p></div>`);
-  rows.push(`<div class="item"><div class="meta">暂藏 / 未实现功能清单</div><p class="hint">七入口均已接通（含数据处理与分析、上下文AI对话）。如实单列：Zotero 实时连接未实现（题录/附件导入可用）；手写 OCR 通道已实现但真实手写样本未验证；报告正式导出、实验图 AI 重排未实现（占位）。暂藏项（核对/采用、列设置、原始 CSV、映射比较高级选项）均折叠保留，非删除。详见 docs/stage5/02_HIDDEN_FEATURES.md。</p></div>`);
+  if (!rows.length) rows.push(`<div class="item"><p class="hint">当前没有待办。</p></div>`);
+  if (mechCount) rows.push(`<div class="item"><div class="meta">机械草稿 ${mechCount} 张</div><p class="hint">旧逐段拆分，开发调试用，不计入语义知识。</p></div>`);
+  rows.push(acceptancePanelHtml());
+  rows.push(`<div class="item"><div class="meta">暂藏 / 未实现</div><p class="hint">未实现：Zotero 实时连接、报告导出、实验图 AI 重排；手写 OCR 未验证。见 docs/stage5/02_HIDDEN_FEATURES.md。</p></div>`);
   return rows.join("");
+}
+
+/** 验收材料（常驻，未处理）：样本已在库，点按钮走真实路由；解析/提取由用户自行发起。 */
+const ACC_MATERIALS = [
+  { key: "paper", label: "导入文献", file: "samples/paper-laccase-btb-2026.md", src: "PMC13566542 · CC BY 4.0",
+    paper: { title: "Individual and Cooperative Photochemical–Enzymatic Processes for the Degradation of the Dye Bromothymol Blue: Kinetic and Eco-Toxicity Analysis", authors: "Urquiza AS, Reynoso A, Biasutti MA, Montejano HA, Reynoso E", year: "2026", doi: "10.3390/ijms27177767", source: "Europe PMC PMC13566542 · Int. J. Mol. Sci.", license: "CC BY 4.0" }, name: "paper-laccase-btb-2026.md" },
+  { key: "csv", label: "导入数据", file: "samples/slac-ph3-data.csv", src: "DaRUS 3337 · CC BY 4.0", name: "EnzymeML_SLAC_pH3__Data.csv" },
+  { key: "proto", label: "导入方案", file: "samples/protocol-source.md", src: "DaRUS 3337 · CC BY 4.0", name: "protocol-source.md" },
+];
+function acceptancePanelHtml() {
+  const dis = ui.topicId ? "" : `disabled title="先选课题"`;
+  return `<details class="mini"><summary>验收材料（未处理）</summary>
+    ${ACC_MATERIALS.map((m) => `<div class="row"><button class="acc-import" data-key="${m.key}" ${dis}>${m.label}</button><span class="hint">${esc(m.src)}</span></div>`).join("")}
+    <p class="hint">导入后自行发起解析／提取。</p>
+  </details>`;
 }
 
 /** 409 不死路：给出已有条目定位按钮。 */
@@ -576,7 +592,7 @@ function showLocate(msg, paperId) {
 function renderPaperForm(box) {
   box.innerHTML = `
     <details class="mini" ${state.papers.length ? "" : "open"}>
-      <summary>新建论文条目（题名必填，其余可后补）</summary>
+      <summary>新建论文条目（题名必填）</summary>
       <input id="pp-title" placeholder="题名（必填）" />
       <input id="pp-authors" placeholder="作者（and 或分号分隔）" />
       <div class="row"><input id="pp-year" placeholder="年份" /><input id="pp-doi" placeholder="DOI（可空）" /></div>
@@ -649,7 +665,7 @@ function renderKnowledgeForm(box) {
   const subqs = state.subquestions.filter((q) => !ui.topicId || q.topicId === ui.topicId);
   box.innerHTML = `
     <details class="mini" open>
-      <summary>发起语义提取（选文献＋研究目的）</summary>
+      <summary>语义提取（选文献＋目的）</summary>
       ${p ? `<div class="hint">当前文献：${esc(p.title)}</div>
         ${atts.length ? atts.map((a) => `<label class="cmppick"><input type="checkbox" class="k-att" value="${a.id}" checked/> ${esc(state.assets.find((x) => x.id === a.assetId)?.name ?? a.assetId)}（${ROLE_LABEL[a.role]}）</label>`).join("") : `<p class="hint warn">该条目无附件；先到「文献整理」导入。</p>`}
         <textarea id="k-purpose" rows="2" placeholder="研究目的（必填）：围绕哪个研究问题提取？如：比较 pH 对 Km 的影响"></textarea>
@@ -659,7 +675,7 @@ function renderKnowledgeForm(box) {
       : `<p class="hint">先在下方选择文献条目（或到「文献整理」新建）。</p>`}
     </details>
     <details class="mini">
-      <summary>机械草稿（开发调试，非正式提取）</summary>
+      <summary>机械草稿（开发调试）</summary>
       <input id="dbg-name" placeholder="文件名" />
       <textarea id="dbg-text" rows="2" placeholder="粘贴文本：逐段拆分为草稿卡，全部标记 mechanical"></textarea>
       <button id="dbg-import">导入机械草稿</button>
@@ -685,7 +701,7 @@ function renderLitTools() {
   if (ui.nav === "papers") {
     box.innerHTML = `
       <details class="mini">
-        <summary>题录导入（Zotero 导出即用）</summary>
+        <summary>题录导入（Zotero 导出）</summary>
         <select id="bib-format"><option value="bibtex">BibTeX（.bib）</option><option value="csl-json">CSL-JSON（Zotero 导出）</option></select>
         <textarea id="bib-text" rows="4" placeholder="粘贴题录内容；同 DOI 已有条目会跳过并给定位"></textarea>
         <button class="primary" id="bib-import">导入题录</button>
@@ -795,8 +811,8 @@ function tableHtml(assetId) {
       <div class="meta">${t.rows.length} 行（${t.rows.length - markers.size} 数据 · ${markers.size} 标记）× ${t.columns.length} 列 · rev ${t.revision}</div>
       <div class="row"><button class="tbl-max">最大化表格</button><button class="tbl-fold">${foldEmpty ? "展开全空行" : "折叠全空行"}</button></div>
       ${grid}
-      <details class="mini"><summary>查看原始 CSV（原件字节不变，不清理）</summary><pre>${esc(asset?.text ?? "")}</pre></details>
-      <details class="mini"><summary>列设置（单位 / 核对，按需展开）</summary>
+      <details class="mini"><summary>查看原始 CSV（原件不改）</summary><pre>${esc(asset?.text ?? "")}</pre></details>
+      <details class="mini"><summary>列设置（单位 / 核对）</summary>
         <div class="tablewrap"><table class="grid"><thead><tr>${t.columns.map((name, i) => `<th><div>${esc(name)}</div>
           <input data-col="${i}" data-k="unit" value="${esc(t.columnMeta[i].unit)}" placeholder="单位" />
           <select data-col="${i}" data-k="decision">${["unreviewed", "confirm", "need_info"].map((v) => `<option ${v === t.columnMeta[i].decision ? "selected" : ""}>${v}</option>`).join("")}</select></th>`).join("")}</tr></thead></table></div>
@@ -807,7 +823,7 @@ function tableHtml(assetId) {
       ${cell ? `<div class="row celledit"><label>单元格 r${cell.row}·c${cell.col}</label>
         <input data-field="cellValue" value="${esc(t.rows[cell.row]?.[cell.col] ?? "")}" />
         <input data-field="cellReason" placeholder="更正原因（必填）" />
-        <button class="save-cell">保存单元格</button><button class="cancel-cell">取消</button></div>` : `<p class="hint">点击中间原件或最大化视图中的单元格可定位；定位后再改数值（需原因）。</p>`}
+        <button class="save-cell">保存单元格</button><button class="cancel-cell">取消</button></div>` : `<p class="hint">点单元格定位；改值需原因。</p>`}
     </div>`;
 }
 
@@ -866,7 +882,7 @@ function renderProtocolImport(box) {
   const paperAtts = state.assets.filter((a) => a.kind === "literature" && state.attachments.some((x) => x.assetId === a.id));
   box.innerHTML = `
     <details class="mini" open>
-      <summary>上传方案原件 → 直接解析（不进文献库）</summary>
+      <summary>上传方案原件（直接解析）</summary>
       <input id="proto-up-name" placeholder="文件名（如 protocol.md）" />
       <input id="proto-up-file" type="file" accept=".md,.markdown,.txt,.text,text/markdown,text/plain" />
       <textarea id="proto-up-text" rows="3" placeholder="或粘贴方案文本（Markdown/纯文本）…"></textarea>
@@ -877,7 +893,7 @@ function renderProtocolImport(box) {
       ${protos.map((a) => `<div class="row protoasset" data-aid="${a.id}"><span class="hint">${esc(a.name)} · ${a.bytes}B</span><button class="protoasset-parse">解析为草稿</button></div>`).join("")}
     </details>` : ""}
     <details class="mini">
-      <summary>从论文附件重构（标 reconstructed，非作者原始方案）</summary>
+      <summary>从论文重构（非作者原始）</summary>
       ${paperAtts.length ? `<select id="parse-asset">${paperAtts.map((a) => `<option value="${a.id}">${esc(a.name)}</option>`).join("")}</select>
       <button id="proto-parse">重构为方案草稿</button>
       <p class="hint">重构来源仅限论文附件；草稿标 reconstructed 并固定来源原件，不是作者原始方案。</p>` : `<p class="hint">先在「文献整理」为论文条目导入正文/方法附件。</p>`}
@@ -949,7 +965,7 @@ function renderRecordImport(box) {
   const tmpls = state.templates.filter((t) => t.humanConfirmed);
   box.innerHTML = `
     <details class="mini" ${state.executions.length ? "" : "open"}>
-      <summary>创建执行（进入准备稿，固定方案版本）</summary>
+      <summary>创建执行（进准备稿）</summary>
       ${ps.length ? `<select id="exec-proto">${ps.map((p) => `<option value="${p.id}">${esc(p.name)}（r${p.revision}）</option>`).join("")}</select>
       <select id="exec-tmpl"><option value="">不用模板</option>${tmpls.map((t) => `<option value="${t.id}">模板 r${t.protocolRevision} · ${t.fields.length} 字段</option>`).join("")}</select>
       <button class="primary" id="exec-start">创建执行</button>
@@ -989,7 +1005,7 @@ function diagramHtml(p, snap) {
       <div class="dlane-nodes">${lane.steps.map((s) => node(s, null, false)).join(`<span class="darrow-h">→</span>`)}</div>
     </div>`;
   });
-  html += `</div><p class="hint">横向为时间推进方向；列宽等分（非时间比例），时间以 t≈/t≥ 标记。${L.unknownCount ? `主线有 ${L.unknownCount} 步时长未知：其后偏移为下界 t≥，未按零累计。` : ""}已知主线总时长 ${L.totalKnown}min。</p>`;
+  html += `</div><p class="hint">列宽等分（非时间比例）；t≈ 规定 / t≥ 下界。${L.unknownCount ? `主线 ${L.unknownCount} 步时长未知，其后为下界。` : ""}已知主线 ${L.totalKnown}min。</p>`;
   return html;
 }
 
@@ -1134,10 +1150,10 @@ function recordHtml() {
   return `
     <div class="item" data-id="${e.id}">
       <div class="meta">${esc(p?.name ?? e.protocolId)} · 固定 r${e.protocolRevision}${nAdj ? ` ＋ 本次差异 ${nAdj} 条` : ""} · <span class="badge ${e.status === "paused" ? "warn" : e.status === "active" ? "confirm" : ""}">${e.status}</span>${e.templateId ? " · 模板" : ""}</div>
-      ${e.preparation?.confirmedAt ? `<div class="hint">本次快照确认于 ${esc(e.preparation.confirmedAt)}（基础 r${e.preparation.baseRevision}${nAdj ? ` ＋ ${nAdj} 条差异` : "，无差异"}）；源方案后续修订不影响本次。</div>` : ""}
+      ${e.preparation?.confirmedAt ? `<div class="hint">本次快照确认于 ${esc(e.preparation.confirmedAt)}（基础 r${e.preparation.baseRevision}${nAdj ? ` ＋ ${nAdj} 条差异` : "，无差异"}）；源方案后续不影响本次。</div>` : ""}
       <div class="hint">数据完整度：步骤记录 ${(snap?.steps.length ?? 0) - missing.length}/${snap?.steps.length ?? 0}${missing.length ? ` · 未记录：${missing.map((s) => esc(s.op)).join("、")}` : ""}${unknownDur ? ` · ${unknownDur} 步时长未知（不按 0 计）` : ""}</div>
-      ${e.status === "active" && !hasStart ? `<div class="row"><button class="primary" id="exec-begin">记录实际开始</button><span class="hint">系统不虚构开始时间；实际开始由人记录。</span></div>` : ""}
-      ${e.preparation?.snapshot ? `<details class="mini"><summary>另存新方案（不改源方案）</summary>
+      ${e.status === "active" && !hasStart ? `<div class="row"><button class="primary" id="exec-begin">记录实际开始</button><span class="hint">由人记录，系统不代填。</span></div>` : ""}
+      ${e.preparation?.snapshot ? `<details class="mini"><summary>另存新方案（不改源）</summary>
         <div class="row"><input id="saveas-name" placeholder="新方案名称" /><button id="exec-saveas">另存为新方案 r1</button></div>
         <p class="hint">把本次确认快照存为新方案；不默认改动全局源方案。</p></details>` : ""}
       ${e.status === "active" ? `<div class="row"><input id="pause-reason" placeholder="暂停原因（必填）" />
@@ -1392,7 +1408,7 @@ function chatRightHtml() {
   if (!c) return `<p class="hint">选择会话后：这里显示范围、建议采纳与最近一次冻结快照。</p>`;
   const q = c.subquestionId ? state.subquestions.find((x) => x.id === c.subquestionId) : null;
   let h = `<p><b>范围</b>：课题「${esc(topicName(c.topicId) ?? c.topicId)}」${q ? ` → 子问题「${esc(q.question)}」` : ""}</p>
-    <ul>${c.scope.map((r) => `<li>${esc(refLabel(r))} <span class="hint">${r.kind}:${r.id}</span></li>`).join("") || `<li class="hint">未显式选取对象（仅课题/子问题层）。</li>`}</ul>
+    <ul>${c.scope.map((r) => `<li>${esc(refLabel(r))} <span class="hint">${r.kind}:${r.id}</span></li>`).join("") || `<li class="hint">未选对象（仅课题层）。</li>`}</ul>
     <p class="hint"><b>建议采纳</b>：讨论不修改对象；逐条预览＋人工确认后才写入目标。</p>`;
   const proposals = c.messages.flatMap((m) => m.proposals.map((p, i) => ({ m, p, i })));
   h += proposals.length
@@ -1654,6 +1670,25 @@ $("#right-content").addEventListener("click", async (ev) => {
       await runBusy(ev.target, "采纳建议", async () => {
         await api.adoptChatProposal(c.id, ev.target.dataset.mid, Number(ev.target.dataset.idx));
         await refresh(); setStatus("已采纳：写入目标对象（执行备注/报告待验证），来源可溯");
+      }); return;
+    }
+    if (ev.target.classList.contains("acc-import")) {
+      const m = ACC_MATERIALS.find((x) => x.key === ev.target.dataset.key);
+      await runBusy(ev.target, m.label, async () => {
+        const r = await fetch(m.file);
+        if (!r.ok) throw new Error(`样本缺失：${m.file}`);
+        const text = await r.text();
+        if (m.key === "paper") {
+          const p = await api.createPaper({ ...m.paper, topicIds: [ui.topicId] });
+          await api.addPaperAttachment(p.paperId, { name: m.name, text, role: "fulltext", version: "v1" });
+          ui.paperId = p.paperId;
+        } else if (m.key === "csv") {
+          await api.importMeasurements(m.name, text, ui.topicId, "auto", "auto");
+        } else {
+          const up = await api.uploadProtocolSource(m.name, text, ui.topicId);
+          ui.assetId = up.assetId;
+        }
+        await refresh(); setStatus(`${m.label}完成`);
       }); return;
     }
     if (ev.target.classList.contains("tbl-max")) { const it = ev.target.closest(".item"); if (it) openTableMax(it.dataset.id); return; }
