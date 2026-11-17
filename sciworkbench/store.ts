@@ -32,7 +32,7 @@ export interface RevisionEntry {
 /** 一条原始素材（导入的文献摘录或实验数据文件）。原件**完整保存**；超限直接拒绝，不截断。 */
 export interface AssetRecord {
   readonly id: string;
-  readonly kind: "literature" | "measurement" | "image";
+  readonly kind: "literature" | "measurement" | "image" | "protocol";
   readonly name: string;
   readonly topicId?: string;
   readonly bytes: number;

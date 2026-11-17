@@ -5,7 +5,7 @@ import { api } from "./lib/api.js";
 import { computeLanes, timeLabel } from "./lib/lanes.js";
 
 let state = { topics: [], subquestions: [], assets: [], papers: [], attachments: [], cards: [], tables: [], adoptions: [], mappings: [], comparisons: [], protocols: [], templates: [], executions: [], samples: [], measurements: [], impacts: [], ocrs: [] };
-const ui = { nav: "topic", topicId: "", assetId: null, paperId: null, attId: null, tableId: null, highlight: null, cell: null, dirty: false, busy: false, cardFilter: "all", groupSel: new Set(), batch: null, ack: false, protocolId: null, executionId: null, stepSel: null, viewRev: null, editEventId: null, pauseSuggest: null };
+const ui = { nav: "topic", topicId: "", assetId: null, paperId: null, attId: null, tableId: null, highlight: null, cell: null, dirty: false, busy: false, cardFilter: "all", groupSel: new Set(), batch: null, ack: false, protocolId: null, executionId: null, stepSel: null, viewRev: null, editEventId: null, pauseSuggest: null, prepExtra: 0 };
 let lastAction = null; // { label, run }
 
 // 选择态持久（仅非敏感 UI 选择：页签/课题/材料/表块），刷新后归属正确。
@@ -133,8 +133,8 @@ function renderImportBox() {
     knowledge: "领域知识：选文献＋写研究目的，才发起语义提取；结果进待审区",
     literature: "旧版材料视图（开发调试）：逐段机械草稿，明确标记，不作为正式知识提取",
     measurement: "实验数据：上传/粘贴 CSV（保留表格结构）",
-    protocol: "方案：手工创建或从文献 AI 解析；版本固定，编辑追加新快照",
-    record: "记录：按固定方案版本执行；实际层编辑不改源方案",
+    protocol: "方案：上传原件直接解析（不进文献库）；版本固定，编辑追加新快照",
+    record: "记录：创建执行先进准备稿；确认快照后才补记录，实际层不改源方案",
   };
   $("#nav-hint").textContent = hints[ui.nav] ?? "";
   const box = $("#import-box");
@@ -231,12 +231,13 @@ function renderMaterials() {
     box.innerHTML = es.length
       ? es.map((e) => {
           const p = state.protocols.find((x) => x.id === e.protocolId);
+          const prep = (e.phase ?? "recording") === "preparing";
           return `<div class="material ${e.id === ui.executionId ? "active" : ""}" data-eid="${e.id}">
-            <div class="m-title">${esc(p?.name ?? e.protocolId)} <span class="badge ${e.status === "paused" ? "warn" : e.status === "active" ? "confirm" : ""}">${STATUS[e.status]}</span></div>
-            <div class="m-meta">固定 r${e.protocolRevision} · ${e.events.length} 事件${e.templateId ? " · 用模板" : ""}</div>
+            <div class="m-title">${esc(p?.name ?? e.protocolId)} <span class="badge ${prep ? "cand-pending" : e.status === "paused" ? "warn" : e.status === "active" ? "confirm" : ""}">${prep ? "准备稿" : STATUS[e.status]}</span></div>
+            <div class="m-meta">固定 r${e.protocolRevision}${prep ? ` · ${e.preparation?.adjustments.length ?? 0} 条差异待确认` : ` · ${e.events.length} 事件`}${e.templateId ? " · 用模板" : ""}</div>
           </div>`;
         }).join("")
-      : `<p class="hint">暂无执行。选择方案（及已确认模板）后开始。</p>`;
+      : `<p class="hint">暂无执行。选择方案（及已确认模板）后创建，进入准备稿。</p>`;
     return;
   }
   const list = materials();
@@ -303,11 +304,17 @@ function renderMiddle() {
       return;
     }
     const e = currentExecution();
-    $("#mid-title").textContent = e ? `固定方案快照 · r${e.protocolRevision}` : "原始材料";
+    const prep = e && (e.phase ?? "recording") === "preparing";
+    $("#mid-title").textContent = e ? (prep ? `准备稿 · 基础 r${e.preparation?.baseRevision ?? e.protocolRevision}` : `本次执行快照 · 基础 r${e.protocolRevision}`) : "原始材料";
     if (!e) { note.hidden = true; content.textContent = "在左栏选择执行，或选择手写图片。"; return; }
     const p = state.protocols.find((x) => x.id === e.protocolId);
-    const snap = p?.revisions.find((r) => r.revision === e.protocolRevision);
-    note.hidden = false; note.textContent = `执行固定引用 r${e.protocolRevision}（当前方案 r${p?.revision ?? "?"}）；实际层编辑不改此快照。`;
+    const snap = e.preparation?.snapshot ?? p?.revisions.find((r) => r.revision === (e.preparation?.baseRevision ?? e.protocolRevision));
+    note.hidden = false;
+    note.textContent = prep
+      ? `准备稿（未确认）：基础 r${e.preparation?.baseRevision ?? e.protocolRevision}，当前方案 r${p?.revision ?? "?"}；差异在右栏编辑，确认后才冻结。`
+      : e.preparation?.snapshot
+        ? `本次执行确认快照（基础 r${e.protocolRevision} ＋ ${e.preparation.adjustments.length} 条差异）；源方案当前 r${p?.revision ?? "?"}，不影响本次。`
+        : `执行固定引用 r${e.protocolRevision}（当前方案 r${p?.revision ?? "?"}）；实际层编辑不改此快照。`;
     content.textContent = snap ? fmtSnapshot(snap) : "（方案快照缺失）";
     return;
   }
@@ -480,11 +487,13 @@ function topicTodosHtml() {
   const mechCount = state.cards.filter((c) => c.mechanical).length;
   const draftProtos = state.protocols.filter((p) => p.sourceKind === "ai-draft" && inTopic(p.topicId));
   const unconfTmpls = state.templates.filter((t) => !t.humanConfirmed && inTopic(state.protocols.find((p) => p.id === t.protocolId)?.topicId));
-  const liveExecs = state.executions.filter((e) => e.status !== "done" && inTopic(e.topicId));
+  const liveExecs = state.executions.filter((e) => e.status !== "done" && (e.phase ?? "recording") !== "preparing" && inTopic(e.topicId));
+  const prepExecs = state.executions.filter((e) => (e.phase ?? "recording") === "preparing" && inTopic(e.topicId));
   const rows = [];
   if (pendingCards.length) rows.push(`<div class="item"><div class="meta">待审知识卡 ${pendingCards.length} 张</div><p class="hint">语义提取结果须人工核对后才算数。</p><button class="goto" data-goto="knowledge">去审阅</button></div>`);
   if (draftProtos.length) rows.push(`<div class="item"><div class="meta">AI 方案草稿 ${draftProtos.length} 份待确认</div><button class="goto" data-goto="protocol">去确认</button></div>`);
   if (unconfTmpls.length) rows.push(`<div class="item"><div class="meta">记录模板 ${unconfTmpls.length} 份待人工确认</div><button class="goto" data-goto="protocol">去确认</button></div>`);
+  if (prepExecs.length) rows.push(`<div class="item"><div class="meta">执行准备稿 ${prepExecs.length} 份待确认快照</div><p class="hint">准备≠已做实验：确认本次快照后才进入记录。</p><button class="goto" data-goto="record">去确认</button></div>`);
   if (liveExecs.length) rows.push(`<div class="item"><div class="meta">进行中/暂停的执行 ${liveExecs.length} 个</div><button class="goto" data-goto="record">去记录</button></div>`);
   if (!rows.length) rows.push(`<div class="item"><p class="hint">当前没有待办。可新建课题、整理论文或发起知识提取。</p></div>`);
   if (mechCount) rows.push(`<div class="item"><p class="hint">另有 ${mechCount} 张机械草稿（旧逐段拆分，开发调试产物），已明确标记，不计入语义知识。</p></div>`);
@@ -749,8 +758,26 @@ async function pollJob(jobId, label) {
 }
 
 function renderProtocolImport(box) {
-  const lits = state.assets.filter((a) => a.kind === "literature" && (!ui.topicId || a.topicId === ui.topicId || !a.topicId));
+  const protos = state.assets.filter((a) => a.kind === "protocol" && (!ui.topicId || a.topicId === ui.topicId || !a.topicId));
+  const paperAtts = state.assets.filter((a) => a.kind === "literature" && state.attachments.some((x) => x.assetId === a.id));
   box.innerHTML = `
+    <details class="mini" open>
+      <summary>上传方案原件 → 直接解析（不进文献库）</summary>
+      <input id="proto-up-name" placeholder="文件名（如 protocol.md）" />
+      <input id="proto-up-file" type="file" accept=".md,.markdown,.txt,.text,text/markdown,text/plain" />
+      <textarea id="proto-up-text" rows="3" placeholder="或粘贴方案文本（Markdown/纯文本）…"></textarea>
+      <button class="primary" id="proto-upload">上传并解析为方案草稿</button>
+      <p class="hint">原件按方案类归档；草稿标 ai-draft，须人工编辑确认。AI 未配置时只归档，可稍后解析。</p>
+    </details>
+    ${protos.length ? `<details class="mini"><summary>已归档方案原件（${protos.length}）</summary>
+      ${protos.map((a) => `<div class="row protoasset" data-aid="${a.id}"><span class="hint">${esc(a.name)} · ${a.bytes}B</span><button class="protoasset-parse">解析为草稿</button></div>`).join("")}
+    </details>` : ""}
+    <details class="mini">
+      <summary>从论文附件重构（标 reconstructed，非作者原始方案）</summary>
+      ${paperAtts.length ? `<select id="parse-asset">${paperAtts.map((a) => `<option value="${a.id}">${esc(a.name)}</option>`).join("")}</select>
+      <button id="proto-parse">重构为方案草稿</button>
+      <p class="hint">重构来源仅限论文附件；草稿标 reconstructed 并固定来源原件，不是作者原始方案。</p>` : `<p class="hint">先在「文献整理」为论文条目导入正文/方法附件。</p>`}
+    </details>
     <details class="mini" ${state.protocols.length ? "" : "open"}>
       <summary>新建方案（手工）</summary>
       <input id="proto-name" placeholder="方案名称" />
@@ -760,13 +787,38 @@ function renderProtocolImport(box) {
       <input id="proto-criteria" placeholder="完成判据" />
       <input id="proto-frag" placeholder="来源片段（重构时必填，逗号分隔）" />
       <button class="primary" id="proto-create">创建方案</button>
-    </details>
-    <details class="mini">
-      <summary>AI 解析方案（独立任务）</summary>
-      ${lits.length ? `<select id="parse-asset">${lits.map((a) => `<option value="${a.id}">${esc(a.name)}</option>`).join("")}</select>
-      <button id="proto-parse">解析为方案草稿</button>
-      <p class="hint">草稿标 ai-draft 并固定来源原件；须人工编辑确认。</p>` : `<p class="hint">先在「文献证据」导入方法文本。</p>`}
     </details>`;
+  $("#proto-upload").addEventListener("click", (ev) => runJob(ev.target, "上传并解析方案", async () => {
+    if (!ui.topicId) throw new Error("请先选择/创建课题");
+    const file = $("#proto-up-file").files?.[0];
+    let text = $("#proto-up-text").value, name = $("#proto-up-name").value;
+    if (file) { text = await readTextFile(file); if (!name) name = file.name; }
+    let assetId;
+    try {
+      const up = await api.uploadProtocolSource(name, text, ui.topicId);
+      assetId = up.assetId;
+    } catch (e) {
+      if (e.status === 409 && e.details?.existingAssetId) { assetId = e.details.existingAssetId; setStatus("原件已归档：定位已有原件，继续解析"); }
+      else throw e;
+    }
+    $("#proto-up-text").value = ""; if ($("#proto-up-file")) $("#proto-up-file").value = "";
+    let r;
+    try { r = await api.parseProtocol(assetId, ui.topicId); }
+    catch (e) {
+      if (e.status === 422) { await refresh(); setStatus(`原件已归档。${e.message}`); return; }
+      throw e;
+    }
+    const res = await pollJob(r.jobId, "方案解析");
+    ui.protocolId = res.protocolId; ui.viewRev = null; await refresh();
+    setStatus("方案草稿已生成（ai-draft，须人工确认）");
+  }));
+  $$(".protoasset-parse").forEach((b) => b.addEventListener("click", (ev) => runJob(ev.target, "AI 解析方案", async () => {
+    const aid = b.closest(".protoasset").dataset.aid;
+    const r = await api.parseProtocol(aid, ui.topicId);
+    const res = await pollJob(r.jobId, "方案解析");
+    ui.protocolId = res.protocolId; ui.viewRev = null; await refresh();
+    setStatus("方案草稿已生成（ai-draft，须人工确认）");
+  })));
   $("#proto-create").addEventListener("click", (ev) => runBusy(ev.target, "创建方案", async () => {
     if (!ui.topicId) throw new Error("请先选择/创建课题");
     const sourceKind = $("#proto-src").value;
@@ -779,12 +831,12 @@ function renderProtocolImport(box) {
     await refresh(); setStatus("方案已创建（r1）");
   }));
   const parseBtn = $("#proto-parse");
-  if (parseBtn) parseBtn.addEventListener("click", (ev) => runJob(ev.target, "AI 解析方案", async () => {
+  if (parseBtn) parseBtn.addEventListener("click", (ev) => runJob(ev.target, "AI 重构方案", async () => {
     if (!ui.topicId) throw new Error("请先选择/创建课题");
-    const r = await api.parseProtocol($("#parse-asset").value, ui.topicId);
-    const res = await pollJob(r.jobId, "方案解析");
+    const r = await api.parseProtocol($("#parse-asset").value, ui.topicId, undefined, "reconstructed");
+    const res = await pollJob(r.jobId, "方案重构");
     ui.protocolId = res.protocolId; ui.viewRev = null; await refresh();
-    setStatus("方案草稿已生成（ai-draft，须人工确认）");
+    setStatus("重构草稿已生成（reconstructed：非作者原始方案，须人工确认）");
   }));
 }
 
@@ -793,17 +845,17 @@ function renderRecordImport(box) {
   const tmpls = state.templates.filter((t) => t.humanConfirmed);
   box.innerHTML = `
     <details class="mini" ${state.executions.length ? "" : "open"}>
-      <summary>开始执行（固定方案版本）</summary>
+      <summary>创建执行（进入准备稿，固定方案版本）</summary>
       ${ps.length ? `<select id="exec-proto">${ps.map((p) => `<option value="${p.id}">${esc(p.name)}（r${p.revision}）</option>`).join("")}</select>
       <select id="exec-tmpl"><option value="">不用模板</option>${tmpls.map((t) => `<option value="${t.id}">模板 r${t.protocolRevision} · ${t.fields.length} 字段</option>`).join("")}</select>
-      <button class="primary" id="exec-start">开始执行</button>
-      <p class="hint">执行固定引用所选方案版本；之后方案修订不影响本执行。</p>` : `<p class="hint">先在「方案与图」创建方案。</p>`}
+      <button class="primary" id="exec-start">创建执行</button>
+      <p class="hint">创建后进入准备稿：可登记本次差异，确认快照后才开始补记录；实际开始另行记录。之后方案修订不影响本执行。</p>` : `<p class="hint">先在「方案与图」创建方案。</p>`}
     </details>`;
   const btn = $("#exec-start");
-  if (btn) btn.addEventListener("click", (ev) => runBusy(ev.target, "开始执行", async () => {
+  if (btn) btn.addEventListener("click", (ev) => runBusy(ev.target, "创建执行", async () => {
     if (!ui.topicId) throw new Error("请先选择/创建课题");
     const r = await api.startExecution({ topicId: ui.topicId, protocolId: $("#exec-proto").value, templateId: $("#exec-tmpl").value || undefined });
-    ui.executionId = r.executionId; ui.assetId = null; await refresh(); setStatus("执行已开始（固定方案版本）");
+    ui.executionId = r.executionId; ui.assetId = null; ui.prepExtra = 0; await refresh(); setStatus("执行已创建：进入准备稿（尚未开始实验）");
   }));
 }
 
@@ -930,20 +982,60 @@ function protocolHtml() {
     </div>`;
 }
 
+/** 5D 准备稿：基础快照图＋本次差异编辑（固定底部编辑区）；确认前可反复改，确认后冻结。 */
+function preparationHtml(e, p, baseSnap) {
+  const adj = e.preparation?.adjustments ?? [];
+  const FIELDS = [["op", "操作"], ["durationMin", "时长(分)"], ["estimated", "估计(true/false)"], ["params", "参数(JSON)"], ["note", "备注"], ["observeEnd", "观察终点"], ["branch", "支路"]];
+  const stepOpts = (cur) => (baseSnap?.steps ?? []).map((s) => `<option value="${s.id}" ${s.id === cur ? "selected" : ""}>${esc(s.op)}</option>`).join("");
+  const fieldOpts = (cur) => FIELDS.map(([v, l]) => `<option value="${v}" ${v === cur ? "selected" : ""}>${l}</option>`).join("");
+  const rowHtml = (a) => `<div class="preprow celledit">
+    <div class="row"><select data-pf="stepId">${stepOpts(a?.stepId)}</select><select data-pf="field">${fieldOpts(a?.field ?? "durationMin")}</select>
+      <input data-pf="after" placeholder="调整后值（时长可填 null=未知）" value="${esc(a?.after ?? "")}" />
+      <button class="prep-del">删除</button></div>
+    <div class="hint">调整前：${a ? esc(a.before) : "（保存时自动取基础快照值）"}</div>
+    <div class="row"><input data-pf="reason" placeholder="本次差异原因（必填）" value="${esc(a?.reason ?? "")}" /></div>
+  </div>`;
+  return `
+    <div class="item" data-id="${e.id}">
+      <div class="meta">${esc(p?.name ?? e.protocolId)} · 准备稿 · 基础 r${e.preparation?.baseRevision ?? e.protocolRevision} · <span class="badge cand-pending">未确认</span></div>
+      <p class="hint">准备≠已做实验：这里登记本次差异；确认快照后进入记录状态，实际开始另行记录。源方案不被改动。</p>
+      ${baseSnap ? diagramHtml(p, baseSnap) : `<p class="hint warn">基础方案快照缺失。</p>`}
+      <div class="pane-title">本次差异（${adj.length}）</div>
+      ${adj.map((a) => rowHtml(a)).join("")}
+      ${Array.from({ length: ui.prepExtra }, () => rowHtml(null)).join("")}
+      <textarea id="prep-notes" rows="2" placeholder="准备备注（如室温/试剂批次）">${esc(e.preparation?.notes ?? "")}</textarea>
+      <div class="row"><button id="prep-add">＋添加差异</button><button id="prep-save">保存准备稿</button><button class="primary" id="prep-confirm">确认本次执行快照</button></div>
+      <p class="hint">确认＝把「基础快照＋差异」冻结为本次执行的独立快照；有时长差异时自动登记确定性时间传播。确认前草稿不算数。</p>
+    </div>`;
+}
+
 function recordHtml() {
   const a = currentAsset();
   if (a && a.kind === "image") return ocrHtml(a);
   const e = currentExecution();
   if (!e) return `<p class="hint">在左栏选择执行；或选择手写图片进行 OCR。</p>`;
   const p = state.protocols.find((x) => x.id === e.protocolId);
-  const snap = p?.revisions.find((r) => r.revision === e.protocolRevision);
+  const baseSnap = p?.revisions.find((r) => r.revision === (e.preparation?.baseRevision ?? e.protocolRevision));
+  if ((e.phase ?? "recording") === "preparing") return preparationHtml(e, p, baseSnap) + impactHtml([e.id]);
+  const snap = e.preparation?.snapshot ?? baseSnap;
   const samples = state.samples.filter((s) => s.topicId === e.topicId);
   const meas = state.measurements.filter((m) => m.topicId === e.topicId);
   const KIND = { start: "开始", step: "步骤", pause: "暂停", resume: "恢复", note: "备注", deviation: "偏差" };
   const suggest = ui.pauseSuggest;
+  const nAdj = e.preparation?.adjustments.length ?? 0;
+  const coveredIds = new Set(e.events.filter((ev) => ev.kind === "step").map((ev) => ev.stepId));
+  const missing = (snap?.steps ?? []).filter((s) => !coveredIds.has(s.id));
+  const unknownDur = (snap?.steps ?? []).filter((s) => s.durationMin === null).length;
+  const hasStart = e.events.some((ev) => ev.kind === "start");
   return `
     <div class="item" data-id="${e.id}">
-      <div class="meta">${esc(p?.name ?? e.protocolId)} · 固定 r${e.protocolRevision} · <span class="badge ${e.status === "paused" ? "warn" : e.status === "active" ? "confirm" : ""}">${e.status}</span>${e.templateId ? " · 模板" : ""}</div>
+      <div class="meta">${esc(p?.name ?? e.protocolId)} · 固定 r${e.protocolRevision}${nAdj ? ` ＋ 本次差异 ${nAdj} 条` : ""} · <span class="badge ${e.status === "paused" ? "warn" : e.status === "active" ? "confirm" : ""}">${e.status}</span>${e.templateId ? " · 模板" : ""}</div>
+      ${e.preparation?.confirmedAt ? `<div class="hint">本次快照确认于 ${esc(e.preparation.confirmedAt)}（基础 r${e.preparation.baseRevision}${nAdj ? ` ＋ ${nAdj} 条差异` : "，无差异"}）；源方案后续修订不影响本次。</div>` : ""}
+      <div class="hint">数据完整度：步骤记录 ${(snap?.steps.length ?? 0) - missing.length}/${snap?.steps.length ?? 0}${missing.length ? ` · 未记录：${missing.map((s) => esc(s.op)).join("、")}` : ""}${unknownDur ? ` · ${unknownDur} 步时长未知（不按 0 计）` : ""}</div>
+      ${e.status === "active" && !hasStart ? `<div class="row"><button class="primary" id="exec-begin">记录实际开始</button><span class="hint">系统不虚构开始时间；实际开始由人记录。</span></div>` : ""}
+      ${e.preparation?.snapshot ? `<details class="mini"><summary>另存新方案（不改源方案）</summary>
+        <div class="row"><input id="saveas-name" placeholder="新方案名称" /><button id="exec-saveas">另存为新方案 r1</button></div>
+        <p class="hint">把本次确认快照存为新方案；不默认改动全局源方案。</p></details>` : ""}
       ${e.status === "active" ? `<div class="row"><input id="pause-reason" placeholder="暂停原因（必填）" />
         <button id="exec-assist">AI 暂停建议</button><button class="primary" id="exec-pause">暂停</button><button id="exec-done">结束执行</button></div>
         ${suggest ? `<div class="hint">AI 建议（仅建议，采纳由人决定）：风险[${suggest.risks.map(esc).join("、") || "—"}] 恢复检查[${suggest.resumeChecks.map(esc).join("、") || "—"}]${suggest.unknowns.length ? ` 未知[${suggest.unknowns.map(esc).join("、")}]` : ""}</div>` : ""}` : ""}
@@ -1069,7 +1161,7 @@ $("#nav").addEventListener("click", (ev) => {
   const b = ev.target.closest(".navitem"); if (!b || b.disabled) return;
   if (!guardLeave()) return;
   ui.nav = b.dataset.nav; ui.highlight = null; ui.cell = null; ui.tableId = null; ui.groupSel.clear(); ui.batch = null; ui.ack = false;
-  ui.stepSel = null; ui.viewRev = null; ui.editEventId = null; ui.pauseSuggest = null;
+  ui.stepSel = null; ui.viewRev = null; ui.editEventId = null; ui.pauseSuggest = null; ui.prepExtra = 0;
   $$(".navitem").forEach((x) => x.classList.toggle("active", x === b));
   renderAll();
 });
@@ -1097,7 +1189,7 @@ $("#material-list").addEventListener("click", (ev) => {
   if (el.dataset.eid) {
     if (el.dataset.eid === ui.executionId) return;
     if (!guardLeave()) return;
-    ui.executionId = el.dataset.eid; ui.editEventId = null; ui.pauseSuggest = null; ui.assetId = null; renderAll(); return;
+    ui.executionId = el.dataset.eid; ui.editEventId = null; ui.pauseSuggest = null; ui.prepExtra = 0; ui.assetId = null; renderAll(); return;
   }
   if (el.dataset.id === ui.assetId) return;
   if (!guardLeave()) return;
@@ -1313,7 +1405,7 @@ $("#right-content").addEventListener("click", async (ev) => {
       const t = state.templates.find((x) => x.id === tid);
       await runBusy(ev.target, "按模板开始执行", async () => {
         const r = await api.startExecution({ topicId: ui.topicId || currentProtocol().topicId, protocolId: t.protocolId, protocolRevision: t.protocolRevision, templateId: tid });
-        ui.executionId = r.executionId; ui.nav = "record"; ui.dirty = false; await refresh(); setStatus("执行已开始（固定模板所指方案版本）");
+        ui.executionId = r.executionId; ui.nav = "record"; ui.prepExtra = 0; ui.dirty = false; await refresh(); setStatus("执行已创建：进入准备稿（固定模板所指方案版本）");
       }); return;
     }
     if (ev.target.id === "tmpl-create") {
@@ -1329,6 +1421,37 @@ $("#right-content").addEventListener("click", async (ev) => {
         const res = await pollJob(r.jobId, "影响评估");
         await refresh();
         setStatus(res.discarded ? "已有更新改动：旧评估被丢弃（stale 守卫）" : "影响评估完成");
+      }); return;
+    }
+    if (ev.target.id === "prep-add") { ui.prepExtra += 1; renderRight(); return; }
+    if (ev.target.classList.contains("prep-del")) { ev.target.closest(".preprow").remove(); return; }
+    if (ev.target.id === "prep-save" || ev.target.id === "prep-confirm") {
+      const confirm = ev.target.id === "prep-confirm";
+      const rows = [];
+      $$("#right-content .preprow").forEach((r) => {
+        const after = r.querySelector('[data-pf="after"]').value.trim();
+        if (!after) return;
+        rows.push({ stepId: r.querySelector('[data-pf="stepId"]').value, field: r.querySelector('[data-pf="field"]').value, after, reason: r.querySelector('[data-pf="reason"]').value.trim() });
+      });
+      await runBusy(ev.target, confirm ? "确认快照" : "保存准备稿", async () => {
+        await api.updatePreparation(ui.executionId, { adjustments: rows, notes: $("#prep-notes").value });
+        if (!confirm) { ui.prepExtra = 0; ui.dirty = false; await refresh(); setStatus("准备稿已保存（未确认，不算数）"); return; }
+        const r = await api.confirmPreparation(ui.executionId);
+        ui.prepExtra = 0; ui.dirty = false; await refresh();
+        setStatus(r.impactId ? "快照已确认：进入记录状态；已登记影响分析（含确定性时间传播）" : "快照已确认（无差异）：进入记录状态；实际开始请另行记录");
+      }); return;
+    }
+    if (ev.target.id === "exec-begin") {
+      await runBusy(ev.target, "记录实际开始", async () => {
+        await api.appendEvent(ui.executionId, { kind: "start" });
+        ui.dirty = false; await refresh(); setStatus("实际开始已记录（由人记录，非系统虚构）");
+      }); return;
+    }
+    if (ev.target.id === "exec-saveas") {
+      await runBusy(ev.target, "另存新方案", async () => {
+        const r = await api.saveExecutionAsProtocol(ui.executionId, $("#saveas-name").value);
+        ui.protocolId = r.protocolId; ui.nav = "protocol"; ui.viewRev = null; ui.dirty = false; await refresh();
+        setStatus("已另存为新方案 r1（源方案未改动）");
       }); return;
     }
     if (ev.target.id === "exec-assist") {

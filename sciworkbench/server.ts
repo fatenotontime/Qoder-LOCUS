@@ -36,6 +36,7 @@ import {
   appendEvent,
   completeExecution,
   confirmOcr,
+  confirmPreparation,
   confirmTemplate,
   createProtocol,
   createSample,
@@ -52,8 +53,11 @@ import {
   resumeExecution,
   runImpactAssessment,
   runOcr,
+  saveExecutionAsProtocol,
   startExecution,
   templateProtocolCheck,
+  updatePreparation,
+  uploadProtocolSource,
 } from "./services/experiment.ts";
 import { extractKnowledge, extractLiterature, runTask } from "./services/ai.ts";
 import { addPaperAttachment, createPaper, importBibliography, linkPaperTopic, updatePaper } from "./services/papers.ts";
@@ -102,6 +106,8 @@ export interface Job {
 export async function createApp(store: Store) {
   let state: LocusState = await store.load();
   const jobs = new Map<string, Job>();
+  // 任务身份/重复提交守卫：同一原件的方案解析同时只允许一个在跑 job。
+  const parsingAssets = new Set<string>();
   const trimJobs = () => { if (jobs.size > 20) { for (const k of jobs.keys()) { if (jobs.size <= 20) break; jobs.delete(k); } } };
 
   const readBody = (req: IncomingMessage): Promise<string> =>
@@ -410,14 +416,25 @@ export async function createApp(store: Store) {
           state = r.state; await store.save(state);
           send(res, 200, { ok: true, protocolId: r.protocol.id }); return;
         }
+        // 5D：上传方案原件直接归档为 protocol 类（不进文献候选库），随后走方案解析。
+        if (path === "/api/protocols/upload") {
+          const r = uploadProtocolSource(state, { name: String(body.name ?? ""), text: String(body.text ?? ""), topicId: body.topicId as string | undefined });
+          state = r.state; await store.save(state);
+          send(res, 200, { ok: true, assetId: r.asset.id }); return;
+        }
         if (path === "/api/protocols/parse") {
           const cfg = getAiConfig();
-          if (!cfg) { send(res, 422, { error: "AI 未配置：无法解析方案。可先手工创建方案。" }); return; }
+          if (!cfg) { send(res, 422, { error: "AI 未配置：无法解析方案。原件已归档的可稍后解析；也可先手工创建方案。" }); return; }
           const assetId = String(body.assetId ?? "");
           const asset = state.assets.find((a) => a.id === assetId);
           if (!asset) { send(res, 404, { error: `原件不存在：${assetId}` }); return; }
+          // 从论文方法重构须标明不是作者原始方案；reconstructed 仅接受文献类原件。
+          const sourceKind = body.sourceKind === "reconstructed" ? "reconstructed" : "ai-draft";
+          if (sourceKind === "reconstructed" && asset.kind !== "literature") { send(res, 422, { error: "重构来源须为文献/论文附件原件。" }); return; }
           const topicId = String(body.topicId ?? asset.topicId ?? "");
           const name = String(body.name ?? `${asset.name} · 方案草稿`);
+          if (parsingAssets.has(assetId)) { send(res, 409, { error: "该原件已有方案解析任务在运行，请等待完成，勿重复提交。" }); return; }
+          parsingAssets.add(assetId);
           const id = `job_${randomUUID()}`;
           const job: Job = { id, status: "running", done: 0, total: 1, message: "方案解析中…" };
           jobs.set(id, job); trimJobs();
@@ -425,11 +442,12 @@ export async function createApp(store: Store) {
             try {
               const { value, raw } = await runTask(cfg, "protocol_parse", asset.text.slice(0, 12000));
               const draft = protocolDraftFromAi(value, assetId);
-              const r = createProtocol(state, { topicId, name, sourceKind: "ai-draft", sourceAssetId: assetId, ...draft });
+              const r = createProtocol(state, { topicId, name, sourceKind, sourceAssetId: assetId, ...draft });
               state = r.state; await store.save(state);
               writeAudit(assetId, { raws: [{ index: 0, content: raw }], model: cfg.model }, "protocol_parse");
               job.status = "done"; job.result = { protocolId: r.protocol.id, assetId }; job.message = "完成";
             } catch (e) { job.status = "error"; job.error = (e as Error).message ?? "失败"; }
+            finally { parsingAssets.delete(assetId); }
           })();
           send(res, 202, { ok: true, jobId: id }); return;
         }
@@ -474,6 +492,28 @@ export async function createApp(store: Store) {
           });
           state = r.state; await store.save(state);
           send(res, 200, { ok: true, executionId: r.execution.id }); return;
+        }
+        // ── 5D：执行准备稿 → 确认快照 → 另存新方案 ──
+        const execPrep = path.match(/^\/api\/executions\/([^/]+)\/preparation$/);
+        if (execPrep) {
+          const r = updatePreparation(state, decodeURIComponent(execPrep[1]), {
+            adjustments: body.adjustments as never,
+            notes: body.notes as string | undefined,
+          });
+          state = r.state; await store.save(state);
+          send(res, 200, { ok: true, adjustments: r.execution.preparation?.adjustments.length ?? 0 }); return;
+        }
+        const execConfirm = path.match(/^\/api\/executions\/([^/]+)\/confirm-preparation$/);
+        if (execConfirm) {
+          const r = confirmPreparation(state, decodeURIComponent(execConfirm[1]));
+          state = r.state; await store.save(state);
+          send(res, 200, { ok: true, impactId: r.impactId, confirmedAt: r.execution.preparation?.confirmedAt }); return;
+        }
+        const execSaveAs = path.match(/^\/api\/executions\/([^/]+)\/save-as-protocol$/);
+        if (execSaveAs) {
+          const r = saveExecutionAsProtocol(state, decodeURIComponent(execSaveAs[1]), { name: String(body.name ?? "") });
+          state = r.state; await store.save(state);
+          send(res, 200, { ok: true, protocolId: r.protocol.id }); return;
         }
         const execEvents = path.match(/^\/api\/executions\/([^/]+)\/events$/);
         if (execEvents) {

@@ -10,7 +10,7 @@ import type {
   ImpactRecord, ImpactItem, OcrRecord, RevisionEntry, AssetRecord,
 } from "../store.ts";
 import { contentHash, rawHash } from "../store.ts";
-import { AppError, MAX_IMPORT_BYTES } from "./app.ts";
+import { AppError, MAX_IMPORT_BYTES, makeAsset, assertUniqueHash } from "./app.ts";
 import { AiError, runTask, getAiConfig, type AiConfig } from "./ai.ts";
 import { transition, displayAssessment, type ImpactState } from "../domain/impact.ts";
 
@@ -256,8 +256,24 @@ export function templateProtocolCheck(state: LocusState, templateId: string): { 
   return { changed: t.protocolRevision !== p.revision, pinnedRevision: t.protocolRevision, currentRevision: p.revision };
 }
 
-// ── 执行（EXP04/EXP05：实际层不改源方案；暂停/恢复人决定）────
+// ── 执行（EXP04/EXP05 + 5D：准备稿→确认快照→实际记录；实际层不改源方案）────
 
+/** 上传方案原件（5D：直接走方案解析，不先进文献候选库）。kind=protocol，与文献库分开。 */
+export function uploadProtocolSource(state: LocusState, input: { name: string; text: string; topicId?: string }): { state: LocusState; asset: AssetRecord } {
+  const ext = (input.name ?? "").toLowerCase().match(/\.[a-z0-9]+$/)?.[0] ?? "";
+  if (![".md", ".markdown", ".txt", ".text", ""].includes(ext)) {
+    throw new AppError(422, `方案文件暂只支持 Markdown/纯文本（.md/.txt）；${ext} 解析器未配置。`);
+  }
+  let text = String(input.text ?? "");
+  if (text.charCodeAt(0) === 0xfeff) text = text.slice(1);
+  if (!text.trim()) throw new AppError(422, "方案文本为空。");
+  if (text.includes(String.fromCharCode(0))) throw new AppError(422, "文件疑似二进制/含不支持内容，已拒绝。请提供文本类方案文件。");
+  const asset = makeAsset("protocol", input.name ?? "", text, input.topicId);
+  assertUniqueHash(state, asset.fingerprint!);
+  return { state: { ...state, assets: [...state.assets, asset] }, asset };
+}
+
+/** 创建执行 = 进入准备稿（5D）：固定引用方案版本；不虚构开始事件，实际开始另行动作。 */
 export function startExecution(
   state: LocusState,
   input: { topicId: string; protocolId: string; protocolRevision?: number; templateId?: string },
@@ -274,22 +290,142 @@ export function startExecution(
     if (t.protocolId !== proto.id) throw new AppError(422, "模板不属于该方案。");
     if (!t.humanConfirmed) throw new AppError(422, "AI 草稿模板须人工确认后才能用于执行（EXP03）。");
   }
-  const start: ExecEvent = {
-    id: `ev_${randomUUID()}`, at: now(), recordedAt: now(), backfilled: false,
-    kind: "start", text: `按方案 r${rev} 开始执行`, actual: {}, revision: 1, history: [],
-  };
   const execution: ExecutionRecord = {
     id: `exec_${randomUUID()}`,
     topicId: input.topicId,
     protocolId: proto.id,
     protocolRevision: rev,
     templateId: input.templateId || undefined,
+    phase: "preparing",
+    preparation: { baseRevision: rev, adjustments: [], notes: "" },
     status: "active",
-    events: [start],
+    events: [],
     createdAt: now(),
     updatedAt: now(),
   };
   return { state: { ...state, executions: [...state.executions, execution] }, execution };
+}
+
+/** 执行的有效快照：确认后用 preparation.snapshot（基础＋本次差异）；存量/未确认用基础方案快照。 */
+export function effectiveSnapshot(state: LocusState, exec: ExecutionRecord): ProtocolRevisionSnapshot | undefined {
+  if (exec.preparation?.snapshot) return exec.preparation.snapshot;
+  const proto = state.protocols.find((p) => p.id === exec.protocolId);
+  return proto?.revisions.find((r) => r.revision === exec.protocolRevision);
+}
+
+function baseSnapshotOf(state: LocusState, exec: ExecutionRecord): ProtocolRevisionSnapshot {
+  const proto = state.protocols.find((p) => p.id === exec.protocolId);
+  const snap = proto?.revisions.find((r) => r.revision === (exec.preparation?.baseRevision ?? exec.protocolRevision));
+  if (!snap) throw new AppError(422, "基础方案快照缺失，无法准备。");
+  return snap;
+}
+
+export interface PreparationAdjustmentInput { stepId: string; field: string; before?: string; after: string; reason: string }
+
+/** 准备稿编辑（仅 preparing）：保存基础引用＋本次差异；草稿可反复改，确认前不算数。 */
+export function updatePreparation(
+  state: LocusState,
+  execId: string,
+  input: { adjustments?: PreparationAdjustmentInput[]; notes?: string },
+): { state: LocusState; execution: ExecutionRecord } {
+  const cur = state.executions.find((e) => e.id === execId);
+  if (!cur) throw new AppError(404, `执行不存在：${execId}`);
+  if ((cur.phase ?? "recording") !== "preparing") throw new AppError(422, "快照已确认：准备稿不可再改；如需变更请在实际层记录偏差，或另存新方案。");
+  const base = baseSnapshotOf(state, cur);
+  const adjustments = (input.adjustments ?? cur.preparation?.adjustments ?? []).map((a, i) => {
+    const stepId = str(a.stepId);
+    const field = str(a.field);
+    const reason = str(a.reason);
+    const after = str(a.after);
+    if (!base.steps.some((s) => s.id === stepId)) throw new AppError(422, `第 ${i + 1} 条调整引用的步骤不在基础快照中：${stepId}`);
+    if (!field) throw new AppError(422, `第 ${i + 1} 条调整缺少字段名。`);
+    if (!after) throw new AppError(422, `第 ${i + 1} 条调整缺少调整后值。`);
+    if (!reason) throw new AppError(422, `第 ${i + 1} 条调整必须填写原因（本次差异须可追溯）。`);
+    if (field === "durationMin" && after !== "null" && (!Number.isFinite(Number(after)) || Number(after) < 0)) {
+      throw new AppError(422, `时长调整须为非负数或 null（未知）：${after}`);
+    }
+    const step = base.steps.find((s) => s.id === stepId)!;
+    const before = a.before !== undefined ? str(a.before) : field === "params" ? JSON.stringify(step.params) : String((step as unknown as Record<string, unknown>)[field] ?? "");
+    return { stepId, field, before, after, reason };
+  });
+  const execution: ExecutionRecord = {
+    ...cur,
+    preparation: { baseRevision: cur.preparation?.baseRevision ?? cur.protocolRevision, adjustments, notes: input.notes !== undefined ? str(input.notes) : (cur.preparation?.notes ?? "") },
+    updatedAt: now(),
+  };
+  return { state: { ...state, executions: state.executions.map((e) => (e.id === execId ? execution : e)) }, execution };
+}
+
+/** 确认本次执行快照（5D）：基础快照＋差异 → 冻结副本；进入待补记录状态；登记确定性时间传播。源方案不动。 */
+export function confirmPreparation(state: LocusState, execId: string): { state: LocusState; execution: ExecutionRecord; impactId?: string } {
+  const cur = state.executions.find((e) => e.id === execId);
+  if (!cur) throw new AppError(404, `执行不存在：${execId}`);
+  if ((cur.phase ?? "recording") !== "preparing") throw new AppError(422, "该执行已确认快照（或为存量执行），无需重复确认。");
+  const base = baseSnapshotOf(state, cur);
+  const steps = base.steps.map((s) => ({ ...s, params: { ...s.params } }));
+  for (const a of cur.preparation?.adjustments ?? []) {
+    const s = steps.find((x) => x.id === a.stepId);
+    if (!s) continue;
+    if (a.field === "durationMin") s.durationMin = a.after === "null" ? null : Number(a.after);
+    else if (a.field === "estimated") s.estimated = a.after === "true";
+    else if (a.field === "params") {
+      try {
+        const obj = JSON.parse(a.after) as Record<string, unknown>;
+        const params: Record<string, string> = {};
+        for (const [k, v] of Object.entries(obj)) params[str(k)] = str(v);
+        s.params = params;
+      } catch { throw new AppError(422, `步骤「${s.op}」的参数调整不是合法 JSON 对象。`); }
+    } else if (a.field === "op" || a.field === "note" || a.field === "observeEnd" || a.field === "branch") {
+      (s as unknown as Record<string, unknown>)[a.field] = a.field === "branch" ? (a.after || null) : a.after;
+    } else throw new AppError(422, `不支持的调整字段：${a.field}（可用：op/durationMin/estimated/params/note/observeEnd/branch）。`);
+  }
+  const snapshot: ProtocolRevisionSnapshot = {
+    ...base, steps,
+    at: now(),
+    reason: `本次执行确认快照（基础 r${base.revision}${cur.preparation?.adjustments.length ? ` ＋ ${cur.preparation.adjustments.length} 条本次差异` : "，无差异"}）`,
+  };
+  let execution: ExecutionRecord = {
+    ...cur,
+    phase: "recording",
+    preparation: { ...cur.preparation!, snapshot, confirmedAt: now() },
+    updatedAt: now(),
+  };
+  let next: LocusState = { ...state, executions: state.executions.map((e) => (e.id === execId ? execution : e)) };
+  let impactId: string | undefined;
+  if ((cur.preparation?.adjustments.length ?? 0) > 0) {
+    const reg = registerImpact(next, {
+      topicId: cur.topicId,
+      change: { entityKind: "execution", entityId: execId, revision: 1, summary: `执行准备确认：基础 r${base.revision} ＋ ${cur.preparation!.adjustments.length} 条本次差异` },
+      prevSteps: base.steps,
+      nextSteps: steps,
+      aiConfigured: getAiConfig() !== null,
+    });
+    next = reg.state; impactId = reg.impact.id;
+    execution = next.executions.find((e) => e.id === execId)!;
+  }
+  return { state: next, execution, impactId };
+}
+
+/** 另存新方案（5D）：把本次确认快照存为新方案 r1；不默认改全局源方案。 */
+export function saveExecutionAsProtocol(state: LocusState, execId: string, input: { name: string }): { state: LocusState; protocol: ProtocolRecord } {
+  const cur = state.executions.find((e) => e.id === execId);
+  if (!cur) throw new AppError(404, `执行不存在：${execId}`);
+  const snap = cur.preparation?.snapshot;
+  if (!snap) throw new AppError(422, "须先确认本次执行快照，才能另存为新方案。");
+  const name = str(input.name);
+  if (!name) throw new AppError(422, "新方案名称不能为空。");
+  return createProtocol(state, {
+    topicId: cur.topicId,
+    name,
+    sourceKind: "user",
+    purpose: snap.purpose,
+    inputs: snap.inputs,
+    steps: snap.steps,
+    conditions: snap.conditions,
+    criteria: snap.criteria,
+    unknowns: snap.unknowns,
+    sourceFragments: [`由执行 ${execId} 的确认快照另存（基础方案 ${cur.protocolId} r${cur.preparation!.baseRevision}；不改动源方案）`],
+  });
 }
 
 export interface EventInput {
@@ -304,13 +440,13 @@ export interface EventInput {
 export function appendEvent(state: LocusState, execId: string, input: EventInput): { state: LocusState; execution: ExecutionRecord } {
   const cur = state.executions.find((e) => e.id === execId);
   if (!cur) throw new AppError(404, `执行不存在：${execId}`);
+  if ((cur.phase ?? "recording") === "preparing") throw new AppError(422, "本次执行快照未确认：先在准备稿中确认，再补记录（准备≠已做实验）。");
   if (cur.status === "done") throw new AppError(422, "执行已结束，不能再追加事件。");
   const text = str(input.text);
   if ((input.kind === "note" || input.kind === "deviation") && !text) throw new AppError(422, "备注/偏差必须写明内容。");
   if (input.kind === "step") {
-    const proto = state.protocols.find((p) => p.id === cur.protocolId)!;
-    const snap = proto.revisions.find((r) => r.revision === cur.protocolRevision)!;
-    if (!input.stepId || !snap.steps.some((s) => s.id === input.stepId)) throw new AppError(422, "步骤事件须引用固定方案 revision 中存在的步骤。");
+    const snap = effectiveSnapshot(state, cur);
+    if (!input.stepId || !snap?.steps.some((s) => s.id === input.stepId)) throw new AppError(422, "步骤事件须引用本次执行固定快照中存在的步骤。");
   }
   const actual: ExecEvent["actual"] = {};
   if (input.actual?.amount !== undefined) actual.amount = str(input.actual.amount);
@@ -386,6 +522,7 @@ export function pauseExecution(
 ): { state: LocusState; execution: ExecutionRecord } {
   const cur = state.executions.find((e) => e.id === execId);
   if (!cur) throw new AppError(404, `执行不存在：${execId}`);
+  if ((cur.phase ?? "recording") === "preparing") throw new AppError(422, "准备稿未确认，实验尚未开始，无暂停可言。");
   if (cur.status !== "active") throw new AppError(422, "只有进行中的执行可以暂停。");
   const reason = str(input.reason);
   if (!reason) throw new AppError(422, "暂停必须填写原因。");
@@ -432,6 +569,7 @@ export function resumeExecution(state: LocusState, execId: string, humanDecision
 export function completeExecution(state: LocusState, execId: string): { state: LocusState; execution: ExecutionRecord } {
   const cur = state.executions.find((e) => e.id === execId);
   if (!cur) throw new AppError(404, `执行不存在：${execId}`);
+  if ((cur.phase ?? "recording") === "preparing") throw new AppError(422, "准备稿未确认，不能标记完成（不虚构已做完实验）。");
   const execution: ExecutionRecord = { ...cur, status: "done", updatedAt: now() };
   return { state: { ...state, executions: state.executions.map((e) => (e.id === execId ? execution : e)) }, execution };
 }
@@ -440,8 +578,7 @@ export function completeExecution(state: LocusState, execId: string): { state: L
 export async function pauseAssist(cfg: AiConfig, state: LocusState, execId: string): Promise<{ risks: string[]; resumeChecks: string[]; unknowns: string[]; raw: string; model: string }> {
   const exec = state.executions.find((e) => e.id === execId);
   if (!exec) throw new AppError(404, `执行不存在：${execId}`);
-  const proto = state.protocols.find((p) => p.id === exec.protocolId)!;
-  const snap = proto.revisions.find((r) => r.revision === exec.protocolRevision)!;
+  const snap = effectiveSnapshot(state, exec);
   const context = JSON.stringify({ protocol: snap, events: exec.events, pausedState: exec.pausedState ?? null }).slice(0, 6000);
   const { value, raw } = await runTask(cfg, "pause_assist", context);
   const obj = (value ?? {}) as { risks?: unknown; resumeChecks?: unknown; unknowns?: unknown };

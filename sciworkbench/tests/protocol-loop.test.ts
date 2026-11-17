@@ -13,6 +13,7 @@ import {
   appendEvent,
   computeTimeShifts,
   confirmOcr,
+  confirmPreparation,
   confirmTemplate,
   createProtocol,
   createSample,
@@ -128,14 +129,18 @@ test("T04 执行事件追加/后补/原位编辑；改实际值须原因；源�
   const ex = startExecution(st, { topicId, protocolId: r.protocol.id });
   st = ex.state;
   const eid = ex.execution.id;
+  // 5D：创建执行=准备稿；确认快照后才进入记录状态（无差异也要确认）
+  assert.equal(ex.execution.phase, "preparing");
+  assert.equal(ex.execution.events.length, 0);
+  st = confirmPreparation(st, eid).state;
   const ev = appendEvent(st, eid, { kind: "step", stepId: "s1", text: "已配液", actual: { durationMin: 12 }, backfilled: true });
   st = ev.state;
-  const evId = st.executions[0].events[1].id;
-  assert.equal(st.executions[0].events[1].backfilled, true);
+  const evId = st.executions[0].events[0].id;
+  assert.equal(st.executions[0].events[0].backfilled, true);
   assert.throws(() => editEvent(st, eid, evId, { actual: { durationMin: 15 } }), /原因/);
   const ed = editEvent(st, eid, evId, { actual: { durationMin: 15 }, reason: "计时更正" });
   st = ed.state;
-  const edited = st.executions[0].events[1];
+  const edited = st.executions[0].events[0];
   assert.equal(edited.actual.durationMin, 15);
   assert.equal(edited.history.length, 1);
   assert.equal(edited.history[0].before, JSON.stringify({ durationMin: 12 }));
@@ -152,6 +157,7 @@ test("T05 暂停须原因；恢复须人的决定；建议标记保留", () => {
   const r = proto(s, topicId, [step("s1", "op", 10)]);
   let st = startExecution(r.state, { topicId, protocolId: r.protocol.id }).state;
   const eid = st.executions[0].id;
+  st = confirmPreparation(st, eid).state;
   assert.throws(() => pauseExecution(st, eid, { reason: "" }), /原因/);
   st = pauseExecution(st, eid, { reason: "设备故障", risks: ["样品降解"], resumeChecks: ["确认温度"], aiSuggested: true }).state;
   assert.equal(st.executions[0].status, "paused");
@@ -330,6 +336,8 @@ test("4C HTTP 闭环：方案→模板→执行→暂停恢复→样品→测量
     const ex = await post("/api/executions", { topicId, protocolId, templateId });
     assert.equal(ex.status, 200);
     const executionId = ex.data.executionId as string;
+    assert.equal((await post(`/api/executions/${executionId}/events`, { kind: "start" })).status, 422); // 准备稿未确认不得补记录
+    assert.equal((await post(`/api/executions/${executionId}/confirm-preparation`, {})).status, 200);
     const ev = await post(`/api/executions/${executionId}/events`, { kind: "step", stepId: "s1", text: "配液完成", actual: { durationMin: 12 } });
     const eventId = ev.data.eventId as string;
     assert.equal((await post(`/api/executions/${executionId}/events/${eventId}/edit`, { actual: { durationMin: 14 } })).status, 422);
