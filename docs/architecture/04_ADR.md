@@ -22,6 +22,7 @@
 | ADR-0016 | 三业务路径/两事件在应用服务层分离；共领域模型，不共"导入"入口 | accepted | 用户纠正；`05_DATAFLOW_WALKTHROUGH.md` |
 | ADR-0017 | 实验图=**横向时间泳道**：支路加 `branchFrom`/`mergeInto` 锚点（追加式可选字段，须指向同快照主线步骤、分叉在汇合前）；未指定锚点明示不猜；**未知时长不按零累计**，其后偏移为下界 t≥；布局模型为纯函数 `public/lib/lanes.js`（浏览器/测试共用） | accepted（用户 2026-11-16 实测反馈） | S02-T10；`tests/diagram-lanes.test.ts` |
 | ADR-0018 | AI 后台 job **合并写回**：请求时同步校验/查重，AI 计算与 state 写回分离；完成时对**最新** state 只追加本 job 新实体，查重复检，等待期同内容已入库则丢弃结果并指向已有原件；409 附 `existingAssetId` | accepted（用户 2026-11-16 实测反馈） | S02-T10 反例复现；`tests/job-race.test.ts` |
+| ADR-0019 | 实验图**以用户提供的 experiment-archify v0.4 草案为规格**（应用内实现通用合同 `docs/stage5/05_EXPERIMENT_ARCHIFY_CONTRACT.md`）：**不安装**上游 tt-a1i/archify、**不冒充**其 native finalize；**AI 重排不接入**（依 `03_DOMAIN_RUNTIME`）；技能原文/过程日志/私人案例参数**不入公开仓库** | accepted（用户 2026-11-18 拍板"要接"→提供草案路径） | 合同 10 条对照：6 符合 / 4 部分 / 1 未实现（见该文档） |
 
 ## 待补 ADR（阶段2 之后）
 

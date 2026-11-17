@@ -1005,7 +1005,8 @@ function diagramHtml(p, snap) {
       <div class="dlane-nodes">${lane.steps.map((s) => node(s, null, false)).join(`<span class="darrow-h">→</span>`)}</div>
     </div>`;
   });
-  html += `</div><p class="hint">列宽等分（非时间比例）；t≈ 规定 / t≥ 下界。${L.unknownCount ? `主线 ${L.unknownCount} 步时长未知，其后为下界。` : ""}已知主线 ${L.totalKnown}min。</p>`;
+  const estCount = snap.steps.filter((s) => s.estimated).length;
+  html += `</div><p class="hint">列宽等分（非时间比例）；t≈ 规定 / t≥ 下界。${L.unknownCount ? `主线 ${L.unknownCount} 步时长未知，其后为下界。` : ""}${estCount ? `估计 ${estCount} 步：取值＝所填数字。` : ""}已知主线 ${L.totalKnown}min。</p>`;
   return html;
 }
 
