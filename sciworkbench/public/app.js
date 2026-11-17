@@ -393,7 +393,7 @@ function renderRight() {
   }
   if (ui.nav === "protocol") { $("#right-title").textContent = "方案与实验图"; $("#right-content").innerHTML = protocolHtml(); return; }
   if (ui.nav === "record") { $("#right-title").textContent = "实验记录"; $("#right-content").innerHTML = recordHtml(); return; }
-  if (ui.nav === "analysis") { $("#right-title").textContent = "推荐 · 结果 · 初步报告"; $("#right-content").innerHTML = analysisRightHtml(); return; }
+  if (ui.nav === "analysis") { $("#right-title").textContent = "推荐 · 结果 · 分析初稿"; $("#right-content").innerHTML = analysisRightHtml(); return; }
   if (ui.nav === "chat") { $("#right-title").textContent = "范围 · 来源 · 采纳"; $("#right-content").innerHTML = chatRightHtml(); return; }
   const a = currentAsset();
   if (!a) { $("#right-title").textContent = "结构化结果"; $("#right-content").innerHTML = `<p class="hint">选中材料后，这里显示结构化草稿与核对操作。</p>`; return; }
@@ -1353,7 +1353,7 @@ function reportHtml(r) {
 
 function analysisRightHtml() {
   const t = currentTask();
-  if (!t) return `<p class="hint">选择分析任务后：这里发起方法推荐、提交处理结果、编辑初步报告。</p>`;
+  if (!t) return `<p class="hint">选择分析任务后：这里做推荐、提交结果、写分析初稿。</p>`;
   const rec = t.recommendation;
   const results = t.resultIds.map((id) => state.analysisResults.find((r) => r.id === id)).filter(Boolean);
   const reps = state.reports.filter((r) => r.taskId === t.id);
@@ -1378,8 +1378,8 @@ function analysisRightHtml() {
     <p class="hint">只有图/脚本也可提交，但不标「可复现」；附数据文件（csv/tsv/json/txt/md）＋关键参数才可复现。</p>
     <button class="primary" id="res-submit">提交结果</button></details>`;
   h += results.map(resultHtml).join("");
-  h += `<details class="mini" open><summary>初步报告（观察/假设/解释/待验证分列）</summary>
-    <button id="rep-create">新建初步报告（钉住当前结果）</button>
+  h += `<details class="mini" open><summary>分析初稿（观察/假设/解释/待验证）</summary>
+    <button id="rep-create">新建初稿（钉住结果）</button>
     ${reps.map(reportHtml).join("") || `<p class="hint">暂无报告。</p>`}</details>`;
   return h;
 }
@@ -1641,7 +1641,7 @@ $("#right-content").addEventListener("click", async (ev) => {
       const t = currentTask();
       await runBusy(ev.target, "新建报告", async () => {
         const r = await api.createReport(ui.topicId || t?.topicId, t?.id);
-        ui.reportId = r.reportId; await refresh(); setStatus("初步报告已创建（钉住当前结果与快照）");
+        ui.reportId = r.reportId; await refresh(); setStatus("初稿已建（钉住结果与快照）");
       }); return;
     }
     if (ev.target.classList.contains("rep-add")) {
