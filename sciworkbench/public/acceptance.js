@@ -12,7 +12,7 @@ const MATS = [
     title: "实验数据库（条件记录 CSV）", path: "路径② 实验数据",
     src: "DaRUS DOI 10.18419/DARUS-3337 · CC BY 4.0 · 30 组动力学测定之 pH3 条件块",
     act: "上传并构建数据表", route: "/api/import/measurements",
-    body: (text, topicId) => ({ name: MATS[0].name, csv: text, topicId, headerRows: "auto", profile: "auto" }),
+    body: (text, topicId) => ({ name: "EnzymeML_SLAC_pH3__Data.csv", csv: text, topicId, headerRows: "auto", profile: "auto" }),
     stage: "核验未开始",
     summary: (st, a) => {
       const ts = st.tables.filter((t) => t.assetId === a.id);
@@ -22,31 +22,44 @@ const MATS = [
     advanced: (st, a) => st.tables.some((t) => t.assetId === a.id && t.revision > 1),
   },
   {
-    key: "proto", name: "protocol-source.md", file: "samples/protocol-source.md", kind: "text",
-    title: "实验方案（原作者 notebook 节选）", path: "路径① 文献证据 → 方案解析",
-    src: "DaRUS DOI 10.18419/DARUS-3337 · CC BY 4.0 · 译述节选",
-    act: "上传方案原件（草稿卡路径）", route: "/api/import/literature",
-    body: (text, topicId) => ({ name: MATS[1].name, text, topicId, mode: "draft" }),
-    stage: "方案解析未开始",
-    summary: (st, a) => `${st.cards.filter((c) => c.assetId === a.id).length} 张草稿卡 · 方案尚未解析（主界面「AI 解析」或手工构建）`,
-    advanced: (st, a) => st.protocols.some((p) => p.sourceAssetId === a.id),
+    key: "paper", name: "paper-laccase-btb-2026.md", file: "samples/paper-laccase-btb-2026.md", kind: "text",
+    title: "真实公开论文（CC BY 全文，含署名与许可）", path: "路径① 文献整理 → 领域知识",
+    src: "Europe PMC PMC13566542 · DOI 10.3390/ijms27177767 · Int. J. Mol. Sci. 2026 · CC BY 4.0（作者署名见文件头；经 scripts/fetch-paper.ts 自公开 JATS 全文转换）",
+    act: "创建条目＋导入附件", route: "/api/papers",
+    stage: "已导入 · 语义提取未开始",
+    run: async (text, topicId) => {
+      const p = await api("/api/papers", { title: "Individual and Cooperative Photochemical–Enzymatic Processes for the Degradation of the Dye Bromothymol Blue: Kinetic and Eco-Toxicity Analysis", authors: "Urquiza AS, Reynoso A, Biasutti MA, Montejano HA, Reynoso E", year: 2026, doi: "10.3390/ijms27177767", source: "Europe PMC PMC13566542 · Int. J. Mol. Sci.", license: "CC BY 4.0", note: "验收用真实公开论文（逐附件署名/许可清楚）" });
+      if (p.status >= 400) return p;
+      const a = await api(`/api/papers/${encodeURIComponent(p.j.paperId)}/attachments`, { name: "paper-laccase-btb-2026.md", text, role: "fulltext", version: "v1" });
+      if (a.status >= 400) return a;
+      if (topicId) await api(`/api/papers/${encodeURIComponent(p.j.paperId)}/topics`, { topicId, link: true });
+      return { status: 201, j: { paperId: p.j.paperId, attachmentId: a.j.attachmentId } };
+    },
+    summary: (st) => {
+      const p = st.papers.find((x) => x.doi === "10.3390/ijms27177767");
+      if (!p) return "条目未找到";
+      const atts = st.attachments.filter((x) => x.paperId === p.id).length;
+      const cs = st.cards.filter((c) => c.paperId === p.id).length;
+      return `条目 1 · 附件 ${atts}（全文）· 知识卡 ${cs}（在「领域知识积累」发起语义提取）`;
+    },
+    advanced: (st) => st.cards.some((c) => c.paperId && st.papers.find((p) => p.id === c.paperId)?.doi === "10.3390/ijms27177767"),
   },
   {
-    key: "hand", name: "handwriting-record.jpg", file: "samples/handwriting-record.jpg", kind: "image",
-    title: "手写实验记录（网络来源真实手写件）", path: "路径③ 实验记录 · OCR",
-    src: "知乎 @你知道我不知道（水印署名）· 大学物理实验记录 · 与 SLAC 课题不同源，仅演示 OCR 与人工确认门禁 · 无许可声明，不作再授权",
-    act: "上传图片原件", route: "/api/import/image",
-    body: (dataUrl, topicId) => ({ name: MATS[2].name, dataUrl, topicId }),
-    stage: "识别未开始",
-    summary: (st, a) => `原图已归档（${(a.bytes / 1024).toFixed(0)}KB，不压缩转码）· OCR 未开始（主界面识别或人工转录兜底）`,
-    advanced: (st, a) => st.ocrs.some((o) => o.assetId === a.id),
+    key: "proto", name: "protocol-source.md", file: "samples/protocol-source.md", kind: "text",
+    title: "实验方案（原作者 notebook 节选）", path: "路径② 方案直解",
+    src: "DaRUS DOI 10.18419/DARUS-3337 · CC BY 4.0 · 译述节选",
+    act: "上传方案原件（归档，解析在主界面）", route: "/api/protocols/upload",
+    body: (text, topicId) => ({ name: MATS.find((m) => m.key === "proto").name, text, topicId }),
+    stage: "已归档 · 方案解析未开始",
+    summary: (st, a) => `方案原件已归档（不进文献候选库）· 结构化解析在「实验方案管理」发起`,
+    advanced: (st, a) => st.protocols.some((p) => p.sourceAssetId === a.id),
   },
   {
     key: "meth", name: "methods-source.md", file: "samples/methods-source.md", kind: "text",
     title: "方法学文献（处理路径依据）", path: "路径① 文献证据",
     src: "DaRUS DOI 10.18419/DARUS-3337 · CC BY 4.0",
     act: "上传并构建草稿卡", route: "/api/import/literature",
-    body: (text, topicId) => ({ name: MATS[3].name, text, topicId, mode: "draft" }),
+    body: (text, topicId) => ({ name: "methods-source.md", text, topicId, mode: "draft" }),
     stage: "核验未开始",
     summary: (st, a) => {
       const cs = st.cards.filter((c) => c.assetId === a.id);
@@ -113,7 +126,7 @@ async function upload(m, isDup) {
   out(m.key, "上传中…（调用真实导入函数）");
   try {
     const content = await contentOf(m);
-    const { status, j } = await api(m.route, m.body(content, topicId));
+    const { status, j } = m.run ? await m.run(content, topicId) : await api(m.route, m.body(content, topicId));
     if (status === 409) {
       out(m.key, `<span class="${isDup ? "ok" : "err"}">409 拒重：${esc(j.error)}${j.existingAssetId ? ` <code>${esc(j.existingAssetId)}</code>` : ""}${isDup ? "（预期行为：指向已有原件，不产生重复）" : ""}</span>`);
     } else if (status >= 400) {

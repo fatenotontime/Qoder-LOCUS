@@ -268,3 +268,12 @@ table.grid .celledit input { width: auto; }
 .repraw, .reprow { display: grid; gap: 4px; margin: 4px 0; }
 .resedit { display: grid; gap: 4px; }
 #mid-content pre { white-space: pre-wrap; word-break: break-word; font-size: 12px; background: var(--bg); border: 1px solid var(--line); border-radius: var(--radius-sm); padding: var(--space-2); max-height: 320px; overflow: auto; }
+
+/* 5B：表格最大化工作区 */
+#table-max { position: fixed; inset: 0; background: rgba(23, 33, 28, 0.45); display: flex; flex-direction: column; padding: var(--space-4); z-index: 40; }
+#table-max .tblmax-head { display: flex; gap: var(--space-2); align-items: center; background: var(--bg); border: 1px solid var(--line); border-radius: var(--radius) var(--radius) 0 0; padding: var(--space-2) var(--space-3); }
+#table-max .tblmax-head #tblmax-close { margin-left: auto; }
+#table-max .tblmax-body { flex: 1; overflow: auto; background: var(--bg); border: 1px solid var(--line); border-top: 0; border-radius: 0 0 var(--radius) var(--radius); padding: var(--space-3); }
+#table-max .tablewrap.big { max-height: none; }
+#table-max .tablewrap.big table.grid td, #table-max .tablewrap.big table.grid th { font-size: var(--text); }
+#table-max pre { white-space: pre-wrap; word-break: break-word; font-size: 12px; background: var(--panel, var(--bg)); border: 1px solid var(--line); border-radius: var(--radius-sm); padding: var(--space-2); max-height: 60vh; overflow: auto; }

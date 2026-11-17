@@ -477,6 +477,7 @@ function cardsHtml(assetId, paperId) {
         ${c.unknowns.length ? `<div class="hint warn">缺项：${c.unknowns.map(esc).join("、")}</div>` : ""}
         <div class="row"><button class="save-fields">保存字段/单位/条件</button></div>
       </details>
+      <details class="mini rev"><summary>核对与采用（按需展开）：核对 ${c.audit} · 候选 ${CAND_LABEL[cs]}${adps.length ? ` · 已记录 ${adps.length} 条任务采用` : ""}</summary>
       <div class="row"><label>核对</label>
         <select data-field="audit">${["unreviewed", "confirm", "need_info", "exclude", "skip"].map((v) => `<option ${v === c.audit ? "selected" : ""}>${v}</option>`).join("")}</select>
         <label>重要</label>
@@ -494,6 +495,7 @@ function cardsHtml(assetId, paperId) {
         <button class="adopt-btn">记录</button>` : `<span class="hint">先在左栏创建子问题，才能按任务采用。</span>`}
       </div>
       ${adps.length ? `<div class="adoptlist">${adps.map((a) => `<span class="badge ${a.decision === "adopt" ? "adopted" : "exclude"}" title="${esc(a.reason)}">${a.decision === "adopt" ? "采用" : "排除"} · ${esc(state.subquestions.find((q) => q.id === a.subquestionId)?.question ?? a.subquestionId)}（卡 rev ${a.cardRevision}）</span>`).join("")}</div>` : ""}
+      </details>
     </div>`;
   }).join("") : `<p class="hint">${all.length ? "当前筛选下无证据卡。" : "暂无证据卡。"}</p>`;
 
@@ -556,7 +558,7 @@ function topicTodosHtml() {
   if (liveExecs.length) rows.push(`<div class="item"><div class="meta">进行中/暂停的执行 ${liveExecs.length} 个</div><button class="goto" data-goto="record">去记录</button></div>`);
   if (!rows.length) rows.push(`<div class="item"><p class="hint">当前没有待办。可新建课题、整理论文或发起知识提取。</p></div>`);
   if (mechCount) rows.push(`<div class="item"><p class="hint">另有 ${mechCount} 张机械草稿（旧逐段拆分，开发调试产物），已明确标记，不计入语义知识。</p></div>`);
-  rows.push(`<div class="item"><div class="meta">暂藏功能清单</div><p class="hint">数据处理与分析、上下文AI对话：导航占位，阶段5后续段实现。Zotero 实时连接：未验证未实现（题录/附件导入可用）。手写 OCR：真实公开手写样本未验证。详见 docs/stage5/01_REFACTOR_PLAN.md。</p></div>`);
+  rows.push(`<div class="item"><div class="meta">暂藏 / 未实现功能清单</div><p class="hint">七入口均已接通（含数据处理与分析、上下文AI对话）。如实单列：Zotero 实时连接未实现（题录/附件导入可用）；手写 OCR 通道已实现但真实手写样本未验证；报告正式导出、实验图 AI 重排未实现（占位）。暂藏项（核对/采用、列设置、原始 CSV、映射比较高级选项）均折叠保留，非删除。详见 docs/stage5/02_HIDDEN_FEATURES.md。</p></div>`);
   return rows.join("");
 }
 
@@ -740,29 +742,72 @@ function showReminder() {
   btn.addEventListener("click", () => { hideBanner(); const d = $("#cmp-box"); if (d) d.open = true; });
   b.appendChild(btn);
 }
+let foldEmpty = true;
+/** 表格渲染（中间/最大化共用）：全空行只在展示层折叠，零值与标记行不折叠，原件字节不改。 */
+function tableGridHtml(t, big) {
+  const markers = new Set(t.markerRows ?? []);
+  const isEmptyRow = (r) => (r ?? []).every((c) => String(c ?? "").trim() === "");
+  const folded = [];
+  const rows = t.rows.map((r, ri) => {
+    const isMarker = markers.has(ri);
+    if (!isMarker && isEmptyRow(r) && foldEmpty) { folded.push(ri + 1); return ""; }
+    return `<tr${isMarker ? ` class="marker" title="块标记行：原件中的分块标题（非测量行），保留原样"` : ""}>${t.columns.map((_, ci) => `<td class="cell" data-row="${ri}" data-col="${ci}">${esc(r[ci] ?? "")}</td>`).join("")}</tr>`;
+  }).join("");
+  const note = folded.length
+    ? `<p class="hint">已折叠 ${folded.length} 个全空行（仅展示层；原件字节未改，零值与标记行不折叠）：第 ${folded.slice(0, 12).join("、")}${folded.length > 12 ? "…" : ""} 行</p>`
+    : "";
+  return { html: `<div class="tablewrap${big ? " big" : ""}"><table class="grid"><thead><tr>${t.columns.map((n) => `<th>${esc(n)}</th>`).join("")}</tr></thead><tbody>${rows}</tbody></table></div>${note}`, folded: folded.length };
+}
+function openTableMax(tid) {
+  const t = state.tables.find((x) => x.id === tid); if (!t) return;
+  document.querySelector("#table-max")?.remove();
+  const asset = state.assets.find((a) => a.id === t.assetId);
+  const wrap = document.createElement("div");
+  wrap.id = "table-max";
+  wrap.innerHTML = `
+    <div class="tblmax-head"><strong>${esc(t.name)}</strong> <span class="hint">${t.rows.length} 行 × ${t.columns.length} 列 · 原件 ${asset?.bytes ?? 0}B · rev ${t.revision}</span>
+      <button id="tblmax-fold">${foldEmpty ? "展开全空行" : "折叠全空行"}</button>
+      <button id="tblmax-csv">查看原始 CSV</button>
+      <button id="tblmax-close">关闭</button></div>
+    <div class="tblmax-body">${tableGridHtml(t, true).html}<div id="tblmax-raw" hidden><pre>${esc(asset?.text ?? "")}</pre></div></div>`;
+  document.body.appendChild(wrap);
+  wrap.querySelector("#tblmax-close").onclick = () => wrap.remove();
+  wrap.querySelector("#tblmax-fold").onclick = () => { foldEmpty = !foldEmpty; saveUi(); openTableMax(tid); };
+  wrap.querySelector("#tblmax-csv").onclick = () => { const r = wrap.querySelector("#tblmax-raw"); r.hidden = !r.hidden; };
+  wrap.querySelector(".tblmax-body").addEventListener("click", (ev) => {
+    const td = ev.target.closest("td.cell"); if (!td) return;
+    ui.cell = { tableId: tid, row: Number(td.dataset.row), col: Number(td.dataset.col) };
+    renderRight();
+  });
+}
 function tableHtml(assetId) {
   const ts = state.tables.filter((x) => x.assetId === assetId);
   if (!ts.length) return `<p class="hint">暂无表格。</p>`;
   const t = ts.find((x) => x.id === ui.tableId) ?? ts[0];
   const markers = new Set(t.markerRows ?? []);
-  const head = t.columns.map((name, i) => `<th><div>${esc(name)}</div>
-    <input data-col="${i}" data-k="unit" value="${esc(t.columnMeta[i].unit)}" placeholder="单位" />
-    <select data-col="${i}" data-k="decision">${["unreviewed", "confirm", "need_info"].map((v) => `<option ${v === t.columnMeta[i].decision ? "selected" : ""}>${v}</option>`).join("")}</select></th>`).join("");
-  const body = t.rows.map((r, ri) => `<tr${markers.has(ri) ? ` class="marker" title="块标记行：原件中的分块标题（非测量行），保留原样"` : ""}>${t.columns.map((_, ci) => `<td class="cell" data-row="${ri}" data-col="${ci}">${esc(r[ci] ?? "")}</td>`).join("")}</tr>`).join("");
+  const { html: grid, folded } = tableGridHtml(t, false);
+  const asset = state.assets.find((a) => a.id === assetId);
   const cell = ui.cell && ui.cell.tableId === t.id ? ui.cell : null;
   const pick = ts.length > 1 ? `<div class="row"><label>表块</label><select id="table-pick">${ts.map((x) => `<option value="${x.id}" ${x.id === t.id ? "selected" : ""}>${esc(x.name)}</option>`).join("")}</select></div>` : "";
   return `
     <div class="item" data-id="${t.id}">
       ${pick}
       <div class="meta">${t.rows.length} 行（${t.rows.length - markers.size} 数据 · ${markers.size} 标记）× ${t.columns.length} 列 · rev ${t.revision}</div>
-      <div class="tablewrap"><table class="grid"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>
+      <div class="row"><button class="tbl-max">最大化表格</button><button class="tbl-fold">${foldEmpty ? "展开全空行" : "折叠全空行"}</button></div>
+      ${grid}
+      <details class="mini"><summary>查看原始 CSV（原件字节不变，不清理）</summary><pre>${esc(asset?.text ?? "")}</pre></details>
+      <details class="mini"><summary>列设置（单位 / 核对，按需展开）</summary>
+        <div class="tablewrap"><table class="grid"><thead><tr>${t.columns.map((name, i) => `<th><div>${esc(name)}</div>
+          <input data-col="${i}" data-k="unit" value="${esc(t.columnMeta[i].unit)}" placeholder="单位" />
+          <select data-col="${i}" data-k="decision">${["unreviewed", "confirm", "need_info"].map((v) => `<option ${v === t.columnMeta[i].decision ? "selected" : ""}>${v}</option>`).join("")}</select></th>`).join("")}</tr></thead></table></div>
+      </details>
       <div class="row"><label>备注</label><input data-field="note" value="${esc(t.note)}" />
         <label>原因</label><input data-field="reason" placeholder="改单元格数值时必填" />
         <button class="save-cols">保存列设置</button><button class="history-btn">历史(${t.history.length})</button></div>
       ${cell ? `<div class="row celledit"><label>单元格 r${cell.row}·c${cell.col}</label>
         <input data-field="cellValue" value="${esc(t.rows[cell.row]?.[cell.col] ?? "")}" />
         <input data-field="cellReason" placeholder="更正原因（必填）" />
-        <button class="save-cell">保存单元格</button><button class="cancel-cell">取消</button></div>` : `<p class="hint">点击中间原件中的行可定位；点击单元格后再改数值（需原因）。</p>`}
+        <button class="save-cell">保存单元格</button><button class="cancel-cell">取消</button></div>` : `<p class="hint">点击中间原件或最大化视图中的单元格可定位；定位后再改数值（需原因）。</p>`}
     </div>`;
 }
 
@@ -1602,6 +1647,8 @@ $("#right-content").addEventListener("click", async (ev) => {
         await refresh(); setStatus("已采纳：写入目标对象（执行备注/报告待验证），来源可溯");
       }); return;
     }
+    if (ev.target.classList.contains("tbl-max")) { const it = ev.target.closest(".item"); if (it) openTableMax(it.dataset.id); return; }
+    if (ev.target.classList.contains("tbl-fold")) { foldEmpty = !foldEmpty; renderRight(); return; }
     if (ev.target.classList.contains("span-link")) { ui.assetId = ev.target.dataset.asset; ui.highlight = ev.target.dataset.quote; renderMiddle(); return; }
     const attEl = ev.target.closest(".material[data-attid]");
     if (attEl) { ui.attId = attEl.dataset.attid; ui.highlight = null; renderMiddle(); renderRight(); return; }
