@@ -48,6 +48,15 @@ function restoreUi() {
 const $ = (s) => document.querySelector(s);
 const $$ = (s) => document.querySelectorAll(s);
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+/** 把任意字符串里的 ISO 时间替换成本地短格式（用于服务端生成的摘要文本）。 */
+const deIso = (s) => String(s ?? "").replace(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z/g, (m) => fmtTime(m));
+/** 服务端摘要文本里可能夹带的英文枚举/裸版本 → 中文（仅用于展示）。 */
+const humanVer = (s) => String(s ?? "")
+  .replace(/rev (\d+)/g, "第$1版")
+  .replace(/ai-draft/g, "模型草稿").replace(/reconstructed/g, "重构")
+  .replace(/unreviewed/g, "待审").replace(/need_info/g, "待补")
+  .replace(/exploratory/g, "探索中").replace(/declared/g, "已定")
+  .replace(/confirm/g, "已确认").replace(/exclude/g, "已排除").replace(/\bskip\b/g, "已跳过");
 const topicName = (id) => state.topics.find((t) => t.id === id)?.name;
 
 async function refresh() {
@@ -294,106 +303,8 @@ function renderRight() {
   $("#right-content").innerHTML = `<p class="hint">在左栏选择工作对象。</p>`;
 }
 /** 候选库状态（与后端 candidateStateOf 同口径）：跳过保未复核；采用独立于核对。 */
-function candState(c) {
-  if (state.adoptions.some((a) => a.cardId === c.id && a.decision === "adopt")) return "adopted";
-  if (c.audit === "need_info") return "pending";
-  if (c.audit === "confirm" || c.audit === "exclude") return "reviewed";
-  return "unreviewed";
-}
-const CAND_LABEL = { unreviewed: "未复核", pending: "待补信息", reviewed: "已审候选", adopted: "已采用" };
-const KIND_LABEL = { data: "数据", argument: "论证", method: "方法", idea: "思路" };
 const ROLE_LABEL = { fulltext: "正文", supplement: "补充材料", other: "其他" };
 
-function cardsHtml(assetId, paperId) {
-  const all = state.cards.filter((c) => paperId ? c.paperId === paperId : c.assetId === assetId);
-  const inFilter = (c) => ui.cardFilter === "all" ? true
-    : ui.cardFilter === "pending" ? ["unreviewed", "pending"].includes(candState(c))
-    : ["reviewed", "adopted"].includes(candState(c));
-  const cards = all.filter(inFilter);
-  const nPend = all.filter((c) => ["unreviewed", "pending"].includes(candState(c))).length;
-  const nRev = all.length - nPend;
-  const paper = paperId ? state.papers.find((p) => p.id === paperId) : null;
-  const asset = paper
-    ? state.assets.find((a) => a.id === state.attachments.find((x) => x.paperId === paper.id)?.assetId)
-    : state.assets.find((a) => a.id === assetId);
-  const topicIds = paper ? paper.topicIds : (asset?.topicId ? [asset.topicId] : []);
-  const subqs = state.subquestions.filter((q) => !topicIds.length || topicIds.includes(q.topicId));
-  const independent = all.filter((c) => c.audit === "confirm" && !c.secondaryCitation).length;
-
-  const tabs = `<div class="tabs">
-    ${[["all", `全部 ${all.length}`], ["pending", `待审 ${nPend}`], ["reviewed", `已审候选 ${nRev}`]].map(([k, label]) => `<button class="tab ${ui.cardFilter === k ? "active" : ""}" data-filter="${k}">${label}</button>`).join("")}
-    <span class="hint">独立证据 ${independent}（不含转引/未确认）</span>
-  </div>`;
-
-  const batchBar = `<div class="row batchbar">
-    <button class="batch-preview" ${ui.groupSel.size ? "" : "disabled"}>组审预览（已选 ${ui.groupSel.size}）</button>
-    <button class="batch-clear" ${ui.groupSel.size ? "" : "disabled"}>清空选择</button>
-  </div>`;
-  const batchPanel = ui.batch ? `<div class="item batchpanel">
-    <div class="meta">组审预览 · ${ui.batch.count} 张（先呈现共享条件，确认后才整组通过）</div>
-    <div>共享条件：${ui.batch.sharedConditions.length ? ui.batch.sharedConditions.map(esc).join("、") : "（无）"}</div>
-    <div>缺定位：${ui.batch.missing.length ? ui.batch.missing.map((id) => esc(id)).join("、") : "（无）"}</div>
-    <div>缺项/异常：${ui.batch.anomalies.length ? ui.batch.anomalies.map((id) => esc(id)).join("、") : "（无）"}</div>
-    <div class="row"><label><input type="checkbox" id="batch-ack" ${ui.ack ? "checked" : ""}/> 我已查看上述共享条件/缺项/异常</label>
-      <button class="primary batch-confirm" ${ui.ack ? "" : "disabled"}>整组确认</button>
-      <button class="batch-cancel">取消</button></div>
-  </div>` : "";
-
-  const manualForm = !asset ? (paper ? `<p class="hint">该条目暂无附件：手动补卡需要可定位的原件，请先导入附件。</p>` : "") : `<details class="mini">
-    <summary>手动补卡</summary>
-    <textarea id="mc-raw" rows="2" placeholder="证据内容（必填）"></textarea>
-    <input id="mc-quote" placeholder="定位引文：粘贴原件中的连续片段（可留空＝定位不足，不得正式采用）" />
-    <textarea id="mc-fields" rows="2" placeholder="字段，每行 键=值（如 Km=0.5）"></textarea>
-    <div class="row"><input id="mc-units" placeholder="单位（逗号分隔）" /><input id="mc-conditions" placeholder="条件（逗号分隔）" /></div>
-    <div class="row"><input id="mc-unknowns" placeholder="缺项（逗号分隔）" /><input id="mc-reason" placeholder="原因（标转引时必填）" /></div>
-    <div class="row"><label><input type="checkbox" id="mc-secondary" /> 综述转引（二手）</label><button class="primary" id="mc-add">补卡</button></div>
-  </details>`;
-
-  const body = cards.length ? cards.map((c) => {
-    const cs = candState(c);
-    const adps = state.adoptions.filter((a) => a.cardId === c.id);
-    const fields = Object.entries(c.extracted?.fields ?? {});
-    return `
-    <div class="item" data-id="${c.id}">
-      <div class="meta"><label class="grpwrap"><input type="checkbox" class="grp" data-id="${c.id}" ${ui.groupSel.has(c.id) ? "checked" : ""}/></label>
-        ${c.kind ? `<span class="badge kind-${c.kind}">${KIND_LABEL[c.kind] ?? c.kind}</span> · ` : ""}抽取 <span class="badge ${c.extraction === "ai" ? "ai" : ""}">${c.extraction}</span> · 核对 <span class="badge ${c.audit}">${c.audit}</span> · 候选 <span class="badge cand-${cs}">${CAND_LABEL[cs]}</span>${c.mechanical ? ` · <span class="badge warn">机械草稿（逐段拆分，非语义提取）</span>` : ""}${c.secondaryCitation ? ` · <span class="badge secondary">转引(二手)</span>` : ""} · rev ${c.revision}</div>
-      <div class="raw linkable" title="点击在原文件中定位">${esc(c.rawText)}</div>
-      ${c.scope ? `<div class="hint">适用范围：${esc(c.scope)}</div>` : ""}
-      ${c.interpretation ? `<div class="hint">作者解释（与数据/事实分开）：${esc(c.interpretation)}</div>` : ""}
-      ${c.spans?.length ? `<div class="spans">${c.spans.map((s) => `<div class="hint ${s.matched ? "" : "warn"}"><button class="span-link" data-asset="${s.assetId}" data-quote="${esc(s.quote)}">${s.matched ? "定位" : "定位不足"}</button> 「${esc(s.quote.slice(0, 80))}${s.quote.length > 80 ? "…" : ""}」</div>`).join("")}</div>` : ""}
-      ${!c.locator.sectionQuote ? `<div class="hint warn">定位不足：无原文定位，不得用于正式采用。</div>` : ""}
-      <details class="mini ex"><summary>字段/条件/缺项${c.unknowns.length ? `（缺项 ${c.unknowns.length}）` : ""}</summary>
-        ${fields.map(([k, v]) => `<div class="row"><label>${esc(k)}</label><input data-fkey="${esc(k)}" value="${esc(v)}" /></div>`).join("") || `<p class="hint">暂无抽取字段。</p>`}
-        <div class="row"><input data-field="newkey" placeholder="新字段名" /><input data-field="newval" placeholder="值" /></div>
-        <div class="row"><label>单位</label><input data-field="units" value="${esc((c.extracted?.units ?? []).join(","))}" /></div>
-        <div class="row"><label>条件</label><input data-field="conditions" value="${esc((c.extracted?.conditions ?? []).join(","))}" /></div>
-        ${c.unknowns.length ? `<div class="hint warn">缺项：${c.unknowns.map(esc).join("、")}</div>` : ""}
-        <div class="row"><button class="save-fields">保存字段/单位/条件</button></div>
-      </details>
-      <details class="mini rev"><summary>核对与采用 · 核对 ${c.audit} · 候选 ${CAND_LABEL[cs]}${adps.length ? ` · 已记录 ${adps.length} 条任务采用` : ""}</summary>
-      <div class="row"><label>核对</label>
-        <select data-field="audit">${["unreviewed", "confirm", "need_info", "exclude", "skip"].map((v) => `<option ${v === c.audit ? "selected" : ""}>${v}</option>`).join("")}</select>
-        <label>重要</label>
-        <select data-field="importance">${["", "high", "medium", "low"].map((v) => `<option value="${v}" ${(c.importance ?? "") === v ? "selected" : ""}>${v || "—"}</option>`).join("")}</select>
-        <button class="sec-toggle">${c.secondaryCitation ? "取消转引标记" : "标记转引(二手)"}</button>
-      </div>
-      <div class="row"><label>备注</label><input data-field="note" value="${esc(c.note)}" /></div>
-      <div class="row"><label>原因</label><input data-field="reason" value="${esc(c.reason)}" placeholder="排除/改关键文本/标转引时必填" />
-        <button class="save">保存</button><button class="history-btn">历史(${c.history.length})</button></div>
-      <div class="row adopt">
-        <label>任务</label>
-        ${subqs.length ? `<select data-field="adoptSubq">${subqs.map((q) => `<option value="${q.id}">${esc(q.question)}</option>`).join("")}</select>
-        <select data-field="adoptDecision"><option value="adopt">采用</option><option value="exclude">排除</option></select>
-        <input data-field="adoptReason" placeholder="原因（排除必填）" />
-        <button class="adopt-btn">记录</button>` : `<span class="hint">先在左栏创建子问题，才能按任务采用。</span>`}
-      </div>
-      ${adps.length ? `<div class="adoptlist">${adps.map((a) => `<span class="badge ${a.decision === "adopt" ? "adopted" : "exclude"}" title="${esc(a.reason)}">${a.decision === "adopt" ? "采用" : "排除"} · ${esc(state.subquestions.find((q) => q.id === a.subquestionId)?.question ?? a.subquestionId)}（卡 rev ${a.cardRevision}）</span>`).join("")}</div>` : ""}
-      </details>
-    </div>`;
-  }).join("") : `<p class="hint">${all.length ? "当前筛选下无证据卡。" : "暂无证据卡。"}</p>`;
-
-  return tabs + batchBar + batchPanel + manualForm + body;
-}
 
 // ── 阶段5 第一段：课题首页 / 文献整理 / 领域知识积累 ─────────────
 
@@ -445,7 +356,7 @@ function paperHtml() {
   const nCard = state.cards.filter((c) => c.paperId === p.id).length;
   return `
     <div class="item" data-id="${p.id}">
-      <div class="meta">题录 · rev ${p.revision} · ${nCard} 张知识卡</div>
+      <div class="meta">题录 · ${nCard} 张知识卡</div>
       <div class="row"><label>题名</label><input data-field="pTitle" value="${esc(p.title)}" /></div>
       <div class="row"><label>作者</label><input data-field="pAuthors" value="${esc(p.authors.join(" and "))}" /></div>
       <div class="row"><label>年份</label><input data-field="pYear" value="${esc(p.year)}" /><label>DOI</label><input data-field="pDoi" value="${esc(p.doi)}" /></div>
@@ -554,7 +465,7 @@ function renderLitTools(box) {
       <summary>条件比较（${cmps.length}）</summary>
       ${ui.topicId ? `
         <div class="hint">仅已确认证据卡可入比较；快照固定卡版本，不自动合并/平均。</div>
-        ${confirmed.length ? confirmed.map((c) => `<label class="cmppick"><input type="checkbox" class="cmp-card" value="${c.id}" /> ${esc(c.rawText.slice(0, 40))}（rev ${c.revision}）</label>`).join("") : `<p class="hint">本课题暂无已确认证据卡。</p>`}
+        ${confirmed.length ? confirmed.map((c) => `<label class="cmppick"><input type="checkbox" class="cmp-card" value="${c.id}" /> ${esc(c.rawText.slice(0, 40))}（第${c.revision}版）</label>`).join("") : `<p class="hint">本课题暂无已确认证据卡。</p>`}
         <div class="row"><input id="cmp-filters" placeholder="筛选（逗号分隔）" /><input id="cmp-conversions" placeholder="换算（逗号分隔）" /></div>
         <div class="row"><input id="cmp-exclusions" placeholder="排除（逗号分隔）" /><button class="primary" id="cmp-create">固定快照比较</button></div>
       ` : `<p class="hint">先选课题。</p>`}
@@ -597,7 +508,7 @@ function openTableMax(tid) {
   const wrap = document.createElement("div");
   wrap.id = "table-max"; wrap.className = "item"; wrap.dataset.id = t.id;
   wrap.innerHTML = `
-    <div class="tblmax-head"><strong>${esc(t.name)}</strong> <span class="hint">${t.rows.length} 行（${t.rows.length - markers.size} 数据 · ${markers.size} 标记）× ${t.columns.length} 列 · 原件 ${asset?.bytes ?? 0}B · rev ${t.revision}</span>
+    <div class="tblmax-head"><strong>${esc(t.name)}</strong> <span class="hint">${t.rows.length} 行（${t.rows.length - markers.size} 数据 · ${markers.size} 标记）× ${t.columns.length} 列 · 原件 ${asset?.bytes ?? 0}B</span>
       <button id="tblmax-fold">${foldEmpty ? "展开全空行" : "折叠全空行"}</button>
       <button id="tblmax-csv">查看原始 CSV</button>
       <button id="tblmax-close">关闭</button></div>
@@ -611,7 +522,7 @@ function openTableMax(tid) {
       <details class="mini"><summary>列设置（单位 / 核对）</summary>
         <div class="tablewrap"><table class="grid"><thead><tr>${t.columns.map((name, i) => `<th><div>${esc(name)}</div>
           <input data-col="${i}" data-k="unit" value="${esc(t.columnMeta[i].unit)}" placeholder="单位" />
-          <select data-col="${i}" data-k="decision">${["unreviewed", "confirm", "need_info"].map((v) => `<option ${v === t.columnMeta[i].decision ? "selected" : ""}>${v}</option>`).join("")}</select></th>`).join("")}</tr></thead></table></div>
+          <select data-col="${i}" data-k="decision">${[["unreviewed", "待审"], ["confirm", "已确认"], ["need_info", "待补"]].map(([v, l]) => `<option value="${v}" ${v === t.columnMeta[i].decision ? "selected" : ""}>${l}</option>`).join("")}</select></th>`).join("")}</tr></thead></table></div>
       </details>
       <div class="row"><label>备注</label><input data-field="note" value="${esc(t.note)}" />
         <label>原因</label><input data-field="reason" placeholder="改单元格数值时必填" />
@@ -711,13 +622,13 @@ function renderProtocolImport(box) {
         <input id="proto-up-file" type="file" accept=".md,.markdown,.txt,.text,text/markdown,text/plain" />
         <textarea id="proto-up-text" rows="3" placeholder="或粘贴方案文本（Markdown/纯文本）…"></textarea>
         <button class="primary" id="proto-upload">上传并解析为方案草稿</button>
-        <p class="hint">原件按方案类归档；草稿标 ai-draft，须人工编辑确认。AI 未配置时只归档，可稍后解析。</p>
+        <p class="hint">原件按方案类归档；草稿标「模型草稿」，须人工编辑确认。AI 未配置时只归档，可稍后解析。</p>
         ${protos.length ? `<div class="hint">已归档方案原件（${protos.length}）：</div>${protos.map((a) => `<div class="row protoasset" data-aid="${a.id}"><span class="hint">${esc(a.name)} · ${a.bytes}B</span><button class="protoasset-parse">解析为草稿</button></div>`).join("")}` : ""}
       </details>
       <details class="mini"><summary>② 从论文重构（非作者原始）</summary>
         ${paperAtts.length ? `<select id="parse-asset">${paperAtts.map((a) => `<option value="${a.id}">${esc(a.name)}</option>`).join("")}</select>
         <button id="proto-parse">重构为方案草稿</button>
-        <p class="hint">重构来源仅限论文附件；草稿标 reconstructed 并固定来源原件，不是作者原始方案。</p>` : `<p class="hint">先在「文献整理」为论文条目导入正文/方法附件。</p>`}
+        <p class="hint">重构来源仅限论文附件；草稿标「重构」并固定来源原件，不是作者原始方案。</p>` : `<p class="hint">先在「文献整理」为论文条目导入正文/方法附件。</p>`}
       </details>
       <details class="mini"><summary>③ 手动新建</summary>
         <input id="proto-name" placeholder="方案名称" />
@@ -751,14 +662,14 @@ function renderProtocolImport(box) {
     }
     const res = await pollJob(r.jobId, "方案解析");
     ui.protocolId = res.protocolId; ui.viewRev = null; await refreshAfterJob();
-    setStatus("方案草稿已生成（ai-draft，须人工确认）");
+    setStatus("方案草稿已生成（模型草稿，须人工确认）");
   }));
   $$(".protoasset-parse").forEach((b) => b.addEventListener("click", (ev) => runJob(ev.target, "AI 解析方案", async () => {
     const aid = b.closest(".protoasset").dataset.aid;
     const r = await api.parseProtocol(aid, ui.topicId);
     const res = await pollJob(r.jobId, "方案解析");
     ui.protocolId = res.protocolId; ui.viewRev = null; await refreshAfterJob();
-    setStatus("方案草稿已生成（ai-draft，须人工确认）");
+    setStatus("方案草稿已生成（模型草稿，须人工确认）");
   })));
   $("#proto-create").addEventListener("click", (ev) => runBusy(ev.target, "创建方案", async () => {
     if (!ui.topicId) throw new Error("请先选择/创建课题");
@@ -777,7 +688,7 @@ function renderProtocolImport(box) {
     const r = await api.parseProtocol($("#parse-asset").value, ui.topicId, undefined, "reconstructed");
     const res = await pollJob(r.jobId, "方案重构");
     ui.protocolId = res.protocolId; ui.viewRev = null; await refreshAfterJob();
-    setStatus("重构草稿已生成（reconstructed：非作者原始方案，须人工确认）");
+    setStatus("重构草稿已生成（重构：非作者原始方案，须人工确认）");
   }));
 }
 
@@ -1175,8 +1086,8 @@ function renderChatForm(box) {
 
 function snapshotHtml(snap) {
   return `<details class="mini" open><summary>冻结上下文快照 · ${esc(snap.summary)}</summary>
-    <p class="hint">目的：${esc(snap.purpose)}<br/>模型：${esc(snap.model)} · 提示词 ${esc(snap.promptVersion)} · ${esc(snap.at)}<br/>hash：${esc(snap.hash)}</p>
-    ${snap.fragments.map((f, i) => `<details class="mini"><summary>碎片 ${i + 1} · ${esc(f.label)} · ${esc(f.version)} · ${f.ref.kind}:${f.ref.id}</summary><pre>${esc(f.excerpt)}</pre></details>`).join("")}
+    <p class="hint">目的：${esc(snap.purpose)}<br/>模型：${esc(snap.model)} · ${esc(fmtTime(snap.at))}<br/>hash：${esc(snap.hash)}</p>
+    ${snap.fragments.map((f, i) => `<details class="mini"><summary>碎片 ${i + 1} · ${esc(f.label)} · ${esc(humanVer(f.version))} · ${f.ref.kind}:${f.ref.id}</summary><pre>${esc(deIso(humanVer(f.excerpt)))}</pre></details>`).join("")}
   </details>`;
 }
 
@@ -1207,7 +1118,7 @@ function contextMapHtml(t) {
 
 const REPORT_NATURES = [["observation", "观察"], ["hypothesis", "假设"], ["interpretation", "解释"], ["to_verify", "待验证"], ["human_judgment", "人工判断"]];
 const natureLabel = (n) => (REPORT_NATURES.find(([k]) => k === n)?.[1] ?? n);
-const refDisplay = (r) => r.version ? `${r.label}（${r.kind} ${r.version}）` : r.label;
+const refDisplay = (r) => r.version ? `${r.label}（${humanVer(r.version)}）` : r.label;
 
 /** 触发浏览器下载（本地服务带 content-disposition）。 */
 function download(path) {
@@ -1246,7 +1157,7 @@ function reportHtml(r) {
       <button class="rep-trace" data-repid="${r.id}">追溯包</button>
     </div>
     <div class="rep-diff"></div>
-    ${r.history.length ? `<details class="mini"><summary>历史（${r.history.length}）</summary>${r.history.map((h) => `<p class="hint">r${h.revision} · ${esc(h.at)} · ${esc(h.reason)}</p>`).join("")}</details>` : ""}
+    ${r.history.length ? `<details class="mini"><summary>历史（${r.history.length}）</summary>${r.history.map((h) => `<p class="hint">${fmtVersion(h.revision)} · ${esc(fmtTime(h.at))} · ${esc(h.reason)}</p>`).join("")}</details>` : ""}
   </details>`;
 }
 
@@ -1287,7 +1198,7 @@ function resultHtml(r) {
         <input data-field="reason" placeholder="修订原因（必填）"/>
         <button class="res-edit-save">保存修订</button>
       </div></details>
-    ${r.history.length ? `<details class="mini"><summary>历史（${r.history.length}）</summary>${r.history.map((h) => `<p class="hint">r${h.revision} · ${esc(h.at)} · ${esc(h.reason)} · 方法 ${esc(h.method)}</p>`).join("")}</details>` : ""}
+    ${r.history.length ? `<details class="mini"><summary>历史（${r.history.length}）</summary>${r.history.map((h) => `<p class="hint">${fmtVersion(h.revision)} · ${esc(fmtTime(h.at))} · ${esc(h.reason)} · 方法 ${esc(h.method)}</p>`).join("")}</details>` : ""}
   </details>`;
 }
 
@@ -1375,7 +1286,7 @@ function ocrHtml(asset) {
     </div>
     ${ocrs.map((o) => `<div class="item ocr" data-id="${o.id}">
       <div class="meta"><span class="badge ${o.extraction === "ai" ? "ai" : ""}">${o.extraction}</span>
-        <span class="badge ${o.status === "confirmed" ? "confirm" : "cand-pending"}">${o.status === "confirmed" ? "已确认" : "草稿"}</span> · rev ${o.revision}</div>
+        <span class="badge ${o.status === "confirmed" ? "confirm" : "cand-pending"}">${o.status === "confirmed" ? "已确认" : "草稿"}</span> · 第${o.revision}版</div>
       <div class="row"><label>转录</label><input data-field="oRaw" value="${esc(o.rawText)}" /></div>
       ${Object.entries(o.fields).map(([k, v]) => `<div class="row"><label>${esc(k)}</label><input data-ofkey="${esc(k)}" value="${esc(v)}" /></div>`).join("")}
       <div class="row"><input data-field="oNewKey" placeholder="新字段名" /><input data-field="oNewVal" placeholder="值" /></div>
@@ -2153,10 +2064,10 @@ $("#tools-area").addEventListener("click", (ev) => {
 function openHistory(obj) {
   if (!obj) return;
   $("#drawer-title").textContent = "修订历史";
-  $("#drawer-meta").textContent = `当前 rev ${obj.revision} · 共 ${obj.history.length} 条`;
+  $("#drawer-meta").textContent = `当前第${obj.revision}版 · 共 ${obj.history.length} 条`;
   $("#drawer-body").innerHTML = obj.history.length === 0 ? `<p class="hint">暂无修订记录。</p>`
-    : `<table class="grid"><thead><tr><th>rev</th><th>字段</th><th>前</th><th>后</th><th>原因</th><th>时间</th></tr></thead><tbody>${
-        obj.history.slice().reverse().map((h) => `<tr><td>${h.revision}</td><td>${esc(h.field)}</td><td class="raw">${esc(h.before)}</td><td class="raw">${esc(h.after)}</td><td>${esc(h.reason)}</td><td>${esc(h.at)}</td></tr>`).join("")
+    : `<table class="grid"><thead><tr><th>版本</th><th>字段</th><th>前</th><th>后</th><th>原因</th><th>时间</th></tr></thead><tbody>${
+        obj.history.slice().reverse().map((h) => `<tr><td>${h.revision}</td><td>${esc(h.field)}</td><td class="raw">${esc(h.before)}</td><td class="raw">${esc(h.after)}</td><td>${esc(h.reason)}</td><td>${esc(fmtTime(h.at))}</td></tr>`).join("")
       }</tbody></table>`;
   $("#drawer").hidden = false;
 }
