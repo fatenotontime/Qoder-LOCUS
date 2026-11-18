@@ -77,6 +77,30 @@ function showBanner(msg, retry) {
 }
 function hideBanner() { $("#banner").hidden = true; }
 
+/** 证据可达：科学改动后，就地提示命中的报告块/分析（需复核，不自动改）。失败不阻断保存。 */
+async function noteChangeHits(kind, id, fields) {
+  if (!fields || !fields.length) return;
+  let r;
+  try { r = await api.changeHits(kind, id, { fields }); } catch { return; }
+  if (r.category !== "needs_review") { setStatus("改动已保存（标题/备注：无需重算）"); return; }
+  const blocks = r.byKind?.block ?? [];
+  const tasks = r.byKind?.task ?? [];
+  const results = r.byKind?.result ?? [];
+  if (!blocks.length && !tasks.length && !results.length) { setStatus("改动已保存（暂无引用它的分析/报告块）"); return; }
+  const b = $("#banner"); b.hidden = false; b.className = "banner info";
+  const parts = [];
+  if (blocks.length) parts.push(`报告块 ${blocks.length}`);
+  if (tasks.length) parts.push(`分析任务 ${tasks.length}`);
+  if (results.length) parts.push(`结果 ${results.length}`);
+  b.innerHTML = `<span>改数值命中：${parts.join("、")}（需复核，不自动改）</span>`;
+  const rep = blocks.length ? state.reports.find((rp) => rp.blocks.some((bl) => bl.id === blocks[0].id)) : null;
+  if (rep) {
+    const btn = document.createElement("button"); btn.textContent = "去复核"; btn.className = "primary";
+    btn.addEventListener("click", () => { hideBanner(); ui.nav = "analysis"; ui.reportId = rep.id; if (rep.taskId) ui.taskId = rep.taskId; renderAll(); });
+    b.appendChild(btn);
+  }
+}
+
 /** 所有写操作：禁用按钮 + 处理中 + 错误内联 + 可重试。 */
 async function runBusy(btn, label, fn) {
   if (ui.busy) return;
@@ -1685,10 +1709,14 @@ $("#right-content").addEventListener("click", async (ev) => {
     }
     if (ev.target.classList.contains("res-edit-save")) {
       const box = ev.target.closest(".resedit"); const rid = box.dataset.rid;
+      const before = state.analysisResults.find((r) => r.id === rid);
       const v = (f) => box.querySelector(`[data-field="${f}"]`).value;
       await runBusy(ev.target, "修订结果", async () => {
         await api.editResult(rid, { method: v("method"), params: v("params"), note: v("note"), reason: v("reason") });
+        const fields = [];
+        if (before) { if (v("params") !== before.params) fields.push("params"); if (v("method") !== before.method) fields.push("method"); }
         ui.dirty = false; await refresh(); setStatus("结果已修订（留历史，可复现性重算）");
+        await noteChangeHits("result", rid, fields);
       }); return;
     }
     if (ev.target.id === "rep-create") {
@@ -2099,9 +2127,13 @@ $("#right-content").addEventListener("click", async (ev) => {
       }); return;
     }
     if (ev.target.classList.contains("meas-save")) {
+      const before = state.measurements.find((m) => m.id === item.dataset.id);
       await runBusy(ev.target, "保存测量修订", async () => {
         await api.editMeasurement(item.dataset.id, { value: val("mValue"), unit: val("mUnit"), method: val("mMethod"), instrument: val("mInstr"), note: val("mNote"), reason: val("mReason") });
+        const fields = [];
+        if (before) { if (val("mValue") !== before.value) fields.push("value"); if (val("mUnit") !== before.unit) fields.push("unit"); if (val("mMethod") !== before.method) fields.push("method"); }
         ui.dirty = false; await refresh(); setStatus("测量已修订（留历史）");
+        await noteChangeHits("measurement", item.dataset.id, fields);
       }); return;
     }
     if (ev.target.id === "ocr-ai") {

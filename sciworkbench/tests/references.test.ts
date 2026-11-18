@@ -122,4 +122,8 @@ test("6A-3 改动命中：改数值/判据→需复核且命中报告块；改�
   // 改动卡 → 命中引用它的任务与报告块（support 链）
   const cardHit = changeHits(w.s, { kind: "card", id: w.cardId, fields: ["interpretation"] });
   assert.ok(cardHit.byKind.task?.some((n) => n.id === w.taskId));
+  // 改动结果参数 → 命中引用它的报告块（供结果修订后就地提示复核）
+  const resHit = changeHits(w.s, { kind: "result", id: w.resultId, fields: ["params"] });
+  assert.equal(resHit.category, "needs_review");
+  assert.ok(resHit.byKind.block?.some((n) => n.id === w.blockId));
 });
