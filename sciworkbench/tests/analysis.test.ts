@@ -278,9 +278,15 @@ test("6C 稳定：服务重启后孤儿 running 消息标失败可重试（不�
   assert.equal(s.chats[0].messages.find((x) => x.id === turn.messageId)!.status, "running");
 });
 
+test("B5 修复：测量引用须用『测量记录 id』（kind=measurement）；原件 id 会被拒", async () => {
+  const w = await world();
+  const ok = createChat(w.s, { topicId: w.topicId, scope: [{ kind: "measurement", id: w.measId }] });
+  assert.equal(ok.chat.scope.length, 1);
+  assert.throws(() => createChat(w.s, { topicId: w.topicId, scope: [{ kind: "measurement", id: "ast_ghost" }] }), /测量不存在/);
+});
+
 // ── 集成：真实路由 + 假模型（按任务分流）；推荐/对话/取消/采纳 ──
-const REC_JSON = JSON.stringify(REC);
-async function fakeAi(delayMs: number): Promise<{ server: Server; port: number }> {
+const REC_JSON = JSON.stringify(REC);async function fakeAi(delayMs: number): Promise<{ server: Server; port: number }> {
   const server = createServer((req, res) => {
     let body = "";
     req.on("data", (c) => { body += c; });

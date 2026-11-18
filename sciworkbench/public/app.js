@@ -1086,7 +1086,11 @@ function refLabel(ref) {
   switch (ref.kind) {
     case "execution": { const e = state.executions.find((x) => x.id === ref.id); const p = e && state.protocols.find((x) => x.id === e.protocolId); return `执行 · ${p?.name ?? ref.id}`; }
     case "protocol": return `方案 · ${state.protocols.find((x) => x.id === ref.id)?.name ?? ref.id}`;
-    case "measurement": return `测量原件 · ${state.assets.find((x) => x.id === ref.id)?.name ?? ref.id}`;
+    case "measurement": {
+      const mr = state.measurements.find((x) => x.id === ref.id);
+      if (mr) { const s = state.samples.find((x) => x.id === mr.sampleId); return `测量 · ${s?.shortName ?? ""} ${mr.value}${mr.unit}`; }
+      return `测量原件 · ${state.assets.find((x) => x.id === ref.id)?.name ?? ref.id}`;
+    }
     case "table": return `数据表 · ${state.tables.find((x) => x.id === ref.id)?.name ?? ref.id}`;
     case "card": { const c = state.cards.find((x) => x.id === ref.id); return `知识卡 · ${c?.scope || Object.values(c?.extracted?.fields ?? {})[0] || ref.id}`; }
     case "asset": return `原件 · ${state.assets.find((x) => x.id === ref.id)?.name ?? ref.id}`;
@@ -1098,7 +1102,7 @@ function topicObjects() {
   const tid = ui.topicId;
   const execs = state.executions.filter((e) => !tid || e.topicId === tid);
   const tables = state.tables.filter((t) => { const a = state.assets.find((x) => x.id === t.assetId); return !tid || !a?.topicId || a.topicId === tid; });
-  const meas = state.assets.filter((a) => a.kind === "measurement" && (!tid || !a.topicId || a.topicId === tid));
+  const meas = state.measurements.filter((m) => !tid || m.topicId === tid);
   const protos = state.protocols.filter((p) => !tid || p.topicId === tid);
   const cards = state.cards.filter((c) => { const p = state.papers.find((x) => x.id === c.paperId); return c.audit === "confirm" && (!tid || !p || !p.topicIds.length || p.topicIds.includes(tid)); });
   return { execs, tables, meas, protos, cards };
@@ -1112,7 +1116,7 @@ function renderAnalysisForm(box) {
   const conf = cards.filter((c) => c.audit === "confirm");
   const dataSources = [
     ...tables.map((t) => ({ kind: "table", id: t.id, label: `数据表 · ${t.name}` })),
-    ...meas.map((m) => ({ kind: "measurement", id: m.id, label: `测量原件 · ${m.name}` })),
+    ...meas.map((m) => ({ kind: "measurement", id: m.id, label: `测量 · ${state.samples.find((s) => s.id === m.sampleId)?.shortName ?? ""} ${m.value}${m.unit}` })),
   ];
   box.innerHTML = `
     <details class="mini" open>
@@ -1156,7 +1160,7 @@ function renderChatForm(box) {
       ${conf.length ? conf.map((c) => `<label class="ctxpick"><input type="checkbox" class="ch-scope" data-kind="card" data-id="${c.id}" checked/> ${esc(c.scope || c.rawText.slice(0, 24))}</label>`).join("") : `<p class="hint">暂无。</p>`}
       <details class="mini"><summary>其他可选（折叠：执行/测量/表/方案/其余卡）</summary>
         ${execs.map((e) => row("execution", e.id, `执行 · ${state.protocols.find((p) => p.id === e.protocolId)?.name ?? e.id}`)).join("")}
-        ${meas.map((m) => row("measurement", m.id, `测量原件 · ${m.name}`)).join("")}
+        ${meas.map((m) => row("measurement", m.id, `测量 · ${state.samples.find((s) => s.id === m.sampleId)?.shortName ?? ""} ${m.value}${m.unit}`)).join("")}
         ${tables.map((t) => row("table", t.id, `数据表 · ${t.name}`)).join("")}
         ${protos.map((p) => row("protocol", p.id, `方案 · ${p.name}`)).join("")}
         ${cards.filter((c) => c.audit !== "confirm").map((c) => row("card", c.id, `知识卡 · ${c.scope || c.rawText.slice(0, 20)}`)).join("")}
@@ -1181,8 +1185,9 @@ function contextMapHtml(t) {
   const refOpen = (r) => {
     if (r.kind === "table") return ` <button class="tbl-open" data-tid="${r.id}">查看表格</button>`;
     if (r.kind === "measurement") {
-      const tb = state.tables.find((x) => x.assetId === r.id);
-      return tb ? ` <button class="tbl-open" data-tid="${tb.id}">查看表格</button>` : ` <span class="hint">（该原件尚未构建数据表）</span>`;
+      const mr = state.measurements.find((x) => x.id === r.id);
+      const tb = state.tables.find((x) => x.assetId === r.id) || (mr?.cellRef ? state.tables.find((t) => t.id === mr.cellRef.tableId) : null);
+      return tb ? ` <button class="tbl-open" data-tid="${tb.id}">查看表格</button>` : ` <span class="hint">（无关联数据表）</span>`;
     }
     return "";
   };
