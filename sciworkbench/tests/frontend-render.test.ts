@@ -8,6 +8,7 @@ import assert from "node:assert/strict";
 import {
   topbarTopicHtml, emptyTopicGuideHtml, navHtml, panelErrorHtml, sidebarListHtml,
   topicOverviewHtml, topicTodosHtml, subqBlockHtml, nextStepHtml,
+  knowledgeLeftHtml, knowledgeWorkspaceHtml, knowledgeQueueHtml,
 } from "../public/lib/views.js";
 import { fmtTime, fmtEnum, fmtVersion, fmtNameOnce } from "../public/lib/format.js";
 
@@ -46,6 +47,10 @@ function allRendered() {
     sidebarListHtml(state, { ...ui, nav: "analysis" }),
     sidebarListHtml(state, { ...ui, nav: "chat" }),
     topicOverviewHtml(state, ui), topicTodosHtml(state, ui), subqBlockHtml(state, ui), nextStepHtml(state, ui),
+    knowledgeLeftHtml(state, { ...ui, nav: "knowledge" }),
+    knowledgeWorkspaceHtml(state, { ...ui, nav: "knowledge", kzTab: "todo", cardOpen: "c1" }),
+    knowledgeWorkspaceHtml(state, { ...ui, nav: "knowledge", kzTab: "cand" }),
+    knowledgeQueueHtml(state, { ...ui, nav: "knowledge" }),
   ];
   return parts.join("\n");
 }

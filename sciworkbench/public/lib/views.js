@@ -169,4 +169,82 @@ export function nextStepHtml(state, ui) {
   return `<div class="item nextstep"><div class="meta">下一步</div><p>${esc(text)}</p><button class="goto" data-goto="${goto}">去这里</button></div>`;
 }
 
+// ── 领域知识页（B2 补充版）：左原文 / 中卡片工作区 / 右 AI 待审队列 ──
+
+const KZ_PART = (c) => (c.audit === "confirm" ? "cand" : c.audit === "skip" ? "skip" : c.audit === "exclude" ? "excl" : "todo");
+const KZ_STATUS = { todo: "待审", cand: "已入候选", skip: "已跳过", excl: "已排除" };
+const kzCards = (state, ui) => state.cards.filter((c) => (ui.paperId ? c.paperId === ui.paperId : true));
+
+/** 原文区（显示层排版；原件字节不改）。章节标题、影印页码、段落间距；命中高亮。 */
+function fmtSource(text, hi) {
+  const lines = String(text ?? "").split(/\r?\n/);
+  const out = [];
+  let buf = [];
+  const flush = () => { if (buf.length) { out.push(`<p>${esc(buf.join(" "))}</p>`); buf = []; } };
+  for (const raw of lines) {
+    const line = raw.trim();
+    if (!line) { flush(); continue; }
+    if (/^#{1,6}\s+/.test(line)) { flush(); out.push(`<h4>${esc(line.replace(/^#{1,6}\s+/, ""))}</h4>`); continue; }
+    if (/^（影印页|^\d{1,4}\s*$/.test(line)) { flush(); out.push(`<div class="kzpage">${esc(line)}</div>`); continue; }
+    buf.push(line);
+  }
+  flush();
+  let html = out.join("");
+  if (hi && html.includes(esc(hi))) html = html.split(esc(hi)).join(`<mark>${esc(hi)}</mark>`);
+  return html;
+}
+
+export function knowledgeLeftHtml(state, ui) {
+  const paper = state.papers.find((p) => p.id === ui.paperId);
+  if (!paper) return `<p class="hint">在左侧选择文献条目。</p>`;
+  const atts = state.attachments.filter((a) => a.paperId === ui.paperId);
+  const asset = (ui.assetId && state.assets.find((a) => a.id === ui.assetId)) || state.assets.find((a) => a.id === atts[0]?.assetId);
+  if (!asset) return `<p class="hint">该条目暂无附件。</p>`;
+  return `<div class="kztextwrap"><div class="kztext-title">${esc(asset.name)}</div><div class="kztext" id="kz-text" data-asset="${esc(asset.id)}">${fmtSource(asset.text, ui.highlight)}</div></div>`;
+}
+
+function firstQuote(c) {
+  return (c.spans?.[0]?.quote) || c.locator?.sectionQuote || "";
+}
+
+export function knowledgeWorkspaceHtml(state, ui) {
+  const cards = kzCards(state, ui);
+  const part = { todo: [], cand: [], skip: [], excl: [] };
+  for (const c of cards) part[KZ_PART(c)].push(c);
+  const tab = ui.kzTab && part[ui.kzTab] ? ui.kzTab : "todo";
+  const tabs = [["todo", "待审"], ["cand", "已入候选"], ["skip", "已跳过"], ["excl", "已排除"]];
+  const tabHtml = tabs.map(([k, l]) => `<button class="kztab ${k === tab ? "active" : ""}" data-kztab="${k}">${l} ${part[k].length}</button>`).join("");
+  const rows = part[tab].map((c) => {    const open = ui.cardOpen === c.id;
+    const type = c.kind ? fmtEnum(c.kind) : (c.extraction === "ai" ? "模型摘录" : "摘录");
+    const q = firstQuote(c);
+    const acts = tab === "todo"
+      ? `<button class="kz-cand" data-cid="${c.id}">入候选</button><button class="kz-skip" data-cid="${c.id}">跳过</button><button class="kz-excl" data-cid="${c.id}">排除</button>`
+      : `<button class="kz-undo" data-cid="${c.id}">撤回</button>`;
+    return `<div class="kzcard ${open ? "open" : ""}" data-cid="${c.id}">
+      <div class="kzhead"><button class="kz-open" data-cid="${c.id}"><span class="kztype">${esc(type)}</span> · <span class="kzsum">${esc(c.rawText.slice(0, 40))}</span></button><span class="badge">${KZ_STATUS[KZ_PART(c)]}</span></div>
+      ${open ? `<div class="kzbody">
+        <div class="kv">内容：${esc(c.rawText)}</div>
+        ${c.scope ? `<div class="kv">适用范围：${esc(c.scope)}</div>` : ""}
+        <div class="kv">重要程度：<select class="kz-imp" data-cid="${c.id}">${["", "high", "medium", "low"].map((v) => `<option value="${v}" ${(c.importance ?? "") === v ? "selected" : ""}>${v ? fmtEnum(v) : "未定"}</option>`).join("")}</select></div>
+        <div class="kv">备注：<input class="kz-note" data-cid="${c.id}" value="${esc(c.note)}" /></div>
+        <div class="kv">原文位置：${q ? `<button class="kz-locate" data-cid="${c.id}" data-quote="${esc(q)}">看原文</button>` : `<span class="hint">定位不足</span>`}</div>
+        <div class="kzactions">${acts}</div>
+      </div>` : ""}
+    </div>`;
+  }).join("");
+  return `<div class="kzpick">文献：<select id="kz-paper">${state.papers.length ? state.papers.map((p) => `<option value="${esc(p.id)}" ${p.id === ui.paperId ? "selected" : ""}>${esc(p.title)}</option>`).join("") : `<option>（暂无文献）</option>`}</select></div>
+    <div class="kztabs">${tabHtml}</div>
+    <div class="kzlist">${rows || `<p class="hint">此分区暂无卡片。</p>`}</div>
+    <div class="kzfoot"><button class="kz-skipall">一键全部跳过</button><span class="hint">为时间紧准备，不推荐</span></div>`;
+}
+
+export function knowledgeQueueHtml(state, ui) {
+  const queue = kzCards(state, ui).filter((c) => c.extraction === "ai" && KZ_PART(c) === "todo");
+  return `<div class="kzq">
+    <div class="kzq-head">AI 待审队列 <span class="badge">新增 ${queue.length}</span></div>
+    <div class="kzq-task"><span class="hint">抽取进度：第二步接入</span><button class="kzq-pause" disabled title="未接入">暂停</button><button class="kzq-cancel" disabled title="未接入">取消</button></div>
+    <div class="kzq-list">${queue.map((c) => `<button class="kzq-item" data-cid="${c.id}">${esc(c.kind ? fmtEnum(c.kind) : "摘录")} · ${esc(c.rawText.slice(0, 28))}</button>`).join("") || `<p class="hint">队列为空。</p>`}</div>
+  </div>`;
+}
+
 export { esc, fmtVersion, fmtTime, fmtEnum, fmtNameOnce };

@@ -314,3 +314,42 @@ table.grid .celledit input { width: auto; }
 .empty-guide { max-width: 520px; }
 .empty-guide input { margin-bottom: var(--space-2); }
 #err-left:empty, #err-mid:empty, #err-right:empty { display: none; }
+
+/* ── B2 领域知识页：窄导航条 ＋ 左原文/中工作区/右队列 ── */
+.app.mode-knowledge { grid-template-columns: 56px 1.15fr 1fr 0.9fr; }
+.navrail { display: flex; flex-direction: column; gap: 2px; padding: 8px 4px; border-right: 1px solid var(--line); background: var(--surface); }
+.navrail[hidden] { display: none; }
+.navrail .navtoggle { display: none; }
+.navrail .navitems { display: flex; flex-direction: column; gap: 2px; }
+.navrail .navitem { justify-content: center; padding: 8px 0; }
+.navrail .navlabel { display: none; }
+.navrail .navico { display: inline; font-weight: 700; }
+
+#kz-left { margin-top: var(--space-3); }
+.kztext-title { font-weight: 600; margin-bottom: var(--space-2); }
+.kztext { font-size: var(--text); line-height: 1.75; }
+.kztext p { margin: 0 0 0.85em; }
+.kztext h4 { margin: 1em 0 0.4em; font-size: var(--text-lg); }
+.kztext .kzpage { color: var(--muted); font-size: var(--text-sm); text-align: center; border-top: 1px dashed var(--line); margin: 1em 0; padding-top: 4px; }
+.kztext mark { background: #ffe9a8; }
+
+#mid-content.kzw { white-space: normal; font-family: var(--font-sans); font-size: var(--text); }
+.kztabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: var(--space-2); }
+.kztab { border: 1px solid var(--line); background: var(--surface); border-radius: var(--radius-sm); padding: 4px 10px; cursor: pointer; }
+.kztab.active { border-color: var(--accent); font-weight: 600; }
+.kzlist { display: grid; gap: var(--space-2); }
+.kzcard { border: 1px solid var(--line); border-radius: var(--radius-sm); padding: var(--space-2); }
+.kzcard.open { border-color: var(--accent); }
+.kzhead { display: flex; align-items: center; gap: 8px; justify-content: space-between; }
+.kz-open { text-align: left; border: 0; background: transparent; cursor: pointer; padding: 0; color: var(--fg); }
+.kztype { font-weight: 600; }
+.kzsum { color: var(--muted); }
+.kzbody { margin-top: var(--space-2); display: grid; gap: 6px; }
+.kzbody .kv { font-size: var(--text-sm); }
+.kzactions { display: flex; gap: 6px; margin-top: 6px; }
+.kzfoot { margin-top: var(--space-3); display: flex; gap: 8px; align-items: center; }
+
+.kzq-head { font-weight: 600; margin-bottom: 4px; }
+.kzq-task { display: flex; gap: 6px; align-items: center; margin-bottom: var(--space-2); }
+.kzq-list { display: grid; gap: 4px; }
+.kzq-item { text-align: left; border: 1px solid var(--line); background: var(--surface); border-radius: var(--radius-sm); padding: 6px 8px; cursor: pointer; font-size: var(--text-sm); }

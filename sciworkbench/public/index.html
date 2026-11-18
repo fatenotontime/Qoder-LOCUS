@@ -28,10 +28,13 @@
   </details>
 
   <div class="app">
-    <!-- 左：导航（上层）＋ 本页列表（下层） -->
+    <!-- 领域知识页专用：窄导航条（可点开） -->
+    <nav class="navrail" id="navrail" hidden></nav>
+    <!-- 左：导航（上层）＋ 本页列表（下层）；领域知识页切为原文区 -->
     <aside class="pane left">
       <nav class="nav" id="nav"></nav>
       <div id="err-left"></div>
+      <div id="kz-left" hidden></div>
       <div id="sec-materials">
         <div class="pane-title" id="materials-title">材料</div>
         <div class="materials" id="material-list"></div>

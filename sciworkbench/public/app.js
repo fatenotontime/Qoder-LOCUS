@@ -7,10 +7,11 @@ import { fmtTime, fmtEnum, fmtVersion, fmtNameOnce } from "./lib/format.js";
 import {
   topbarTopicHtml, emptyTopicGuideHtml, navHtml, panelErrorHtml, sidebarListHtml,
   topicOverviewHtml, topicTodosHtml, subqBlockHtml, nextStepHtml,
+  knowledgeLeftHtml, knowledgeWorkspaceHtml, knowledgeQueueHtml,
 } from "./lib/views.js";
 
 let state = { topics: [], subquestions: [], assets: [], papers: [], attachments: [], cards: [], tables: [], adoptions: [], mappings: [], comparisons: [], protocols: [], templates: [], executions: [], samples: [], measurements: [], impacts: [], ocrs: [], analysisTasks: [], analysisResults: [], reports: [], chats: [] };
-const ui = { nav: "topic", topicId: "", assetId: null, paperId: null, attId: null, tableId: null, highlight: null, cell: null, dirty: false, busy: false, cardFilter: "all", groupSel: new Set(), batch: null, ack: false, protocolId: null, executionId: null, stepSel: null, viewRev: null, editEventId: null, pauseSuggest: null, prepExtra: 0, taskId: null, chatId: null, reportId: null, navCollapsed: false };
+const ui = { nav: "topic", topicId: "", assetId: null, paperId: null, attId: null, tableId: null, highlight: null, cell: null, dirty: false, busy: false, cardFilter: "all", groupSel: new Set(), batch: null, ack: false, protocolId: null, executionId: null, stepSel: null, viewRev: null, editEventId: null, pauseSuggest: null, prepExtra: 0, taskId: null, chatId: null, reportId: null, navCollapsed: false, kzTab: "todo", cardOpen: null };
 let lastAction = null; // { label, run }
 
 // A2 分区报错：只在触发它的面板内显示（left/mid/right），可关闭、带重试。
@@ -155,11 +156,18 @@ function renderAll() {
 /** 外壳：页头当前课题、侧栏（导航＋本页列表）、中间「＋新建」区、分区报错。 */
 function renderShell() {
   $("#curtopic").innerHTML = topbarTopicHtml(state, ui);
-  $("#nav").innerHTML = navHtml(ui, ui.navCollapsed);
+  const kz = ui.nav === "knowledge";
+  if (kz && !ui.paperId && state.papers.length) ui.paperId = state.papers[0].id;
+  document.querySelector(".app").classList.toggle("mode-knowledge", kz);
+  $("#navrail").hidden = !kz;
+  $("#nav").hidden = kz;
+  if (kz) $("#navrail").innerHTML = navHtml(ui, false); else $("#nav").innerHTML = navHtml(ui, ui.navCollapsed);
   $("#nav").classList.toggle("collapsed", !!ui.navCollapsed);
-  $("#sec-materials").hidden = ui.nav === "topic";
-  $("#materials-title").textContent = { papers: "论文条目", knowledge: "选择文献", protocol: "方案", record: "执行", analysis: "分析任务", chat: "对话会话" }[ui.nav] ?? "材料";
-  $("#material-list").innerHTML = sidebarListHtml(state, ui);
+  $("#kz-left").hidden = !kz;
+  if (kz) $("#kz-left").innerHTML = knowledgeLeftHtml(state, ui);
+  $("#sec-materials").hidden = kz || ui.nav === "topic";
+  $("#materials-title").textContent = { papers: "论文条目", protocol: "方案", record: "执行", analysis: "分析任务", chat: "对话会话" }[ui.nav] ?? "材料";
+  $("#material-list").innerHTML = kz ? "" : sidebarListHtml(state, ui);
   renderCreateArea();
   renderErrors();
 }
@@ -184,6 +192,7 @@ function renderImportBox(box) {
 }
 function renderMiddle() {
   const note = $("#mid-note"), content = $("#mid-content");
+  content.classList.toggle("kzw", ui.nav === "knowledge");
   if (ui.nav === "topic") {
     $("#mid-title").textContent = "课题";
     note.hidden = true;
@@ -204,15 +213,9 @@ function renderMiddle() {
     return;
   }
   if (ui.nav === "knowledge") {
-    const p = currentPaper();
-    const atts = p ? state.attachments.filter((a) => a.paperId === p.id) : [];
-    const asset = (ui.assetId && state.assets.find((a) => a.id === ui.assetId)) || state.assets.find((a) => a.id === atts[0]?.assetId);
-    $("#mid-title").textContent = asset ? `原件 · ${asset.name}` : "原件";
-    if (!p) { note.hidden = true; content.textContent = "在左栏选择文献条目。"; return; }
-    if (!asset) { note.hidden = false; note.textContent = "无附件；先去「文献整理」导入。"; content.textContent = ""; return; }
-    if (ui.highlight && asset.text.includes(ui.highlight)) { note.hidden = true; content.innerHTML = esc(asset.text).replace(esc(ui.highlight), `<mark>${esc(ui.highlight)}</mark>`); }
-    else if (ui.highlight) { note.hidden = false; note.textContent = "定位不足：显示完整原件。"; content.innerHTML = esc(asset.text); }
-    else { note.hidden = true; content.innerHTML = esc(asset.text); }
+    $("#mid-title").textContent = "卡片审阅";
+    note.hidden = true;
+    content.innerHTML = knowledgeWorkspaceHtml(state, ui);
     return;
   }
   if (ui.nav === "protocol") {
@@ -282,9 +285,8 @@ function renderRight() {
   if (ui.nav === "topic") { $("#right-title").textContent = "下一步与待办"; $("#right-content").innerHTML = nextStepHtml(state, ui) + topicTodosHtml(state, ui); return; }
   if (ui.nav === "papers") { $("#right-title").textContent = "条目与附件"; $("#right-content").innerHTML = paperHtml(); return; }
   if (ui.nav === "knowledge") {
-    $("#right-title").textContent = "知识卡（独立人工审阅）";
-    const p = currentPaper();
-    $("#right-content").innerHTML = p ? cardsHtml(null, p.id) : `<p class="hint">在左栏选择文献条目后，这里显示其知识卡与核对操作。</p>`;
+    $("#right-title").textContent = "AI 待审队列";
+    $("#right-content").innerHTML = knowledgeQueueHtml(state, ui);
     return;
   }
   if (ui.nav === "protocol") { $("#right-title").textContent = "方案与实验图"; $("#right-content").innerHTML = protocolHtml(); return; }
@@ -1387,6 +1389,37 @@ document.addEventListener("click", (ev) => {
   if (ev.target.classList.contains("perr-close")) { clearError(panel); return; }
   if (ev.target.classList.contains("perr-detail")) { const d = bar.querySelector(".perr-detail-body"); if (d) d.hidden = !d.hidden; return; }
   if (ev.target.classList.contains("perr-retry")) { const r = errors[panel]?.retry; clearError(panel); if (r) r(); return; }
+});
+// 领域知识页（B2）：卡片审阅动作
+async function kzAct(fn, msg) {
+  try { await fn(); ui.dirty = false; await refresh(); setStatus(msg); }
+  catch (e) { const h = humanError(e); setError("mid", { panel: "mid", message: h.message, detail: h.detail, retry: null }); }
+}
+document.addEventListener("click", (ev) => {
+  const t = ev.target;
+  if (t.classList.contains("kztab")) { ui.kzTab = t.dataset.kztab; ui.cardOpen = null; renderMiddle(); return; }
+  if (t.classList.contains("kz-open")) { ui.cardOpen = ui.cardOpen === t.dataset.cid ? null : t.dataset.cid; renderMiddle(); return; }
+  if (t.classList.contains("kzq-item")) { ui.kzTab = "todo"; ui.cardOpen = t.dataset.cid; renderMiddle(); return; }
+  if (t.classList.contains("kz-locate")) { ui.highlight = t.dataset.quote || null; renderShell(); const m = document.querySelector("#kz-text mark"); if (m) m.scrollIntoView({ block: "center" }); return; }
+  const cid = t.dataset.cid;
+  if (!cid) return;
+  if (t.classList.contains("kz-cand")) { kzAct(() => api.reviewCard(cid, { audit: "confirm" }), "已入候选"); return; }
+  if (t.classList.contains("kz-skip")) { kzAct(() => api.reviewCard(cid, { audit: "skip" }), "已跳过（可回来）"); return; }
+  if (t.classList.contains("kz-excl")) { kzAct(() => api.reviewCard(cid, { audit: "exclude", reason: "排除（见操作）" }), "已排除"); return; }
+  if (t.classList.contains("kz-undo")) { kzAct(() => api.reviewCard(cid, { audit: "unreviewed" }), "已撤回（回到待审）"); return; }
+  if (t.classList.contains("kz-skipall")) {
+    if (!confirm("一键全部跳过：为时间紧准备，不推荐。确定跳过本页所有待审卡？")) return;
+    const ids = state.cards.filter((c) => (ui.paperId ? c.paperId === ui.paperId : true) && ["unreviewed", "need_info"].includes(c.audit)).map((c) => c.id);
+    kzAct(async () => { for (const id of ids) await api.reviewCard(id, { audit: "skip" }); }, `已跳过 ${ids.length} 张`);
+    return;
+  }
+});
+document.addEventListener("change", (ev) => {
+  if (ev.target.id === "kz-paper") { ui.paperId = ev.target.value; ui.assetId = null; ui.cardOpen = null; ui.highlight = null; clearAllErrors(); renderAll(); return; }
+  if (ev.target.classList.contains("kz-imp")) { const cid = ev.target.dataset.cid; kzAct(() => api.reviewCard(cid, { importance: ev.target.value || null }), "重要程度已记"); }
+});
+document.addEventListener("focusout", (ev) => {
+  if (ev.target.classList.contains("kz-note")) { const cid = ev.target.dataset.cid; kzAct(() => api.reviewCard(cid, { note: ev.target.value }), "备注已记"); }
 });
 $("#material-list").addEventListener("click", (ev) => {
   const el = ev.target.closest(".material"); if (!el) return;
