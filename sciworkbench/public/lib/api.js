@@ -2,6 +2,7 @@
 export const api = {
   async getState() { return json("/api/state"); },
   async aiStatus() { return json("/api/ai/status"); },
+  async aiTest() { return json("/api/ai/test", {}); },
   async setAiConfig(baseUrl, model, key, timeoutMs) { return json("/api/ai/config", { baseUrl, model, key, timeoutMs }); },
   async clearAiConfig() { return fetch("/api/ai/config", { method: "DELETE" }).then((r) => r.json()); },
   async getJob(id) { return json(`/api/jobs/${encodeURIComponent(id)}`); },
@@ -53,6 +54,8 @@ export const api = {
   async linkPaperTopic(id, topicId, link) { return json(`/api/papers/${encodeURIComponent(id)}/topics`, { topicId, link }); },
   async importBibliography(format, text) { return json("/api/papers/import-bibliography", { format, text }); },
   async knowledgeJob(input) { return json("/api/knowledge/jobs", input); },
+  async cancelKnowledgeJob(id) { return json(`/api/knowledge/jobs/${encodeURIComponent(id)}/cancel`, {}); },
+  async retryKnowledgeChunk(id, index) { return json(`/api/knowledge/jobs/${encodeURIComponent(id)}/retry-chunk`, { index }); },
   // ── 5E：分析任务 / 方法推荐 / 结果提交 / 初步报告 / 上下文对话 ──
   async createAnalysisTask(input) { return json("/api/analysis/tasks", input); },
   async setTaskCandidates(id, optional) { return json(`/api/analysis/tasks/${encodeURIComponent(id)}/candidates`, { optional }); },

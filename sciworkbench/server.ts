@@ -10,7 +10,7 @@ import { randomUUID } from "node:crypto";
 import { dirname, extname, join, normalize, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { JsonFileStore, type LocusState, type Store } from "./store.ts";
-import { AiError, clearAiConfig, describeConfig, getAiConfig, setAiConfig } from "./services/ai.ts";
+import { AiError, clearAiConfig, describeConfig, getAiConfig, setAiConfig, testAiConnection } from "./services/ai.ts";
 import {
   AppError,
   addManualCard,
@@ -60,7 +60,7 @@ import {
   updatePreparation,
   uploadProtocolSource,
 } from "./services/experiment.ts";
-import { extractKnowledge, extractLiterature, runTask } from "./services/ai.ts";
+import { extractLiterature, runTask, extractKnowledgeProgressive, knowledgeChunks, extractKnowledgeChunk } from "./services/ai.ts";
 import {
   createAnalysisTask, setTaskCandidates, buildSnapshot, snapshotInput, applyRecommendation,
   submitResult, editResult, archiveResultFile, createReport,
@@ -109,7 +109,7 @@ export interface Job {
   done: number;
   total: number;
   message: string;
-  result?: { assetId?: string; created?: number; reminder?: boolean; protocolId?: string; impactId?: string; ocrIds?: string[]; discarded?: boolean; paperId?: string; skipped?: number };
+  result?: { assetId?: string; created?: number; reminder?: boolean; protocolId?: string; impactId?: string; ocrIds?: string[]; discarded?: boolean; paperId?: string; skipped?: number; chunkErrors?: { index: number; error: string; recoverable: boolean }[]; cancelled?: boolean };
   error?: string;
 }
 
@@ -124,6 +124,8 @@ export async function createApp(store: Store) {
   // 任务身份/重复提交守卫：同一原件的方案解析同时只允许一个在跑 job。
   const parsingAssets = new Set<string>();
   const recommendingTasks = new Set<string>();
+  // 知识抽取流式任务的运行控制（取消 / 只重试失败块）
+  const knowledgeRuns = new Map<string, { cancel(): void; retryChunk(index: number): Promise<{ created: number; skipped: number }> }>();
   const trimJobs = () => { if (jobs.size > 20) { for (const k of jobs.keys()) { if (jobs.size <= 20) break; jobs.delete(k); } } };
 
   /** 5E 对话 job：发送时冻结快照；写回前检查取消（在途请求无法中止，结果丢弃不写回）。 */
@@ -318,24 +320,77 @@ export async function createApp(store: Store) {
           });
           const paper = state.papers.find((p) => p.id === jobInput.paperId)!;
           const text = assets.map((a) => a.text).join("\n\n");
+          const chunks = knowledgeChunks(text); // 空/超长早拒
           const id = `job_${randomUUID()}`;
-          const job: Job = { id, status: "running", done: 0, total: 0, message: "语义提取中…" };
+          const job: Job = { id, status: "running", done: 0, total: chunks.length, message: "语义提取中…", result: { paperId: paper.id, created: 0, skipped: 0, chunkErrors: [] } };
           jobs.set(id, job); trimJobs();
+          const raws: { index: number; content: string }[] = [];
+          let cancelled = false;
+          // 串行落库：每块完成即 map→apply→save（重跑/重试按概述去重，不重复入库）
+          const persistChunk = async (raw: string, cards: unknown[]) => {
+            const mapped = mapKnowledgeCards(paper, assets, cards);
+            const r = applyKnowledge(state, paper.id, mapped);
+            state = r.state; await store.save(state);
+            job.result!.created = (job.result!.created ?? 0) + r.created;
+            job.result!.skipped = (job.result!.skipped ?? 0) + r.skipped;
+            return r;
+          };
+          knowledgeRuns.set(id, {
+            cancel: () => { cancelled = true; job.message = "取消中…（保留已出）"; },
+            retryChunk: async (index: number) => {
+              if (!Number.isInteger(index) || index < 0 || index >= chunks.length) throw new AppError(422, `块序号越界：${index}`);
+              const { cards, raw } = await extractKnowledgeChunk(cfg, jobInput.purpose, chunks[index], index, chunks.length);
+              raws.push({ index, content: raw });
+              const r = await persistChunk(raw, cards);
+              job.result!.chunkErrors = (job.result!.chunkErrors ?? []).filter((e) => e.index !== index);
+              job.done = Math.min(chunks.length, job.done + 1);
+              job.message = `第 ${index + 1}/${chunks.length} 段重试成功（已出 ${job.result!.created} 张）`;
+              return r;
+            },
+          });
           void (async () => {
             try {
-              const result = await extractKnowledge(cfg, text, jobInput.purpose, (done, total) => { job.done = done; job.total = total; job.message = `第 ${done}/${total} 块`; });
-              const cards = mapKnowledgeCards(paper, assets, result.cards);
-              // 合并写回：完成时对最新 state 只追加新卡；重复概述跳过，不覆盖等待期编辑。
-              const r = applyKnowledge(state, paper.id, cards);
-              state = r.state; await store.save(state);
-              writeAudit(paper.id, { raws: result.raws, model: cfg.model }, "knowledge_extract");
+              const res = await extractKnowledgeProgressive(cfg, text, jobInput.purpose, {
+                isCancelled: () => cancelled,
+                onChunkStart: (i, total) => { job.total = total; job.message = `第 ${i + 1}/${total} 段，已出 ${job.result!.created} 张`; },
+                onChunkCards: async (i, total, cards, raw) => {
+                  raws.push({ index: i, content: raw });
+                  await persistChunk(raw, cards);
+                  job.done = i + 1; job.message = `第 ${i + 1}/${total} 段，已出 ${job.result!.created} 张`;
+                },
+                onChunkError: (i, total, err, recoverable) => {
+                  job.result!.chunkErrors = [...(job.result!.chunkErrors ?? []), { index: i, error: err.message, recoverable }];
+                  job.message = `第 ${i + 1}/${total} 段失败`;
+                },
+              });
+              await store.save(state);
+              writeAudit(paper.id, { raws, model: cfg.model }, "knowledge_extract");
+              job.result!.cancelled = res.cancelled;
               job.status = "done";
-              job.result = { paperId: paper.id, created: r.created, skipped: r.skipped };
-              job.message = `完成：新增 ${r.created} 张待审知识卡${r.skipped ? `，跳过重复 ${r.skipped}` : ""}（输入快照 ${snapshotHash.slice(0, 12)}）`;
+              job.message = res.cancelled
+                ? `已取消：保留已出 ${job.result!.created} 张`
+                : `完成：新增 ${job.result!.created} 张待审知识卡${job.result!.skipped ? `，跳过重复 ${job.result!.skipped}` : ""}${res.failed.length ? `，${res.failed.length} 段失败（可逐块重试）` : ""}（输入快照 ${snapshotHash.slice(0, 12)}）`;
             } catch (e) { job.status = "error"; job.error = (e as Error).message ?? "失败"; }
+            finally {
+              // 若仍有未解决的失败块，保留运行句柄以便逐块重试；全部解决后清理。
+              if (!(job.result?.chunkErrors?.length)) knowledgeRuns.delete(id);
+            }
           })();
-          send(res, 202, { ok: true, jobId: id, snapshotHash });
+          send(res, 202, { ok: true, jobId: id, snapshotHash, total: chunks.length });
           return;
+        }
+        const kjCancel = path.match(/^\/api\/knowledge\/jobs\/([^/]+)\/cancel$/);
+        if (kjCancel) {
+          const run = knowledgeRuns.get(decodeURIComponent(kjCancel[1]));
+          if (!run) { send(res, 404, { error: "该抽取任务不在运行（可能已完成/已结束）。" }); return; }
+          run.cancel(); send(res, 200, { ok: true }); return;
+        }
+        const kjRetry = path.match(/^\/api\/knowledge\/jobs\/([^/]+)\/retry-chunk$/);
+        if (kjRetry) {
+          const run = knowledgeRuns.get(decodeURIComponent(kjRetry[1]));
+          if (!run) { send(res, 404, { error: "该抽取任务不在运行，无法重试该块。" }); return; }
+          const r = await run.retryChunk(Number(body.index));
+          send(res, 200, { ok: true, ...r }); return;
         }
         if (path === "/api/import/literature") {
           const mode = (body.mode as "draft" | "ai") ?? "draft";
@@ -782,6 +837,12 @@ export async function createApp(store: Store) {
           try { restored = await new JsonFileStore(target).loadStrict(); }
           catch (e) { send(res, 422, { error: `恢复失败：${(e as Error).message}` }); return; }
           send(res, 200, { ok: true, isolatedPath: target, version: restored.version, counts: countsOf(restored) }); return;
+        }
+        if (path === "/api/ai/test") {
+          const cfg = getAiConfig();
+          if (!cfg) { send(res, 400, { error: "未配置 AI：先填写三项并保存。" }); return; }
+          const r = await testAiConnection(cfg);
+          send(res, 200, r); return;
         }
         if (path === "/api/change-hits") {          const r = changeHits(state, {
             kind: String(body.kind ?? ""), id: String(body.id ?? ""),

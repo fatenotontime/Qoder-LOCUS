@@ -131,13 +131,45 @@ export function setAiConfig(input: { baseUrl?: unknown; model?: unknown; key?: u
 }
 export function clearAiConfig(): void { runtimeConfig = null; }
 
+/** 测试连接：明确结果——成功 / 地址不通 / Key 无效 / 模型名不存在 / 其他。 */
+export async function testAiConnection(cfg: AiConfig): Promise<{ ok: boolean; kind: "ok" | "unreachable" | "auth" | "model" | "other"; message: string }> {
+  const timeoutMs = cfg.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(`${cfg.baseUrl}/chat/completions`, {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: `Bearer ${cfg.key}` },
+      body: JSON.stringify({ model: cfg.model, temperature: 0, max_tokens: 1, messages: [{ role: "user", content: "ping" }] }),
+      signal: controller.signal,
+    });
+    if (res.ok) return { ok: true, kind: "ok", message: "连接成功。" };
+    const text = await res.text().catch(() => "");
+    if (res.status === 401 || res.status === 403) return { ok: false, kind: "auth", message: "Key 无效或无权限。" };
+    if (res.status === 404 || /model/i.test(text)) return { ok: false, kind: "model", message: "模型名不存在或不可用。" };
+    return { ok: false, kind: "other", message: `请求失败：HTTP ${res.status}` };
+  } catch (e) {
+    const err = e as Error;
+    const msg = err.name === "AbortError" ? `连接超时（${Math.round(timeoutMs / 1000)}s）。` : "地址不通或网络不可达。";
+    return { ok: false, kind: "unreachable", message: msg };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export function describeConfig(cfg: AiConfig | null): { configured: boolean; baseUrl: string; model: string; timeoutMs: number } {
   return cfg
     ? { configured: true, baseUrl: cfg.baseUrl, model: cfg.model, timeoutMs: cfg.timeoutMs ?? DEFAULT_TIMEOUT_MS }
     : { configured: false, baseUrl: "", model: "", timeoutMs: DEFAULT_TIMEOUT_MS };
 }
 
-export class AiError extends Error {}
+export class AiError extends Error {
+  /** 可恢复（超时/连接/429/5xx）→ 允许有限重试。 */
+  readonly recoverable: boolean;
+  /** 致命（认证/参数类 4xx）→ 重试无益，整任务应停止；解析/结构问题非致命（按块处理）。 */
+  readonly fatal: boolean;
+  constructor(message: string, recoverable = false, fatal = false) { super(message); this.recoverable = recoverable; this.fatal = fatal; }
+}
 
 // ── JSON 提取容错 ───────────────────────────────────────────
 function stripFence(s: string): string {
@@ -170,7 +202,7 @@ async function postChat(cfg: AiConfig, system: string, user: string, images?: st
     ? [{ type: "text", text: user }, ...images.map((url) => ({ type: "image_url", image_url: { url } }))]
     : user;
   const timeoutMs = cfg.timeoutMs ?? DEFAULT_TIMEOUT_MS;
-  let lastErr: Error = new AiError("模型请求失败。");
+  let lastErr: Error = new AiError("模型请求失败。", false);
   for (let attempt = 0; attempt < 3; attempt++) {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -181,18 +213,18 @@ async function postChat(cfg: AiConfig, system: string, user: string, images?: st
         body: JSON.stringify({ model: cfg.model, temperature: 0, messages: [{ role: "system", content: system }, { role: "user", content: userContent }] }),
         signal: controller.signal,
       });
-      if (res.status === 429) { lastErr = new AiError("模型限流（429）。"); await sleep(600 * (attempt + 1)); continue; }
-      if (res.status >= 500) { lastErr = new AiError(`模型服务错误（HTTP ${res.status}）。`); await sleep(600 * (attempt + 1)); continue; }
-      if (!res.ok) throw new AiError(`模型请求失败：HTTP ${res.status}`);
+      if (res.status === 429) { lastErr = new AiError("模型限流（429）。", true); await sleep(600 * (attempt + 1)); continue; }
+      if (res.status >= 500) { lastErr = new AiError(`模型服务错误（HTTP ${res.status}）。`, true); await sleep(600 * (attempt + 1)); continue; }
+      if (!res.ok) throw new AiError(`模型请求失败：HTTP ${res.status}`, false, true);
       const data = (await res.json()) as { choices?: { message?: { content?: string } }[] };
       const content = data.choices?.[0]?.message?.content ?? "";
-      if (!content) throw new AiError("模型返回为空。");
+      if (!content) throw new AiError("模型返回为空。", false);
       return content;
     } catch (e) {
       const err = e as Error;
       if (err instanceof AiError) throw err;
-      if (err.name === "AbortError") { lastErr = new AiError(`模型请求超时（${Math.round(timeoutMs / 1000)}s）。`); await sleep(400); continue; }
-      throw new AiError(`模型调用错误：${err.message}`);
+      if (err.name === "AbortError") { lastErr = new AiError(`模型请求超时（${Math.round(timeoutMs / 1000)}s）。`, true); await sleep(400); continue; }
+      throw new AiError(`模型调用错误：${err.message}`, true);
     } finally {
       clearTimeout(timer);
     }
@@ -285,4 +317,65 @@ export async function extractKnowledge(
     onProgress?.(i + 1, total);
   }
   return { cards, raws };
+}
+
+// ── 卡片级流式：逐块回调（供即时落库）+ 取消 + 单块失败隔离 ──
+
+export interface KnowledgeStreamHooks {
+  onChunkStart?: (index: number, total: number) => void | Promise<void>;
+  /** 该块成功：raw 为模型原始响应，cards 为原始（未映射）卡片，供调用方即时映射并落库。 */
+  onChunkCards?: (index: number, total: number, cards: unknown[], raw: string) => void | Promise<void>;
+  onChunkError?: (index: number, total: number, error: Error, recoverable: boolean) => void | Promise<void>;
+  isCancelled?: () => boolean;
+}
+export interface KnowledgeStreamResult {
+  total: number; processed: number; cancelled: boolean;
+  failed: { index: number; error: string; recoverable: boolean }[];
+}
+
+export function knowledgeChunks(text: string): string[] {
+  const chunks = chunkText(text);
+  if (chunks.length === 0) throw new AiError("所选附件为空。");
+  if (chunks.length > MAX_CHUNKS) throw new AiError(`材料过长：需分 ${chunks.length} 块，超过上限 ${MAX_CHUNKS} 块。请缩小选择范围。`);
+  return chunks;
+}
+
+export function knowledgeChunkInput(purpose: string, chunk: string, index: number, total: number): string {
+  return `研究目的：${purpose}\n\n文献材料（第 ${index + 1}/${total} 部分）：\n${chunk}`;
+}
+
+/** 解析单块的模型输出（供逐块与重试复用）。返回原始响应与 cards 数组。 */
+export async function extractKnowledgeChunk(cfg: AiConfig, purpose: string, chunk: string, index: number, total: number): Promise<{ cards: unknown[]; raw: string }> {
+  const { value, raw } = await runTask(cfg, "knowledge_extract", knowledgeChunkInput(purpose, chunk, index, total));
+  const obj = value as { cards?: unknown };
+  if (!obj || !Array.isArray(obj.cards)) throw new AiError(`第 ${index + 1}/${total} 块提取结果结构不符：缺少 cards。`, false);
+  return { cards: obj.cards, raw };
+}
+
+/**
+ * 逐块抽取：每块完成**立即 await 回调**（串行落库，避免并发写）；单块失败不拖垮整任务
+ * （可恢复错误记入 failed 后继续；致命错误——认证/参数类——停止整任务并保留已产出）。
+ * 支持取消（停止后续块，已产出保留）。
+ */
+export async function extractKnowledgeProgressive(cfg: AiConfig, text: string, purpose: string, hooks: KnowledgeStreamHooks = {}): Promise<KnowledgeStreamResult> {
+  const chunks = knowledgeChunks(text);
+  const total = chunks.length;
+  const failed: KnowledgeStreamResult["failed"] = [];
+  let processed = 0, cancelled = false;
+  for (let i = 0; i < total; i++) {
+    if (hooks.isCancelled?.()) { cancelled = true; break; }
+    await hooks.onChunkStart?.(i, total);
+    try {
+      const { cards, raw } = await extractKnowledgeChunk(cfg, purpose, chunks[i], i, total);
+      await hooks.onChunkCards?.(i, total, cards, raw);
+      processed++;
+    } catch (e) {
+      const err = e as Error;
+      const recoverable = err instanceof AiError ? err.recoverable : true;
+      failed.push({ index: i, error: err.message, recoverable });
+      await hooks.onChunkError?.(i, total, err, recoverable);
+      if (err instanceof AiError && err.fatal) break; // 认证/参数类：整任务停（保留已产出）
+    }
+  }
+  return { total, processed, cancelled, failed };
 }

@@ -241,8 +241,14 @@ export function knowledgeWorkspaceHtml(state, ui) {
 
 export function knowledgeQueueHtml(state, ui) {
   const queue = kzCards(state, ui).filter((c) => c.extraction === "ai" && KZ_PART(c) === "todo");
+  const j = ui.kzJob;
+  const task = j ? `<div class="kzq-task">
+    <span class="hint">${j.status === "running" ? `抽取中 ${j.done}/${j.total} 段，已出 ${j.created} 张` : (j.cancelled ? `已取消，保留已出 ${j.created} 张` : esc(j.message ?? ""))}</span>
+    ${j.status === "running" ? `<button class="kzq-cancel">取消</button>` : ""}
+  </div>${(j.chunkErrors ?? []).map((e) => `<div class="kzq-err">第 ${e.index + 1} 段失败 · <button class="kzq-retry" data-index="${e.index}">重试</button></div>`).join("")}` : "";
   return `<div class="kzq">
     <div class="kzq-head">AI 待审队列 <span class="badge">新增 ${queue.length}</span></div>
+    ${task}
     <div class="kzq-list">${queue.map((c) => `<button class="kzq-item" data-cid="${c.id}">${esc(c.kind ? fmtEnum(c.kind) : "摘录")} · ${esc(c.rawText.slice(0, 28))}</button>`).join("") || `<p class="hint">队列为空。</p>`}</div>
   </div>`;
 }

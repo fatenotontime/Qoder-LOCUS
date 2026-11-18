@@ -364,3 +364,7 @@ table.grid .celledit input { width: auto; }
 .nd-item.active { background: #e6efe8; font-weight: 600; }
 .kz-reason { font-size: var(--text-sm); }
 .kz-reason input { margin-top: 4px; }
+
+/* B2 第二步：抽取队列进度/失败块 */
+.kzq-err { color: var(--danger); font-size: var(--text-sm); margin: 3px 0; }
+.kzq-cancel, .kzq-retry { font: inherit; }

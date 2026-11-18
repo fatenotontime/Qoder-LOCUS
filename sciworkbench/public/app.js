@@ -11,7 +11,7 @@ import {
 } from "./lib/views.js";
 
 let state = { topics: [], subquestions: [], assets: [], papers: [], attachments: [], cards: [], tables: [], adoptions: [], mappings: [], comparisons: [], protocols: [], templates: [], executions: [], samples: [], measurements: [], impacts: [], ocrs: [], analysisTasks: [], analysisResults: [], reports: [], chats: [] };
-const ui = { nav: "topic", topicId: "", assetId: null, paperId: null, attId: null, tableId: null, highlight: null, cell: null, dirty: false, busy: false, cardFilter: "all", groupSel: new Set(), batch: null, ack: false, protocolId: null, executionId: null, stepSel: null, viewRev: null, editEventId: null, pauseSuggest: null, prepExtra: 0, taskId: null, chatId: null, reportId: null, navCollapsed: false, kzTab: "todo", cardOpen: null };
+const ui = { nav: "topic", topicId: "", assetId: null, paperId: null, attId: null, tableId: null, highlight: null, cell: null, dirty: false, busy: false, cardFilter: "all", groupSel: new Set(), batch: null, ack: false, protocolId: null, executionId: null, stepSel: null, viewRev: null, editEventId: null, pauseSuggest: null, prepExtra: 0, taskId: null, chatId: null, reportId: null, navCollapsed: false, kzTab: "todo", cardOpen: null, kzJob: null };
 let lastAction = null; // { label, run }
 
 // A2 分区报错：只在触发它的面板内显示（left/mid/right），可关闭、带重试。
@@ -157,6 +157,7 @@ function renderAll() {
 function renderShell() {
   $("#curtopic").innerHTML = topbarTopicHtml(state, ui);
   const kz = ui.nav === "knowledge";
+  if (!kz) ui.kzJob = null;
   if (kz && !ui.paperId && state.papers.length) ui.paperId = state.papers[0].id;
   document.querySelector(".app").classList.toggle("mode-knowledge", kz);
   $("#navrail").hidden = !kz;
@@ -508,9 +509,11 @@ function renderKnowledgeForm(box) {
   if (start) start.addEventListener("click", (ev) => runJob(ev.target, "语义知识提取", async () => {
     const attachmentIds = [...$$(".k-att")].filter((x) => x.checked).map((x) => x.value);
     const r = await api.knowledgeJob({ paperId: p.id, attachmentIds, purpose: $("#k-purpose").value, topicId: ui.topicId || undefined, subquestionId: $("#k-subq")?.value || undefined });
-    const res = await pollJob(r.jobId, "知识提取");
+    ui.kzJob = { id: r.jobId, status: "running", done: 0, total: r.total ?? 0, created: 0, chunkErrors: [], message: "语义提取中…" };
+    renderRight();
+    const job = await pollKnowledgeJob(r.jobId);
     await refreshAfterJob();
-    setStatus(`知识提取完成：新增 ${res.created} 张待审卡${res.skipped ? `，跳过重复 ${res.skipped}` : ""}（输入快照已固定）`);
+    setStatus(job.status === "done" ? job.message : `知识提取失败：${job.error ?? ""}`);
   }));
   $("#dbg-import").addEventListener("click", (ev) => runBusy(ev.target, "导入机械草稿", async () => {
     const r = await api.importLiterature($("#dbg-name").value || "debug.md", $("#dbg-text").value, "draft", ui.topicId || undefined);
@@ -687,6 +690,18 @@ async function refreshAfterJob() {
     return;
   }
   await refresh();
+}
+
+/** 知识抽取流式轮询：只更新右栏队列（不动中栏编辑），把进度/失败块反映到 ui.kzJob。 */
+async function pollKnowledgeJob(jobId) {
+  for (let i = 0; i < 2400; i++) {
+    const job = await api.getJob(jobId);
+    ui.kzJob = { id: jobId, status: job.status, done: job.done ?? 0, total: job.total ?? 0, created: job.result?.created ?? 0, chunkErrors: job.result?.chunkErrors ?? [], cancelled: job.result?.cancelled, message: job.message };
+    renderRight();
+    if (job.status === "done" || job.status === "error") return job;
+    await new Promise((r) => setTimeout(r, 700));
+  }
+  return { status: "error", error: "等待超时" };
 }
 
 function renderProtocolImport(box) {
@@ -1401,6 +1416,14 @@ document.addEventListener("click", (ev) => {
   if (t.classList.contains("kz-open")) { ui.cardOpen = ui.cardOpen === t.dataset.cid ? null : t.dataset.cid; renderMiddle(); return; }
   if (t.classList.contains("kzq-item")) { ui.kzTab = "todo"; ui.cardOpen = t.dataset.cid; renderMiddle(); return; }
   if (t.classList.contains("kz-locate")) { ui.highlight = t.dataset.quote || null; renderShell(); const m = document.querySelector("#kz-text mark"); if (m) m.scrollIntoView({ block: "center" }); return; }
+  if (t.classList.contains("kzq-cancel")) { if (ui.kzJob?.id) api.cancelKnowledgeJob(ui.kzJob.id).then(() => setStatus("已请求取消：保留已出内容")).catch(() => {}); return; }
+  if (t.classList.contains("kzq-retry")) {
+    const idx = Number(t.dataset.index);
+    if (ui.kzJob?.id) { t.disabled = true; api.retryKnowledgeChunk(ui.kzJob.id, idx)
+      .then(async (r) => { await refreshAfterJob(); ui.kzJob = { ...ui.kzJob, chunkErrors: (ui.kzJob.chunkErrors ?? []).filter((e) => e.index !== idx), created: ui.kzJob.created + (r.created ?? 0) }; renderRight(); setStatus(`第 ${idx + 1} 段已重试（新增 ${r.created} 张）`); })
+      .catch((e) => { const h = humanError(e); setError("mid", { panel: "mid", message: h.message, detail: h.detail, retry: null }); t.disabled = false; }); }
+    return;
+  }
   const cid = t.dataset.cid;
   if (!cid) return;
   if (t.classList.contains("kz-cand")) { kzAct(() => api.reviewCard(cid, { audit: "confirm" }), "已入候选"); return; }
@@ -1415,7 +1438,7 @@ document.addEventListener("click", (ev) => {
   }
 });
 document.addEventListener("change", (ev) => {
-  if (ev.target.id === "kz-paper") { ui.paperId = ev.target.value; ui.assetId = null; ui.cardOpen = null; ui.highlight = null; clearAllErrors(); renderAll(); return; }
+  if (ev.target.id === "kz-paper") { ui.paperId = ev.target.value; ui.assetId = null; ui.cardOpen = null; ui.highlight = null; ui.kzJob = null; clearAllErrors(); renderAll(); return; }
   if (ev.target.classList.contains("kz-imp")) { const cid = ev.target.dataset.cid; kzAct(() => api.reviewCard(cid, { importance: ev.target.value || null }), "重要程度已记"); }
 });
 document.addEventListener("focusout", (ev) => {
@@ -2093,6 +2116,14 @@ $("#ai-save").addEventListener("click", async (ev) => {
   finally { btn.disabled = false; btn.textContent = old; }
 });
 $("#ai-clear").addEventListener("click", (ev) => runBusy(ev.target, "清除 AI 配置", async () => { await api.clearAiConfig(); await refreshAiState(); setStatus("AI 配置已清除"); }));
+$("#ai-test").addEventListener("click", (ev) => {
+  const btn = ev.target, old = btn.textContent;
+  btn.disabled = true; btn.textContent = "测试中…"; $("#ai-msg").textContent = "";
+  api.aiTest()
+    .then((r) => { $("#ai-msg").textContent = (r.ok ? "✓ " : "✗ ") + r.message; })
+    .catch((e) => { $("#ai-msg").textContent = "测试失败：" + (e.status === 400 ? "未配置（先保存再测）" : String(e.message ?? e)); })
+    .finally(() => { btn.disabled = false; btn.textContent = old; });
+});
 
 refreshAiState().catch(() => {});
 refresh().catch((e) => { const h = humanError(e); notify("mid", `加载失败：${h.message}`, h.detail); });
