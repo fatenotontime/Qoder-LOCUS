@@ -7,7 +7,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   topbarTopicHtml, emptyTopicGuideHtml, navHtml, panelErrorHtml, sidebarListHtml,
-  topicOverviewHtml, topicTodosHtml, subqBlockHtml,
+  topicOverviewHtml, topicTodosHtml, subqBlockHtml, nextStepHtml,
 } from "../public/lib/views.js";
 import { fmtTime, fmtEnum, fmtVersion, fmtNameOnce } from "../public/lib/format.js";
 
@@ -45,7 +45,7 @@ function allRendered() {
     sidebarListHtml(state, { ...ui, nav: "record" }),
     sidebarListHtml(state, { ...ui, nav: "analysis" }),
     sidebarListHtml(state, { ...ui, nav: "chat" }),
-    topicOverviewHtml(state, ui), topicTodosHtml(state, ui), subqBlockHtml(state, ui),
+    topicOverviewHtml(state, ui), topicTodosHtml(state, ui), subqBlockHtml(state, ui), nextStepHtml(state, ui),
   ];
   return parts.join("\n");
 }

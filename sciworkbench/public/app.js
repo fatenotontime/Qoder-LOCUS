@@ -6,7 +6,7 @@ import { computeLanes, timeLabel } from "./lib/lanes.js";
 import { fmtTime, fmtEnum, fmtVersion, fmtNameOnce } from "./lib/format.js";
 import {
   topbarTopicHtml, emptyTopicGuideHtml, navHtml, panelErrorHtml, sidebarListHtml,
-  topicOverviewHtml, topicTodosHtml, subqBlockHtml,
+  topicOverviewHtml, topicTodosHtml, subqBlockHtml, nextStepHtml,
 } from "./lib/views.js";
 
 let state = { topics: [], subquestions: [], assets: [], papers: [], attachments: [], cards: [], tables: [], adoptions: [], mappings: [], comparisons: [], protocols: [], templates: [], executions: [], samples: [], measurements: [], impacts: [], ocrs: [], analysisTasks: [], analysisResults: [], reports: [], chats: [] };
@@ -279,7 +279,7 @@ function renderMiddle() {
   content.textContent = "在左栏选择工作对象。";
 }
 function renderRight() {
-  if (ui.nav === "topic") { $("#right-title").textContent = "待办与入口"; $("#right-content").innerHTML = topicTodosHtml(state, ui) + acceptancePanelHtml() + exportRestoreHtml(); return; }
+  if (ui.nav === "topic") { $("#right-title").textContent = "下一步与待办"; $("#right-content").innerHTML = nextStepHtml(state, ui) + topicTodosHtml(state, ui); return; }
   if (ui.nav === "papers") { $("#right-title").textContent = "条目与附件"; $("#right-content").innerHTML = paperHtml(); return; }
   if (ui.nav === "knowledge") {
     $("#right-title").textContent = "知识卡（独立人工审阅）";
@@ -405,28 +405,6 @@ function currentAttachment() {
   return atts.find((a) => a.id === ui.attId) ?? atts[0] ?? null;
 }
 
-/** 验收材料（常驻，未处理）：样本已在库，点按钮走真实路由；解析/提取由用户自行发起。 */
-const ACC_MATERIALS = [
-  { key: "paper", label: "导入文献", file: "samples/paper-laccase-btb-2026.md", src: "PMC13566542 · CC BY 4.0",
-    paper: { title: "Individual and Cooperative Photochemical–Enzymatic Processes for the Degradation of the Dye Bromothymol Blue: Kinetic and Eco-Toxicity Analysis", authors: "Urquiza AS, Reynoso A, Biasutti MA, Montejano HA, Reynoso E", year: "2026", doi: "10.3390/ijms27177767", source: "Europe PMC PMC13566542 · Int. J. Mol. Sci.", license: "CC BY 4.0" }, name: "paper-laccase-btb-2026.md" },
-  { key: "csv", label: "导入数据", file: "samples/slac-ph3-data.csv", src: "DaRUS 3337 · CC BY 4.0", name: "EnzymeML_SLAC_pH3__Data.csv" },
-  { key: "proto", label: "导入方案", file: "samples/protocol-source.md", src: "DaRUS 3337 · CC BY 4.0", name: "protocol-source.md" },
-];
-function acceptancePanelHtml() {
-  const dis = ui.topicId ? "" : `disabled title="先选课题"`;
-  return `<details class="mini"><summary>验收材料（未处理）</summary>
-    ${ACC_MATERIALS.map((m) => `<div class="row"><button class="acc-import" data-key="${m.key}" ${dis}>${m.label}</button><span class="hint">${esc(m.src)}</span></div>`).join("")}
-    <p class="hint">导入后自行发起解析／提取。</p>
-  </details>`;
-}
-function exportRestoreHtml() {
-  return `<details class="mini"><summary>导出与恢复</summary>
-    <p class="hint">导出含 manifest；恢复不覆盖主数据。</p>
-    <button id="lib-export">整体导出</button>
-    <input type="file" id="lib-restore-file" accept=".json"/>
-    <button id="lib-restore">隔离恢复校验</button>
-    <div class="refnet-body" id="lib-restore-out"></div></details>`;
-}
 
 /** 409 不死路：给出已有条目定位按钮（用分区报错承载）。 */
 function showLocate(msg, paperId) {
@@ -1580,18 +1558,6 @@ $("#right-content").addEventListener("click", async (ev) => {
     }
     if (ev.target.classList.contains("rep-docx")) { download(`/api/reports/${encodeURIComponent(ev.target.dataset.repid)}/export.docx`); setStatus("Word 已导出（快照，外部编辑不回流）"); return; }
     if (ev.target.classList.contains("rep-trace")) { download(`/api/reports/${encodeURIComponent(ev.target.dataset.repid)}/traceability.zip`); setStatus("追溯包已导出（含版本索引/许可过滤/manifest）"); return; }
-    if (ev.target.id === "lib-export") { download("/api/export/all.zip"); setStatus("整体导出已下载"); return; }
-    if (ev.target.id === "lib-restore") {
-      const f = document.querySelector("#lib-restore-file")?.files?.[0];
-      const out = $("#lib-restore-out");
-      if (!f) { notify("right", "先选择导出的 state.json。"); return; }
-      await runBusy(ev.target, "隔离恢复校验", async () => {
-        const json = await readTextFile(f);
-        const r = await api.restore(json);
-        out.innerHTML = `<div class="diffbox"><p class="hint">版本 v${r.version} · 隔离文件 ${esc(r.isolatedPath)}</p><p class="hint">${Object.entries(r.counts).map(([k, v]) => `${esc(k)} ${v}`).join(" · ")}</p></div>`;
-        setStatus("恢复校验通过（未覆盖主数据）");
-      }); return;
-    }
     if (ev.target.classList.contains("rep-confirm")) {
       const box = ev.target.closest(".rep"); const repId = box.dataset.repid;
       const bid = ev.target.closest(".reprow").dataset.bid;
@@ -1636,25 +1602,6 @@ $("#right-content").addEventListener("click", async (ev) => {
       await runBusy(ev.target, "采纳建议", async () => {
         await api.adoptChatProposal(c.id, ev.target.dataset.mid, Number(ev.target.dataset.idx));
         await refresh(); setStatus("已采纳：写入目标对象（执行备注/报告待验证），来源可溯");
-      }); return;
-    }
-    if (ev.target.classList.contains("acc-import")) {
-      const m = ACC_MATERIALS.find((x) => x.key === ev.target.dataset.key);
-      await runBusy(ev.target, m.label, async () => {
-        const r = await fetch(m.file);
-        if (!r.ok) throw new Error(`样本缺失：${m.file}`);
-        const text = await r.text();
-        if (m.key === "paper") {
-          const p = await api.createPaper({ ...m.paper, topicIds: [ui.topicId] });
-          await api.addPaperAttachment(p.paperId, { name: m.name, text, role: "fulltext", version: "v1" });
-          ui.paperId = p.paperId;
-        } else if (m.key === "csv") {
-          await api.importMeasurements(m.name, text, ui.topicId, "auto", "auto");
-        } else {
-          const up = await api.uploadProtocolSource(m.name, text, ui.topicId);
-          ui.assetId = up.assetId;
-        }
-        await refresh(); setStatus(`${m.label}完成`);
       }); return;
     }
     if (ev.target.classList.contains("span-link")) { ui.assetId = ev.target.dataset.asset; ui.highlight = ev.target.dataset.quote; renderMiddle(); return; }

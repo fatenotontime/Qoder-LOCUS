@@ -150,4 +150,23 @@ export function subqBlockHtml(state, ui) {
     <button id="subq-create">添加子问题</button></details>`;
 }
 
+/** 首页「下一步」：只给一条建议（按当前进度）。 */
+export function nextStepHtml(state, ui) {
+  const inTopic = (id) => (ui.topicId ? id === ui.topicId : true);
+  const papers = state.papers.filter((p) => !p.topicIds.length || p.topicIds.some(inTopic));
+  const pending = state.cards.filter((c) => ["unreviewed", "need_info"].includes(c.audit) && !c.mechanical);
+  const protos = state.protocols.filter((p) => inTopic(p.topicId));
+  const prep = state.executions.filter((e) => (e.phase ?? "recording") === "preparing" && inTopic(e.topicId));
+  const tasks = state.analysisTasks.filter((t) => inTopic(t.topicId));
+  let text, goto;
+  if (!state.topics.length) { text = "创建课题（名称＋研究问题）"; goto = "topic"; }
+  else if (!papers.length) { text = "导入文献（条目＋附件）"; goto = "papers"; }
+  else if (pending.length) { text = `审阅 ${pending.length} 张知识卡`; goto = "knowledge"; }
+  else if (!protos.length) { text = "建或导入实验方案"; goto = "protocol"; }
+  else if (prep.length) { text = "确认执行准备稿快照"; goto = "record"; }
+  else if (!tasks.length) { text = "建分析任务（选数据表）"; goto = "analysis"; }
+  else { text = "撰写分析初稿"; goto = "analysis"; }
+  return `<div class="item nextstep"><div class="meta">下一步</div><p>${esc(text)}</p><button class="goto" data-goto="${goto}">去这里</button></div>`;
+}
+
 export { esc, fmtVersion, fmtTime, fmtEnum, fmtNameOnce };
