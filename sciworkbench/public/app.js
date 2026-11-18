@@ -710,7 +710,7 @@ function renderKnowledgeForm(box) {
     const attachmentIds = [...$$(".k-att")].filter((x) => x.checked).map((x) => x.value);
     const r = await api.knowledgeJob({ paperId: p.id, attachmentIds, purpose: $("#k-purpose").value, topicId: ui.topicId || undefined, subquestionId: $("#k-subq")?.value || undefined });
     const res = await pollJob(r.jobId, "知识提取");
-    await refresh();
+    await refreshAfterJob();
     setStatus(`知识提取完成：新增 ${res.created} 张待审卡${res.skipped ? `，跳过重复 ${res.skipped}` : ""}（输入快照已固定）`);
   }));
   $("#dbg-import").addEventListener("click", (ev) => runBusy(ev.target, "导入机械草稿", async () => {
@@ -901,6 +901,15 @@ async function pollJob(jobId, label) {
   throw new Error(`${label}等待超时`);
 }
 
+/** 后台任务完成后的刷新：若有未保存编辑，不静默丢弃，改为提示后再由用户决定。 */
+async function refreshAfterJob() {
+  if (ui.dirty) {
+    showBanner("后台任务已完成，但当前有未保存编辑（未刷新，以免丢弃）。保存或放弃后再刷新查看结果。");
+    return;
+  }
+  await refresh();
+}
+
 function renderProtocolImport(box) {
   const protos = state.assets.filter((a) => a.kind === "protocol" && (!ui.topicId || a.topicId === ui.topicId || !a.topicId));
   const paperAtts = state.assets.filter((a) => a.kind === "literature" && state.attachments.some((x) => x.assetId === a.id));
@@ -953,14 +962,14 @@ function renderProtocolImport(box) {
       throw e;
     }
     const res = await pollJob(r.jobId, "方案解析");
-    ui.protocolId = res.protocolId; ui.viewRev = null; await refresh();
+    ui.protocolId = res.protocolId; ui.viewRev = null; await refreshAfterJob();
     setStatus("方案草稿已生成（ai-draft，须人工确认）");
   }));
   $$(".protoasset-parse").forEach((b) => b.addEventListener("click", (ev) => runJob(ev.target, "AI 解析方案", async () => {
     const aid = b.closest(".protoasset").dataset.aid;
     const r = await api.parseProtocol(aid, ui.topicId);
     const res = await pollJob(r.jobId, "方案解析");
-    ui.protocolId = res.protocolId; ui.viewRev = null; await refresh();
+    ui.protocolId = res.protocolId; ui.viewRev = null; await refreshAfterJob();
     setStatus("方案草稿已生成（ai-draft，须人工确认）");
   })));
   $("#proto-create").addEventListener("click", (ev) => runBusy(ev.target, "创建方案", async () => {
@@ -979,7 +988,7 @@ function renderProtocolImport(box) {
     if (!ui.topicId) throw new Error("请先选择/创建课题");
     const r = await api.parseProtocol($("#parse-asset").value, ui.topicId, undefined, "reconstructed");
     const res = await pollJob(r.jobId, "方案重构");
-    ui.protocolId = res.protocolId; ui.viewRev = null; await refresh();
+    ui.protocolId = res.protocolId; ui.viewRev = null; await refreshAfterJob();
     setStatus("重构草稿已生成（reconstructed：非作者原始方案，须人工确认）");
   }));
 }
@@ -1634,7 +1643,7 @@ $("#mid-content").addEventListener("click", async (ev) => {
       $("#chat-text").value = "";
       await refresh();
       await pollJob(r.jobId, "上下文讨论");
-      await refresh(); setStatus("讨论完成（建议采纳见右栏）");
+      await refreshAfterJob(); setStatus("讨论完成（建议采纳见右栏）");
     }); return;
   }
   if (ev.target.classList.contains("chat-cancel")) {
@@ -1650,7 +1659,7 @@ $("#mid-content").addEventListener("click", async (ev) => {
       const r = await api.retryChatMessage(c.id, ev.target.dataset.mid);
       await refresh();
       await pollJob(r.jobId, "上下文讨论");
-      await refresh(); setStatus("重试完成");
+      await refreshAfterJob(); setStatus("重试完成");
     }); return;
   }
 });
@@ -1690,7 +1699,7 @@ $("#right-content").addEventListener("click", async (ev) => {
         const r = await api.recommendMethods(t.id, purpose);
         setStatus(`快照已冻结 ${r.snapshotHash.slice(0, 12)}…`);
         await pollJob(r.jobId, "方法推荐");
-        await refresh(); setStatus("方法推荐完成（含验收项）");
+        await refreshAfterJob(); setStatus("方法推荐完成（含验收项）");
       }); return;
     }
     if (ev.target.id === "res-submit") {
@@ -2031,7 +2040,7 @@ $("#right-content").addEventListener("click", async (ev) => {
       await runJob(ev.target, "AI 影响评估", async () => {
         const r = await api.runImpact(iid);
         const res = await pollJob(r.jobId, "影响评估");
-        await refresh();
+        await refreshAfterJob();
         setStatus(res.discarded ? "已有更新改动：旧评估被丢弃（stale 守卫）" : "影响评估完成");
       }); return;
     }
@@ -2140,7 +2149,7 @@ $("#right-content").addEventListener("click", async (ev) => {
       await runJob(ev.target, "AI 识别", async () => {
         const r = await api.runOcr(ui.assetId);
         const res = await pollJob(r.jobId, "手写识别");
-        await refresh(); setStatus(`识别完成：${res.created} 条草稿（须人工确认）`);
+        await refreshAfterJob(); setStatus(`识别完成：${res.created} 条草稿（须人工确认）`);
       }); return;
     }
     if (ev.target.id === "ocr-manual-add") {
