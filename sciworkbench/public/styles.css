@@ -368,3 +368,11 @@ table.grid .celledit input { width: auto; }
 /* B2 第二步：抽取队列进度/失败块 */
 .kzq-err { color: var(--danger); font-size: var(--text-sm); margin: 3px 0; }
 .kzq-cancel, .kzq-retry { font: inherit; }
+
+/* B3：实验图（中间大区）与估计/未知虚线范围条 */
+.mid .diagram { width: 100%; }
+.dbar { font-size: var(--text-sm); border-radius: 999px; padding: 0 6px; white-space: nowrap; }
+.dbar.fixed { border: 1px solid var(--line); }
+.dbar.est { border: 1px dashed var(--warn); color: var(--warn); }
+.dbar.unknown { border: 1px dashed var(--muted); color: var(--muted); }
+.srcpre { white-space: pre-wrap; word-break: break-word; max-height: 320px; overflow: auto; font-size: 12px; margin: 4px 0 0; }

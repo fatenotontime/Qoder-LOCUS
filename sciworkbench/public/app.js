@@ -220,19 +220,9 @@ function renderMiddle() {
     return;
   }
   if (ui.nav === "protocol") {
-    const p = currentProtocol();
-    $("#mid-title").textContent = p ? `原始材料 · ${p.name}` : "原始材料";
-    if (!p) { note.hidden = true; content.textContent = "在左栏选择或创建方案。"; return; }
-    const src = p.sourceAssetId ? state.assets.find((a) => a.id === p.sourceAssetId) : null;
-    if (src) {
-      note.hidden = false; note.textContent = `方法来源原件：${src.name}（${p.sourceKind}）`;
-      content.innerHTML = ui.highlight && src.text.includes(ui.highlight)
-        ? esc(src.text).replace(esc(ui.highlight), `<mark>${esc(ui.highlight)}</mark>`)
-        : esc(src.text);
-    } else {
-      note.hidden = false; note.textContent = p.sourceKind === "user" ? "无外部原件；下为版本快照。" : "来源见快照 sourceFragments。";
-      content.textContent = fmtSnapshot(viewSnapshot(p));
-    }
+    $("#mid-title").textContent = "实验图";
+    note.hidden = true;
+    content.innerHTML = protocolMainHtml();
     return;
   }
   if (ui.nav === "record") {
@@ -290,7 +280,7 @@ function renderRight() {
     $("#right-content").innerHTML = knowledgeQueueHtml(state, ui);
     return;
   }
-  if (ui.nav === "protocol") { $("#right-title").textContent = "方案与实验图"; $("#right-content").innerHTML = protocolHtml(); return; }
+  if (ui.nav === "protocol") { $("#right-title").textContent = "方案信息"; $("#right-content").innerHTML = protocolSideHtml(); return; }
   if (ui.nav === "record") { $("#right-title").textContent = "实验记录"; $("#right-content").innerHTML = recordHtml(); return; }
   if (ui.nav === "analysis") { $("#right-title").textContent = "推荐 · 结果 · 分析初稿"; $("#right-content").innerHTML = analysisRightHtml(); return; }
   if (ui.nav === "chat") { $("#right-title").textContent = "范围 · 来源 · 采纳"; $("#right-content").innerHTML = chatRightHtml(); return; }
@@ -708,32 +698,30 @@ function renderProtocolImport(box) {
   const protos = state.assets.filter((a) => a.kind === "protocol" && (!ui.topicId || a.topicId === ui.topicId || !a.topicId));
   const paperAtts = state.assets.filter((a) => a.kind === "literature" && state.attachments.some((x) => x.assetId === a.id));
   box.innerHTML = `
-    <details class="mini" open>
-      <summary>上传方案原件（直接解析）</summary>
-      <input id="proto-up-name" placeholder="文件名（如 protocol.md）" />
-      <input id="proto-up-file" type="file" accept=".md,.markdown,.txt,.text,text/markdown,text/plain" />
-      <textarea id="proto-up-text" rows="3" placeholder="或粘贴方案文本（Markdown/纯文本）…"></textarea>
-      <button class="primary" id="proto-upload">上传并解析为方案草稿</button>
-      <p class="hint">原件按方案类归档；草稿标 ai-draft，须人工编辑确认。AI 未配置时只归档，可稍后解析。</p>
-    </details>
-    ${protos.length ? `<details class="mini"><summary>已归档方案原件（${protos.length}）</summary>
-      ${protos.map((a) => `<div class="row protoasset" data-aid="${a.id}"><span class="hint">${esc(a.name)} · ${a.bytes}B</span><button class="protoasset-parse">解析为草稿</button></div>`).join("")}
-    </details>` : ""}
-    <details class="mini">
-      <summary>从论文重构（非作者原始）</summary>
-      ${paperAtts.length ? `<select id="parse-asset">${paperAtts.map((a) => `<option value="${a.id}">${esc(a.name)}</option>`).join("")}</select>
-      <button id="proto-parse">重构为方案草稿</button>
-      <p class="hint">重构来源仅限论文附件；草稿标 reconstructed 并固定来源原件，不是作者原始方案。</p>` : `<p class="hint">先在「文献整理」为论文条目导入正文/方法附件。</p>`}
-    </details>
     <details class="mini" ${state.protocols.length ? "" : "open"}>
-      <summary>新建方案（手工）</summary>
-      <input id="proto-name" placeholder="方案名称" />
-      <select id="proto-src"><option value="user">用户编写</option><option value="reconstructed">公开材料重构（须标来源）</option></select>
-      <input id="proto-purpose" placeholder="目的" />
-      <textarea id="proto-steps" rows="4" placeholder="每行一步：操作 | 时长分钟 | 支路名 | est&#10;例：配缓冲液 | 10 | |&#10;孵育 | 30 | | est&#10;对照 | 60 | 对照支路 |"></textarea>
-      <input id="proto-criteria" placeholder="完成判据" />
-      <input id="proto-frag" placeholder="来源片段（重构时必填，逗号分隔）" />
-      <button class="primary" id="proto-create">创建方案</button>
+      <summary>＋新建方案</summary>
+      <details class="mini" open><summary>① 上传原件并解析</summary>
+        <input id="proto-up-name" placeholder="文件名（如 protocol.md）" />
+        <input id="proto-up-file" type="file" accept=".md,.markdown,.txt,.text,text/markdown,text/plain" />
+        <textarea id="proto-up-text" rows="3" placeholder="或粘贴方案文本（Markdown/纯文本）…"></textarea>
+        <button class="primary" id="proto-upload">上传并解析为方案草稿</button>
+        <p class="hint">原件按方案类归档；草稿标 ai-draft，须人工编辑确认。AI 未配置时只归档，可稍后解析。</p>
+        ${protos.length ? `<div class="hint">已归档方案原件（${protos.length}）：</div>${protos.map((a) => `<div class="row protoasset" data-aid="${a.id}"><span class="hint">${esc(a.name)} · ${a.bytes}B</span><button class="protoasset-parse">解析为草稿</button></div>`).join("")}` : ""}
+      </details>
+      <details class="mini"><summary>② 从论文重构（非作者原始）</summary>
+        ${paperAtts.length ? `<select id="parse-asset">${paperAtts.map((a) => `<option value="${a.id}">${esc(a.name)}</option>`).join("")}</select>
+        <button id="proto-parse">重构为方案草稿</button>
+        <p class="hint">重构来源仅限论文附件；草稿标 reconstructed 并固定来源原件，不是作者原始方案。</p>` : `<p class="hint">先在「文献整理」为论文条目导入正文/方法附件。</p>`}
+      </details>
+      <details class="mini"><summary>③ 手动新建</summary>
+        <input id="proto-name" placeholder="方案名称" />
+        <select id="proto-src"><option value="user">用户编写</option><option value="reconstructed">公开材料重构（须标来源）</option></select>
+        <input id="proto-purpose" placeholder="目的" />
+        <textarea id="proto-steps" rows="4" placeholder="每行一步：操作 | 时长分钟 | 支路名 | est&#10;例：配缓冲液 | 10 | |&#10;孵育 | 30 | | est&#10;对照 | 60 | 对照支路 |"></textarea>
+        <input id="proto-criteria" placeholder="完成判据" />
+        <input id="proto-frag" placeholder="来源片段（重构时必填，逗号分隔）" />
+        <button class="primary" id="proto-create">创建方案</button>
+      </details>
     </details>`;
   $("#proto-upload").addEventListener("click", (ev) => runJob(ev.target, "上传并解析方案", async () => {
     if (!ui.topicId) throw new Error("请先选择/创建课题");
@@ -811,10 +799,14 @@ function renderRecordImport(box) {
 function diagramHtml(p, snap) {
   const L = computeLanes(snap.steps);
   const node = (s, offset, approx) => {
-    const dur = s.durationMin === null ? `<span class="badge warn">时长未知</span>` : `<span class="badge ${s.estimated ? "warn" : "confirm"}">${s.durationMin}min${s.estimated ? "·估计" : ""}</span>`;
-    return `<div class="dnode ${ui.stepSel === s.id ? "sel" : ""}" data-step="${s.id}">
-      <div class="dop">${esc(s.op)}</div>
-      <div class="dmeta">${offset !== null ? `<span class="dtime">${timeLabel(offset, approx)}</span>` : ""}${dur}${s.observeEnd ? `<span class="hint">终点:${esc(s.observeEnd)}</span>` : ""}</div>
+    const unknown = s.durationMin === null;
+    const bar = unknown
+      ? `<span class="dbar unknown" title="时长未知（不按 0）">时长未知</span>`
+      : `<span class="dbar ${s.estimated ? "est" : "fixed"}">${s.durationMin}min${s.estimated ? "·估" : ""}</span>`;
+    const op = s.op.length > 16 ? `${s.op.slice(0, 16)}…` : s.op;
+    return `<div class="dnode ${ui.stepSel === s.id ? "sel" : ""}" data-step="${s.id}" title="${esc(s.op)}">
+      <div class="dop">${esc(op)}</div>
+      <div class="dmeta">${offset !== null ? `<span class="dtime">${timeLabel(offset, approx)}</span>` : ""}${bar}${s.observeEnd ? `<span class="hint">终点:${esc(s.observeEnd)}</span>` : ""}</div>
     </div>`;
   };
   let html = `<div class="diagram" style="grid-template-columns:repeat(${L.cols},minmax(110px,1fr))">`;
@@ -833,14 +825,15 @@ function diagramHtml(p, snap) {
     </div>`;
   });
   const estCount = snap.steps.filter((s) => s.estimated).length;
-  html += `</div><p class="hint">列宽等分（非时间比例）；t≈ 规定 / t≥ 下界。${L.unknownCount ? `主线 ${L.unknownCount} 步时长未知，其后为下界。` : ""}${estCount ? `估计 ${estCount} 步：取值＝所填数字。` : ""}已知主线 ${L.totalKnown}min。</p>`;
+  const unkCount = snap.steps.filter((s) => s.durationMin === null).length;
+  html += `</div><p class="hint">横轴：时间（步序，列宽等分）；纵轴：线程／泳道。虚线＝估计或时长未知${unkCount ? `（未知 ${unkCount} 步不按 0，其后为下界）` : ""}${estCount ? `（估计 ${estCount} 步）` : ""}；已知主线 ${L.totalKnown}min。</p>`;
   return html;
 }
 
 function stepEditorHtml(p, snap) {
   const s = ui.stepSel === "new" ? { id: "", op: "", params: {}, note: "", durationMin: null, estimated: false, branch: null, observeEnd: "" } : snap.steps.find((x) => x.id === ui.stepSel);
   if (!s) return `<div class="stepeditor"><p class="hint">点击图中节点编辑步骤；保存将追加方案新快照（旧版本不动）。</p>
-    <div class="row"><input id="newstep-op" placeholder="新步骤操作名" /><button id="step-add">添加步骤</button></div></div>`;
+    <div class="row"><input id="newstep-op" placeholder="新步骤操作名" /><button id="step-add">添加步骤</button><button disabled title="占位：AI 重排未接入">AI 重排（未实现）</button></div></div>`;
   const paramsText = Object.entries(s.params).map(([k, v]) => `${k}=${v}`).join("\n");
   const mainOpts = (cur) => snap.steps.filter((x) => !x.branch).map((x) => `<option value="${x.id}" ${x.id === cur ? "selected" : ""}>${esc(x.op)}</option>`).join("");
   return `<div class="stepeditor">
@@ -855,7 +848,7 @@ function stepEditorHtml(p, snap) {
     <div class="row"><label>观察终点</label><input id="se-end" value="${esc(s.observeEnd)}" /></div>
     <textarea id="se-params" rows="2" placeholder="参数，每行 键=值">${esc(paramsText)}</textarea>
     <div class="row"><label>备注</label><input id="se-note" value="${esc(s.note)}" /></div>
-    <div class="row"><input id="se-reason" placeholder="修改原因（必填）" /><button class="primary" id="step-save">保存步骤</button><button id="step-cancel">取消</button></div>
+    <div class="row"><input id="se-reason" placeholder="修改原因（必填）" /><button class="primary" id="step-save">保存步骤</button><button id="step-cancel">取消</button><button disabled title="占位：AI 重排未接入">AI 重排（未实现）</button></div>
   </div>`;
 }
 
@@ -893,40 +886,49 @@ function impactHtml(entityIds) {
   </div>`;
 }
 
-function protocolHtml() {
+function protocolMainHtml() {
   const p = currentProtocol();
-  if (!p) return `<p class="hint">在左栏选择方案。图中节点可点击编辑；保存追加新快照，旧版本与已固定的执行/模板不受影响。</p>`;
+  if (!p) return `<p class="hint">在左栏选择方案，或用中间「＋新建方案」创建。图中节点可点击编辑；保存追加新快照，旧版本与已固定的执行/模板不受影响。</p>`;
+  const snap = viewSnapshot(p);
+  const viewingOld = snap.revision !== p.revision;
+  return `
+    <div class="item" data-id="${p.id}">
+      <div class="meta">${esc(p.name)} · 来源 ${fmtEnum(p.sourceKind)}</div>
+      <div class="row"><label>查看版本</label>
+        <select id="proto-rev">${p.revisions.map((r) => `<option value="${r.revision}" ${r.revision === snap.revision ? "selected" : ""}>${fmtVersion(r.revision)} · ${esc(r.reason)}</option>`).join("")}</select>
+        <button id="proto-export">导出 JSON</button>
+        <button class="history-btn">快照历史(${p.revisions.length})</button></div>
+      ${viewingOld ? `<p class="hint warn">正在查看旧快照 ${fmtVersion(snap.revision)}（只读）；编辑将基于最新 ${fmtVersion(p.revision)} 追加。</p>` : ""}
+      ${diagramHtml(p, snap)}
+      ${!viewingOld ? stepEditorHtml(p, snap) : ""}
+    </div>
+    ${impactHtml([p.id])}`;
+}
+
+function protocolSideHtml() {
+  const p = currentProtocol();
+  if (!p) return `<p class="hint">选择方案后显示元信息、来源原件与记录模板。</p>`;
   const snap = viewSnapshot(p);
   const viewingOld = snap.revision !== p.revision;
   const tmpls = state.templates.filter((t) => t.protocolId === p.id);
+  const src = p.sourceAssetId ? state.assets.find((a) => a.id === p.sourceAssetId) : null;
   return `
-    <div class="item" data-id="${p.id}">
-      <div class="meta">${esc(p.name)} · 当前 r${p.revision} · 来源 ${p.sourceKind}${p.sourceAssetId ? `（${esc(state.assets.find((a) => a.id === p.sourceAssetId)?.name ?? p.sourceAssetId)}）` : ""}</div>
-      <div class="row"><label>查看版本</label>
-        <select id="proto-rev">${p.revisions.map((r) => `<option value="${r.revision}" ${r.revision === snap.revision ? "selected" : ""}>r${r.revision} · ${esc(r.reason)}</option>`).join("")}</select>
-        <button id="proto-export">导出 JSON</button>
-        <button disabled title="占位：AI 重排未实现（仅确定性布局）">AI 重排（未实现）</button>
-        <button class="history-btn">快照历史(${p.revisions.length})</button></div>
-      ${viewingOld ? `<p class="hint warn">正在查看旧快照 r${snap.revision}（只读）；编辑将基于最新 r${p.revision} 追加。</p>` : ""}
-      ${diagramHtml(p, snap)}
-      ${!viewingOld ? stepEditorHtml(p, snap) : ""}
-      ${!viewingOld ? `<details class="mini"><summary>方案元信息编辑</summary>
-        <div class="row"><label>目的</label><input data-field="purpose" value="${esc(snap.purpose)}" /></div>
-        <div class="row"><label>判据</label><input data-field="criteria" value="${esc(snap.criteria)}" /></div>
-        <div class="row"><label>条件</label><input data-field="conditions" value="${esc(snap.conditions.join(","))}" /></div>
-        <div class="row"><label>未知项</label><input data-field="unknowns" value="${esc(snap.unknowns.join(","))}" /></div>
-        <div class="row"><input data-field="reason" placeholder="修改原因（必填）" /><button class="primary" id="proto-save">保存元信息</button></div>
-      </details>` : ""}
-    </div>
-    ${impactHtml([p.id])}
+    <div class="item">${!viewingOld ? `<details class="mini" open><summary>方案元信息</summary>
+      <div class="row"><label>目的</label><input data-field="purpose" value="${esc(snap.purpose)}" /></div>
+      <div class="row"><label>判据</label><input data-field="criteria" value="${esc(snap.criteria)}" /></div>
+      <div class="row"><label>条件</label><input data-field="conditions" value="${esc(snap.conditions.join(","))}" /></div>
+      <div class="row"><label>未知项</label><input data-field="unknowns" value="${esc(snap.unknowns.join(","))}" /></div>
+      <div class="row"><input data-field="reason" placeholder="修改原因（必填）" /><button class="primary" id="proto-save">保存元信息</button></div></details>`
+      : `<p class="hint">正在查看旧快照（只读）。</p>`}</div>
+    ${src ? `<details class="mini"><summary>来源原件 · ${esc(src.name)}</summary><pre class="srcpre">${esc(src.text)}</pre></details>` : ""}
     <div class="item"><div class="meta">记录模板（${tmpls.length}）</div>
       ${tmpls.map((t) => `<div class="row tmpl" data-id="${t.id}">
         <span class="badge ${t.humanConfirmed ? "confirm" : "cand-pending"}">${t.humanConfirmed ? "已确认" : "待确认"}</span>
         ${t.aiDraft ? `<span class="badge ai">AI 草稿</span>` : ""}
-        <span class="hint">固定 r${t.protocolRevision}${t.protocolRevision !== p.revision ? `（方案已变 → 当前 r${p.revision}，复用前须比较）` : ""} · ${t.fields.length} 字段</span>
+        <span class="hint">固定 ${fmtVersion(t.protocolRevision)}${t.protocolRevision !== p.revision ? `（方案已变 → 当前 ${fmtVersion(p.revision)}，复用前须比较）` : ""} · ${t.fields.length} 字段</span>
         ${!t.humanConfirmed ? `<button class="tmpl-confirm">人工确认</button>` : `<button class="tmpl-use">用于执行</button>`}
       </div>`).join("") || `<p class="hint">暂无模板。</p>`}
-      <div class="row"><label><input type="checkbox" id="tmpl-ai" /> AI 草稿</label><button id="tmpl-create">生成模板（固定 r${p.revision}）</button></div>
+      <div class="row"><label><input type="checkbox" id="tmpl-ai" /> AI 草稿</label><button id="tmpl-create">生成模板（固定 ${fmtVersion(p.revision)}）</button></div>
     </div>`;
 }
 
