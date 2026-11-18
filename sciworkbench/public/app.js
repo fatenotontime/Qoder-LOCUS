@@ -159,6 +159,11 @@ function renderShell() {
   const kz = ui.nav === "knowledge";
   if (!kz) ui.kzJob = null;
   if (kz && !ui.paperId && state.papers.length) ui.paperId = state.papers[0].id;
+  // B5：进入分析页自动打开最近的分析任务
+  if (ui.nav === "analysis" && !ui.taskId) {
+    const ts = state.analysisTasks.filter((t) => !ui.topicId || t.topicId === ui.topicId).slice().sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    if (ts.length) ui.taskId = ts[0].id;
+  }
   document.querySelector(".app").classList.toggle("mode-knowledge", kz);
   $("#navrail").hidden = !kz;
   $("#nav").hidden = kz;
@@ -1102,31 +1107,39 @@ const pickRow = (cls, kind, id, label) => `<label class="ctxpick"><input type="c
 const collectPicks = (cls) => [...$$(`.${cls}:checked`)].map((cb) => ({ kind: cb.dataset.kind, id: cb.dataset.id }));
 
 function renderAnalysisForm(box) {
-  if (!ui.topicId) { box.innerHTML = `<p class="hint">先在上方选择课题，再创建分析任务。</p>`; return; }
+  if (!ui.topicId) { box.innerHTML = `<p class="hint">先在上方选择课题，再建分析任务。</p>`; return; }
   const { execs, tables, meas, protos, cards } = topicObjects();
   const subqs = state.subquestions.filter((s) => s.topicId === ui.topicId);
-  const coreList = [
-    ...execs.map((e) => pickRow("an-core", "execution", e.id, `执行 · ${state.protocols.find((p) => p.id === e.protocolId)?.name ?? e.id}${(e.phase ?? "recording") === "preparing" ? "（准备稿）" : ""}`)),
-    ...meas.map((a) => pickRow("an-core", "measurement", a.id, `测量原件 · ${a.name}`)),
-    ...tables.map((t) => pickRow("an-core", "table", t.id, `数据表 · ${t.name}`)),
-  ].join("");
-  const optList = [
-    ...protos.map((p) => pickRow("an-opt", "protocol", p.id, `方案 · ${p.name} r${p.revision}`)),
-    ...cards.map((c) => pickRow("an-opt", "card", c.id, `知识卡 · ${c.scope || Object.values(c.extracted?.fields ?? {})[0] || c.id}`)),
-  ].join("");
+  const conf = cards.filter((c) => c.audit === "confirm");
+  const dataSources = [
+    ...tables.map((t) => ({ kind: "table", id: t.id, label: `数据表 · ${t.name}` })),
+    ...meas.map((m) => ({ kind: "measurement", id: m.id, label: `测量原件 · ${m.name}` })),
+  ];
   box.innerHTML = `
     <details class="mini" open>
-      <summary>新建分析任务</summary>
-      <input id="an-title" placeholder="任务标题（如 pH3 酶活衰减拟合）"/>
-      <select id="an-subq"><option value="">（不挂子问题）</option>${subqs.map((s) => `<option value="${s.id}">${esc(s.question)}</option>`).join("")}</select>
-      <p class="hint">核心对象（至少一项执行/测量/数据表，不可取消）：</p>
-      ${coreList || `<p class="hint">本课题暂无执行/测量/数据表。先到「实验执行与记录」或数据导入建立。</p>`}
-      <details class="mini"><summary>可选候选（方案/知识卡，默认纳入、可取消）</summary>${optList || `<p class="hint">暂无方案/知识卡。</p>`}</details>
-      <button class="primary" id="an-create">创建任务</button>
+      <summary>＋新建分析任务</summary>
+      <input id="an-title" placeholder="任务标题（如 传播量级汇总）"/>
+      <select id="an-subq"><option value="">（子问题）</option>${subqs.map((s) => `<option value="${s.id}">${esc(s.question)}</option>`).join("")}</select>
+      <p class="hint">选择数据（必选，锁定且不可取消）：</p>
+      ${dataSources.length ? dataSources.map((d) => `<label class="ctxpick"><input type="checkbox" class="an-data" data-kind="${d.kind}" data-id="${d.id}"/> ${esc(d.label)}</label>`).join("") : `<p class="hint">本课题暂无可分析数据（先导入数据表或记录测量）。</p>`}
+      <p class="hint">默认已选（关联度高的已入候选知识卡，可取消）：</p>
+      ${conf.length ? conf.map((c) => `<label class="ctxpick"><input type="checkbox" class="an-def" data-id="${c.id}" checked/> ${esc(c.scope || c.rawText.slice(0, 24))}</label>`).join("") : `<p class="hint">暂无已入候选卡。</p>`}
+      <details class="mini"><summary>其他可选（折叠：方案/执行）</summary>
+        ${protos.map((p) => `<label class="ctxpick"><input type="checkbox" class="an-opt2" data-kind="protocol" data-id="${p.id}"/> 方案 · ${esc(p.name)}</label>`).join("")}
+        ${execs.map((e) => `<label class="ctxpick"><input type="checkbox" class="an-opt2" data-kind="execution" data-id="${e.id}"/> 执行 · ${esc(state.protocols.find((p) => p.id === e.protocolId)?.name ?? e.id)}</label>`).join("")}
+      </details>
+      <button class="primary" id="an-create">创建任务（必选项自动锁定）</button>
     </details>`;
   $("#an-create").addEventListener("click", (ev) => runBusy(ev.target, "创建分析任务", async () => {
-    const r = await api.createAnalysisTask({ topicId: ui.topicId, subquestionId: $("#an-subq").value || undefined, title: $("#an-title").value, core: collectPicks("an-core"), optional: collectPicks("an-opt") });
-    ui.taskId = r.taskId; await refresh(); setStatus("分析任务已创建：上下文地图在中栏");
+    const core = [...$$(".an-data:checked")].map((x) => ({ kind: x.dataset.kind, id: x.dataset.id }));
+    if (!core.length) { notify("mid", "请至少选择一个数据表/测量作为必选数据。"); return; }
+    const optional = [
+      ...[...$$(".an-def:checked")].map((x) => ({ ref: { kind: "card", id: x.dataset.id }, included: true })),
+      ...[...$$(".an-opt2:checked")].map((x) => ({ ref: { kind: x.dataset.kind, id: x.dataset.id }, included: true })),
+      ...[...$$(".an-def:not(:checked)")].map((x) => ({ ref: { kind: "card", id: x.dataset.id }, included: false })),
+    ];
+    const r = await api.createAnalysisTask({ topicId: ui.topicId, subquestionId: $("#an-subq").value || undefined, title: $("#an-title").value, core, optional });
+    ui.taskId = r.taskId; await refresh(); setStatus("分析任务已创建：必选数据已锁定");
   }));
 }
 
@@ -1172,14 +1185,17 @@ function contextMapHtml(t) {
     }
     return "";
   };
+  const inc = t.optional.map((o, i) => ({ o, i })).filter(({ o }) => o.included);
+  const others = t.optional.map((o, i) => ({ o, i })).filter(({ o }) => !o.included);
+  const cand = ({ o, i }) => `<li><label><input type="checkbox" class="cand-toggle" data-idx="${i}" ${o.included ? "checked" : ""}/> ${esc(refLabel(o.ref))}</label>${refOpen(o.ref)}</li>`;
   return `
-    <p><b>课题「${esc(topicName(t.topicId) ?? t.topicId)}」${q ? ` → 子问题「${esc(q.question)}」` : ""} → 核心数据/记录</b></p>
-    <p class="hint">核心（不可取消）：</p>
-    <ul>${t.core.map((r) => `<li>${esc(refLabel(r))} <span class="hint">${r.kind}:${r.id}</span>${refOpen(r)}</li>`).join("")}</ul>
-    <p class="hint">可选候选（勾选＝纳入上下文；保存后对下次推荐生效）：</p>
-    ${t.optional.length
-      ? `<ul>${t.optional.map((o, i) => `<li><label><input type="checkbox" class="cand-toggle" data-idx="${i}" ${o.included ? "checked" : ""}/> ${esc(refLabel(o.ref))}</label> <span class="hint">${o.ref.kind}:${o.ref.id}</span>${refOpen(o.ref)}</li>`).join("")}</ul><button id="cand-save">保存候选选择</button>`
-      : `<p class="hint">无候选。创建任务时可勾选方案/知识卡作为补充。</p>`}
+    <p><b>课题「${esc(topicName(t.topicId) ?? t.topicId)}」${q ? ` → 子问题「${esc(q.question)}」` : ""}</b></p>
+    <p class="hint">必选（锁定，不可取消）：</p>
+    <ul>${t.core.map((r) => `<li>🔒 ${esc(refLabel(r))}${refOpen(r)}</li>`).join("") || `<li class="hint">无</li>`}</ul>
+    <p class="hint">默认已选（可取消）：</p>
+    ${inc.length ? `<ul>${inc.map(cand).join("")}</ul>` : `<p class="hint">无。</p>`}
+    ${others.length ? `<details class="mini"><summary>其他可选（${others.length}，折叠）</summary><ul>${others.map(cand).join("")}</ul></details>` : ""}
+    ${t.optional.length ? `<button id="cand-save">保存候选选择</button>` : `<p class="hint">无候选。</p>`}
     ${t.snapshot ? snapshotHtml(t.snapshot) : ""}`;
 }
 
@@ -1296,7 +1312,7 @@ function analysisRightHtml() {
     <p class="hint">只有图/脚本也可提交，但不标「可复现」；附数据文件（csv/tsv/json/txt/md）＋关键参数才可复现。</p>
     <button class="primary" id="res-submit">提交结果</button></details>`;
   h += results.map(resultHtml).join("");
-  h += `<details class="mini" open><summary>分析初稿（有序块 · 性质 · 固定引用）</summary>
+  h += `<details class="mini" open><summary>分析初稿（有序块 · 性质 · 固定引用 · 仅供参考，非最终结论）</summary>
     <button id="rep-create">新建初稿（钉住结果）</button>
     ${reps.map(reportHtml).join("") || `<p class="hint">暂无报告。</p>`}</details>`;
   return h;
