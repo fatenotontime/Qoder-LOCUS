@@ -112,7 +112,7 @@ function guardLeave() {
 }
 
 function renderAll() {
-  setStatus(`课题 ${state.topics.length} · 论文 ${state.papers.length} · 知识卡 ${state.cards.length} · 表格 ${state.tables.length} · 方案 ${state.protocols.length} · 执行 ${state.executions.length} · 样品 ${state.samples.length}`);
+  if ($("#status").textContent === "连接中…") setStatus("就绪");
   $$(".navitem").forEach((x) => x.classList.toggle("active", x.dataset.nav === ui.nav));
   $("#sec-subq").hidden = ui.nav !== "topic";
   $("#topic-create-box").hidden = ui.nav !== "topic";
@@ -535,7 +535,7 @@ function topicOverviewHtml() {
         <button class="goto" data-goto="knowledge" data-topic="${t.id}">领域知识</button>
         <button class="goto" data-goto="protocol" data-topic="${t.id}">实验方案</button>
         <button class="goto" data-goto="record" data-topic="${t.id}">执行与记录</button>
-        <button class="goto" data-goto="measurement" data-topic="${t.id}">数据表（内部视图）</button>
+        <button class="goto" data-goto="analysis" data-topic="${t.id}">分析与数据</button>
       </div>
     </div>`;
   }).join("");
@@ -707,8 +707,7 @@ function renderLitTools() {
         <textarea id="bib-text" rows="4" placeholder="粘贴题录内容；同 DOI 已有条目会跳过并给定位"></textarea>
         <button class="primary" id="bib-import">导入题录</button>
         <p class="hint">Zotero 三模式如实区分：题录导入（本功能）/ 附件导入（右栏上传）/ 实时连接（未验证、未实现，不做假入口）。</p>
-      </details>
-      <div class="row"><button class="goto" data-goto="literature">旧版材料视图（开发调试）</button></div>`;
+      </details>`;
     $("#bib-import").addEventListener("click", (ev) => runBusy(ev.target, "导入题录", async () => {
       const r = await api.importBibliography($("#bib-format").value, $("#bib-text").value);
       $("#bib-text").value = "";

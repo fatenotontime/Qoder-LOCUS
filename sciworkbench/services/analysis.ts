@@ -525,6 +525,24 @@ export function failChat(state: LocusState, chatId: string, messageId: string, e
   return patchMessage(state, chatId, messageId, { status: "failed", error });
 }
 
+/**
+ * 启动恢复：job 仅在内存，服务重启后仍为 running 的消息已成孤儿 → 标失败可重试。
+ * 只在加载时调用（正常运行时不会误伤在途消息）。稳定优先：模型消息不悬挂。
+ */
+export function recoverInterruptedChats(state: LocusState): { state: LocusState; recovered: number } {
+  let recovered = 0;
+  const chats = state.chats.map((c) => {
+    if (!c.messages.some((m) => m.status === "running")) return c;
+    const messages = c.messages.map((m) => {
+      if (m.status !== "running") return m;
+      recovered++;
+      return { ...m, status: "failed" as const, error: "服务重启：任务中断，可重试。" };
+    });
+    return { ...c, messages };
+  });
+  return { state: { ...state, chats }, recovered };
+}
+
 export function cancelChat(state: LocusState, chatId: string, messageId: string): LocusState {
   const chat = state.chats.find((c) => c.id === chatId);
   const msg = chat?.messages.find((m) => m.id === messageId);

@@ -12,7 +12,7 @@ import {
   createAnalysisTask, setTaskCandidates, buildSnapshot, snapshotInput, applyRecommendation,
   submitResult, editResult, archiveResultFile, createReport,
   previewReportEdit, applyReportEdit, confirmReportBlock, draftReportBlocks,
-  createChat, chatScopeSnapshot, appendChatTurn, applyChatResponse, cancelChat, retryChat, adoptProposal,
+  createChat, chatScopeSnapshot, appendChatTurn, applyChatResponse, cancelChat, retryChat, adoptProposal, recoverInterruptedChats,
 } from "../services/analysis.ts";
 import { emptyState, MemoryStore, type LocusState } from "../store.ts";
 import { clearAiConfig } from "../services/ai.ts";
@@ -257,6 +257,25 @@ test("5E-6 采纳写入报告待验证：修订留历史并标来源", async () 
   assert.equal(r.state.reports[0].blocks[0].refs[0].label, `对话 ${cid} · 消息 ${turn.messageId}`);
   assert.equal(r.state.reports[0].revision, 2);
   assert.match(r.state.reports[0].history[0].reason, /人工确认/);
+});
+
+test("6C 稳定：服务重启后孤儿 running 消息标失败可重试（不悬挂）", async () => {
+  const w = await world();
+  let s = createChat(w.s, { topicId: w.topicId, scope: [{ kind: "execution", id: w.execId }] }).state;
+  const cid = s.chats[0].id;
+  const turn = appendChatTurn(s, cid, "问"); s = turn.state;
+  assert.equal(s.chats[0].messages.find((m) => m.id === turn.messageId)!.status, "running");
+  // 重启恢复：running → failed（可重试）
+  const rec = recoverInterruptedChats(s);
+  assert.equal(rec.recovered, 1);
+  const m = rec.state.chats[0].messages.find((x) => x.id === turn.messageId)!;
+  assert.equal(m.status, "failed");
+  assert.match(m.error!, /服务重启/);
+  // 无 running 时不误伤
+  assert.equal(recoverInterruptedChats(rec.state).recovered, 0);
+  // 之后可重试
+  s = retryChat(rec.state, cid, turn.messageId);
+  assert.equal(s.chats[0].messages.find((x) => x.id === turn.messageId)!.status, "running");
 });
 
 // ── 集成：真实路由 + 假模型（按任务分流）；推荐/对话/取消/采纳 ──

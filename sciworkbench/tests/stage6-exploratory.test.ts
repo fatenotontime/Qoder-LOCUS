@@ -9,7 +9,9 @@ import { createServer, type Server } from "node:http";
 import { rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { MemoryStore, JsonFileStore } from "../store.ts";
+import { MemoryStore, JsonFileStore, emptyState } from "../store.ts";
+import { createTopic } from "../services/app.ts";
+import { createChat, appendChatTurn } from "../services/analysis.ts";
 import { clearAiConfig } from "../services/ai.ts";
 
 // 内部测试包数据（逐字取自达尔文 1859 页 371–373；公有领域）
@@ -183,6 +185,28 @@ test("6B 重复 / 并发 / 失败恢复：幂等拒重、守卫 409、取消丢�
     st = await get("/api/state");
     assert.equal(st.chats[0].messages.find((m: any) => m.id === send.data.messageId).status, "done");
   } finally { app.close(); ai.server.close(); clearAiConfig(); }
+});
+
+test("6C 稳定：持久化的 running 模型消息在重启后标失败可重试（不悬挂）", async () => {
+  const { createApp } = await import("../server.ts");
+  const path = join(tmpdir(), `locus-6c-${Date.now()}.json`);
+  const store = new JsonFileStore(path);
+  let s = emptyState();
+  s = createTopic(s, { name: "重启", researchQuestion: "Q" }).state;
+  s = createChat(s, { topicId: s.topics[0].id, scope: [] }).state;
+  const cid = s.chats[0].id;
+  const turn = appendChatTurn(s, cid, "问"); s = turn.state; // 留下 running 助手消息
+  await store.save(s);
+  // 重启：新实例读同一文件 → 启动恢复
+  const app = await createApp(new JsonFileStore(path));
+  await new Promise<void>((r) => app.listen(0, "127.0.0.1", () => r()));
+  const base = `http://127.0.0.1:${(app.address() as import("node:net").AddressInfo).port}`;
+  const st = await (await fetch(`${base}/api/state`)).json() as any;
+  const m = st.chats[0].messages.find((x: any) => x.id === turn.messageId);
+  assert.equal(m.status, "failed");
+  assert.match(m.error, /服务重启/);
+  app.close();
+  rmSync(path, { force: true });
 });
 
 test("6B 中途离开：JsonFileStore 持久化；重启后恢复（含报告块与历史）", async () => {

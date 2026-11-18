@@ -66,7 +66,7 @@ import {
   submitResult, editResult, archiveResultFile, createReport,
   previewReportEdit, applyReportEdit, confirmReportBlock, draftReportBlocks,
   createChat, chatScopeSnapshot, chatHistoryInput, appendChatTurn, applyChatResponse,
-  failChat, cancelChat, retryChat, adoptProposal,
+  failChat, cancelChat, retryChat, adoptProposal, recoverInterruptedChats,
 } from "./services/analysis.ts";
 import { traverseNetwork, changeHits } from "./services/references.ts";
 import { buildReportDocx, buildTraceabilityPackage, buildWholeLibraryPackage, inspectLibraryJson, countsOf } from "./services/export.ts";
@@ -115,6 +115,11 @@ export interface Job {
 
 export async function createApp(store: Store) {
   let state: LocusState = await store.load();
+  // 启动恢复：服务重启后仍为 running 的模型消息成孤儿 → 标失败可重试（job 仅在内存）。
+  {
+    const rec = recoverInterruptedChats(state);
+    if (rec.recovered > 0) { state = rec.state; await store.save(state); }
+  }
   const jobs = new Map<string, Job>();
   // 任务身份/重复提交守卫：同一原件的方案解析同时只允许一个在跑 job。
   const parsingAssets = new Set<string>();
