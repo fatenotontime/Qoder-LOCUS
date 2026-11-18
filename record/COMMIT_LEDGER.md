@@ -37,10 +37,12 @@
 | S02-T17 | main | `e3e3f67` | 2026-11-18 00:23 | experiment-archify 合同接入（ADR-0019）＋缺口登记；[会话记录](sessions/2026-11-17_session-02.md) |
 | S02-T18 | main | `8c71b39` | 2026-11-18 13:10 | 两份内部测试包建立（达尔文可跑、密立根部分待件）；阶段6 计划与四理念落地顺序；[会话记录](sessions/2026-11-17_session-02.md) |
 | S02-T19 | — | 无提交 | — | 密立根包补齐（原件/定位/渲染；转录受阻如实标注；手写 CC BY 4.0 候选待下载）；[会话记录](sessions/2026-11-17_session-02.md) |
+| S02-T20 | main | `453f132` | 2026-11-18 17:40 | 阶段6 6A-1 报告块化（blocks 顺序/性质/固定引用/AI 草稿/块内历史；块级 diff→接受→新版本 409 并发；store v8 迁移）；164 测试通过；[会话记录](sessions/2026-11-17_session-02.md) |
 | 26 | `85ad505` · 2026-11-17 23:37、`6b4a27d` · 2026-11-17 23:41 | — | S02-T16 | 用户验收流程拍板与前端简洁化：**验收直进主页面**（删 `acceptance.html`/`acceptance.js`），课题展示右栏常驻「验收材料（未处理）」三项走真实路由；交付态＝隔离数据只含种子、样本已提交未处理，每轮先 `--force` 重置以免指纹防重 409，我方自验改在独立 scratch 实例；**文案硬规则**落地（≤4 字或架构术语、禁过度说明、保留硬标记）共 43 处＋术语表 `docs/stage5/04_UI_TERMS.md`，界面统一「分析初稿」；按用户架构表覆盖旧文档矛盾叙述（留原文对照）；162 测试通过 |
 | 27 | `e3e3f67` · 2026-11-18 00:23 | — | S02-T17 | experiment_archify 接入（用户提供草案路径→按 ADR-0019）：核实市场/社区/本机三处均无该技能；以通用合同 `docs/stage5/05_EXPERIMENT_ARCHIFY_CONTRACT.md` 为实验图规格（应用内实现），不安装上游 tt-a1i/archify、不冒充其 native finalize；技能原文/过程日志/私人案例参数不入公开仓库；图注新增估计排程取值假设；合同 10 条对照 6 符合/4 部分/1 未实现；162 测试通过 |
 | 28 | `8c71b39` · 2026-11-18 13:10 | — | S02-T18 | 阶段6 前置：按用户拍板自建**两份内部测试包**（不入产品样本）：达尔文种子浸盐水（研究闭环，原文 1859 页 370–373＋逐物件漂浮/萌发与传播量级两表）＋密立根油滴（手写/选择/计算/回查，1912 亲述全篇 421–444；逐滴数据与手写扫描件**待补占位**）；环境备注：gutenberg 503、archive.org 不可达、Wikisource 可用；`test-packages/` 入 `.gitignore` 仅本机内部用 |
 | 29 | 本轮无提交（内部测试包更新，不入库） | — | S02-T19 | 密立根包补齐：1913 原文入包（用户自 APS 下载）+ Table XX 定位（p.25 说明／p.30–31 表格）+ 渲染件；文本层与本地视觉模型均不可用 → 逐滴数据保持"待转录"（不臆造，给三条补齐途径）；手写样本找到 CC BY 4.0 Wellcome 三件（Crick/Horsley/Curie），下载遇 Wikimedia 429 限流待重试 |
+| 30 | `453f132` · 2026-11-18 17:40 | — | S02-T20 | 阶段6 **6A-1 分析初稿块化**：store v8 报告 `sections`→有序 `blocks`（`order`＋`nature` 观察/假设/解释/待验证/人工判断＋固定 `refs`〔kind/id/version〕＋`draft` AI 草稿标记＋块内 `history`）；`previewReportEdit`（纯函数、块级 diff：增/删/改〔含字段〕/顺序）→`applyReportEdit`（`baseRevision` 乐观并发 **409＋currentRevision**，不覆盖；改动块记块内历史）→`confirmReportBlock`（草稿人工确认）；`draftReportBlocks` 本地生成不调模型；`adoptProposal` 追加 `to_verify` 块；路由 `/api/reports/:id/preview\|apply\|blocks/:bid/confirm\|draft`；前端块编辑器＋diff 面板＋接受按钮；迁移 v2–v7→v8 按类展开、修订号不变、幂等；ADR-0020；`tests/analysis.test.ts`（5E-4/5E-6 改块＋6A-1 单元/路由）＋`web-loop.test.ts` v7 迁移断言，**164 测试通过**；Edge headless 启动渲染离屏复核。保守简化如实登记：块尚未单列 `contextList`、编辑为整份块级 |
 
 ## 2. 对话轮次索引
 
