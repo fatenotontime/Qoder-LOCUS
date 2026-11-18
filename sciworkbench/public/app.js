@@ -555,7 +555,7 @@ function renderLitTools(box) {
       ` : `<p class="hint">先选课题。</p>`}
       ${cmps.map((cmp) => `
         <div class="item cmp" data-id="${cmp.id}">
-          <div class="meta">快照 ${esc(cmp.snapshot.dataRevision.slice(0, 10))} · ${esc(cmp.snapshot.pinnedAt)}${cmp.reviewFlags.length ? ` · <span class="badge warn">需复核（${cmp.reviewFlags.length} 张卡已修改）</span>` : ""}</div>
+          <div class="meta">快照 ${esc(fmtTime(cmp.snapshot.pinnedAt))}${cmp.reviewFlags.length ? ` · <span class="badge warn">需复核（${cmp.reviewFlags.length} 张卡已修改）</span>` : ""}</div>
           <div class="hint">口径：筛选[${cmp.snapshot.filters.map(esc).join("、") || "—"}] 换算[${cmp.snapshot.conversions.map(esc).join("、") || "—"}] 排除[${cmp.snapshot.exclusions.map(esc).join("、") || "—"}]</div>
           ${cmp.groups.map((g) => `<div class="cmpgroup">
             <strong>${esc(g.name)}</strong> <span class="badge div-${g.divergence}">${DIV[g.divergence]}</span>
@@ -651,7 +651,7 @@ function fmtSnapshot(s) {
   lines.push(`条件：${s.conditions.join("、") || "（未写）"}`, `判据：${s.criteria || "（未写）"}`);
   if (s.unknowns.length) lines.push(`未知项：${s.unknowns.join("、")}`);
   if (s.sourceFragments.length) lines.push("方法来源片段：", ...s.sourceFragments.map((f) => `  「${f}」`));
-  lines.push(`（r${s.revision} · ${s.at} · 原因：${s.reason}）`);
+  lines.push(`（${fmtVersion(s.revision)} · ${fmtTime(s.at)} · 原因：${s.reason}）`);
   return lines.join("\n");
 }
 
@@ -867,7 +867,7 @@ function impactHtml(entityIds) {
       const dispLabel = disp === "failed" ? "评估失败（≠无影响）" : disp === "not_analyzed" ? "未分析/进行中" : disp === "needs_review" ? "需人工复核" : ASSESS[disp];
       return `<details class="mini imp" ${i === imps[0] ? "open" : ""}>
         <summary><span class="badge ${i.status === "failed" ? "exclude" : i.status === "stale" ? "warn" : i.status === "completed" ? "confirm" : "cand-pending"}">${STATUS[i.status]}</span>
-          ${esc(i.change.summary)} <span class="hint">${esc(i.createdAt)}</span></summary>
+          ${esc(i.change.summary)} <span class="hint">${esc(fmtTime(i.createdAt))}</span></summary>
         <div class="hint">结论口径：<strong>${esc(dispLabel)}</strong>${i.status === "stale" ? "（旧结论仅供历史查看，已有更新改动）" : ""}${i.error ? ` · 错误：${esc(i.error)}` : ""}</div>
         ${i.deterministic.timeShifts.length ? `<div class="hint">确定性时间传播：${esc(i.deterministic.note)}</div>
           <table class="grid"><thead><tr><th>步骤</th><th>平移(min)</th><th>主线总时长(min)</th></tr></thead><tbody>
@@ -1051,7 +1051,7 @@ function recordHtml() {
         const mOfS = meas.filter((m) => m.sampleId === s.id);
         return `<div class="smprow" data-id="${s.id}">
           <div class="row"><input class="smp-name" value="${esc(s.displayName)}" placeholder="名称" />
-            <span class="hint">编号 ${esc(s.shortName)}</span>
+            ${s.shortName !== s.displayName ? `<span class="hint">编号 ${esc(s.shortName)}</span>` : ""}
             <button class="smp-rename">改名</button></div>
           <div class="hint">总量：${esc(last?.amount.value ?? "—")} ${esc(last?.amount.unit ?? "")}${last?.amount.estimated ? "（估计）" : ""} · 拆分：${s.states.length} 个状态${last?.handling ? ` · 处理：${esc(last.handling)}` : ""}${last?.use ? ` · 用途：${esc(last.use)}` : ""}</div>
           <div class="hint">测量结果：${mOfS.length ? mOfS.map((m) => `${esc(m.value)}${esc(m.unit)}`).join("、") : "（无）"}</div>
