@@ -20,7 +20,7 @@ function restoreUi() {
   try {
     const s = JSON.parse(localStorage.getItem(UI_KEY) ?? "null");
     if (!s) return;
-    if (["topic", "papers", "knowledge", "protocol", "record", "analysis", "chat", "literature", "measurement"].includes(s.nav)) ui.nav = s.nav;
+    if (["topic", "papers", "knowledge", "protocol", "record", "analysis", "chat"].includes(s.nav)) ui.nav = s.nav;
     if (s.cardFilter === "all" || s.cardFilter === "pending" || s.cardFilter === "reviewed") ui.cardFilter = s.cardFilter;
     if (state.topics.some((t) => t.id === s.topicId)) ui.topicId = s.topicId;
     if (state.assets.some((a) => a.id === s.assetId)) ui.assetId = s.assetId;
@@ -161,8 +161,6 @@ function renderImportBox() {
     topic: "研究问题与待办",
     papers: "条目与附件；不强制解析",
     knowledge: "选文献＋写目的，才提取",
-    literature: "旧版材料视图（开发调试）",
-    measurement: "上传/粘贴 CSV",
     protocol: "上传原件直接解析；版本固定",
     record: "先准备稿，确认快照后再记录",
     analysis: "选上下文，推荐与验收项",
