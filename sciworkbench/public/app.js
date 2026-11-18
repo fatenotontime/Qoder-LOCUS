@@ -560,7 +560,7 @@ function topicTodosHtml() {
   if (mechCount) rows.push(`<div class="item"><div class="meta">机械草稿 ${mechCount} 张</div><p class="hint">旧逐段拆分，开发调试用，不计入语义知识。</p></div>`);
   rows.push(acceptancePanelHtml());
   rows.push(`<div class="item"><div class="meta">暂藏 / 未实现</div><p class="hint">未实现：Zotero 实时连接、实验图 AI 重排；手写 OCR 未验证。见 docs/stage5/02_HIDDEN_FEATURES.md。</p></div>`);
-  rows.push(`<div class="item"><div class="meta">导出与恢复</div><p class="hint">整体导出含 manifest；恢复在隔离文件校验，不覆盖主数据。</p><button id="lib-export">整体导出</button><input type="file" id="lib-restore-file" accept=".json"/><button id="lib-restore">隔离恢复校验</button><div class="refnet-body" id="lib-restore-out"></div></div>`);
+  rows.push(`<div class="item"><div class="meta">导出与恢复</div><p class="hint">导出含 manifest；恢复不覆盖主数据。</p><button id="lib-export">整体导出</button><input type="file" id="lib-restore-file" accept=".json"/><button id="lib-restore">隔离恢复校验</button><div class="refnet-body" id="lib-restore-out"></div></div>`);
   return rows.join("");
 }
 
@@ -1347,7 +1347,7 @@ function blockRowHtml(b, i) {
 
 function reportHtml(r) {
   return `<details class="mini rep" data-repid="${r.id}" ${r.id === ui.reportId ? "open" : ""}><summary>分析初稿 r${r.revision} · 钉住 ${r.pinned.resultIds.length} 结果${r.pinned.snapshotHash ? ` · 快照 ${r.pinned.snapshotHash.slice(0, 8)}…` : ""}</summary>
-    <p class="hint">块按顺序排列；每块标性质与固定引用。改动→预览 diff→接受为新版本。</p>
+    <p class="hint">块＝性质＋固定引用；改动→预览→新版本。</p>
     <div class="repblocks">${r.blocks.map(blockRowHtml).join("") || `<p class="hint">尚无块。</p>`}</div>
     <div class="repaddrow">
       <select class="rep-newnature">${REPORT_NATURES.map(([k, l]) => `<option value="${k}">${l}</option>`).join("")}</select>
