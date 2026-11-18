@@ -1446,6 +1446,56 @@ document.addEventListener("change", (ev) => {
 document.addEventListener("focusout", (ev) => {
   if (ev.target.classList.contains("kz-note")) { const cid = ev.target.dataset.cid; kzAct(() => api.reviewCard(cid, { note: ev.target.value }), "备注已记"); }
 });
+// 实验图（中栏）：点节点选择步骤 + 图下固定区编辑（保存追加新快照）
+document.addEventListener("click", (ev) => {
+  const t = ev.target;
+  if (t.classList.contains("dnode")) { if (ui.nav === "protocol") { ui.stepSel = t.closest(".dnode").dataset.step; renderMiddle(); } return; }
+  if (t.id === "step-cancel") { ui.stepSel = null; renderMiddle(); return; }
+  if (t.id === "step-add") {
+    const op = ($("#newstep-op")?.value ?? "").trim();
+    if (!op) { notify("mid", "新步骤操作名不能为空"); return; }
+    const p = currentProtocol(); const latest = p.revisions[p.revisions.length - 1];
+    runBusy(t, "添加步骤", async () => { await api.editProtocol(p.id, { steps: [...latest.steps, { op, durationMin: null, branch: null, estimated: false }], reason: `添加步骤：${op}` }); ui.dirty = false; await refresh(); setStatus(`已添加步骤（${fmtVersion(p.revision + 1)}）`); }); return;
+  }
+  if (t.id === "step-save") {
+    const p = currentProtocol(); const latest = p.revisions[p.revisions.length - 1];
+    const params = {};
+    for (const line of $("#se-params").value.split(/\n/)) { const i = line.indexOf("="); if (i > 0) params[line.slice(0, i).trim()] = line.slice(i + 1).trim(); }
+    const durRaw = $("#se-dur").value;
+    const edited = {
+      id: ui.stepSel === "new" ? undefined : ui.stepSel,
+      op: $("#se-op").value, params, note: $("#se-note").value,
+      durationMin: durRaw === "" ? null : Number(durRaw),
+      estimated: $("#se-est").checked, branch: $("#se-branch").value.trim() || null, observeEnd: $("#se-end").value,
+      branchFrom: $("#se-fork")?.value || null, mergeInto: $("#se-merge")?.value || null,
+    };
+    const steps = ui.stepSel === "new" ? [...latest.steps, edited] : latest.steps.map((s) => (s.id === ui.stepSel ? { ...s, ...edited, id: s.id } : s));
+    runBusy(t, "保存步骤", async () => { await api.editProtocol(p.id, { steps, reason: $("#se-reason").value }); ui.stepSel = null; ui.dirty = false; await refresh(); setStatus("步骤已保存（追加新快照，旧版本不动）"); }); return;
+  }
+});
+// 通用（中栏或右栏皆可）：修订/快照历史、方案导出 JSON、影响分析运行
+document.addEventListener("click", (ev) => {
+  const t = ev.target;
+  if (t.classList.contains("history-btn")) {
+    const item = t.closest(".item"); const id = item?.dataset.id; if (!id) return;
+    const obj = state.cards.find((c) => c.id === id) ?? state.tables.find((x) => x.id === id) ?? state.ocrs.find((o) => o.id === id) ?? state.measurements.find((m) => m.id === id) ?? state.papers.find((p) => p.id === id);
+    if (obj) { openHistory(obj); return; }
+    const p = state.protocols.find((x) => x.id === id);
+    if (p) { openHistory({ revision: p.revision, history: p.revisions.map((r) => ({ revision: r.revision, field: "整版快照", before: r.revision > 1 ? fmtVersion(r.revision - 1) : "—", after: `${r.steps.length} 步`, reason: r.reason, at: r.at })) }); return; }
+    return;
+  }
+  if (t.id === "proto-export") {
+    const p = currentProtocol(); if (!p) return;
+    const snap = viewSnapshot(p);
+    const blob = new Blob([JSON.stringify(snap, null, 2)], { type: "application/json" });
+    const aEl = document.createElement("a"); aEl.href = URL.createObjectURL(blob); aEl.download = `${p.name}_${fmtVersion(snap.revision)}.json`;
+    aEl.click(); URL.revokeObjectURL(aEl.href); setStatus("已导出当前快照 JSON"); return;
+  }
+  if (t.classList.contains("imp-run")) {
+    const iid = t.dataset.id;
+    runJob(t, "AI 影响评估", async () => { const r = await api.runImpact(iid); const res = await pollJob(r.jobId, "影响评估"); await refreshAfterJob(); setStatus(res.discarded ? "已有更新改动：旧评估被丢弃（stale 守卫）" : "影响评估完成"); }); return;
+  }
+});
 // 窄导航条：悬停显文字（title）；点击图标弹出完整导航抽屉
 function openNavDrawer() {
   $("#nd-list").innerHTML = NAV_ITEMS.map(([k, l]) => `<button class="nd-item ${k === ui.nav ? "active" : ""}" data-nav="${k}">${esc(l)}</button>`).join("");
@@ -1739,21 +1789,7 @@ $("#right-content").addEventListener("click", async (ev) => {
         ui.dirty = false; await refresh(); setStatus("补卡成功（manual，待核对）");
       }); return;
     }
-    if (ev.target.classList.contains("dnode")) { ui.stepSel = ev.target.closest(".dnode").dataset.step; renderRight(); return; }
     if (!item) return;
-    if (ev.target.classList.contains("history-btn")) {
-      const id = item.dataset.id;
-      const obj = state.cards.find((c) => c.id === id) ?? state.tables.find((t) => t.id === id)
-        ?? state.ocrs.find((o) => o.id === id) ?? state.measurements.find((m) => m.id === id)
-        ?? state.papers.find((p) => p.id === id);
-      if (obj) { openHistory(obj); return; }
-      const p = state.protocols.find((x) => x.id === id);
-      if (p) {
-        openHistory({ revision: p.revision, history: p.revisions.map((r) => ({ revision: r.revision, field: "整版快照", before: r.revision > 1 ? `r${r.revision - 1}` : "—", after: `${r.steps.length} 步`, reason: r.reason, at: r.at })) });
-        return;
-      }
-      return;
-    }
     if (ev.target.classList.contains("raw") && ev.target.classList.contains("linkable")) {
       const c = state.cards.find((x) => x.id === item.dataset.id); ui.highlight = c?.locator.sectionQuote || c?.rawText || null;
       if (ui.nav === "knowledge" && c) ui.assetId = c.assetId;
@@ -1810,43 +1846,6 @@ $("#right-content").addEventListener("click", async (ev) => {
       }); return;
     }
     // ── 4C 操作 ──
-    if (ev.target.id === "step-cancel") { ui.stepSel = null; renderRight(); return; }
-    if (ev.target.id === "step-add") {
-      const op = $("#newstep-op").value.trim();
-      if (!op) throw new Error("新步骤操作名不能为空");
-      const p = currentProtocol();
-      const latest = p.revisions[p.revisions.length - 1];
-      await runBusy(ev.target, "添加步骤", async () => {
-        await api.editProtocol(p.id, { steps: [...latest.steps, { op, durationMin: null, branch: null, estimated: false }], reason: `添加步骤：${op}` });
-        ui.dirty = false; await refresh(); setStatus(`已添加步骤（方案 r${p.revision + 1}）`);
-      }); return;
-    }
-    if (ev.target.id === "step-save") {
-      const p = currentProtocol();
-      const latest = p.revisions[p.revisions.length - 1];
-      const params = {};
-      for (const line of $("#se-params").value.split(/\n/)) { const i = line.indexOf("="); if (i > 0) params[line.slice(0, i).trim()] = line.slice(i + 1).trim(); }
-      const durRaw = $("#se-dur").value;
-      const edited = {
-        id: ui.stepSel === "new" ? undefined : ui.stepSel,
-        op: $("#se-op").value, params, note: $("#se-note").value,
-        durationMin: durRaw === "" ? null : Number(durRaw),
-        estimated: $("#se-est").checked, branch: $("#se-branch").value.trim() || null, observeEnd: $("#se-end").value,
-        branchFrom: $("#se-fork")?.value || null, mergeInto: $("#se-merge")?.value || null,
-      };
-      const steps = ui.stepSel === "new" ? [...latest.steps, edited] : latest.steps.map((s) => (s.id === ui.stepSel ? { ...s, ...edited, id: s.id } : s));
-      await runBusy(ev.target, "保存步骤", async () => {
-        await api.editProtocol(p.id, { steps, reason: $("#se-reason").value });
-        ui.stepSel = null; ui.dirty = false; await refresh(); setStatus("步骤已保存（追加新快照，旧版本不动）");
-      }); return;
-    }
-    if (ev.target.id === "proto-export") {
-      const p = currentProtocol();
-      const blob = new Blob([JSON.stringify(viewSnapshot(p), null, 2)], { type: "application/json" });
-      const aEl = document.createElement("a");
-      aEl.href = URL.createObjectURL(blob); aEl.download = `${p.name}_r${viewSnapshot(p).revision}.json`;
-      aEl.click(); URL.revokeObjectURL(aEl.href); setStatus("已导出当前快照 JSON"); return;
-    }
     if (ev.target.id === "proto-save") {
       const p = currentProtocol();
       await runBusy(ev.target, "保存方案元信息", async () => {
@@ -1870,15 +1869,6 @@ $("#right-content").addEventListener("click", async (ev) => {
       await runBusy(ev.target, "生成模板", async () => {
         await api.createTemplate({ protocolId: ui.protocolId, aiDraft: $("#tmpl-ai").checked });
         ui.dirty = false; await refresh(); setStatus("模板已生成（固定当前方案版本；AI 草稿须人工确认）");
-      }); return;
-    }
-    if (ev.target.classList.contains("imp-run")) {
-      const iid = ev.target.dataset.id;
-      await runJob(ev.target, "AI 影响评估", async () => {
-        const r = await api.runImpact(iid);
-        const res = await pollJob(r.jobId, "影响评估");
-        await refreshAfterJob();
-        setStatus(res.discarded ? "已有更新改动：旧评估被丢弃（stale 守卫）" : "影响评估完成");
       }); return;
     }
     if (ev.target.id === "prep-add") { ui.prepExtra += 1; renderRight(); return; }
