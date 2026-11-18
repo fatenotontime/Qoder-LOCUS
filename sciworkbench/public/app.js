@@ -3,16 +3,25 @@
 // 防护：所有写操作禁用按钮 + 处理中提示 + 内联错误 + 可重试；离开前脏检查。
 import { api } from "./lib/api.js";
 import { computeLanes, timeLabel } from "./lib/lanes.js";
+import { fmtTime, fmtEnum, fmtVersion, fmtNameOnce } from "./lib/format.js";
+import {
+  topbarTopicHtml, emptyTopicGuideHtml, navHtml, panelErrorHtml, sidebarListHtml,
+  topicOverviewHtml, topicTodosHtml, subqBlockHtml,
+} from "./lib/views.js";
 
 let state = { topics: [], subquestions: [], assets: [], papers: [], attachments: [], cards: [], tables: [], adoptions: [], mappings: [], comparisons: [], protocols: [], templates: [], executions: [], samples: [], measurements: [], impacts: [], ocrs: [], analysisTasks: [], analysisResults: [], reports: [], chats: [] };
-const ui = { nav: "topic", topicId: "", assetId: null, paperId: null, attId: null, tableId: null, highlight: null, cell: null, dirty: false, busy: false, cardFilter: "all", groupSel: new Set(), batch: null, ack: false, protocolId: null, executionId: null, stepSel: null, viewRev: null, editEventId: null, pauseSuggest: null, prepExtra: 0, taskId: null, chatId: null, reportId: null };
+const ui = { nav: "topic", topicId: "", assetId: null, paperId: null, attId: null, tableId: null, highlight: null, cell: null, dirty: false, busy: false, cardFilter: "all", groupSel: new Set(), batch: null, ack: false, protocolId: null, executionId: null, stepSel: null, viewRev: null, editEventId: null, pauseSuggest: null, prepExtra: 0, taskId: null, chatId: null, reportId: null, navCollapsed: false };
 let lastAction = null; // { label, run }
+
+// A2 分区报错：只在触发它的面板内显示（left/mid/right），可关闭、带重试。
+const errors = { left: null, mid: null, right: null };
+const PANEL_OF = (el) => { const p = el?.closest?.(".pane"); return p ? (p.classList.contains("left") ? "left" : p.classList.contains("right") ? "right" : "mid") : "mid"; };
 
 // 选择态持久（仅非敏感 UI 选择：页签/课题/材料/表块），刷新后归属正确。
 const UI_KEY = "locus.ui.v2"; // 阶段5 重构：七入口导航，旧选择态作废，默认落课题首页
 let uiRestored = false;
 function saveUi() {
-  try { localStorage.setItem(UI_KEY, JSON.stringify({ nav: ui.nav, topicId: ui.topicId, assetId: ui.assetId, paperId: ui.paperId, tableId: ui.tableId, cardFilter: ui.cardFilter, protocolId: ui.protocolId, executionId: ui.executionId, taskId: ui.taskId, chatId: ui.chatId, reportId: ui.reportId })); } catch {}
+  try { localStorage.setItem(UI_KEY, JSON.stringify({ nav: ui.nav, topicId: ui.topicId, assetId: ui.assetId, paperId: ui.paperId, tableId: ui.tableId, cardFilter: ui.cardFilter, protocolId: ui.protocolId, executionId: ui.executionId, taskId: ui.taskId, chatId: ui.chatId, reportId: ui.reportId, navCollapsed: ui.navCollapsed })); } catch {}
 }
 function restoreUi() {
   if (uiRestored) return;
@@ -31,6 +40,7 @@ function restoreUi() {
     if (state.analysisTasks.some((t) => t.id === s.taskId)) ui.taskId = s.taskId;
     if (state.chats.some((c) => c.id === s.chatId)) ui.chatId = s.chatId;
     if (state.reports.some((r) => r.id === s.reportId)) ui.reportId = s.reportId;
+    if (typeof s.navCollapsed === "boolean") ui.navCollapsed = s.navCollapsed;
   } catch {}
 }
 
@@ -45,6 +55,8 @@ async function refresh() {
   if (ui.assetId && !state.assets.some((a) => a.id === ui.assetId)) ui.assetId = null;
   if (ui.tableId && !state.tables.some((t) => t.id === ui.tableId)) ui.tableId = null;
   if (ui.topicId && !state.topics.some((t) => t.id === ui.topicId)) ui.topicId = "";
+  // A1：有课题即自动落到第一个（单课题自动选中；多课题默认首项，可页头切换）；无课题由中间区引导创建。
+  if (!ui.topicId && state.topics.length >= 1) ui.topicId = state.topics[0].id;
   if (ui.protocolId && !state.protocols.some((p) => p.id === ui.protocolId)) ui.protocolId = null;
   if (ui.executionId && !state.executions.some((e) => e.id === ui.executionId)) ui.executionId = null;
   if (ui.paperId && !state.papers.some((p) => p.id === ui.paperId)) { ui.paperId = null; ui.attId = null; }
@@ -66,16 +78,22 @@ async function readTextFile(file) {
   else if (u8[0] === 0xfe && u8[1] === 0xff) enc = "utf-16be";
   return new TextDecoder(enc).decode(buf).replace(/^\uFEFF/, "");
 }
-function showBanner(msg, retry) {
-  const b = $("#banner"); b.hidden = false; b.className = "banner error";
-  b.innerHTML = `<span>${esc(msg)}</span>`;
-  if (retry) {
-    const btn = document.createElement("button"); btn.textContent = "重试"; btn.className = "primary";
-    btn.addEventListener("click", async () => { hideBanner(); if (ui.busy) return; try { await retry(); } catch (e) { showBanner(String(e.message ?? e), retry); } });
-    b.appendChild(btn);
-  }
+/** 人话错误：把原始报错翻译成可读文案，原始信息进「详情」。 */
+function humanError(e) {
+  const raw = String(e?.message ?? e ?? "");
+  if (/fetch failed|Failed to fetch|NetworkError|ECONNREFUSED|ETIMEDOUT|ENOTFOUND/i.test(raw)) return { message: "连不上服务或模型，请检查网络与地址。", detail: raw };
+  if (/401|403|unauthor|key/i.test(raw)) return { message: "认证失败：请检查 Key。", detail: raw };
+  if (/429/.test(raw)) return { message: "请求过多（限流），请稍后重试。", detail: raw };
+  if (/timeout|超时/i.test(raw)) return { message: "请求超时，请重试或调大超时。", detail: raw };
+  return { message: raw || "操作失败。", detail: raw };
 }
-function hideBanner() { $("#banner").hidden = true; }
+function setError(panel, err) { errors[panel] = err; renderErrors(); }
+const notify = (panel, message, detail) => setError(panel, { panel, message, detail: detail ?? "", retry: null });
+function clearError(panel) { errors[panel] = null; renderErrors(); }
+function clearAllErrors() { errors.left = errors.mid = errors.right = null; renderErrors(); }
+function renderErrors() {
+  for (const p of ["left", "mid", "right"]) { const el = $("#err-" + p); if (el) el.innerHTML = panelErrorHtml(errors[p]); }
+}
 
 /** 证据可达：科学改动后，就地提示命中的报告块/分析（需复核，不自动改）。失败不阻断保存。 */
 async function noteChangeHits(kind, id, fields) {
@@ -87,39 +105,34 @@ async function noteChangeHits(kind, id, fields) {
   const tasks = r.byKind?.task ?? [];
   const results = r.byKind?.result ?? [];
   if (!blocks.length && !tasks.length && !results.length) { setStatus("改动已保存（暂无引用它的分析/报告块）"); return; }
-  const b = $("#banner"); b.hidden = false; b.className = "banner info";
   const parts = [];
   if (blocks.length) parts.push(`报告块 ${blocks.length}`);
   if (tasks.length) parts.push(`分析任务 ${tasks.length}`);
   if (results.length) parts.push(`结果 ${results.length}`);
-  b.innerHTML = `<span>改数值命中：${parts.join("、")}（需复核，不自动改）</span>`;
   const rep = blocks.length ? state.reports.find((rp) => rp.blocks.some((bl) => bl.id === blocks[0].id)) : null;
-  if (rep) {
-    const btn = document.createElement("button"); btn.textContent = "去复核"; btn.className = "primary";
-    btn.addEventListener("click", () => { hideBanner(); ui.nav = "analysis"; ui.reportId = rep.id; if (rep.taskId) ui.taskId = rep.taskId; renderAll(); });
-    b.appendChild(btn);
-  }
+  setError("right", { panel: "right", message: `改数值命中：${parts.join("、")}（需复核，不自动改）`, detail: (r.hits ?? []).map((h) => h.reason).join("\n"), retry: rep ? () => { clearAllErrors(); ui.nav = "analysis"; ui.reportId = rep.id; if (rep.taskId) ui.taskId = rep.taskId; renderAll(); } : null });
 }
 
 /** 所有写操作：禁用按钮 + 处理中 + 错误内联 + 可重试。 */
 async function runBusy(btn, label, fn) {
   if (ui.busy) return;
-  ui.busy = true; hideBanner();
+  ui.busy = true;
+  const panel = PANEL_OF(btn); clearError(panel);
   const old = btn?.textContent; if (btn) { btn.disabled = true; btn.textContent = "处理中…"; }
   lastAction = { label, run: () => runBusy(btn, label, fn) };
   setStatus(`${label}…`);
   try { await fn(); }
-  catch (e) { showBanner(`${label}失败：${e.message ?? e}`, lastAction.run); }
+  catch (e) { const h = humanError(e); setError(panel, { panel, message: `${label}失败：${h.message}`, detail: h.detail, retry: lastAction.run }); }
   finally { ui.busy = false; if (btn) { btn.disabled = false; btn.textContent = old; } }
 }
 
 /** 后台 job 专用：只禁用发起按钮，不锁全局——等待期可继续编辑（后端合并写回保证不覆盖）。 */
 async function runJob(btn, label, fn) {
-  hideBanner();
+  const panel = PANEL_OF(btn); clearError(panel);
   const old = btn?.textContent; if (btn) { btn.disabled = true; btn.textContent = "后台运行中…"; }
   setStatus(`${label}…`);
   try { await fn(); }
-  catch (e) { showBanner(`${label}失败：${e.message ?? e}`, () => runJob(btn, label, fn)); }
+  catch (e) { const h = humanError(e); setError(panel, { panel, message: `${label}失败：${h.message}`, detail: h.detail, retry: () => runJob(btn, label, fn) }); }
   finally { if (btn) { btn.disabled = false; btn.textContent = old; } }
 }
 
@@ -134,38 +147,33 @@ function guardLeave() {
 
 function renderAll() {
   if ($("#status").textContent === "连接中…") setStatus("就绪");
-  $$(".navitem").forEach((x) => x.classList.toggle("active", x.dataset.nav === ui.nav));
-  $("#sec-subq").hidden = ui.nav !== "topic";
-  $("#topic-create-box").hidden = ui.nav !== "topic";
-  $("#sec-materials").hidden = ui.nav === "topic";
-  $("#materials-title").textContent = { papers: "论文条目", knowledge: "选择文献", protocol: "方案", record: "执行", analysis: "分析任务", chat: "对话会话" }[ui.nav] ?? "材料";
-  renderTopics(); renderSubq(); renderImportBox(); renderMaterials(); renderLitTools(); renderMiddle(); renderRight();
+  renderShell();
+  renderMiddle(); renderRight();
   saveUi();
 }
 
-function renderTopics() {
-  $("#topic-select").innerHTML = [`<option value="">（全部课题）</option>`]
-    .concat(state.topics.map((t) => `<option value="${t.id}" ${t.id === ui.topicId ? "selected" : ""}>${esc(t.name)}</option>`)).join("");
+/** 外壳：页头当前课题、侧栏（导航＋本页列表）、中间「＋新建」区、分区报错。 */
+function renderShell() {
+  $("#curtopic").innerHTML = topbarTopicHtml(state, ui);
+  $("#nav").innerHTML = navHtml(ui, ui.navCollapsed);
+  $("#nav").classList.toggle("collapsed", !!ui.navCollapsed);
+  $("#sec-materials").hidden = ui.nav === "topic";
+  $("#materials-title").textContent = { papers: "论文条目", knowledge: "选择文献", protocol: "方案", record: "执行", analysis: "分析任务", chat: "对话会话" }[ui.nav] ?? "材料";
+  $("#material-list").innerHTML = sidebarListHtml(state, ui);
+  renderCreateArea();
+  renderErrors();
 }
-function renderSubq() {
-  const list = state.subquestions.filter((s) => !ui.topicId || s.topicId === ui.topicId);
-  $("#subq-list").innerHTML = list.length
-    ? list.map((s) => `<li class="${s.kind}">${esc(s.question)} <span class="hint">(${s.kind})</span></li>`).join("")
-    : `<li class="hint">暂无子问题${ui.topicId ? "" : "（先选课题）"}</li>`;
+
+/** 中间「＋新建」区：本页的新建/上传表单与工具（不再放侧栏）。 */
+function renderCreateArea() {
+  const box = $("#create-area"), tools = $("#tools-area");
+  if (ui.nav === "topic") { box.innerHTML = ""; tools.innerHTML = ""; return; }
+  box.innerHTML = ""; tools.innerHTML = "";
+  renderImportBox(box);
+  renderLitTools(tools);
 }
-function renderImportBox() {
-  const hints = {
-    topic: "研究问题与待办",
-    papers: "条目与附件；不强制解析",
-    knowledge: "选文献＋写目的，才提取",
-    protocol: "上传原件直接解析；版本固定",
-    record: "先准备稿，确认快照后再记录",
-    analysis: "选上下文，推荐与验收项",
-    chat: "带上下文讨论；采纳需确认",
-  };
-  $("#nav-hint").textContent = hints[ui.nav] ?? "";
-  const box = $("#import-box");
-  if (ui.nav === "topic") { box.innerHTML = ""; return; }
+
+function renderImportBox(box) {
   if (ui.nav === "papers") { renderPaperForm(box); return; }
   if (ui.nav === "knowledge") { renderKnowledgeForm(box); return; }
   if (ui.nav === "protocol") { renderProtocolImport(box); return; }
@@ -174,84 +182,14 @@ function renderImportBox() {
   if (ui.nav === "chat") { renderChatForm(box); return; }
   box.innerHTML = "";
 }
-function renderMaterials() {
-  const box = $("#material-list");
-  if (ui.nav === "topic") { box.innerHTML = ""; return; }
-  if (ui.nav === "papers" || ui.nav === "knowledge") {
-    const ps = state.papers.filter((p) => !ui.topicId || p.topicIds.includes(ui.topicId) || !p.topicIds.length);
-    box.innerHTML = ps.length
-      ? ps.map((p) => {
-          const nAtt = state.attachments.filter((a) => a.paperId === p.id).length;
-          const nCard = state.cards.filter((c) => c.paperId === p.id).length;
-          const sel = ui.nav === "papers" ? p.id === ui.paperId : p.id === ui.paperId;
-          return `<div class="material ${sel ? "active" : ""}" data-paperid="${p.id}">
-            <div class="m-title">${esc(p.title)}</div>
-            <div class="m-meta">${p.year ? esc(p.year) + " · " : ""}${nAtt} 附件 · ${nCard} 卡${p.doi ? " · DOI " + esc(p.doi) : ""}</div>
-          </div>`;
-        }).join("")
-      : `<p class="hint">暂无论文条目。${ui.nav === "papers" ? "在上方新建或导入题录。" : "先在「文献整理」建立条目并导入附件。"}</p>`;
-    return;
-  }
-  if (ui.nav === "protocol") {
-    const ps = state.protocols.filter((p) => !ui.topicId || p.topicId === ui.topicId);
-    box.innerHTML = ps.length
-      ? ps.map((p) => `<div class="material ${p.id === ui.protocolId ? "active" : ""}" data-pid="${p.id}">
-          <div class="m-title">${esc(p.name)}</div>
-          <div class="m-meta">r${p.revision} · ${p.sourceKind === "user" ? "用户编写" : p.sourceKind === "reconstructed" ? "重构（已标来源）" : "AI 草稿"} · ${p.revisions[p.revisions.length - 1].steps.length} 步</div>
-        </div>`).join("")
-      : `<p class="hint">本课题暂无方案。先创建或从文献解析。</p>`;
-    return;
-  }
-  if (ui.nav === "record") {
-    const es = state.executions.filter((e) => !ui.topicId || e.topicId === ui.topicId);
-    const STATUS = { active: "进行中", paused: "已暂停", done: "已结束" };
-    box.innerHTML = es.length
-      ? es.map((e) => {
-          const p = state.protocols.find((x) => x.id === e.protocolId);
-          const prep = (e.phase ?? "recording") === "preparing";
-          return `<div class="material ${e.id === ui.executionId ? "active" : ""}" data-eid="${e.id}">
-            <div class="m-title">${esc(p?.name ?? e.protocolId)} <span class="badge ${prep ? "cand-pending" : e.status === "paused" ? "warn" : e.status === "active" ? "confirm" : ""}">${prep ? "准备稿" : STATUS[e.status]}</span></div>
-            <div class="m-meta">固定 r${e.protocolRevision}${prep ? ` · ${e.preparation?.adjustments.length ?? 0} 条差异待确认` : ` · ${e.events.length} 事件`}${e.templateId ? " · 用模板" : ""}</div>
-          </div>`;
-        }).join("")
-      : `<p class="hint">暂无执行。选择方案（及已确认模板）后创建，进入准备稿。</p>`;
-    return;
-  }
-  if (ui.nav === "analysis") {
-    const ts = state.analysisTasks.filter((t) => !ui.topicId || t.topicId === ui.topicId);
-    box.innerHTML = ts.length
-      ? ts.map((t) => {
-          const inc = t.optional.filter((o) => o.included).length;
-          return `<div class="material ${t.id === ui.taskId ? "active" : ""}" data-atid="${t.id}">
-            <div class="m-title">${esc(t.title)} ${t.recommendation ? `<span class="badge confirm">已推荐</span>` : `<span class="badge cand-pending">待推荐</span>`}</div>
-            <div class="m-meta">核心 ${t.core.length} · 候选 ${inc}/${t.optional.length} · 结果 ${t.resultIds.length}${t.snapshot ? " · 快照已冻结" : ""}</div>
-          </div>`;
-        }).join("")
-      : `<p class="hint">暂无分析任务。先选课题，再从执行/测量/数据表建任务。</p>`;
-    return;
-  }
-  if (ui.nav === "chat") {
-    const cs = state.chats.filter((c) => !ui.topicId || c.topicId === ui.topicId);
-    box.innerHTML = cs.length
-      ? cs.map((c) => {
-          const q = state.subquestions.find((x) => x.id === c.subquestionId);
-          const running = c.messages.some((m) => m.status === "running");
-          return `<div class="material ${c.id === ui.chatId ? "active" : ""}" data-cid="${c.id}">
-            <div class="m-title">${esc(q ? q.question : topicName(c.topicId) ?? "课题对话")} ${running ? `<span class="badge warn">运行中</span>` : ""}</div>
-            <div class="m-meta">范围 ${c.scope.length} 对象${c.subquestionId ? " ＋ 子问题" : ""} · ${c.messages.length} 条消息</div>
-          </div>`;
-        }).join("")
-      : `<p class="hint">暂无对话。选课题后可加子问题与显式对象范围，再创建会话。</p>`;
-    return;
-  }
-  box.innerHTML = "";
-}
 function renderMiddle() {
   const note = $("#mid-note"), content = $("#mid-content");
   if (ui.nav === "topic") {
-    $("#mid-title").textContent = "课题总览";
+    $("#mid-title").textContent = "课题";
     note.hidden = true;
-    content.innerHTML = topicOverviewHtml();
+    content.innerHTML = state.topics.length
+      ? topicOverviewHtml(state, ui) + subqBlockHtml(state, ui)
+      : emptyTopicGuideHtml();
     return;
   }
   if (ui.nav === "papers") {
@@ -341,7 +279,7 @@ function renderMiddle() {
   content.textContent = "在左栏选择工作对象。";
 }
 function renderRight() {
-  if (ui.nav === "topic") { $("#right-title").textContent = "待办与入口"; $("#right-content").innerHTML = topicTodosHtml(); return; }
+  if (ui.nav === "topic") { $("#right-title").textContent = "待办与入口"; $("#right-content").innerHTML = topicTodosHtml(state, ui) + acceptancePanelHtml() + exportRestoreHtml(); return; }
   if (ui.nav === "papers") { $("#right-title").textContent = "条目与附件"; $("#right-content").innerHTML = paperHtml(); return; }
   if (ui.nav === "knowledge") {
     $("#right-title").textContent = "知识卡（独立人工审阅）";
@@ -467,59 +405,6 @@ function currentAttachment() {
   return atts.find((a) => a.id === ui.attId) ?? atts[0] ?? null;
 }
 
-/** 课题首页总览：研究问题＋各对象进度；不堆审计字段。 */
-function topicOverviewHtml() {
-  const ts = ui.topicId ? state.topics.filter((t) => t.id === ui.topicId) : state.topics;
-  if (!ts.length) return `<div class="item"><p class="hint">还没有课题。在左栏「新建课题」填写名称与研究问题即可开始——不需要先准备任何材料。</p></div>`;
-  return ts.map((t) => {
-    const papers = state.papers.filter((p) => p.topicIds.includes(t.id));
-    const paperIds = new Set(papers.map((p) => p.id));
-    const cards = state.cards.filter((c) => paperIds.has(c.paperId) || state.assets.find((a) => a.id === c.assetId)?.topicId === t.id);
-    const confirmed = cards.filter((c) => c.audit === "confirm").length;
-    const adopted = state.adoptions.filter((a) => a.decision === "adopt" && state.subquestions.find((q) => q.id === a.subquestionId)?.topicId === t.id).length;
-    const protos = state.protocols.filter((p) => p.topicId === t.id);
-    const execs = state.executions.filter((e) => e.topicId === t.id);
-    const tables = state.tables.filter((x) => state.assets.find((a) => a.id === x.assetId)?.topicId === t.id);
-    const subqs = state.subquestions.filter((q) => q.topicId === t.id);
-    return `<div class="item topiccard" data-id="${t.id}">
-      <div class="meta"><strong>${esc(t.name)}</strong></div>
-      <div>研究问题：${esc(t.researchQuestion)}</div>
-      <div class="hint">子问题 ${subqs.length} · 论文 ${papers.length} · 知识卡 ${cards.length}（已确认 ${confirmed} · 按任务采用 ${adopted}）</div>
-      <div class="hint">方案 ${protos.length} · 执行 ${execs.length}（进行中 ${execs.filter((e) => e.status === "active").length} · 暂停 ${execs.filter((e) => e.status === "paused").length} · 结束 ${execs.filter((e) => e.status === "done").length}）· 数据表 ${tables.length}</div>
-      <div class="row">
-        <button class="goto" data-goto="papers" data-topic="${t.id}">文献整理</button>
-        <button class="goto" data-goto="knowledge" data-topic="${t.id}">领域知识</button>
-        <button class="goto" data-goto="protocol" data-topic="${t.id}">实验方案</button>
-        <button class="goto" data-goto="record" data-topic="${t.id}">执行与记录</button>
-        <button class="goto" data-goto="analysis" data-topic="${t.id}">分析与数据</button>
-      </div>
-    </div>`;
-  }).join("");
-}
-
-/** 待办：只列需要人动作的事；入口直达对应工作区。 */
-function topicTodosHtml() {
-  const inTopic = (topicId) => !ui.topicId || topicId === ui.topicId;
-  const pendingCards = state.cards.filter((c) => ["unreviewed", "need_info"].includes(c.audit) && !c.mechanical && inTopic(state.papers.find((p) => p.id === c.paperId)?.topicIds[0] ?? state.assets.find((a) => a.id === c.assetId)?.topicId));
-  const mechCount = state.cards.filter((c) => c.mechanical).length;
-  const draftProtos = state.protocols.filter((p) => p.sourceKind === "ai-draft" && inTopic(p.topicId));
-  const unconfTmpls = state.templates.filter((t) => !t.humanConfirmed && inTopic(state.protocols.find((p) => p.id === t.protocolId)?.topicId));
-  const liveExecs = state.executions.filter((e) => e.status !== "done" && (e.phase ?? "recording") !== "preparing" && inTopic(e.topicId));
-  const prepExecs = state.executions.filter((e) => (e.phase ?? "recording") === "preparing" && inTopic(e.topicId));
-  const rows = [];
-  if (pendingCards.length) rows.push(`<div class="item"><div class="meta">待审知识卡 ${pendingCards.length} 张</div><p class="hint">须人工核对。</p><button class="goto" data-goto="knowledge">去审阅</button></div>`);
-  if (draftProtos.length) rows.push(`<div class="item"><div class="meta">AI 方案草稿 ${draftProtos.length} 份待确认</div><button class="goto" data-goto="protocol">去确认</button></div>`);
-  if (unconfTmpls.length) rows.push(`<div class="item"><div class="meta">记录模板 ${unconfTmpls.length} 份待人工确认</div><button class="goto" data-goto="protocol">去确认</button></div>`);
-  if (prepExecs.length) rows.push(`<div class="item"><div class="meta">执行准备稿 ${prepExecs.length} 份待确认快照</div><p class="hint">确认快照后再记录。</p><button class="goto" data-goto="record">去确认</button></div>`);
-  if (liveExecs.length) rows.push(`<div class="item"><div class="meta">进行中/暂停的执行 ${liveExecs.length} 个</div><button class="goto" data-goto="record">去记录</button></div>`);
-  if (!rows.length) rows.push(`<div class="item"><p class="hint">当前没有待办。</p></div>`);
-  if (mechCount) rows.push(`<div class="item"><div class="meta">机械草稿 ${mechCount} 张</div><p class="hint">旧逐段拆分，开发调试用，不计入语义知识。</p></div>`);
-  rows.push(acceptancePanelHtml());
-  rows.push(`<div class="item"><div class="meta">暂藏 / 未实现</div><p class="hint">未实现：Zotero 实时连接、实验图 AI 重排；手写 OCR 未验证。见 docs/stage5/02_HIDDEN_FEATURES.md。</p></div>`);
-  rows.push(`<div class="item"><div class="meta">导出与恢复</div><p class="hint">导出含 manifest；恢复不覆盖主数据。</p><button id="lib-export">整体导出</button><input type="file" id="lib-restore-file" accept=".json"/><button id="lib-restore">隔离恢复校验</button><div class="refnet-body" id="lib-restore-out"></div></div>`);
-  return rows.join("");
-}
-
 /** 验收材料（常驻，未处理）：样本已在库，点按钮走真实路由；解析/提取由用户自行发起。 */
 const ACC_MATERIALS = [
   { key: "paper", label: "导入文献", file: "samples/paper-laccase-btb-2026.md", src: "PMC13566542 · CC BY 4.0",
@@ -534,16 +419,18 @@ function acceptancePanelHtml() {
     <p class="hint">导入后自行发起解析／提取。</p>
   </details>`;
 }
+function exportRestoreHtml() {
+  return `<details class="mini"><summary>导出与恢复</summary>
+    <p class="hint">导出含 manifest；恢复不覆盖主数据。</p>
+    <button id="lib-export">整体导出</button>
+    <input type="file" id="lib-restore-file" accept=".json"/>
+    <button id="lib-restore">隔离恢复校验</button>
+    <div class="refnet-body" id="lib-restore-out"></div></details>`;
+}
 
-/** 409 不死路：给出已有条目定位按钮。 */
+/** 409 不死路：给出已有条目定位按钮（用分区报错承载）。 */
 function showLocate(msg, paperId) {
-  const b = $("#banner"); b.hidden = false; b.className = "banner info";
-  b.innerHTML = `<span>${esc(msg)}</span>`;
-  if (paperId) {
-    const btn = document.createElement("button"); btn.textContent = "定位已有条目"; btn.className = "primary";
-    btn.addEventListener("click", () => { hideBanner(); ui.paperId = paperId; ui.attId = null; renderAll(); });
-    b.appendChild(btn);
-  }
+  setError("right", { panel: "right", message: msg, detail: "", retry: paperId ? () => { clearAllErrors(); ui.paperId = paperId; ui.attId = null; renderAll(); } : null });
 }
 
 function renderPaperForm(box) {
@@ -652,8 +539,7 @@ function renderKnowledgeForm(box) {
 }
 
 /** 左栏文献工具：命名映射 + 条件比较（仅文献导航显示）。 */
-function renderLitTools() {
-  const box = $("#lit-tools");
+function renderLitTools(box) {
   if (ui.nav === "record") { renderRecordTools(box); return; }
   if (ui.nav === "papers") {
     box.innerHTML = `
@@ -817,7 +703,7 @@ async function pollJob(jobId, label) {
 /** 后台任务完成后的刷新：若有未保存编辑，不静默丢弃，改为提示后再由用户决定。 */
 async function refreshAfterJob() {
   if (ui.dirty) {
-    showBanner("后台任务已完成，但当前有未保存编辑（未刷新，以免丢弃）。保存或放弃后再刷新查看结果。");
+    notify("mid", "后台任务已完成，但当前有未保存编辑（未刷新，以免丢弃）。保存或放弃后再刷新查看结果。");
     return;
   }
   await refresh();
@@ -1490,22 +1376,40 @@ document.addEventListener("click", (ev) => {
   renderAll();
 });
 $("#nav").addEventListener("click", (ev) => {
+  if (ev.target.closest("#nav-toggle")) { ui.navCollapsed = !ui.navCollapsed; saveUi(); renderShell(); return; }
   const b = ev.target.closest(".navitem"); if (!b || b.disabled) return;
   if (!guardLeave()) return;
+  clearAllErrors();
   ui.nav = b.dataset.nav; ui.highlight = null; ui.cell = null; ui.tableId = null; ui.groupSel.clear(); ui.batch = null; ui.ack = false;
   ui.stepSel = null; ui.viewRev = null; ui.editEventId = null; ui.pauseSuggest = null; ui.prepExtra = 0;
-  $$(".navitem").forEach((x) => x.classList.toggle("active", x === b));
   renderAll();
 });
-$("#topic-select").addEventListener("change", (e) => { if (!guardLeave()) { renderTopics(); return; } ui.topicId = e.target.value; ui.assetId = null; ui.highlight = null; ui.groupSel.clear(); ui.batch = null; ui.protocolId = null; ui.executionId = null; ui.stepSel = null; ui.viewRev = null; ui.taskId = null; ui.chatId = null; ui.reportId = null; renderAll(); });
-$("#topic-create").addEventListener("click", (ev) => runBusy(ev.target, "创建课题", async () => {
-  const r = await api.createTopic($("#topic-name").value, $("#topic-q").value);
-  ui.topicId = r.topicId; await refresh(); setStatus("课题已创建");
-}));
-$("#subq-create").addEventListener("click", (ev) => runBusy(ev.target, "创建子问题", async () => {
-  if (!ui.topicId) throw new Error("请先选择/创建一个课题");
-  await api.createSubquestion(ui.topicId, $("#subq-q").value, $("#subq-kind").value); $("#subq-q").value = ""; await refresh(); setStatus("子问题已创建");
-}));
+// 页头「当前课题」（容器 #curtopic 常驻，用委托）
+$("#curtopic").addEventListener("change", (e) => {
+  if (e.target.id !== "topic-select") return;
+  if (!guardLeave()) { renderShell(); return; }
+  clearAllErrors();
+  ui.topicId = e.target.value; ui.assetId = null; ui.highlight = null; ui.groupSel.clear(); ui.batch = null; ui.protocolId = null; ui.executionId = null; ui.stepSel = null; ui.viewRev = null; ui.taskId = null; ui.chatId = null; ui.reportId = null; renderAll();
+});
+// 创建课题 / 子问题（中间区随渲染重建，用委托）
+document.addEventListener("click", (ev) => {
+  if (ev.target.id === "topic-create") { runBusy(ev.target, "创建课题", async () => {
+    const r = await api.createTopic($("#topic-name").value, $("#topic-q").value);
+    ui.topicId = r.topicId; await refresh(); setStatus("课题已创建");
+  }); return; }
+  if (ev.target.id === "subq-create") { runBusy(ev.target, "创建子问题", async () => {
+    if (!ui.topicId) { setError("mid", { panel: "mid", message: "请先创建或选择课题。", detail: "", retry: null }); return; }
+    await api.createSubquestion(ui.topicId, $("#subq-q").value, $("#subq-kind").value); $("#subq-q").value = ""; await refresh(); setStatus("子问题已添加");
+  }); return; }
+});
+// 分区报错条：关闭 / 详情 / 重试
+document.addEventListener("click", (ev) => {
+  const bar = ev.target.closest(".panelerr"); if (!bar) return;
+  const panel = bar.dataset.panel || "mid";
+  if (ev.target.classList.contains("perr-close")) { clearError(panel); return; }
+  if (ev.target.classList.contains("perr-detail")) { const d = bar.querySelector(".perr-detail-body"); if (d) d.hidden = !d.hidden; return; }
+  if (ev.target.classList.contains("perr-retry")) { const r = errors[panel]?.retry; clearError(panel); if (r) r(); return; }
+});
 $("#material-list").addEventListener("click", (ev) => {
   const el = ev.target.closest(".material"); if (!el) return;
   if (el.dataset.paperid) {
@@ -1606,7 +1510,7 @@ $("#right-content").addEventListener("click", async (ev) => {
     if (ev.target.id === "an-recommend") {
       const t = currentTask(); if (!t) return;
       const purpose = $("#an-purpose").value.trim();
-      if (!purpose) { showBanner("推荐须写明研究目的。"); return; }
+      if (!purpose) { notify("right", "推荐须写明研究目的。"); return; }
       await runJob(ev.target, "方法推荐", async () => {
         const r = await api.recommendMethods(t.id, purpose);
         setStatus(`快照已冻结 ${r.snapshotHash.slice(0, 12)}…`);
@@ -1680,7 +1584,7 @@ $("#right-content").addEventListener("click", async (ev) => {
     if (ev.target.id === "lib-restore") {
       const f = document.querySelector("#lib-restore-file")?.files?.[0];
       const out = $("#lib-restore-out");
-      if (!f) { showBanner("先选择导出的 state.json。"); return; }
+      if (!f) { notify("right", "先选择导出的 state.json。"); return; }
       await runBusy(ev.target, "隔离恢复校验", async () => {
         const json = await readTextFile(f);
         const r = await api.restore(json);
@@ -1709,8 +1613,8 @@ $("#right-content").addEventListener("click", async (ev) => {
     if (ev.target.classList.contains("rep-preview")) {
       const box = ev.target.closest(".rep"); const repId = box.dataset.repid;
       let blocks;
-      try { blocks = collectReportBlocks(box); } catch (e) { showBanner(String(e.message ?? e)); return; }
-      if (!blocks.length) { showBanner("至少需要一个块。"); return; }
+      try { blocks = collectReportBlocks(box); } catch (e) { notify("right", String(e.message ?? e)); return; }
+      if (!blocks.length) { notify("right", "至少需要一个块。"); return; }
       await runBusy(ev.target, "预览改动", async () => {
         const r = await api.previewReport(repId, blocks);
         renderBlockDiff(box.querySelector(".rep-diff"), r.diff, repId);
@@ -1720,7 +1624,7 @@ $("#right-content").addEventListener("click", async (ev) => {
     if (ev.target.classList.contains("rep-accept")) {
       const box = ev.target.closest(".rep"); const repId = ev.target.dataset.repid; const baseRevision = Number(ev.target.dataset.rev);
       const reason = box.querySelector(".rep-reason").value.trim();
-      if (!reason) { showBanner("报告修订必须填写原因（留历史）。"); return; }
+      if (!reason) { notify("right", "报告修订必须填写原因（留历史）。"); return; }
       const blocks = collectReportBlocks(box);
       await runBusy(ev.target, "接受改动", async () => {
         const r = await api.applyReport(repId, baseRevision, blocks, reason);
@@ -2080,14 +1984,14 @@ $("#right-content").addEventListener("click", async (ev) => {
         ui.dirty = false; await refresh(); setStatus("OCR 记录已人工确认（修订留历史）");
       }); return;
     }
-  } catch (e) { showBanner(String(e.message ?? e)); }
+  } catch (e) { const h = humanError(e); setError("mid", { panel: "mid", message: h.message, detail: h.detail, retry: null }); }
 });
 function lineOf(t, ri) {
   const lines = currentAsset().text.split(/\r?\n/).filter((l) => l.trim() !== "");
   return (lines[ri + 1] ?? "").trim() || null;
 }
 const splitList = (s) => String(s ?? "").split(/[,，]/).map((x) => x.trim()).filter(Boolean);
-$("#lit-tools").addEventListener("click", (ev) => {
+$("#tools-area").addEventListener("click", (ev) => {
   const t = ev.target;
   const imgEl = t.closest?.(".material[data-aid]");
   if (imgEl) {
@@ -2172,16 +2076,26 @@ window.addEventListener("beforeunload", (e) => { if (ui.dirty) { e.preventDefaul
 async function refreshAiState() {
   const s = await api.aiStatus();
   $("#ai-state").textContent = s.configured
-    ? `已配置 · ${s.model} @ ${s.baseUrl} · 超时 ${Math.round((s.timeoutMs ?? 120000) / 1000)}s（仅进程内存）`
-    : "未配置：填写三项并保存后，文献导入可选 AI 抽取";
+    ? `已配置 · ${s.model}`
+    : "未配置";
+  // A3：未配置时自动展开，便于填写；已配置时保持折叠（由用户控制）。
+  $("#aiconfig").open = !s.configured;
 }
-$("#ai-save").addEventListener("click", (ev) => runBusy(ev.target, "保存 AI 配置", async () => {
-  const secs = Number($("#ai-timeout").value);
-  const timeoutMs = Number.isFinite(secs) && secs > 0 ? secs * 1000 : undefined;
-  const s = await api.setAiConfig($("#ai-base").value, $("#ai-model").value, $("#ai-key").value, timeoutMs); $("#ai-key").value = ""; await refreshAiState();
-  setStatus(s.configured ? `AI 已配置 · ${s.model}` : "AI 配置未生效");
-}));
+$("#ai-save").addEventListener("click", async (ev) => {
+  const btn = ev.target, old = btn.textContent;
+  btn.disabled = true; btn.textContent = "处理中…"; $("#ai-msg").textContent = "";
+  try {
+    const secs = Number($("#ai-timeout").value);
+    const timeoutMs = Number.isFinite(secs) && secs > 0 ? secs * 1000 : undefined;
+    const s = await api.setAiConfig($("#ai-base").value, $("#ai-model").value, $("#ai-key").value, timeoutMs);
+    $("#ai-key").value = "";
+    if (s.configured) { $("#ai-msg").textContent = `已保存 · ${s.model}`; setStatus(`AI 已配置 · ${s.model}`); }
+    else { $("#ai-msg").textContent = "配置不完整：需要地址 / 模型 / Key 三项。"; }
+    await refreshAiState();
+  } catch (e) { const h = humanError(e); $("#ai-msg").textContent = `保存失败：${h.message}`; }
+  finally { btn.disabled = false; btn.textContent = old; }
+});
 $("#ai-clear").addEventListener("click", (ev) => runBusy(ev.target, "清除 AI 配置", async () => { await api.clearAiConfig(); await refreshAiState(); setStatus("AI 配置已清除"); }));
 
 refreshAiState().catch(() => {});
-refresh().catch((e) => showBanner(`加载失败：${e.message}`));
+refresh().catch((e) => { const h = humanError(e); notify("mid", `加载失败：${h.message}`, h.detail); });

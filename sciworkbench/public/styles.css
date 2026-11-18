@@ -4,7 +4,7 @@
   --bg: #f7f7f5;
   --surface: #ffffff;
   --fg: #1c1d1f;
-  --muted: #6b7280;
+  --muted: #525862;
   --line: #e3e3e0;
   --accent: #2f6f4f;
   --accent-fg: #ffffff;
@@ -288,3 +288,29 @@ table.grid .celledit input { width: auto; }
 #table-max .tablewrap.big { max-height: none; }
 #table-max .tablewrap.big table.grid td, #table-max .tablewrap.big table.grid th { font-size: var(--text); }
 #table-max pre { white-space: pre-wrap; word-break: break-word; font-size: 12px; background: var(--panel, var(--bg)); border: 1px solid var(--line); border-radius: var(--radius-sm); padding: var(--space-2); max-height: 60vh; overflow: auto; }
+
+/* ── A 段：全局外壳（当前课题 / 可折叠导航 / 分区报错 / 空课题引导） ── */
+.curtopic-slot { flex: 1; margin: 0 var(--space-4); min-width: 0; }
+.curtopic { font-size: var(--text-sm); color: var(--fg); }
+.curtopic.none { color: var(--muted); }
+.curtopic select { width: auto; display: inline-block; margin-left: 6px; }
+.curtopic b { font-weight: 600; }
+
+.nav { position: relative; }
+.nav .navtoggle { align-self: flex-end; border: 0; background: transparent; color: var(--muted); cursor: pointer; line-height: 1; padding: 0 4px; }
+.nav .navitems { display: flex; flex-direction: column; gap: 2px; }
+.navitem { display: flex; align-items: center; gap: 8px; }
+.navico { display: none; font-weight: 700; }
+.nav.collapsed .navlabel { display: none; }
+.nav.collapsed .navico { display: inline; }
+.nav.collapsed .navitem { justify-content: center; padding-left: 0; padding-right: 0; }
+
+.panelerr { border: 1px solid var(--danger); background: #fdf3f3; color: var(--fg); border-radius: var(--radius-sm); padding: var(--space-2) var(--space-3); margin: var(--space-2) 0; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.panelerr .msg { flex: 1; min-width: 160px; }
+.panelerr button { font: inherit; }
+.panelerr .perr-close { border: 0; background: transparent; cursor: pointer; font-size: 16px; line-height: 1; color: var(--muted); }
+.panelerr .perr-detail-body { flex-basis: 100%; margin: 0; white-space: pre-wrap; font-size: var(--text-sm); color: var(--muted); }
+
+.empty-guide { max-width: 520px; }
+.empty-guide input { margin-bottom: var(--space-2); }
+#err-left:empty, #err-mid:empty, #err-right:empty { display: none; }
