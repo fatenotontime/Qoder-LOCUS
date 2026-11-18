@@ -1103,7 +1103,6 @@ function topicObjects() {
   const cards = state.cards.filter((c) => { const p = state.papers.find((x) => x.id === c.paperId); return c.audit === "confirm" && (!tid || !p || !p.topicIds.length || p.topicIds.includes(tid)); });
   return { execs, tables, meas, protos, cards };
 }
-const pickRow = (cls, kind, id, label) => `<label class="ctxpick"><input type="checkbox" class="${cls}" data-kind="${kind}" data-id="${id}"/> ${esc(label)}</label>`;
 const collectPicks = (cls) => [...$$(`.${cls}:checked`)].map((cb) => ({ kind: cb.dataset.kind, id: cb.dataset.id }));
 
 function renderAnalysisForm(box) {
@@ -1147,19 +1146,21 @@ function renderChatForm(box) {
   if (!ui.topicId) { box.innerHTML = `<p class="hint">先在上方选择课题，再创建对话。</p>`; return; }
   const { execs, tables, meas, protos, cards } = topicObjects();
   const subqs = state.subquestions.filter((s) => s.topicId === ui.topicId);
-  const scopeList = [
-    ...execs.map((e) => pickRow("ch-scope", "execution", e.id, `执行 · ${state.protocols.find((p) => p.id === e.protocolId)?.name ?? e.id}`)),
-    ...meas.map((a) => pickRow("ch-scope", "measurement", a.id, `测量原件 · ${a.name}`)),
-    ...tables.map((t) => pickRow("ch-scope", "table", t.id, `数据表 · ${t.name}`)),
-    ...protos.map((p) => pickRow("ch-scope", "protocol", p.id, `方案 · ${p.name}`)),
-    ...cards.map((c) => pickRow("ch-scope", "card", c.id, `知识卡 · ${c.scope || Object.values(c.extracted?.fields ?? {})[0] || c.id}`)),
-  ].join("");
+  const conf = cards.filter((c) => c.audit === "confirm");
+  const row = (kind, id, label) => `<label class="ctxpick"><input type="checkbox" class="ch-scope" data-kind="${kind}" data-id="${id}"/> ${esc(label)}</label>`;
   box.innerHTML = `
     <details class="mini" open>
-      <summary>新建对话会话</summary>
+      <summary>＋新建对话</summary>
       <select id="ch-subq"><option value="">（课题层，不挂子问题）</option>${subqs.map((s) => `<option value="${s.id}">${esc(s.question)}</option>`).join("")}</select>
-      <p class="hint">显式选取讨论对象（不选则只有课题/子问题层）：</p>
-      ${scopeList || `<p class="hint">本课题暂无可选对象。</p>`}
+      <p class="hint">默认已选（已入候选知识卡，可取消）：</p>
+      ${conf.length ? conf.map((c) => `<label class="ctxpick"><input type="checkbox" class="ch-scope" data-kind="card" data-id="${c.id}" checked/> ${esc(c.scope || c.rawText.slice(0, 24))}</label>`).join("") : `<p class="hint">暂无。</p>`}
+      <details class="mini"><summary>其他可选（折叠：执行/测量/表/方案/其余卡）</summary>
+        ${execs.map((e) => row("execution", e.id, `执行 · ${state.protocols.find((p) => p.id === e.protocolId)?.name ?? e.id}`)).join("")}
+        ${meas.map((m) => row("measurement", m.id, `测量原件 · ${m.name}`)).join("")}
+        ${tables.map((t) => row("table", t.id, `数据表 · ${t.name}`)).join("")}
+        ${protos.map((p) => row("protocol", p.id, `方案 · ${p.name}`)).join("")}
+        ${cards.filter((c) => c.audit !== "confirm").map((c) => row("card", c.id, `知识卡 · ${c.scope || c.rawText.slice(0, 20)}`)).join("")}
+      </details>
       <button class="primary" id="ch-create">创建会话</button>
     </details>`;
   $("#ch-create").addEventListener("click", (ev) => runBusy(ev.target, "创建会话", async () => {
