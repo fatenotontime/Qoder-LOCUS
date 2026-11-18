@@ -123,9 +123,6 @@ async function runJob(btn, label, fn) {
   finally { if (btn) { btn.disabled = false; btn.textContent = old; } }
 }
 
-function materials() {
-  return state.assets.filter((a) => a.kind === ui.nav && (!ui.topicId || a.topicId === ui.topicId || !a.topicId));
-}
 function currentAsset() { return state.assets.find((a) => a.id === ui.assetId) ?? null; }
 
 /** 切换前脏检查；返回 true 表示可离开。 */
@@ -141,7 +138,7 @@ function renderAll() {
   $("#sec-subq").hidden = ui.nav !== "topic";
   $("#topic-create-box").hidden = ui.nav !== "topic";
   $("#sec-materials").hidden = ui.nav === "topic";
-  $("#materials-title").textContent = { papers: "论文条目", knowledge: "选择文献", protocol: "方案", record: "执行", analysis: "分析任务", chat: "对话会话", literature: "材料（旧版·开发调试）", measurement: "数据表" }[ui.nav] ?? "材料";
+  $("#materials-title").textContent = { papers: "论文条目", knowledge: "选择文献", protocol: "方案", record: "执行", analysis: "分析任务", chat: "对话会话" }[ui.nav] ?? "材料";
   renderTopics(); renderSubq(); renderImportBox(); renderMaterials(); renderLitTools(); renderMiddle(); renderRight();
   saveUi();
 }
@@ -175,63 +172,11 @@ function renderImportBox() {
   if (ui.nav === "record") { renderRecordImport(box); return; }
   if (ui.nav === "analysis") { renderAnalysisForm(box); return; }
   if (ui.nav === "chat") { renderChatForm(box); return; }
-  if (ui.nav === "literature") {
-    box.innerHTML = `
-      <details class="mini" ${state.assets.length ? "" : "open"}>
-        <summary>导入文献（开发调试）</summary>
-        <input id="lit-name" placeholder="来源名称（如 SLAC methods-source.md）" />
-        <input id="lit-file" type="file" accept=".md,.markdown,.txt,text/markdown,text/plain" />
-        <textarea id="lit-text" rows="3" placeholder="或粘贴 Markdown/文本…"></textarea>
-        <div class="row"><select id="lit-mode"><option value="draft">draft 草稿</option><option value="ai">AI 抽取</option></select>
-        <button class="primary" id="lit-import">导入</button></div>
-      </details>`;
-    $("#lit-import").addEventListener("click", (ev) => runJob(ev.target, "导入文献", async () => {
-      const file = $("#lit-file").files?.[0];
-      let text = $("#lit-text").value, name = $("#lit-name").value;
-      if (file) { text = await readTextFile(file); if (!name) name = file.name; }
-      const mode = $("#lit-mode").value;
-      const r = await api.importLiterature(name, text, mode, ui.topicId || undefined);
-      $("#lit-text").value = ""; if ($("#lit-file")) $("#lit-file").value = "";
-      if (r.jobId) {
-        for (let i = 0; i < 1200; i++) {
-          const job = await api.getJob(r.jobId);
-          setStatus(`AI 抽取：${job.message}`);
-          if (job.status === "done") { ui.assetId = job.result.assetId; await refresh(); setStatus(`AI 导入成功：${job.result.created} 张证据卡`); if (job.result.reminder) showReminder(); return; }
-          if (job.status === "error") throw new Error(job.error || "AI 抽取失败");
-          await new Promise((res) => setTimeout(res, 700));
-        }
-        throw new Error("AI 抽取等待超时（请查看服务日志）");
-      }
-      await refresh(); ui.assetId = r.assetId; renderAll();
-      setStatus(`导入成功：${r.created} 张证据卡（draft）`);
-      if (r.reminder) showReminder();
-    }));
-  } else {
-    box.innerHTML = `
-      <details class="mini" ${state.assets.length ? "" : "open"}>
-        <summary>导入实验数据（CSV）</summary>
-        <input id="meas-name" placeholder="文件名（如 EnzymeML_SLAC_pH3__Data.csv）" />
-        <input id="meas-file" type="file" accept=".csv,.tsv,text/csv,text/plain" />
-        <textarea id="meas-text" rows="2" placeholder="或粘贴 CSV…"></textarea>
-        <div class="row"><label>表头行</label>
-          <select id="meas-hdr"><option value="auto">自动</option><option value="1">1 行</option><option value="2">2 行（两级）</option></select>
-          <label>格式</label>
-          <select id="meas-profile"><option value="auto">自动</option><option value="plain-table">单表</option><option value="enzymeML-blocks">分块</option></select>
-          <button class="primary" id="meas-import">导入</button></div>
-      </details>`;
-    $("#meas-import").addEventListener("click", (ev) => runBusy(ev.target, "导入数据", async () => {
-      const file = $("#meas-file").files?.[0];
-      let csv = $("#meas-text").value, name = $("#meas-name").value;
-      if (file) { csv = await readTextFile(file); if (!name) name = file.name; }
-      const r = await api.importMeasurements(name, csv, ui.topicId || undefined, $("#meas-hdr")?.value ?? "auto", $("#meas-profile")?.value ?? "auto");
-      $("#meas-text").value = ""; if ($("#meas-file")) $("#meas-file").value = "";
-      await refresh(); ui.assetId = r.assetId; renderAll();
-      setStatus(`导入成功：${r.tableCount ?? 1} 张表 · ${r.created} 行`);
-    }));
-  }
+  box.innerHTML = "";
 }
 function renderMaterials() {
   const box = $("#material-list");
+  if (ui.nav === "topic") { box.innerHTML = ""; return; }
   if (ui.nav === "papers" || ui.nav === "knowledge") {
     const ps = state.papers.filter((p) => !ui.topicId || p.topicIds.includes(ui.topicId) || !p.topicIds.length);
     box.innerHTML = ps.length
@@ -299,13 +244,7 @@ function renderMaterials() {
       : `<p class="hint">暂无对话。选课题后可加子问题与显式对象范围，再创建会话。</p>`;
     return;
   }
-  const list = materials();
-  box.innerHTML = list.length
-    ? list.map((a) => `<div class="material ${a.id === ui.assetId ? "active" : ""}" data-id="${a.id}">
-        <div class="m-title">${esc(a.name)}</div>
-        <div class="m-meta">${a.kind === "literature" ? "文献" : "数据"} · ${a.bytes}B ${a.topicId ? "· " + esc(topicName(a.topicId) ?? "") : "· 未归类"}</div>
-      </div>`).join("")
-    : `<p class="hint">当前${ui.nav === "literature" ? "文献" : "数据"}（${ui.topicId ? "本课题" : "全部"}）暂无材料。</p>`;
+  box.innerHTML = "";
 }
 function renderMiddle() {
   const note = $("#mid-note"), content = $("#mid-content");
@@ -397,12 +336,9 @@ function renderMiddle() {
     content.innerHTML = chatHtml(c);
     return;
   }
-  const a = currentAsset();
-  $("#mid-title").textContent = a ? `原始材料 · ${a.name}` : "原始材料";
-  if (!a) { note.hidden = true; content.textContent = "在左栏选择或导入材料。"; return; }
-  if (!ui.highlight) { note.hidden = true; content.innerHTML = esc(a.text); return; }
-  if (a.text.includes(ui.highlight)) { note.hidden = true; content.innerHTML = esc(a.text).replace(esc(ui.highlight), `<mark>${esc(ui.highlight)}</mark>`); }
-  else { note.hidden = false; note.textContent = "定位不足：显示完整原件。"; content.innerHTML = esc(a.text); }
+  note.hidden = true;
+  $("#mid-title").textContent = "原始材料";
+  content.textContent = "在左栏选择工作对象。";
 }
 function renderRight() {
   if (ui.nav === "topic") { $("#right-title").textContent = "待办与入口"; $("#right-content").innerHTML = topicTodosHtml(); return; }
@@ -417,10 +353,8 @@ function renderRight() {
   if (ui.nav === "record") { $("#right-title").textContent = "实验记录"; $("#right-content").innerHTML = recordHtml(); return; }
   if (ui.nav === "analysis") { $("#right-title").textContent = "推荐 · 结果 · 分析初稿"; $("#right-content").innerHTML = analysisRightHtml(); return; }
   if (ui.nav === "chat") { $("#right-title").textContent = "范围 · 来源 · 采纳"; $("#right-content").innerHTML = chatRightHtml(); return; }
-  const a = currentAsset();
-  if (!a) { $("#right-title").textContent = "结构化结果"; $("#right-content").innerHTML = `<p class="hint">选中材料后，这里显示结构化草稿与核对操作。</p>`; return; }
-  if (a.kind === "literature") { $("#right-title").textContent = "证据卡"; $("#right-content").innerHTML = cardsHtml(a.id); }
-  else { $("#right-title").textContent = "数据表格"; $("#right-content").innerHTML = tableHtml(a.id); }
+  $("#right-title").textContent = "结构化结果";
+  $("#right-content").innerHTML = `<p class="hint">在左栏选择工作对象。</p>`;
 }
 /** 候选库状态（与后端 candidateStateOf 同口径）：跳过保未复核；采用独立于核对。 */
 function candState(c) {
@@ -739,7 +673,7 @@ function renderLitTools() {
     }));
     return;
   }
-  if (ui.nav !== "literature" && ui.nav !== "knowledge") { box.innerHTML = ""; return; }
+  if (ui.nav !== "knowledge") { box.innerHTML = ""; return; }
   const maps = state.mappings.filter((m) => !ui.topicId || !m.topicId || m.topicId === ui.topicId);
   const cmps = state.comparisons.filter((c) => !ui.topicId || c.topicId === ui.topicId);
   const confirmed = state.cards.filter((c) => c.audit === "confirm" && (!ui.topicId || state.assets.find((a) => a.id === c.assetId)?.topicId === ui.topicId || state.papers.find((p) => p.id === c.paperId)?.topicIds.includes(ui.topicId)));
@@ -773,13 +707,6 @@ function renderLitTools() {
     </details>`;
 }
 
-function showReminder() {
-  const b = $("#banner"); b.hidden = false; b.className = "banner info";
-  b.innerHTML = `<span>新文献已入库：既有比较快照保持不变。是否按新版本重新比较？</span>`;
-  const btn = document.createElement("button"); btn.textContent = "打开比较"; btn.className = "primary";
-  btn.addEventListener("click", () => { hideBanner(); const d = $("#cmp-box"); if (d) d.open = true; });
-  b.appendChild(btn);
-}
 let foldEmpty = true;
 /** 表格渲染（中间/最大化共用）：全空行只在展示层折叠，零值与标记行不折叠，原件字节不改。 */
 function tableGridHtml(t, big) {
@@ -800,40 +727,22 @@ function openTableMax(tid) {
   const t = state.tables.find((x) => x.id === tid); if (!t) return;
   document.querySelector("#table-max")?.remove();
   const asset = state.assets.find((a) => a.id === t.assetId);
+  const markers = new Set(t.markerRows ?? []);
+  const cell = ui.cell && ui.cell.tableId === t.id ? ui.cell : null;
   const wrap = document.createElement("div");
-  wrap.id = "table-max";
+  wrap.id = "table-max"; wrap.className = "item"; wrap.dataset.id = t.id;
   wrap.innerHTML = `
-    <div class="tblmax-head"><strong>${esc(t.name)}</strong> <span class="hint">${t.rows.length} 行 × ${t.columns.length} 列 · 原件 ${asset?.bytes ?? 0}B · rev ${t.revision}</span>
+    <div class="tblmax-head"><strong>${esc(t.name)}</strong> <span class="hint">${t.rows.length} 行（${t.rows.length - markers.size} 数据 · ${markers.size} 标记）× ${t.columns.length} 列 · 原件 ${asset?.bytes ?? 0}B · rev ${t.revision}</span>
       <button id="tblmax-fold">${foldEmpty ? "展开全空行" : "折叠全空行"}</button>
       <button id="tblmax-csv">查看原始 CSV</button>
       <button id="tblmax-close">关闭</button></div>
-    <div class="tblmax-body">${tableGridHtml(t, true).html}<div id="tblmax-raw" hidden><pre>${esc(asset?.text ?? "")}</pre></div></div>`;
-  document.body.appendChild(wrap);
-  wrap.querySelector("#tblmax-close").onclick = () => wrap.remove();
-  wrap.querySelector("#tblmax-fold").onclick = () => { foldEmpty = !foldEmpty; saveUi(); openTableMax(tid); };
-  wrap.querySelector("#tblmax-csv").onclick = () => { const r = wrap.querySelector("#tblmax-raw"); r.hidden = !r.hidden; };
-  wrap.querySelector(".tblmax-body").addEventListener("click", (ev) => {
-    const td = ev.target.closest("td.cell"); if (!td) return;
-    ui.cell = { tableId: tid, row: Number(td.dataset.row), col: Number(td.dataset.col) };
-    renderRight();
-  });
-}
-function tableHtml(assetId) {
-  const ts = state.tables.filter((x) => x.assetId === assetId);
-  if (!ts.length) return `<p class="hint">暂无表格。</p>`;
-  const t = ts.find((x) => x.id === ui.tableId) ?? ts[0];
-  const markers = new Set(t.markerRows ?? []);
-  const { html: grid, folded } = tableGridHtml(t, false);
-  const asset = state.assets.find((a) => a.id === assetId);
-  const cell = ui.cell && ui.cell.tableId === t.id ? ui.cell : null;
-  const pick = ts.length > 1 ? `<div class="row"><label>表块</label><select id="table-pick">${ts.map((x) => `<option value="${x.id}" ${x.id === t.id ? "selected" : ""}>${esc(x.name)}</option>`).join("")}</select></div>` : "";
-  return `
-    <div class="item" data-id="${t.id}">
-      ${pick}
-      <div class="meta">${t.rows.length} 行（${t.rows.length - markers.size} 数据 · ${markers.size} 标记）× ${t.columns.length} 列 · rev ${t.revision}</div>
-      <div class="row"><button class="tbl-max">最大化表格</button><button class="tbl-fold">${foldEmpty ? "展开全空行" : "折叠全空行"}</button></div>
-      ${grid}
-      <details class="mini"><summary>查看原始 CSV（原件不改）</summary><pre>${esc(asset?.text ?? "")}</pre></details>
+    <div class="tblmax-body">
+      ${tableGridHtml(t, true).html}
+      <div id="tblmax-raw" hidden><pre>${esc(asset?.text ?? "")}</pre></div>
+      ${cell ? `<div class="row celledit"><label>单元格 r${cell.row}·c${cell.col}</label>
+        <input data-field="cellValue" value="${esc(t.rows[cell.row]?.[cell.col] ?? "")}" />
+        <input data-field="cellReason" placeholder="更正原因（必填）" />
+        <button class="save-cell">保存单元格</button><button class="cancel-cell">取消</button></div>` : `<p class="hint">点单元格可更正；改值需原因。</p>`}
       <details class="mini"><summary>列设置（单位 / 核对）</summary>
         <div class="tablewrap"><table class="grid"><thead><tr>${t.columns.map((name, i) => `<th><div>${esc(name)}</div>
           <input data-col="${i}" data-k="unit" value="${esc(t.columnMeta[i].unit)}" placeholder="单位" />
@@ -842,11 +751,17 @@ function tableHtml(assetId) {
       <div class="row"><label>备注</label><input data-field="note" value="${esc(t.note)}" />
         <label>原因</label><input data-field="reason" placeholder="改单元格数值时必填" />
         <button class="save-cols">保存列设置</button><button class="history-btn">历史(${t.history.length})</button></div>
-      ${cell ? `<div class="row celledit"><label>单元格 r${cell.row}·c${cell.col}</label>
-        <input data-field="cellValue" value="${esc(t.rows[cell.row]?.[cell.col] ?? "")}" />
-        <input data-field="cellReason" placeholder="更正原因（必填）" />
-        <button class="save-cell">保存单元格</button><button class="cancel-cell">取消</button></div>` : `<p class="hint">点单元格定位；改值需原因。</p>`}
     </div>`;
+  document.body.appendChild(wrap);
+  wrap.querySelector("#tblmax-close").onclick = () => { ui.cell = null; wrap.remove(); };
+  wrap.querySelector("#tblmax-fold").onclick = () => { foldEmpty = !foldEmpty; saveUi(); openTableMax(tid); };
+  wrap.querySelector("#tblmax-csv").onclick = () => { const r = wrap.querySelector("#tblmax-raw"); r.hidden = !r.hidden; };
+  wrap.querySelector(".tblmax-body").addEventListener("click", (ev) => {
+    const td = ev.target.closest("td.cell"); if (!td) return;
+    ev.stopPropagation();
+    ui.cell = { tableId: tid, row: Number(td.dataset.row), col: Number(td.dataset.col) };
+    openTableMax(tid);
+  });
 }
 
 // ── 4C：方案 / 实验图 / 模板 / 执行 / 样品 / 测量 / 影响 / OCR ──
@@ -1669,7 +1584,6 @@ $("#right-content").addEventListener("change", (ev) => {
       await refresh(); setStatus(ev.target.checked ? "已关联课题（多课题可引用同一来源）" : "已解除课题关联");
     }); return;
   }
-  if (ev.target.id === "table-pick") { ui.tableId = ev.target.value; ui.cell = null; renderRight(); }
   if (ev.target.id === "proto-rev") { ui.viewRev = Number(ev.target.value); ui.stepSel = null; renderMiddle(); renderRight(); }
   if (ev.target.id === "meas-sample") {
     const s = state.samples.find((x) => x.id === ev.target.value);
@@ -1839,8 +1753,6 @@ $("#right-content").addEventListener("click", async (ev) => {
         await refresh(); setStatus(`${m.label}完成`);
       }); return;
     }
-    if (ev.target.classList.contains("tbl-max")) { const it = ev.target.closest(".item"); if (it) openTableMax(it.dataset.id); return; }
-    if (ev.target.classList.contains("tbl-fold")) { foldEmpty = !foldEmpty; renderRight(); return; }
     if (ev.target.classList.contains("span-link")) { ui.assetId = ev.target.dataset.asset; ui.highlight = ev.target.dataset.quote; renderMiddle(); return; }
     const attEl = ev.target.closest(".material[data-attid]");
     if (attEl) { ui.attId = attEl.dataset.attid; ui.highlight = null; renderMiddle(); renderRight(); return; }
@@ -1947,13 +1859,14 @@ $("#right-content").addEventListener("click", async (ev) => {
     if (ev.target.classList.contains("cell")) {
       const t = state.tables.find((x) => x.id === item.dataset.id);
       ui.cell = { tableId: t.id, row: Number(ev.target.dataset.row), col: Number(ev.target.dataset.col) };
-      ui.highlight = lineOf(t, ui.cell.row); renderMiddle(); renderRight(); return;
+      ui.highlight = lineOf(t, ui.cell.row); openTableMax(t.id); return;
     }
-    if (ev.target.classList.contains("cancel-cell")) { ui.cell = null; renderRight(); return; }
+    if (ev.target.classList.contains("cancel-cell")) { const tid = ui.cell?.tableId; ui.cell = null; if (tid) openTableMax(tid); return; }
     if (ev.target.classList.contains("save-cell") && ui.cell) {
+      const tid = ui.cell.tableId;
       await runBusy(ev.target, "保存单元格", async () => {
-        await api.reviewTable(ui.cell.tableId, { cellUpdates: [{ row: ui.cell.row, col: ui.cell.col, value: val("cellValue") }], reason: val("cellReason") });
-        ui.cell = null; ui.dirty = false; await refresh(); setStatus("单元格已保存（含修订历史）");
+        await api.reviewTable(tid, { cellUpdates: [{ row: ui.cell.row, col: ui.cell.col, value: val("cellValue") }], reason: val("cellReason") });
+        ui.cell = null; ui.dirty = false; await refresh(); setStatus("单元格已保存（含修订历史）"); openTableMax(tid);
       }); return;
     }
     if (ev.target.classList.contains("save")) {
@@ -1967,7 +1880,7 @@ $("#right-content").addEventListener("click", async (ev) => {
       await runBusy(ev.target, "保存列设置", async () => {
         const columnUpdates = t.columns.map((_, i) => ({ index: i, unit: item.querySelector(`[data-col="${i}"][data-k="unit"]`).value, decision: item.querySelector(`[data-col="${i}"][data-k="decision"]`).value }));
         await api.reviewTable(t.id, { columnUpdates, note: val("note"), reason: val("reason") });
-        ui.dirty = false; await refresh(); setStatus("列设置已保存");
+        ui.dirty = false; await refresh(); setStatus("列设置已保存"); openTableMax(t.id);
       }); return;
     }
     // ── 4C 操作 ──
