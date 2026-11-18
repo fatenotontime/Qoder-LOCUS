@@ -78,10 +78,14 @@ test("列单位/结论更正也留历史", () => {
   assert.ok(fields.includes("col[0].decision"));
 });
 
-test("证据卡核对记录历史；排除须原因", async () => {
+test("证据卡核对记录历史；排除原因可选（改关键文本仍须原因）", async () => {
   const r = await importLiterature(emptyState(), { name: "s", text: "只有一段" });
   const id = r.state.cards[0].id;
-  assert.throws(() => reviewCard(r.state, id, { audit: "exclude" }), (e: unknown) => e instanceof AppError && e.status === 422);
+  // 2026-11-18 用户拍板：排除原因可选填，不再强制。
+  const ex = reviewCard(r.state, id, { audit: "exclude" });
+  assert.equal(ex.cards[0].audit, "exclude");
+  // 改关键文本仍须原因。
+  assert.throws(() => reviewCard(r.state, id, { rawText: "改过的文本" }), (e: unknown) => e instanceof AppError && e.status === 422);
   const s2 = reviewCard(r.state, id, { audit: "confirm", importance: "high" });
   const fields = s2.cards[0].history.map((h) => h.field);
   assert.deepEqual(fields.sort(), ["audit", "importance"]);

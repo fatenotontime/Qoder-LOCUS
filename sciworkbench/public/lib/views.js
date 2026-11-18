@@ -228,6 +228,7 @@ export function knowledgeWorkspaceHtml(state, ui) {
         <div class="kv">重要程度：<select class="kz-imp" data-cid="${c.id}">${["", "high", "medium", "low"].map((v) => `<option value="${v}" ${(c.importance ?? "") === v ? "selected" : ""}>${v ? fmtEnum(v) : "未定"}</option>`).join("")}</select></div>
         <div class="kv">备注：<input class="kz-note" data-cid="${c.id}" value="${esc(c.note)}" /></div>
         <div class="kv">原文位置：${q ? `<button class="kz-locate" data-cid="${c.id}" data-quote="${esc(q)}">看原文</button>` : `<span class="hint">定位不足</span>`}</div>
+        ${tab === "todo" ? `<details class="kz-reason"><summary>排除原因（可选）</summary><input class="kz-exclr" data-cid="${c.id}" placeholder="可选，留空即不填" /></details>` : ""}
         <div class="kzactions">${acts}</div>
       </div>` : ""}
     </div>`;
@@ -242,7 +243,6 @@ export function knowledgeQueueHtml(state, ui) {
   const queue = kzCards(state, ui).filter((c) => c.extraction === "ai" && KZ_PART(c) === "todo");
   return `<div class="kzq">
     <div class="kzq-head">AI 待审队列 <span class="badge">新增 ${queue.length}</span></div>
-    <div class="kzq-task"><span class="hint">抽取进度：第二步接入</span><button class="kzq-pause" disabled title="未接入">暂停</button><button class="kzq-cancel" disabled title="未接入">取消</button></div>
     <div class="kzq-list">${queue.map((c) => `<button class="kzq-item" data-cid="${c.id}">${esc(c.kind ? fmtEnum(c.kind) : "摘录")} · ${esc(c.rawText.slice(0, 28))}</button>`).join("") || `<p class="hint">队列为空。</p>`}</div>
   </div>`;
 }

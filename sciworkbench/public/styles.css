@@ -353,3 +353,14 @@ table.grid .celledit input { width: auto; }
 .kzq-task { display: flex; gap: 6px; align-items: center; margin-bottom: var(--space-2); }
 .kzq-list { display: grid; gap: 4px; }
 .kzq-item { text-align: left; border: 1px solid var(--line); background: var(--surface); border-radius: var(--radius-sm); padding: 6px 8px; cursor: pointer; font-size: var(--text-sm); }
+
+/* B2 窄导航条抽屉 */
+.navdrawer { position: fixed; top: 92px; left: 8px; width: 220px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: 0 8px 24px rgba(0,0,0,.14); z-index: 50; padding: var(--space-2); }
+.navdrawer[hidden] { display: none; }
+.nd-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+.nd-list { display: grid; gap: 2px; }
+.nd-item { text-align: left; border: 1px solid transparent; background: transparent; border-radius: var(--radius-sm); padding: 8px 10px; cursor: pointer; }
+.nd-item:hover { background: #eef1ee; }
+.nd-item.active { background: #e6efe8; font-weight: 600; }
+.kz-reason { font-size: var(--text-sm); }
+.kz-reason input { margin-top: 4px; }

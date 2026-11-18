@@ -332,7 +332,8 @@ export function mapAiLiteratureCards(asset: AssetRecord, cards: unknown[]): LitC
   });
 }
 
-const CARD_BLOCKING_AUDIT = new Set<LitCardRecord["audit"]>(["exclude"]);
+// 排除不再强制原因（2026-11-18 用户拍板：原因可选填）；改关键文本/字段/转引仍须原因。
+const CARD_BLOCKING_AUDIT = new Set<LitCardRecord["audit"]>([]);
 
 export interface CardPatch {
   audit?: LitCardRecord["audit"];
@@ -355,7 +356,7 @@ export function reviewCard(state: LocusState, id: string, patch: CardPatch): Loc
   const fieldsChanged = patch.extracted?.fields !== undefined && JSON.stringify(patch.extracted.fields) !== JSON.stringify(cur.extracted.fields);
   const needsReason = (patch.audit !== undefined && CARD_BLOCKING_AUDIT.has(patch.audit)) || textChanged || markingSecondary || fieldsChanged;
   // 阻断性动作须给**本次**原因，不复用旧原因（旧原因解释的是上一次修改）。
-  if (needsReason && !(patch.reason ?? "").trim()) throw new AppError(422, "排除证据 / 修改关键文本或字段 / 标记转引，必须填写简短原因。");
+  if (needsReason && !(patch.reason ?? "").trim()) throw new AppError(422, "修改关键文本或字段 / 标记转引，必须填写简短原因。");
 
   const diffs: [string, string, string][] = [];
   if (textChanged) diffs.push(["rawText", cur.rawText, patch.rawText!]);

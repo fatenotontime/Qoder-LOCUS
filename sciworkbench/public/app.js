@@ -7,7 +7,7 @@ import { fmtTime, fmtEnum, fmtVersion, fmtNameOnce } from "./lib/format.js";
 import {
   topbarTopicHtml, emptyTopicGuideHtml, navHtml, panelErrorHtml, sidebarListHtml,
   topicOverviewHtml, topicTodosHtml, subqBlockHtml, nextStepHtml,
-  knowledgeLeftHtml, knowledgeWorkspaceHtml, knowledgeQueueHtml,
+  knowledgeLeftHtml, knowledgeWorkspaceHtml, knowledgeQueueHtml, NAV_ITEMS,
 } from "./lib/views.js";
 
 let state = { topics: [], subquestions: [], assets: [], papers: [], attachments: [], cards: [], tables: [], adoptions: [], mappings: [], comparisons: [], protocols: [], templates: [], executions: [], samples: [], measurements: [], impacts: [], ocrs: [], analysisTasks: [], analysisResults: [], reports: [], chats: [] };
@@ -1043,7 +1043,7 @@ function topicObjects() {
   const tables = state.tables.filter((t) => { const a = state.assets.find((x) => x.id === t.assetId); return !tid || !a?.topicId || a.topicId === tid; });
   const meas = state.assets.filter((a) => a.kind === "measurement" && (!tid || !a.topicId || a.topicId === tid));
   const protos = state.protocols.filter((p) => !tid || p.topicId === tid);
-  const cards = state.cards.filter((c) => { const p = state.papers.find((x) => x.id === c.paperId); return !tid || !p || !p.topicIds.length || p.topicIds.includes(tid); });
+  const cards = state.cards.filter((c) => { const p = state.papers.find((x) => x.id === c.paperId); return c.audit === "confirm" && (!tid || !p || !p.topicIds.length || p.topicIds.includes(tid)); });
   return { execs, tables, meas, protos, cards };
 }
 const pickRow = (cls, kind, id, label) => `<label class="ctxpick"><input type="checkbox" class="${cls}" data-kind="${kind}" data-id="${id}"/> ${esc(label)}</label>`;
@@ -1405,7 +1405,7 @@ document.addEventListener("click", (ev) => {
   if (!cid) return;
   if (t.classList.contains("kz-cand")) { kzAct(() => api.reviewCard(cid, { audit: "confirm" }), "已入候选"); return; }
   if (t.classList.contains("kz-skip")) { kzAct(() => api.reviewCard(cid, { audit: "skip" }), "已跳过（可回来）"); return; }
-  if (t.classList.contains("kz-excl")) { kzAct(() => api.reviewCard(cid, { audit: "exclude", reason: "排除（见操作）" }), "已排除"); return; }
+  if (t.classList.contains("kz-excl")) { const inp = t.closest(".kzcard")?.querySelector(".kz-exclr"); const reason = (inp?.value ?? "").trim(); kzAct(() => api.reviewCard(cid, reason ? { audit: "exclude", reason } : { audit: "exclude" }), "已排除"); return; }
   if (t.classList.contains("kz-undo")) { kzAct(() => api.reviewCard(cid, { audit: "unreviewed" }), "已撤回（回到待审）"); return; }
   if (t.classList.contains("kz-skipall")) {
     if (!confirm("一键全部跳过：为时间紧准备，不推荐。确定跳过本页所有待审卡？")) return;
@@ -1421,6 +1421,23 @@ document.addEventListener("change", (ev) => {
 document.addEventListener("focusout", (ev) => {
   if (ev.target.classList.contains("kz-note")) { const cid = ev.target.dataset.cid; kzAct(() => api.reviewCard(cid, { note: ev.target.value }), "备注已记"); }
 });
+// 窄导航条：悬停显文字（title）；点击图标弹出完整导航抽屉
+function openNavDrawer() {
+  $("#nd-list").innerHTML = NAV_ITEMS.map(([k, l]) => `<button class="nd-item ${k === ui.nav ? "active" : ""}" data-nav="${k}">${esc(l)}</button>`).join("");
+  $("#navdrawer").hidden = false;
+}
+$("#navrail").addEventListener("click", (ev) => { if (ev.target.closest(".navitem")) openNavDrawer(); });
+$("#navdrawer").addEventListener("click", (ev) => {
+  if (ev.target.id === "nd-close") { $("#navdrawer").hidden = true; return; }
+  const b = ev.target.closest(".nd-item"); if (!b) return;
+  $("#navdrawer").hidden = true;
+  if (!guardLeave()) return;
+  clearAllErrors();
+  ui.nav = b.dataset.nav; ui.highlight = null; ui.cell = null; ui.tableId = null; ui.groupSel.clear(); ui.batch = null; ui.ack = false;
+  ui.stepSel = null; ui.viewRev = null; ui.editEventId = null; ui.pauseSuggest = null; ui.prepExtra = 0;
+  renderAll();
+});
+
 $("#material-list").addEventListener("click", (ev) => {
   const el = ev.target.closest(".material"); if (!el) return;
   if (el.dataset.paperid) {

@@ -28,6 +28,8 @@
 
 | ADR-0021 | 阶段6 **6A-2/6A-3/6A-4/6A-5**：①**真实引用网络**由 state 的**实际引用字段**确定性建边（affiliation/provenance/lineage/support），`traverseNetwork` 按关系类型且可限方向/类别——回查是**网络非串联链**；分析结果一律标 `external` 明示**无内部 Run**。②**改动命中**：`classifyChange` 区分科学改动（value/unit/criteria/…→needs_review）与标题/备注（→no_recompute 不误报），`changeHits` 给下游报告块/结果/分析的**具体复核对象**。③**导出**：零依赖 ZIP（deflate）＋最小 DOCX（Word 可打开；块顺序/性质/固定引用清单）；**外部 Word 编辑不回流为审计**。④**追溯包**：版本索引（固定版本）＋**逐附件许可过滤**（CC BY/CC0/PD 可，NC/ND/未标排除并登记）＋sha256 manifest＋NOTICE。⑤**整体导出＋隔离恢复**：包内含 manifest；`loadStrict` 损坏/未知版本**显式报错**（load 仍宽容），恢复写入**临时隔离文件**、**绝不覆盖主数据** | accepted（阶段6） | 03_DOMAIN_RUNTIME §报告/§ADR；ADR-0013/0014/0015；`tests/references.test.ts`、`tests/export.test.ts`；DOCX 经 office-docx 读回 9 块校验 |
 
+| ADR-0022 | 证据卡**排除原因改为可选填**（2026-11-18 用户拍板，前端纠偏第 2 步）：`reviewCard` 的排除不再强制原因；改关键文本/抽取字段/标记转引**仍须原因**。上下文地图的候选改为**仅取自「已入候选」**（`audit=confirm`）；「任务采用」后端 `AdoptionRecord` **保留**但不再有前端入口 | accepted（用户 2026-11-18） | `services/app.ts`；`tests/web-loop.test.ts`；用户前端纠偏反馈 |
+
 ## 待补 ADR（阶段2 之后）
 
 并发冲突的具体解决交互、跨会话暂存/恢复的存储形态、来源定位的精度门槛、AI 任务熔断参数、匿名演示会话清理策略。均**待实测或用户评审**，不预填日期。
