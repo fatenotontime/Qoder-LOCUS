@@ -234,18 +234,19 @@ function renderMiddle() {
       return;
     }
     const e = currentExecution();
-    const prep = e && (e.phase ?? "recording") === "preparing";
-    $("#mid-title").textContent = e ? (prep ? `准备稿 · 基础 r${e.preparation?.baseRevision ?? e.protocolRevision}` : `本次执行快照 · 基础 r${e.protocolRevision}`) : "原始材料";
-    if (!e) { note.hidden = true; content.textContent = "在左栏选择执行，或选择手写图片。"; return; }
+    if (!e) { note.hidden = true; $("#mid-title").textContent = "执行记录"; content.textContent = "在左栏选择执行，或选择手写图片。"; return; }
     const p = state.protocols.find((x) => x.id === e.protocolId);
     const snap = e.preparation?.snapshot ?? p?.revisions.find((r) => r.revision === (e.preparation?.baseRevision ?? e.protocolRevision));
-    note.hidden = false;
-    note.textContent = prep
-      ? `准备稿（未确认）：基础 r${e.preparation?.baseRevision ?? e.protocolRevision}，当前方案 r${p?.revision ?? "?"}；差异在右栏，确认后冻结。`
-      : e.preparation?.snapshot
-        ? `本次快照：基础 r${e.protocolRevision} ＋ ${e.preparation.adjustments.length} 条差异；源方案 r${p?.revision ?? "?"} 不影响本次。`
-        : `固定引用 r${e.protocolRevision}（当前方案 r${p?.revision ?? "?"}）；记录不改此快照。`;
-    content.textContent = snap ? fmtSnapshot(snap) : "（方案快照缺失）";
+    if ((e.phase ?? "recording") === "preparing") {
+      $("#mid-title").textContent = "准备稿";
+      note.hidden = false;
+      note.textContent = `准备稿（未确认）：差异与确认在右栏；确认后进入步骤记录。`;
+      content.textContent = snap ? fmtSnapshot(snap) : "（方案快照缺失）";
+      return;
+    }
+    $("#mid-title").textContent = "步骤记录表";
+    note.hidden = true;
+    content.innerHTML = `<div class="item">${stepsTableHtml(e, snap)}</div>` + impactHtml([e.id]);
     return;
   }
   if (ui.nav === "analysis") {
@@ -933,6 +934,31 @@ function protocolSideHtml() {
 }
 
 /** 5D 准备稿：基础快照图＋本次差异编辑（固定底部编辑区）；确认前可反复改，确认后冻结。 */
+/** 步骤记录表（B4）：左＝计划（来自本次快照，不改源方案）；右＝实际（用量/时长/意外影响到哪一环节）。 */
+function stepsTableHtml(e, snap) {
+  const steps = snap?.steps ?? [];
+  if (!steps.length) return `<p class="hint">本次快照无步骤（方案可能缺失）。</p>`;
+  const lastStepEv = (sid) => { const evs = e.events.filter((ev) => ev.kind === "step" && ev.stepId === sid); return evs[evs.length - 1]; };
+  const hasDev = (sid) => e.events.some((ev) => ev.kind === "deviation" && ev.stepId === sid);
+  const rows = steps.map((s) => {
+    const last = lastStepEv(s.id);
+    const plan = s.durationMin === null ? `<span class="dbar unknown">时长未知</span>` : `<span class="dbar ${s.estimated ? "est" : "fixed"}">${s.durationMin}min${s.estimated ? "·估" : ""}</span>`;
+    const others = steps.filter((x) => x.id !== s.id);
+    const dev = hasDev(s.id);
+    return `<tr data-step="${s.id}" data-op="${esc(s.op)}">
+      <td>${esc(s.op)}${s.branch ? ` <span class="hint">支路:${esc(s.branch)}</span>` : ""}</td>
+      <td>${plan}</td>
+      <td><input data-f="amount" value="${esc(last?.actual.amount ?? "")}" placeholder="用量" /></td>
+      <td><input data-f="dur" type="number" min="0" value="${last?.actual.durationMin ?? ""}" placeholder="分" /></td>
+      <td><label class="hint"><input type="checkbox" data-f="incident" ${dev ? "checked" : ""}/> 意外</label>
+        <select data-f="target">${others.map((x) => `<option value="${x.id}">影响:${esc(x.op)}</option>`).join("") || `<option value="">（无其它步骤）</option>`}</select></td>
+      <td><button class="steptbl-save">${last ? "更新" : "记录"}</button>${dev ? ` <span class="hint warn">已标意外</span>` : ""}</td>
+    </tr>`;
+  }).join("");
+  return `<div class="tablewrap"><table class="grid steptbl"><thead><tr><th>步骤（计划）</th><th>计划时长</th><th>实际用量</th><th>实际时长</th><th>意外/影响</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
+    <p class="hint">左＝计划（本次快照，不改源方案）；右＝实际，逐行记录。实际开始/暂停/备注见下方「事件时间线」。</p>`;
+}
+
 function preparationHtml(e, p, baseSnap) {
   const adj = e.preparation?.adjustments ?? [];
   const FIELDS = [["op", "操作"], ["durationMin", "时长(分)"], ["estimated", "估计(true/false)"], ["params", "参数(JSON)"], ["note", "备注"], ["observeEnd", "观察终点"], ["branch", "支路"]];
@@ -980,7 +1006,7 @@ function recordHtml() {
   return `
     <div class="item" data-id="${e.id}">
       <div class="meta">${esc(p?.name ?? e.protocolId)} · 固定 r${e.protocolRevision}${nAdj ? ` ＋ 本次差异 ${nAdj} 条` : ""} · <span class="badge ${e.status === "paused" ? "warn" : e.status === "active" ? "confirm" : ""}">${e.status}</span>${e.templateId ? " · 模板" : ""}</div>
-      ${e.preparation?.confirmedAt ? `<div class="hint">本次快照确认于 ${esc(e.preparation.confirmedAt)}（基础 r${e.preparation.baseRevision}${nAdj ? ` ＋ ${nAdj} 条差异` : "，无差异"}）；源方案后续不影响本次。</div>` : ""}
+      ${e.preparation?.confirmedAt ? `<div class="hint">本次快照确认于 ${esc(fmtTime(e.preparation.confirmedAt))}（基础 ${fmtVersion(e.preparation.baseRevision)}${nAdj ? ` ＋ ${nAdj} 条差异` : "，无差异"}）；源方案后续不影响本次。</div>` : ""}
       <div class="hint">数据完整度：步骤记录 ${(snap?.steps.length ?? 0) - missing.length}/${snap?.steps.length ?? 0}${missing.length ? ` · 未记录：${missing.map((s) => esc(s.op)).join("、")}` : ""}${unknownDur ? ` · ${unknownDur} 步时长未知（不按 0 计）` : ""}</div>
       ${e.status === "active" && !hasStart ? `<div class="row"><button class="primary" id="exec-begin">记录实际开始</button><span class="hint">由人记录，系统不代填。</span></div>` : ""}
       ${e.preparation?.snapshot ? `<details class="mini"><summary>另存新方案（不改源）</summary>
@@ -994,7 +1020,9 @@ function recordHtml() {
         <div class="hint">风险：${e.pausedState.risks.map(esc).join("、") || "—"} · 恢复检查：${e.pausedState.resumeChecks.map(esc).join("、") || "—"}</div>
         <div class="row"><input id="resume-decision" placeholder="人的恢复决定（必填）" /><button class="primary" id="exec-resume">恢复执行</button></div>
       </div>` : ""}
-      <div class="pane-title">事件时间线（${e.events.length}）</div>
+    </div>
+    <div class="item">
+      <details class="mini"><summary>事件时间线（${e.events.length}，默认折叠）</summary>
       ${e.events.map((ev) => ui.editEventId === ev.id ? `<div class="celledit" data-evid="${ev.id}">
           <div class="row"><label>内容</label><input data-field="evText" value="${esc(ev.text)}" /></div>
           <div class="row"><label>实际用量</label><input data-field="evAmount" value="${esc(ev.actual.amount ?? "")}" />
@@ -1002,12 +1030,12 @@ function recordHtml() {
           <div class="row"><input data-field="evReason" placeholder="修改原因（必填）" /><button class="primary ev-save">保存</button><button class="ev-cancel">取消</button></div>
         </div>` : `<div class="evrow" data-evid="${ev.id}">
           <span class="badge ${ev.kind === "deviation" ? "exclude" : ev.kind === "pause" ? "warn" : ""}">${KIND[ev.kind]}</span>
-          <span class="hint">${esc(ev.at)}${ev.backfilled ? " · 后补" : ""}</span>
+          <span class="hint">${esc(fmtTime(ev.at))}${ev.backfilled ? " · 后补" : ""}</span>
           <span>${esc(ev.text)}</span>
           ${ev.actual.amount ? `<span class="hint">用量 ${esc(ev.actual.amount)}</span>` : ""}
           ${ev.actual.durationMin !== undefined ? `<span class="hint">实际 ${ev.actual.durationMin}min</span>` : ""}
           ${ev.kind === "step" || ev.kind === "note" || ev.kind === "deviation" ? `<button class="ev-edit">编辑(${ev.history.length})</button>` : ""}
-        </div>`).join("")}
+        </div>`).join("") || `<p class="hint">暂无事件。</p>`}
       <details class="mini"><summary>追加事件</summary>
         <div class="row"><select id="ev-kind"><option value="step">步骤</option><option value="note">备注</option><option value="deviation">偏差</option></select>
           <select id="ev-step">${(snap?.steps ?? []).map((s) => `<option value="${s.id}">${esc(s.op)}</option>`).join("")}</select></div>
@@ -1015,28 +1043,35 @@ function recordHtml() {
         <div class="row"><input id="ev-amount" placeholder="实际用量" /><input id="ev-dur" type="number" min="0" placeholder="实际时长(分)" />
           <label><input type="checkbox" id="ev-backfill" /> 后补</label><button class="primary" id="ev-add">追加</button></div>
       </details>
+      </details>
     </div>
     <div class="item"><div class="meta">样品与测量（本课题）</div>
-      ${samples.map((s) => `<div class="smprow" data-id="${s.id}">
-        <strong>${esc(s.shortName)}</strong> ${esc(s.displayName)} <span class="hint">${s.origin === "public" ? "公开导入" : "用户"} · ${s.states.length} 状态</span>
-        <div class="hint">最新：${esc(s.states[s.states.length - 1].amount.value)} ${esc(s.states[s.states.length - 1].amount.unit)}${s.states[s.states.length - 1].amount.estimated ? "（估计）" : ""} · ${esc(s.states[s.states.length - 1].handling || "—")}</div>
-      </div>`).join("") || `<p class="hint">暂无样品（左栏新建）。</p>`}
+      ${samples.map((s) => {
+        const last = s.states[s.states.length - 1];
+        const mOfS = meas.filter((m) => m.sampleId === s.id);
+        return `<div class="smprow" data-id="${s.id}">
+          <div class="row"><input class="smp-name" value="${esc(s.displayName)}" placeholder="名称" />
+            <span class="hint">编号 ${esc(s.shortName)}</span>
+            <button class="smp-rename">改名</button></div>
+          <div class="hint">总量：${esc(last?.amount.value ?? "—")} ${esc(last?.amount.unit ?? "")}${last?.amount.estimated ? "（估计）" : ""} · 拆分：${s.states.length} 个状态${last?.handling ? ` · 处理：${esc(last.handling)}` : ""}${last?.use ? ` · 用途：${esc(last.use)}` : ""}</div>
+          <div class="hint">测量结果：${mOfS.length ? mOfS.map((m) => `${esc(m.value)}${esc(m.unit)}`).join("、") : "（无）"}</div>
+        </div>`;
+      }).join("") || `<p class="hint">暂无样品（左栏新建）。</p>`}
       <details class="mini"><summary>新增测量（固定样品状态版本）</summary>
         ${samples.length ? `<div class="row"><select id="meas-sample">${samples.map((s) => `<option value="${s.id}">${esc(s.shortName)} ${esc(s.displayName)}</option>`).join("")}</select>
-          <select id="meas-srev">${samples[0].states.map((st) => `<option value="${st.revision}">状态 r${st.revision}</option>`).join("")}</select></div>
+          <select id="meas-srev">${samples[0].states.map((st) => `<option value="${st.revision}">状态 ${st.revision}</option>`).join("")}</select></div>
         <div class="row"><input id="meas-value" placeholder="测量值（必填）" /><input id="meas-unit" placeholder="单位" /></div>
         <div class="row"><input id="meas-method" placeholder="方法" /><input id="meas-instr" placeholder="仪器" /></div>
         <div class="row"><input id="meas-note" placeholder="备注" /><button class="primary" id="meas-add">记录测量</button></div>` : `<p class="hint">先建样品。</p>`}
       </details>
       ${meas.map((m) => `<div class="item meas" data-id="${m.id}">
-        <div class="meta">${esc(state.samples.find((s) => s.id === m.sampleId)?.shortName ?? m.sampleId)} · 状态 r${m.sampleStateRevision} · rev ${m.revision}${m.cellRef ? ` · 回链表 ${esc(m.cellRef.tableId.slice(4, 12))} r${m.cellRef.row}c${m.cellRef.col}` : ""}</div>
+        <div class="meta">${esc(state.samples.find((s) => s.id === m.sampleId)?.shortName ?? m.sampleId)} · 样品状态 ${m.sampleStateRevision}${m.cellRef ? ` · 回链表 r${m.cellRef.row}c${m.cellRef.col}` : ""}</div>
         <div class="row"><input data-field="mValue" value="${esc(m.value)}" /><input data-field="mUnit" value="${esc(m.unit)}" />
           <input data-field="mMethod" value="${esc(m.method)}" /><input data-field="mInstr" value="${esc(m.instrument)}" /></div>
         <div class="row"><input data-field="mNote" value="${esc(m.note)}" /><input data-field="mReason" placeholder="修改原因（必填）" />
           <button class="meas-save">保存</button><button class="history-btn">历史(${m.history.length})</button></div>
       </div>`).join("")}
-    </div>
-    ${impactHtml([e.id, ...samples.map((s) => s.id), ...meas.map((m) => m.id)])}`;
+    </div>`;
 }
 
 // ── 5E：数据处理与分析 / 上下文AI对话 ──────────────────────
@@ -1496,6 +1531,26 @@ document.addEventListener("click", (ev) => {
     const iid = t.dataset.id;
     runJob(t, "AI 影响评估", async () => { const r = await api.runImpact(iid); const res = await pollJob(r.jobId, "影响评估"); await refreshAfterJob(); setStatus(res.discarded ? "已有更新改动：旧评估被丢弃（stale 守卫）" : "影响评估完成"); }); return;
   }
+  // B4 步骤记录表 + 样品改名（记录页）
+  const stepBtn = t.closest(".steptbl-save");
+  if (stepBtn) {
+    const row = stepBtn.closest("tr"); const sid = row.dataset.step; const opText = row.dataset.op || "步骤";
+    const amount = row.querySelector('[data-f="amount"]').value.trim();
+    const durRaw = row.querySelector('[data-f="dur"]').value.trim();
+    const incident = row.querySelector('[data-f="incident"]').checked;
+    const targetSel = row.querySelector('[data-f="target"]');
+    const targetOp = (targetSel?.selectedOptions?.[0]?.textContent ?? "").replace(/^影响:/, "");
+    runBusy(stepBtn, "记录步骤", async () => {
+      await api.appendEvent(ui.executionId, { kind: "step", stepId: sid, text: opText, actual: { ...(amount ? { amount } : {}), ...(durRaw !== "" ? { durationMin: Number(durRaw) } : {}) } });
+      if (incident && targetSel?.value) await api.appendEvent(ui.executionId, { kind: "deviation", stepId: sid, text: `意外：影响到「${targetOp}」` });
+      ui.dirty = false; await refresh(); setStatus("步骤已记录（实际值入本次执行，不改源方案）");
+    }); return;
+  }
+  const smpRename = t.closest(".smp-rename");
+  if (smpRename) {
+    const row = smpRename.closest(".smprow"); const id = row.dataset.id; const name = row.querySelector(".smp-name").value.trim();
+    runBusy(smpRename, "改样品名", async () => { await api.renameSample(id, name); ui.dirty = false; await refresh(); setStatus("样品名已改（稳定编号不变）"); }); return;
+  }
 });
 // 窄导航条：悬停显文字（title）；点击图标弹出完整导航抽屉
 function openNavDrawer() {
@@ -1595,7 +1650,7 @@ $("#right-content").addEventListener("change", (ev) => {
   if (ev.target.id === "proto-rev") { ui.viewRev = Number(ev.target.value); ui.stepSel = null; renderMiddle(); renderRight(); }
   if (ev.target.id === "meas-sample") {
     const s = state.samples.find((x) => x.id === ev.target.value);
-    $("#meas-srev").innerHTML = (s?.states ?? []).map((st) => `<option value="${st.revision}">状态 r${st.revision}</option>`).join("");
+    $("#meas-srev").innerHTML = (s?.states ?? []).map((st) => `<option value="${st.revision}">状态 ${st.revision}</option>`).join("");
   }
   if (ev.target.classList.contains("grp")) {
     const id = ev.target.dataset.id;

@@ -376,3 +376,10 @@ table.grid .celledit input { width: auto; }
 .dbar.est { border: 1px dashed var(--warn); color: var(--warn); }
 .dbar.unknown { border: 1px dashed var(--muted); color: var(--muted); }
 .srcpre { white-space: pre-wrap; word-break: break-word; max-height: 320px; overflow: auto; font-size: 12px; margin: 4px 0 0; }
+
+/* B4：步骤记录表 / 样品区 */
+.steptbl td { vertical-align: top; }
+.steptbl input { width: 92px; }
+.steptbl select { width: auto; max-width: 170px; }
+.smprow { border: 1px solid var(--line); border-radius: var(--radius-sm); padding: var(--space-2); margin-bottom: var(--space-2); }
+.smprow .smp-name { width: 180px; }
