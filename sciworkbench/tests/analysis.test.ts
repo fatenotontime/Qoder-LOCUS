@@ -10,7 +10,8 @@ import { createTopic, createSubquestion, importLiterature, importMeasurements } 
 import { createProtocol, startExecution, confirmPreparation, createSample, addMeasurement } from "../services/experiment.ts";
 import {
   createAnalysisTask, setTaskCandidates, buildSnapshot, snapshotInput, applyRecommendation,
-  submitResult, editResult, archiveResultFile, createReport, updateReport,
+  submitResult, editResult, archiveResultFile, createReport,
+  previewReportEdit, applyReportEdit, confirmReportBlock, draftReportBlocks,
   createChat, chatScopeSnapshot, appendChatTurn, applyChatResponse, cancelChat, retryChat, adoptProposal,
 } from "../services/analysis.ts";
 import { emptyState, MemoryStore, type LocusState } from "../store.ts";
@@ -117,21 +118,86 @@ test("5E-4 报告：固定任务/结果/快照版本；四类分列；修订留�
   const rep = createReport(s, { topicId: w.topicId, taskId: tid }); s = rep.state;
   assert.equal(rep.report.pinned.snapshotHash, snap.hash);
   assert.deepEqual(rep.report.pinned.resultIds, [rr.result.id]);
-  assert.throws(() => updateReport(s, rep.report.id, { sections: { observations: [{ text: "" }] }, reason: "r" }), /不能为空/);
-  assert.throws(() => updateReport(s, rep.report.id, { sections: { observations: [{ text: "x" }] }, reason: "" }), /原因/);
-  const up = updateReport(s, rep.report.id, {
-    sections: {
-      observations: [{ text: "pH4 时 Km 最低", sources: [`结果 ${rr.result.id}`] }],
-      hypotheses: [{ text: "质子化影响结合", sources: [] }],
-      interpretations: [{ text: "与文献一致", sources: ["知识卡"] }],
-      toVerify: [{ text: "补 pH5 点", sources: [] }],
-    },
-    reason: "首次填写",
-  });
-  assert.equal(up.report.revision, 2);
-  assert.equal(up.report.history.length, 1);
-  assert.equal(up.report.sections.observations[0].sources.length, 1);
-  assert.equal(up.report.history[0].sections.observations.length, 0); // 旧版保留
+  // 块级 diff：非法块拒绝；无改动拒绝；预审不改状态
+  assert.throws(() => previewReportEdit(s, rep.report.id, { blocks: [{ nature: "observation", text: "" }] }), /不能为空/);
+  assert.throws(() => previewReportEdit(s, rep.report.id, { blocks: [{ nature: "bogus", text: "x" }] }), /性质不合法/);
+  assert.throws(() => previewReportEdit(s, rep.report.id, { blocks: [] }), /至少需要一个块/);
+  assert.throws(() => applyReportEdit(s, rep.report.id, { baseRevision: 1, blocks: [], reason: "r" }), /至少需要一个块/);
+  const proposed = [
+    { nature: "observation" as const, text: "pH4 时 Km 最低", refs: [{ kind: "result" as const, id: rr.result.id, version: "rev 1", label: "米氏拟合结果" }] },
+    { nature: "hypothesis" as const, text: "质子化影响结合" },
+    { nature: "interpretation" as const, text: "与文献一致", refs: [{ kind: "card", id: "card_x", version: "核对 已核对", label: "知识卡" }] },
+    { nature: "to_verify" as const, text: "补 pH5 点" },
+  ];
+  const pv = previewReportEdit(s, rep.report.id, { blocks: proposed });
+  assert.equal(pv.baseRevision, 1);
+  assert.equal(pv.diff.added.length, 4);
+  assert.equal(pv.diff.same, false);
+  assert.equal(s.reports[0].blocks.length, 0); // 预览不改状态
+  // 乐观并发：baseRevision 不符 → 409 可恢复，不覆盖
+  assert.throws(() => applyReportEdit(s, rep.report.id, { baseRevision: 9, blocks: proposed, reason: "首次填写" }), /已被他处修改/);
+  const ap = applyReportEdit(s, rep.report.id, { baseRevision: 1, blocks: proposed, reason: "首次填写" });
+  s = ap.state;
+  assert.equal(ap.diff.added.length, 4);
+  assert.equal(ap.report.revision, 2);
+  assert.equal(ap.report.history.length, 1);
+  assert.equal(ap.report.blocks.length, 4);
+  assert.deepEqual(ap.report.blocks.map((b) => b.order), [0, 1, 2, 3]);
+  assert.equal(ap.report.blocks[0].nature, "observation");
+  assert.equal(ap.report.blocks[0].refs[0].version, "rev 1"); // 固定版本
+  assert.equal(ap.report.history[0].blocks.length, 0); // 旧版保留
+  // 改一块 + 调顺序 → 只改该块记块内历史；另一块顺序变化被识别
+  const b0 = ap.report.blocks[0].id, b1 = ap.report.blocks[1].id;
+  const pv2 = previewReportEdit(s, rep.report.id, { blocks: [
+    { id: b1, nature: "hypothesis", text: "质子化影响结合" },
+    { id: b0, nature: "observation", text: "pH4 时 Km 最低（复核：n=3）", refs: [{ kind: "result", id: rr.result.id, version: "rev 1", label: "米氏拟合结果" }] },
+    { id: ap.report.blocks[2].id, nature: "interpretation", text: "与文献一致", refs: [{ kind: "card", id: "card_x", version: "核对 已核对", label: "知识卡" }] },
+    { id: ap.report.blocks[3].id, nature: "to_verify", text: "补 pH5 点" },
+  ] });
+  assert.equal(pv2.diff.changed.length, 1);
+  assert.deepEqual(pv2.diff.changed[0].fields, ["text"]);
+  assert.equal(pv2.diff.reordered.length, 2);
+  const ap2 = applyReportEdit(s, rep.report.id, { baseRevision: 2, blocks: [
+    { id: b1, nature: "hypothesis", text: "质子化影响结合" },
+    { id: b0, nature: "observation", text: "pH4 时 Km 最低（复核：n=3）", refs: [{ kind: "result", id: rr.result.id, version: "rev 1", label: "米氏拟合结果" }] },
+    { id: ap.report.blocks[2].id, nature: "interpretation", text: "与文献一致", refs: [{ kind: "card", id: "card_x", version: "核对 已核对", label: "知识卡" }] },
+    { id: ap.report.blocks[3].id, nature: "to_verify", text: "补 pH5 点" },
+  ], reason: "复核改数" });
+  s = ap2.state;
+  const nb0 = ap2.report.blocks.find((b) => b.id === b0)!;
+  assert.equal(nb0.history.length, 1); // 仅改动块记块内历史
+  assert.equal(nb0.history[0].reason, "复核改数");
+  assert.equal(nb0.history[0].text, "pH4 时 Km 最低");
+  assert.equal(ap2.report.blocks.find((b) => b.id === b1)!.history.length, 0);
+  assert.equal(ap2.report.blocks.find((b) => b.id === b1)!.order, 0); // 顺序已生效
+  // 无改动的接受 → 拒绝
+  assert.throws(() => applyReportEdit(s, rep.report.id, { baseRevision: 3, blocks: s.reports[0].blocks, reason: "空" }), /未检测到块改动/);
+});
+
+test("6A-1 AI 草稿块：标 draft 待人工确认；确认后 draft=false 且留历史", async () => {
+  const w = await world();
+  let s = createAnalysisTask(w.s, { topicId: w.topicId, title: "t", core: [{ kind: "execution", id: w.execId }] }).state;
+  const tid = s.analysisTasks[0].id;
+  const snap = buildSnapshot(s, s.analysisTasks[0], "p", "m", "analysis_recommend/v1");
+  s = applyRecommendation(s, tid, REC, "raw", snap).state;
+  const csv = archiveResultFile(s, { name: "r.csv", content: "a,b\n1,2", topicId: w.topicId }); s = csv.state;
+  const rr = submitResult(s, tid, { method: "米氏拟合", adoptedRecommendation: "米氏拟合", params: "x", assetIds: [csv.asset.id] }); s = rr.state;
+  s = createReport(s, { topicId: w.topicId, taskId: tid }).state;
+  const rid = s.reports[0].id;
+  const draft = draftReportBlocks(s, rid);
+  assert.ok(draft.blocks.length >= 1);
+  assert.equal(draft.blocks.every((b) => b.draft), true);
+  assert.equal(s.reports[0].blocks.length, 0); // 生成草稿不改状态
+  const ap = applyReportEdit(s, rid, { baseRevision: 1, blocks: draft.blocks, reason: "AI 草稿入稿" }); s = ap.state;
+  const draftBlock = s.reports[0].blocks[0];
+  assert.equal(draftBlock.draft, true);
+  assert.throws(() => confirmReportBlock(s, rid, "ghost", ""), /不存在/);
+  const cf = confirmReportBlock(s, rid, draftBlock.id, "已核对原图");
+  s = cf.state;
+  assert.equal(cf.report.blocks[0].draft, false);
+  assert.equal(cf.report.blocks[0].history.length, 1);
+  assert.equal(cf.report.revision, 3);
+  assert.throws(() => confirmReportBlock(s, rid, draftBlock.id, ""), /非 AI 草稿/);
 });
 
 test("5E-5 对话：运行中拒发；提案越界丢弃；取消/重试边界；采纳须确认且不重复", async () => {
@@ -186,8 +252,9 @@ test("5E-6 采纳写入报告待验证：修订留历史并标来源", async () 
   const snap = chatScopeSnapshot(s, s.chats[0], "p", "m");
   s = applyChatResponse(s, cid, turn.messageId, { answer: "a", sources: [], proposals: [{ targetKind: "report-toVerify", targetId: rid, preview: "补 pH5 数据点" }] }, snap);
   const r = adoptProposal(s, cid, turn.messageId, 0, true);
-  assert.equal(r.state.reports[0].sections.toVerify.length, 1);
-  assert.equal(r.state.reports[0].sections.toVerify[0].sources[0], `对话 ${cid} · 消息 ${turn.messageId}`);
+  assert.equal(r.state.reports[0].blocks.length, 1);
+  assert.equal(r.state.reports[0].blocks[0].nature, "to_verify");
+  assert.equal(r.state.reports[0].blocks[0].refs[0].label, `对话 ${cid} · 消息 ${turn.messageId}`);
   assert.equal(r.state.reports[0].revision, 2);
   assert.match(r.state.reports[0].history[0].reason, /人工确认/);
 });
@@ -297,4 +364,58 @@ test("5E-7 路由：推荐冻结快照＋重复 409；结果提交；对话采�
     assert.equal((await post(`/api/analysis/tasks/${tid}/recommend`, { purpose: "x" })).status, 422);
     assert.equal((await post(`/api/chats/${cid}/send`, { text: "x" })).status, 422);
   } finally { app.close(); ai.server.close(); clearAiConfig(); }
+});
+
+test("6A-1 路由：报告块 preview→apply（409 并发）→confirm；draft 本地生成", async () => {
+  const { createApp } = await import("../server.ts");
+  const app = await createApp(new MemoryStore());
+  await new Promise<void>((r) => app.listen(0, "127.0.0.1", () => r()));
+  const base = `http://127.0.0.1:${(app.address() as import("node:net").AddressInfo).port}`;
+  const post = async (p: string, b: unknown) => {
+    const res = await fetch(`${base}${p}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(b) });
+    return { status: res.status, data: await res.json() as Record<string, unknown> };
+  };
+  const get = async (p: string) => (await fetch(`${base}${p}`)).json() as Promise<Record<string, never>>;
+  try {
+    const topicId = (await post("/api/topics", { name: "报告路由", researchQuestion: "Q" })).data.topicId as string;
+    const rid = (await post("/api/reports", { topicId })).data.reportId as string;
+    const blocks = [
+      { nature: "observation", text: "pH4 时 Km 最低", refs: [{ kind: "note", label: "结果 ares_1" }] },
+      { nature: "human_judgment", text: "该趋势符合酸失活预期" },
+    ];
+    const pv = await post(`/api/reports/${rid}/preview`, { blocks });
+    assert.equal(pv.status, 200);
+    assert.equal(pv.data.baseRevision, 1);
+    assert.equal((pv.data.diff as { added: unknown[] }).added.length, 2);
+    // 预览不改状态
+    assert.equal(((await get("/api/state")).reports as { blocks: unknown[] }[])[0].blocks.length, 0);
+    // 并发：错误 baseRevision → 409 且带 currentRevision
+    const conflict = await post(`/api/reports/${rid}/apply`, { baseRevision: 5, blocks, reason: "x" });
+    assert.equal(conflict.status, 409);
+    assert.equal(conflict.data.currentRevision, 1);
+    // 正确接受 → 新版本
+    const ap = await post(`/api/reports/${rid}/apply`, { baseRevision: 1, blocks, reason: "首次填写" });
+    assert.equal(ap.status, 200);
+    assert.equal(ap.data.revision, 2);
+    let st = await get("/api/state");
+    const rep = (st.reports as { blocks: { id: string; nature: string; draft: boolean }[] }[])[0];
+    assert.equal(rep.blocks.length, 2);
+    assert.equal(rep.blocks[1].nature, "human_judgment");
+    // draft：本地生成（无钉住任务 → 空，不冒充）；手填 AI 草稿块 → 确认
+    const draft = await post(`/api/reports/${rid}/draft`, {});
+    assert.equal(draft.status, 200);
+    assert.deepEqual(draft.data.blocks, []);
+    const draftBlock = { nature: "observation", text: "（AI 草稿）峰形疑似双峰", draft: true };
+    const ap2 = await post(`/api/reports/${rid}/apply`, { baseRevision: 2, blocks: [...blocks, draftBlock], reason: "AI 草稿入稿" });
+    assert.equal(ap2.status, 200);
+    st = await get("/api/state");
+    const rep2 = (st.reports as { blocks: { id: string; draft: boolean }[] }[])[0];
+    const draftId = rep2.blocks.find((b) => b.draft)!.id;
+    assert.equal((await post(`/api/reports/${rid}/blocks/${draftId}/confirm`, { reason: "已核对" })).status, 200);
+    st = await get("/api/state");
+    assert.equal((st.reports as { blocks: { draft: boolean }[] }[])[0].blocks.every((b) => !b.draft), true);
+    assert.equal((await post(`/api/reports/${rid}/blocks/ghost/confirm`, { reason: "" })).status, 404);
+    // 非法块
+    assert.equal((await post(`/api/reports/${rid}/preview`, { blocks: [{ nature: "bogus", text: "x" }] })).status, 422);
+  } finally { app.close(); }
 });

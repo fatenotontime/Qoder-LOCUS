@@ -117,14 +117,14 @@ test("旧版本状态不迁移（返回空）", async () => {
   rmSync(path, { force: true });
 });
 
-test("v2–v6 → v7 迁移：保留既有数据与原件 hash，补论文/附件与机械草稿标记", async () => {
+test("v2–v7 → v8 迁移：保留既有数据与原件 hash，补论文/附件与机械草稿标记", async () => {
   const path = join(tmpdir(), `locus-v2-${Date.now()}.json`);
   const r = importMeasurements(emptyState(), { name: "d.csv", csv: "t,v\n0,1" });
   const oldHash = "legacy-hash-keep";
   const legacyAssets = r.state.assets.map((a) => ({ ...a, hash: oldHash, fingerprint: undefined })); // 真旧记录无指纹字段
   await new JsonFileStore(path).save({ version: 2, assets: legacyAssets, cards: [], tables: r.state.tables } as never);
   const back = await new JsonFileStore(path).load();
-  assert.equal(back.version, 7);
+  assert.equal(back.version, 8);
   assert.equal(back.tables.length, 1);
   assert.equal(back.assets[0].hash, oldHash); // 历史原件 hash 不被加载重算覆盖（5C）
   assert.equal(back.assets[0].fingerprint, oldHash); // 旧记录指纹=既有口径
@@ -150,7 +150,7 @@ test("v2–v6 → v7 迁移：保留既有数据与原件 hash，补论文/附�
   const oldCard = { id: "card_old", assetId: "ast_x", rawText: "x", locator: { sectionQuote: "x" }, audit: "confirm", importance: null, note: "旧备注", reason: "", extraction: "draft", revision: 2, history: [], createdAt: "t", updatedAt: "t" };
   await new JsonFileStore(path3).save({ version: 3, assets: [], cards: [oldCard], tables: [] } as never);
   const back3 = await new JsonFileStore(path3).load();
-  assert.equal(back3.version, 7);
+  assert.equal(back3.version, 8);
   assert.deepEqual(back3.cards[0].extracted, { fields: {}, units: [], conditions: [] });
   assert.deepEqual(back3.cards[0].unknowns, []);
   assert.equal(back3.cards[0].secondaryCitation, false);
@@ -173,6 +173,33 @@ test("v2–v6 → v7 迁移：保留既有数据与原件 hash，补论文/附�
   assert.equal(again.papers.length, 1);
   assert.equal(again.attachments.length, 1);
   rmSync(path5, { force: true });
+  // v7 报告四类 sections → v8 有序块：性质映射、顺序展开、旧来源记为 note 引用；幂等
+  const path7 = join(tmpdir(), `locus-v7-${Date.now()}.json`);
+  const oldRep = {
+    id: "rep_old", topicId: "tp1", pinned: { resultIds: [], },
+    sections: {
+      observations: [{ text: "obs1", sources: ["结果 ares_1"] }],
+      hypotheses: [{ text: "hyp1", sources: [] }],
+      interpretations: [{ text: "int1", sources: ["知识卡"] }],
+      toVerify: [{ text: "tv1", sources: [] }],
+    },
+    revision: 3, history: [], createdAt: "t", updatedAt: "t",
+  };
+  await new JsonFileStore(path7).save({ version: 7, reports: [oldRep] } as never);
+  const back7 = await new JsonFileStore(path7).load();
+  const rb = back7.reports[0];
+  assert.equal(rb.blocks.length, 4);
+  assert.deepEqual(rb.blocks.map((b) => b.nature), ["observation", "hypothesis", "interpretation", "to_verify"]);
+  assert.deepEqual(rb.blocks.map((b) => b.order), [0, 1, 2, 3]);
+  assert.equal(rb.blocks[0].text, "obs1");
+  assert.equal(rb.blocks[0].refs[0].kind, "note");
+  assert.equal(rb.blocks[0].refs[0].label, "结果 ares_1");
+  assert.equal(rb.blocks[0].draft, false);
+  assert.equal(rb.revision, 3); // 修订号不因迁移变化
+  await new JsonFileStore(path7).save(back7);
+  const back7again = await new JsonFileStore(path7).load();
+  assert.equal(back7again.reports[0].blocks.length, 4); // 幂等
+  rmSync(path7, { force: true });
 });
 
 // ── AI：独立任务 + 进程内配置 ───────────────────────────────

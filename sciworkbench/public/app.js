@@ -1319,7 +1319,59 @@ function contextMapHtml(t) {
     ${t.snapshot ? snapshotHtml(t.snapshot) : ""}`;
 }
 
-const REPORT_SECTIONS = [["observations", "观察"], ["hypotheses", "假设"], ["interpretations", "解释"], ["toVerify", "待验证"]];
+const REPORT_NATURES = [["observation", "观察"], ["hypothesis", "假设"], ["interpretation", "解释"], ["to_verify", "待验证"], ["human_judgment", "人工判断"]];
+const natureLabel = (n) => (REPORT_NATURES.find(([k]) => k === n)?.[1] ?? n);
+const refDisplay = (r) => r.version ? `${r.label}（${r.kind} ${r.version}）` : r.label;
+
+function blockRowHtml(b, i) {
+  return `<div class="reprow" data-bid="${esc(b.id)}" data-refs="${esc(JSON.stringify(b.refs ?? []))}">
+    <div class="repmove"><button class="rep-up" title="上移">↑</button><button class="rep-down" title="下移">↓</button><span class="hint">#${i + 1}</span></div>
+    <select class="rep-nature">${REPORT_NATURES.map(([k, l]) => `<option value="${k}" ${k === b.nature ? "selected" : ""}>${l}</option>`).join("")}</select>
+    <textarea class="rep-text" rows="2">${esc(b.text)}</textarea>
+    <input class="rep-refs" value="${esc((b.refs ?? []).map((r) => r.label).join("；"))}" placeholder="引用（分号分隔）"/>
+    <div class="reprowactions">
+      <span class="badge ${b.draft ? "warn" : "confirm"}">${b.draft ? "AI 草稿待确认" : "已确认"}</span>
+      ${b.draft ? `<button class="rep-confirm">确认</button>` : ""}
+      <button class="rep-del">删除</button>
+    </div></div>`;
+}
+
+function reportHtml(r) {
+  return `<details class="mini rep" data-repid="${r.id}" ${r.id === ui.reportId ? "open" : ""}><summary>分析初稿 r${r.revision} · 钉住 ${r.pinned.resultIds.length} 结果${r.pinned.snapshotHash ? ` · 快照 ${r.pinned.snapshotHash.slice(0, 8)}…` : ""}</summary>
+    <p class="hint">块按顺序排列；每块标性质与固定引用。改动→预览 diff→接受为新版本。</p>
+    <div class="repblocks">${r.blocks.map(blockRowHtml).join("") || `<p class="hint">尚无块。</p>`}</div>
+    <div class="repaddrow">
+      <select class="rep-newnature">${REPORT_NATURES.map(([k, l]) => `<option value="${k}">${l}</option>`).join("")}</select>
+      <button class="rep-add">＋ 添加块</button>
+      <button class="rep-draft">由任务生成草稿</button>
+    </div>
+    <input class="rep-reason" placeholder="修订原因（必填，留历史）"/>
+    <button class="primary rep-preview">预览改动</button>
+    <div class="rep-diff"></div>
+    ${r.history.length ? `<details class="mini"><summary>历史（${r.history.length}）</summary>${r.history.map((h) => `<p class="hint">r${h.revision} · ${esc(h.at)} · ${esc(h.reason)}</p>`).join("")}</details>` : ""}
+  </details>`;
+}
+
+function collectReportBlocks(repEl) {
+  return [...repEl.querySelectorAll(".repblocks .reprow")].map((row) => {
+    let refs = [];
+    try { refs = JSON.parse(row.dataset.refs || "[]"); } catch {}
+    const labels = row.querySelector(".rep-refs").value.split(/[;；]/).map((s) => s.trim()).filter(Boolean);
+    const outRefs = labels.map((lab, j) => refs[j] ? { ...refs[j], label: lab } : { kind: "note", id: "", version: "", label: lab });
+    return { id: row.dataset.bid || undefined, nature: row.querySelector(".rep-nature").value, text: row.querySelector(".rep-text").value.trim(), refs: outRefs };
+  });
+}
+
+function renderBlockDiff(el, diff, reportId) {
+  if (diff.same) { el.innerHTML = `<p class="hint">未检测到块改动。</p>`; return; }
+  const part = (label, arr, fmt) => arr.length ? `<p class="hint"><b>${label}</b> ${arr.map(fmt).join("；")}</p>` : "";
+  el.innerHTML = `<div class="diffbox">
+    ${part("新增", diff.added, (a) => `[${natureLabel(a.nature)}] ${esc(a.text)}`)}
+    ${part("删除", diff.removed, (a) => `[${natureLabel(a.nature)}] ${esc(a.text)}`)}
+    ${part("修改", diff.changed, (c) => `[${natureLabel(c.after.nature)}] ${esc(c.text)}（${c.fields.join("/")}）`)}
+    ${part("顺序", diff.reordered, (o) => `#${o.from + 1}→#${o.to + 1}`)}
+    <button class="primary rep-accept" data-repid="${reportId}" data-rev="${diff.baseRevision}">接受并保存为新版本</button></div>`;
+}
 
 function resultHtml(r) {
   const atts = r.assetIds.map((id) => state.assets.find((a) => a.id === id)).filter(Boolean);
@@ -1338,17 +1390,6 @@ function resultHtml(r) {
         <button class="res-edit-save">保存修订</button>
       </div></details>
     ${r.history.length ? `<details class="mini"><summary>历史（${r.history.length}）</summary>${r.history.map((h) => `<p class="hint">r${h.revision} · ${esc(h.at)} · ${esc(h.reason)} · 方法 ${esc(h.method)}</p>`).join("")}</details>` : ""}
-  </details>`;
-}
-
-function reportHtml(r) {
-  return `<details class="mini rep" data-repid="${r.id}" ${r.id === ui.reportId ? "open" : ""}><summary>报告 r${r.revision} · 钉住 ${r.pinned.resultIds.length} 结果${r.pinned.snapshotHash ? ` · 快照 ${r.pinned.snapshotHash.slice(0, 8)}…` : ""}</summary>
-    ${REPORT_SECTIONS.map(([k, label]) => `<p class="hint"><b>${label}</b>（与其余三类分列，来源可溯）</p>
-      ${(r.sections[k] ?? []).map((it, i) => `<div class="reprow" data-sec="${k}" data-idx="${i}"><textarea data-field="text" rows="2">${esc(it.text)}</textarea><input data-field="sources" value="${esc(it.sources.join("；"))}" placeholder="来源（分号分隔）"/><button class="rep-del">删除</button></div>`).join("")}
-      <button class="rep-add" data-sec="${k}">＋ 添加${label}</button>`).join("")}
-    <input class="rep-reason" placeholder="修订原因（必填，留历史）"/>
-    <button class="primary rep-save">保存报告修订</button>
-    ${r.history.length ? `<details class="mini"><summary>历史（${r.history.length}）</summary>${r.history.map((h) => `<p class="hint">r${h.revision} · ${esc(h.at)} · ${esc(h.reason)}</p>`).join("")}</details>` : ""}
   </details>`;
 }
 
@@ -1379,7 +1420,7 @@ function analysisRightHtml() {
     <p class="hint">只有图/脚本也可提交，但不标「可复现」；附数据文件（csv/tsv/json/txt/md）＋关键参数才可复现。</p>
     <button class="primary" id="res-submit">提交结果</button></details>`;
   h += results.map(resultHtml).join("");
-  h += `<details class="mini" open><summary>分析初稿（观察/假设/解释/待验证）</summary>
+  h += `<details class="mini" open><summary>分析初稿（有序块 · 性质 · 固定引用）</summary>
     <button id="rep-create">新建初稿（钉住结果）</button>
     ${reps.map(reportHtml).join("") || `<p class="hint">暂无报告。</p>`}</details>`;
   return h;
@@ -1646,24 +1687,58 @@ $("#right-content").addEventListener("click", async (ev) => {
       }); return;
     }
     if (ev.target.classList.contains("rep-add")) {
-      const row = document.createElement("div"); row.className = "reprow"; row.dataset.sec = ev.target.dataset.sec; row.dataset.idx = "new";
-      row.innerHTML = `<textarea data-field="text" rows="2" placeholder="内容"></textarea><input data-field="sources" placeholder="来源（分号分隔）"/><button class="rep-del">删除</button>`;
-      ev.target.before(row); ui.dirty = true; return;
+      const box = ev.target.closest(".rep");
+      const nature = box.querySelector(".rep-newnature").value;
+      const row = document.createElement("div");
+      row.className = "reprow"; row.dataset.bid = ""; row.dataset.refs = "[]";
+      row.innerHTML = blockRowHtml({ id: "", nature, text: "", refs: [], draft: false }, box.querySelectorAll(".repblocks .reprow").length);
+      box.querySelector(".repblocks").append(row);
+      ui.dirty = true; return;
     }
     if (ev.target.classList.contains("rep-del")) { ev.target.closest(".reprow").remove(); ui.dirty = true; return; }
-    if (ev.target.classList.contains("rep-save")) {
+    if (ev.target.classList.contains("rep-up") || ev.target.classList.contains("rep-down")) {
+      const row = ev.target.closest(".reprow"); const parent = row.parentElement;
+      const sib = ev.target.classList.contains("rep-up") ? row.previousElementSibling : row.nextElementSibling;
+      if (sib) { ev.target.classList.contains("rep-up") ? parent.insertBefore(row, sib) : parent.insertBefore(sib, row); ui.dirty = true; }
+      return;
+    }
+    if (ev.target.classList.contains("rep-confirm")) {
       const box = ev.target.closest(".rep"); const repId = box.dataset.repid;
+      const bid = ev.target.closest(".reprow").dataset.bid;
+      await runBusy(ev.target, "确认草稿块", async () => {
+        await api.confirmReportBlock(repId, bid, "已人工核对");
+        await refresh(); setStatus("AI 草稿块已人工确认");
+      }); return;
+    }
+    if (ev.target.classList.contains("rep-draft")) {
+      const box = ev.target.closest(".rep"); const repId = box.dataset.repid;
+      await runBusy(ev.target, "生成草稿", async () => {
+        const r = await api.draftReport(repId);
+        const holder = box.querySelector(".repblocks");
+        const base = holder.querySelectorAll(".reprow").length;
+        (r.blocks ?? []).forEach((b, i) => { const row = document.createElement("div"); row.className = "reprow"; row.dataset.bid = ""; row.dataset.refs = esc(JSON.stringify(b.refs ?? [])); row.innerHTML = blockRowHtml({ ...b, id: "" }, base + i); holder.append(row); });
+        ui.dirty = true; setStatus(`草稿块 ${r.blocks.length} 个已入编辑器（未保存，须预览→接受）`);
+      }); return;
+    }
+    if (ev.target.classList.contains("rep-preview")) {
+      const box = ev.target.closest(".rep"); const repId = box.dataset.repid;
+      let blocks;
+      try { blocks = collectReportBlocks(box); } catch (e) { showBanner(String(e.message ?? e)); return; }
+      if (!blocks.length) { showBanner("至少需要一个块。"); return; }
+      await runBusy(ev.target, "预览改动", async () => {
+        const r = await api.previewReport(repId, blocks);
+        renderBlockDiff(box.querySelector(".rep-diff"), r.diff, repId);
+        setStatus(r.diff.same ? "未检测到改动。" : "已生成块级 diff，确认后接受为新版本。");
+      }); return;
+    }
+    if (ev.target.classList.contains("rep-accept")) {
+      const box = ev.target.closest(".rep"); const repId = ev.target.dataset.repid; const baseRevision = Number(ev.target.dataset.rev);
       const reason = box.querySelector(".rep-reason").value.trim();
       if (!reason) { showBanner("报告修订必须填写原因（留历史）。"); return; }
-      const sections = { observations: [], hypotheses: [], interpretations: [], toVerify: [] };
-      for (const row of box.querySelectorAll(".reprow")) {
-        const text = row.querySelector('[data-field="text"]').value.trim();
-        if (!text) continue;
-        sections[row.dataset.sec].push({ text, sources: row.querySelector('[data-field="sources"]').value.split(/[;；]/).map((s) => s.trim()).filter(Boolean) });
-      }
-      await runBusy(ev.target, "保存报告", async () => {
-        await api.updateReport(repId, sections, reason);
-        ui.reportId = repId; ui.dirty = false; await refresh(); setStatus("报告已保存（修订留历史）");
+      const blocks = collectReportBlocks(box);
+      await runBusy(ev.target, "接受改动", async () => {
+        const r = await api.applyReport(repId, baseRevision, blocks, reason);
+        ui.reportId = repId; ui.dirty = false; await refresh(); setStatus(`改动已接受：新版本 r${r.revision}（留历史）`);
       }); return;
     }
     if (ev.target.classList.contains("chat-adopt")) {

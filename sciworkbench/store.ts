@@ -483,21 +483,36 @@ export interface AnalysisResultRecord {
   readonly updatedAt: string;
 }
 
-export interface ReportItem { readonly text: string; readonly sources: string[]; }
-export interface ReportSections {
-  readonly observations: ReportItem[];
-  readonly hypotheses: ReportItem[];
-  readonly interpretations: ReportItem[];
-  readonly toVerify: ReportItem[];
+/** 报告块性质：明确区分观察 / 假设 / 解释 / 待验证 / 人工判断，不混淆证据与推断。 */
+export type ReportBlockNature = "observation" | "hypothesis" | "interpretation" | "to_verify" | "human_judgment";
+
+/** 报告块引用：固定版本的明确引用（kind=note 表示旧版自由文字来源，无稳定对象）。 */
+export interface ReportBlockRef {
+  readonly kind: "result" | "measurement" | "table" | "card" | "execution" | "protocol" | "subquestion" | "snapshot" | "note";
+  readonly id: string;
+  readonly version: string;
+  readonly label: string;
 }
+
+/** 报告块：显式顺序＋性质＋固定引用＋AI 草稿标记＋块内局部修改历史。 */
+export interface ReportBlock {
+  readonly id: string;
+  readonly order: number;
+  readonly nature: ReportBlockNature;
+  readonly text: string;
+  readonly refs: ReportBlockRef[];
+  readonly draft: boolean;
+  readonly history: { at: string; reason: string; text: string; nature: ReportBlockNature }[];
+}
+
 export interface PreliminaryReportRecord {
   readonly id: string;
   readonly topicId: string;
   readonly taskId?: string;
   readonly pinned: { taskId?: string; resultIds: string[]; snapshotHash?: string };
-  readonly sections: ReportSections;
+  readonly blocks: ReportBlock[];
   readonly revision: number;
-  readonly history: { revision: number; at: string; reason: string; sections: ReportSections }[];
+  readonly history: { revision: number; at: string; reason: string; blocks: ReportBlock[] }[];
   readonly createdAt: string;
   readonly updatedAt: string;
 }
@@ -555,7 +570,7 @@ export interface LocusState {
   readonly chats: ChatSessionRecord[];
 }
 
-export const STATE_VERSION = 7;
+export const STATE_VERSION = 8;
 
 export function emptyState(): LocusState {
   return { version: STATE_VERSION, topics: [], subquestions: [], assets: [], papers: [], attachments: [], cards: [], tables: [], adoptions: [], mappings: [], comparisons: [], protocols: [], templates: [], executions: [], samples: [], measurements: [], impacts: [], ocrs: [], analysisTasks: [], analysisResults: [], reports: [], chats: [] };
@@ -586,8 +601,8 @@ export class JsonFileStore implements Store {
     try {
       const p = JSON.parse(readFileSync(this.#path, "utf8")) as Partial<LocusState> & { version?: number };
       const v = p.version ?? 0;
-      if (v !== 2 && v !== 3 && v !== 4 && v !== 5 && v !== 6 && v !== STATE_VERSION) return emptyState();
-      // v2–v6 → v7：保留既有数据，补空新实体。
+      if (v !== 2 && v !== 3 && v !== 4 && v !== 5 && v !== 6 && v !== 7 && v !== STATE_VERSION) return emptyState();
+      // v2–v7 → v8：保留既有数据，补空新实体。
       // 原件 hash **不再加载重算**（5C）：历史 hash 原样保留；查重指纹另存（旧记录指纹=既有 hash 口径）。
       const assets = (p.assets ?? []).map((a) => ({ ...a, fingerprint: a.fingerprint ?? a.hash }));
       // 存量文献原件 → 论文条目 + 正文附件（题录未提供处留空，不补造）；已有附件的原件不重复建。
@@ -634,7 +649,26 @@ export class JsonFileStore implements Store {
         ocrs: p.ocrs ?? [],
         analysisTasks: p.analysisTasks ?? [],
         analysisResults: p.analysisResults ?? [],
-        reports: p.reports ?? [],
+        // v7 报告四类 sections → v8 有序块（性质映射；旧来源文字记为 note 引用；顺序按类别展开）。确定性、幂等。
+        reports: (p.reports ?? []).map((r) => {
+          const rep = r as Partial<PreliminaryReportRecord> & { sections?: Record<string, { text: string; sources?: string[] }[]> };
+          if (Array.isArray(rep.blocks)) return rep as PreliminaryReportRecord;
+          const secMap: [string, ReportBlockNature][] = [
+            ["observations", "observation"], ["hypotheses", "hypothesis"],
+            ["interpretations", "interpretation"], ["toVerify", "to_verify"],
+          ];
+          const blocks: ReportBlock[] = [];
+          for (const [key, nature] of secMap) {
+            for (const it of rep.sections?.[key] ?? []) {
+              blocks.push({
+                id: `${rep.id}#b${blocks.length}`, order: blocks.length, nature,
+                text: it.text ?? "", draft: false, history: [],
+                refs: (it.sources ?? []).map((s) => ({ kind: "note" as const, id: "", version: "", label: s })),
+              });
+            }
+          }
+          return { ...(rep as PreliminaryReportRecord), blocks };
+        }),
         chats: p.chats ?? [],
       };
     } catch {

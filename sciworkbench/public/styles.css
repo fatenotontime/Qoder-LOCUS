@@ -266,6 +266,14 @@ table.grid .celledit input { width: auto; }
 .chatmsg.user { background: #eef3ef; }
 .chatmsg p { margin: 4px 0; white-space: pre-wrap; word-break: break-word; }
 .repraw, .reprow { display: grid; gap: 4px; margin: 4px 0; }
+/* 6A：报告块编辑 */
+.reprow { border: 1px solid var(--line); border-radius: var(--radius-sm); padding: var(--space-2); }
+.repmove { display: flex; gap: 6px; align-items: center; }
+.reprowactions { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.repaddrow { display: flex; gap: 6px; align-items: center; margin: var(--space-2) 0; }
+.repblocks { display: grid; gap: var(--space-2); }
+.diffbox { border: 1px dashed var(--accent); border-radius: var(--radius-sm); padding: var(--space-2); margin-top: var(--space-2); }
+.diffbox .hint { margin: 2px 0; }
 .resedit { display: grid; gap: 4px; }
 #mid-content pre { white-space: pre-wrap; word-break: break-word; font-size: 12px; background: var(--bg); border: 1px solid var(--line); border-radius: var(--radius-sm); padding: var(--space-2); max-height: 320px; overflow: auto; }
 

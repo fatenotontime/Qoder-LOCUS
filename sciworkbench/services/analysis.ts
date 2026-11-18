@@ -7,7 +7,7 @@
 import { randomUUID } from "node:crypto";
 import type {
   LocusState, ObjectRef, ContextFragment, ContextSnapshot, AnalysisTaskRecord,
-  AnalysisResultRecord, PreliminaryReportRecord, ReportSections, ReportItem,
+  AnalysisResultRecord, PreliminaryReportRecord, ReportBlock, ReportBlockRef, ReportBlockNature,
   ChatSessionRecord, ChatMessage, ChatProposal,
 } from "../store.ts";
 import { contentHash } from "../store.ts";
@@ -268,23 +268,84 @@ export function editResult(
   return { state: { ...state, analysisResults: state.analysisResults.map((r) => (r.id === resultId ? result : r)) }, result };
 }
 
-// ── 初步报告（四类分列，来源可溯，修订留历史）────────────────
+// ── 分析初稿（有序块：顺序＋性质＋固定引用；块级 diff→接受→新版本）────
+// 性质区分观察/假设/解释/待验证/人工判断；引用固定版本；AI 草稿带 draft 标记，须人工确认。
 
-const SECTION_KEYS = ["observations", "hypotheses", "interpretations", "toVerify"] as const;
+const NATURES: ReportBlockNature[] = ["observation", "hypothesis", "interpretation", "to_verify", "human_judgment"];
+const BLOCK_REF_KINDS = ["result", "measurement", "table", "card", "execution", "protocol", "subquestion", "snapshot", "note"];
+const NATURE_LABEL: Record<ReportBlockNature, string> = {
+  observation: "观察", hypothesis: "假设", interpretation: "解释", to_verify: "待验证", human_judgment: "人工判断",
+};
 
-function cleanSections(v: unknown): ReportSections {
-  const o = (v ?? {}) as Record<string, unknown>;
-  const out = {} as Record<(typeof SECTION_KEYS)[number], ReportItem[]>;
-  for (const k of SECTION_KEYS) {
-    const arr = Array.isArray(o[k]) ? o[k] : [];
-    out[k] = arr.map((it) => {
-      const x = (it ?? {}) as Record<string, unknown>;
-      const text = str(x.text);
-      if (!text) throw new AppError(422, `报告「${k}」条目内容不能为空。`);
-      return { text, sources: (Array.isArray(x.sources) ? x.sources : []).map(str).filter(Boolean) };
-    });
+function cleanRefs(v: unknown): ReportBlockRef[] {
+  return (Array.isArray(v) ? v : []).map((r) => {
+    const o = (r ?? {}) as Record<string, unknown>;
+    const kind = str(o.kind);
+    const label = str(o.label);
+    if (!BLOCK_REF_KINDS.includes(kind)) throw new AppError(422, `不支持的引用类型：${kind}`);
+    const id = str(o.id);
+    if (kind !== "note" && !id) throw new AppError(422, `引用 ${kind} 缺少稳定 id。`);
+    if (!label && !id) throw new AppError(422, "引用须有标签或 id。");
+    return { kind: kind as ReportBlockRef["kind"], id, version: str(o.version), label };
+  });
+}
+
+function cleanBlocks(v: unknown): ReportBlock[] {
+  const arr = Array.isArray(v) ? v : [];
+  if (!arr.length) throw new AppError(422, "报告至少需要一个块（每块含内容与性质）。");
+  return arr.map((it, i) => {
+    const x = (it ?? {}) as Record<string, unknown>;
+    const text = str(x.text);
+    if (!text) throw new AppError(422, "报告块内容不能为空。");
+    const nature = str(x.nature);
+    if (!NATURES.includes(nature as ReportBlockNature)) throw new AppError(422, `报告块性质不合法：${nature}`);
+    return {
+      id: str(x.id) || `rblk_${randomUUID()}`,
+      order: i,
+      nature: nature as ReportBlockNature,
+      text,
+      refs: cleanRefs(x.refs),
+      draft: x.draft === true,
+      history: Array.isArray(x.history) ? (x.history as ReportBlock["history"]) : [],
+    };
+  });
+}
+
+export interface BlockDiff {
+  readonly baseRevision: number;
+  readonly added: { nature: ReportBlockNature; text: string }[];
+  readonly removed: { nature: ReportBlockNature; text: string }[];
+  readonly changed: { id: string; text: string; fields: string[]; before: ReportBlock; after: ReportBlock }[];
+  readonly reordered: { id: string; from: number; to: number }[];
+  readonly same: boolean;
+}
+
+function blockFieldsDiffer(a: ReportBlock, b: ReportBlock): string[] {
+  const f: string[] = [];
+  if (a.text !== b.text) f.push("text");
+  if (a.nature !== b.nature) f.push("nature");
+  if (JSON.stringify(a.refs) !== JSON.stringify(b.refs)) f.push("refs");
+  if (a.draft !== b.draft) f.push("draft");
+  return f;
+}
+
+/** 块级 diff：新增/删除/修改（含字段）＋顺序变化。无对象引用者按 text+nature 匹配。 */
+export function diffReportBlocks(current: ReportBlock[], proposed: ReportBlock[], baseRevision: number): BlockDiff {
+  const byId = new Map(current.map((b) => [b.id, b]));
+  const proposedIds = new Set(proposed.map((b) => b.id));
+  const added: BlockDiff["added"] = [];
+  const changed: BlockDiff["changed"] = [];
+  const reordered: BlockDiff["reordered"] = [];
+  for (const p of proposed) {
+    const before = byId.get(p.id);
+    if (!before) { added.push({ nature: p.nature, text: p.text }); continue; }
+    const fields = blockFieldsDiffer(before, p);
+    if (fields.length) changed.push({ id: p.id, text: p.text, fields, before, after: p });
+    if (before.order !== p.order) reordered.push({ id: p.id, from: before.order, to: p.order });
   }
-  return out as ReportSections;
+  const removed = current.filter((b) => !proposedIds.has(b.id)).map((b) => ({ nature: b.nature, text: b.text }));
+  const same = !added.length && !removed.length && !changed.length && !reordered.length;
+  return { baseRevision, added, removed, changed, reordered, same };
 }
 
 export function createReport(state: LocusState, input: { topicId: string; taskId?: string }): { state: LocusState; report: PreliminaryReportRecord } {
@@ -296,28 +357,82 @@ export function createReport(state: LocusState, input: { topicId: string; taskId
   const report: PreliminaryReportRecord = {
     id: `rep_${randomUUID()}`, topicId: input.topicId, taskId,
     pinned: { taskId, resultIds: task?.resultIds ?? [], snapshotHash: task?.snapshot?.hash },
-    sections: { observations: [], hypotheses: [], interpretations: [], toVerify: [] },
+    blocks: [],
     revision: 1, history: [], createdAt: now(), updatedAt: now(),
   };
   return { state: { ...state, reports: [...state.reports, report] }, report };
 }
 
-export function updateReport(
+/** 预览块级 diff（不改状态）。baseRevision 供接受时做乐观并发校验。 */
+export function previewReportEdit(state: LocusState, reportId: string, input: { blocks: unknown }): { baseRevision: number; diff: BlockDiff } {
+  const cur = requireReport(state, reportId);
+  const proposed = cleanBlocks(input.blocks);
+  return { baseRevision: cur.revision, diff: diffReportBlocks(cur.blocks, proposed, cur.revision) };
+}
+
+/** 接受块编辑 → 新版本；baseRevision 不符即 409（可恢复冲突，不覆盖）。改动块记录块内历史。 */
+export function applyReportEdit(
   state: LocusState,
   reportId: string,
-  input: { sections: unknown; reason: string },
-): { state: LocusState; report: PreliminaryReportRecord } {
-  const cur = state.reports.find((r) => r.id === reportId);
-  if (!cur) throw new AppError(404, `报告不存在：${reportId}`);
+  input: { baseRevision: number; blocks: unknown; reason: string },
+): { state: LocusState; report: PreliminaryReportRecord; diff: BlockDiff } {
+  const cur = requireReport(state, reportId);
+  if (Number(input.baseRevision) !== cur.revision) {
+    throw new AppError(409, `报告已被他处修改（期望 r${input.baseRevision}，当前 r${cur.revision}）。请刷新后重试，不会覆盖新结果。`, { currentRevision: cur.revision });
+  }
   const reason = str(input.reason);
   if (!reason) throw new AppError(422, "报告修订必须填写原因（留历史）。");
-  const sections = cleanSections(input.sections);
+  let proposed = cleanBlocks(input.blocks);
+  const before = new Map(cur.blocks.map((b) => [b.id, b]));
+  const at = now();
+  // 已存在且内容变更的块：追加块内历史；新块/未变块保持原历史。
+  proposed = proposed.map((b) => {
+    const prev = before.get(b.id);
+    if (!prev || blockFieldsDiffer(prev, b).length === 0) return b;
+    return { ...b, history: [...prev.history, { at, reason, text: prev.text, nature: prev.nature }] };
+  });
+  const diff = diffReportBlocks(cur.blocks, proposed, cur.revision);
+  if (diff.same) throw new AppError(422, "未检测到块改动；如需仅改原因，请修改内容或顺序。");
   const report: PreliminaryReportRecord = {
-    ...cur, sections, revision: cur.revision + 1,
-    history: [...cur.history, { revision: cur.revision, at: now(), reason, sections: cur.sections }],
-    updatedAt: now(),
+    ...cur, blocks: proposed, revision: cur.revision + 1,
+    history: [...cur.history, { revision: cur.revision, at, reason, blocks: cur.blocks }],
+    updatedAt: at,
   };
-  return { state: { ...state, reports: state.reports.map((r) => (r.id === reportId ? report : r)) }, report };
+  return { state: { ...state, reports: state.reports.map((r) => (r.id === reportId ? report : r)) }, report, diff };
+}
+
+/** 人工确认 AI 草稿块（draft → confirmed）；讨论/生成不自动确认。 */
+export function confirmReportBlock(state: LocusState, reportId: string, blockId: string, reason: string): { state: LocusState; report: PreliminaryReportRecord } {
+  const cur = requireReport(state, reportId);
+  const block = cur.blocks.find((b) => b.id === blockId);
+  if (!block) throw new AppError(404, `报告块不存在：${blockId}`);
+  if (!block.draft) throw new AppError(422, "该块非 AI 草稿，无需确认。");
+  const r = str(reason) || "人工确认 AI 草稿";
+  const blocks = cur.blocks.map((b) => (b.id === blockId ? { ...b, draft: false, history: [...b.history, { at: now(), reason: r, text: b.text, nature: b.nature }] } : b));
+  const report: PreliminaryReportRecord = { ...cur, blocks, revision: cur.revision + 1, history: [...cur.history, { revision: cur.revision, at: now(), reason: r, blocks: cur.blocks }], updatedAt: now() };
+  return { state: { ...state, reports: state.reports.map((x) => (x.id === reportId ? report : x)) }, report };
+}
+
+/** 由钉住的分析任务生成草稿块（本地确定性，不调用模型；标 draft 待人工确认）。 */
+export function draftReportBlocks(state: LocusState, reportId: string): { blocks: ReportBlock[] } {
+  const rep = requireReport(state, reportId);
+  const task = rep.pinned.taskId ? state.analysisTasks.find((t) => t.id === rep.pinned.taskId) : undefined;
+  const out: ReportBlock[] = [];
+  const push = (nature: ReportBlockNature, text: string, refs: ReportBlockRef[]) => {
+    out.push({ id: `rblk_${randomUUID()}`, order: out.length, nature, text, refs, draft: true, history: [] });
+  };
+  if (task) {
+    const results = state.analysisResults.filter((r) => task.resultIds.includes(r.id));
+    for (const res of results) {
+      push("observation", `按「${res.method}」处理所得结果（参数：${res.params || "未记"}）${res.reproducible ? "" : "（不可复现：缺数据/参数）"}`,
+        [{ kind: "result", id: res.id, version: `rev ${res.revision}`, label: `分析结果 ${res.method}` }]);
+    }
+    for (const m of task.recommendation?.methods ?? []) {
+      push("to_verify", `待核验：${m.name} 的验收项 ${m.acceptanceItems.join("；") || "（未给）"}`,
+        [{ kind: "snapshot", id: task.snapshot?.hash ?? "", version: task.snapshot?.hash ? task.snapshot.hash.slice(0, 8) : "", label: `任务 ${task.title} 快照` }]);
+    }
+  }
+  return { blocks: out };
 }
 
 // ── 上下文对话 ──────────────────────────────────────────────
@@ -450,14 +565,18 @@ export function adoptProposal(
     applied = `执行 ${prop.targetId} 追加备注`;
   } else {
     const cur = requireReport(state, prop.targetId);
-    const sections: ReportSections = { ...cur.sections, toVerify: [...cur.sections.toVerify, { text: prop.preview, sources: [`对话 ${chatId} · 消息 ${messageId}`] }] };
+    const block: ReportBlock = {
+      id: `rblk_${randomUUID()}`, order: cur.blocks.length, nature: "to_verify",
+      text: prop.preview, refs: [{ kind: "note", id: "", version: "", label: `对话 ${chatId} · 消息 ${messageId}` }],
+      draft: false, history: [],
+    };
     const report: PreliminaryReportRecord = {
-      ...cur, sections, revision: cur.revision + 1,
-      history: [...cur.history, { revision: cur.revision, at: now(), reason: "上下文对话采纳（人工确认）", sections: cur.sections }],
+      ...cur, blocks: [...cur.blocks, block], revision: cur.revision + 1,
+      history: [...cur.history, { revision: cur.revision, at: now(), reason: "上下文对话采纳（人工确认）", blocks: cur.blocks }],
       updatedAt: now(),
     };
     next = { ...state, reports: state.reports.map((r) => (r.id === cur.id ? report : r)) };
-    applied = `报告 ${cur.id} 待验证 ＋1`;
+    applied = `报告 ${cur.id} 待验证块 ＋1`;
   }
   const marked = patchMessage(next, chatId, messageId, {
     proposals: msg.proposals.map((p, i) => (i === index ? { ...p, confirmed: true, adoptedAt: now() } : p)),

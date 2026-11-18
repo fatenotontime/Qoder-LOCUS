@@ -62,7 +62,8 @@ import {
 import { extractKnowledge, extractLiterature, runTask } from "./services/ai.ts";
 import {
   createAnalysisTask, setTaskCandidates, buildSnapshot, snapshotInput, applyRecommendation,
-  submitResult, editResult, archiveResultFile, createReport, updateReport,
+  submitResult, editResult, archiveResultFile, createReport,
+  previewReportEdit, applyReportEdit, confirmReportBlock, draftReportBlocks,
   createChat, chatScopeSnapshot, chatHistoryInput, appendChatTurn, applyChatResponse,
   failChat, cancelChat, retryChat, adoptProposal,
 } from "./services/analysis.ts";
@@ -808,11 +809,29 @@ export async function createApp(store: Store) {
           state = r.state; await store.save(state);
           send(res, 200, { ok: true, reportId: r.report.id }); return;
         }
-        const repUpdate = path.match(/^\/api\/reports\/([^/]+)\/update$/);
-        if (repUpdate) {
-          const r = updateReport(state, decodeURIComponent(repUpdate[1]), { sections: body.sections, reason: String(body.reason ?? "") });
+        const repPreview = path.match(/^\/api\/reports\/([^/]+)\/preview$/);
+        if (repPreview) {
+          const r = previewReportEdit(state, decodeURIComponent(repPreview[1]), { blocks: body.blocks });
+          send(res, 200, { ok: true, baseRevision: r.baseRevision, diff: r.diff }); return;
+        }
+        const repApply = path.match(/^\/api\/reports\/([^/]+)\/apply$/);
+        if (repApply) {
+          const r = applyReportEdit(state, decodeURIComponent(repApply[1]), {
+            baseRevision: Number(body.baseRevision), blocks: body.blocks, reason: String(body.reason ?? ""),
+          });
+          state = r.state; await store.save(state);
+          send(res, 200, { ok: true, revision: r.report.revision, diff: r.diff }); return;
+        }
+        const repConfirm = path.match(/^\/api\/reports\/([^/]+)\/blocks\/([^/]+)\/confirm$/);
+        if (repConfirm) {
+          const r = confirmReportBlock(state, decodeURIComponent(repConfirm[1]), decodeURIComponent(repConfirm[2]), String(body.reason ?? ""));
           state = r.state; await store.save(state);
           send(res, 200, { ok: true, revision: r.report.revision }); return;
+        }
+        const repDraft = path.match(/^\/api\/reports\/([^/]+)\/draft$/);
+        if (repDraft) {
+          const r = draftReportBlocks(state, decodeURIComponent(repDraft[1]));
+          send(res, 200, { ok: true, blocks: r.blocks }); return;
         }
         if (path === "/api/chats") {
           const r = createChat(state, { topicId: String(body.topicId ?? ""), subquestionId: body.subquestionId as string | undefined, scope: body.scope as unknown[] | undefined });

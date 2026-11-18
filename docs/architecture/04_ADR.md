@@ -24,6 +24,8 @@
 | ADR-0018 | AI 后台 job **合并写回**：请求时同步校验/查重，AI 计算与 state 写回分离；完成时对**最新** state 只追加本 job 新实体，查重复检，等待期同内容已入库则丢弃结果并指向已有原件；409 附 `existingAssetId` | accepted（用户 2026-11-16 实测反馈） | S02-T10 反例复现；`tests/job-race.test.ts` |
 | ADR-0019 | 实验图**以用户提供的 experiment-archify v0.4 草案为规格**（应用内实现通用合同 `docs/stage5/05_EXPERIMENT_ARCHIFY_CONTRACT.md`）：**不安装**上游 tt-a1i/archify、**不冒充**其 native finalize；**AI 重排不接入**（依 `03_DOMAIN_RUNTIME`）；技能原文/过程日志/私人案例参数**不入公开仓库** | accepted（用户 2026-11-18 拍板"要接"→提供草案路径） | 合同 10 条对照：6 符合 / 4 部分 / 1 未实现（见该文档） |
 
+| ADR-0020 | 分析初稿**块化**：报告从固定四类 `sections` 改为**有序块** `blocks`（`order`＋`nature`∈观察/假设/解释/待验证/人工判断＋固定 `refs`〔kind/id/version〕＋`draft` AI 草稿标记＋块内 `history`）；**块级 diff 预览→接受→新版本**（`preview` 不改状态，`apply` 以 `baseRevision` 乐观并发，不符返回 **409＋currentRevision**，不覆盖新结果）；AI 草稿 `draft=true` 须人工 `confirm`；store **v8**，v2–v7 迁移把旧四类按序展开为块（旧自由文字来源记为 `note` 引用，修订号不变、幂等） | accepted（阶段6 6A-1） | `03_DOMAIN_RUNTIME` §对象/§报告块；`01_DOMAIN_SCHEMA` ReportBlock；`tests/analysis.test.ts`、`tests/web-loop.test.ts` |
+
 ## 待补 ADR（阶段2 之后）
 
 并发冲突的具体解决交互、跨会话暂存/恢复的存储形态、来源定位的精度门槛、AI 任务熔断参数、匿名演示会话清理策略。均**待实测或用户评审**，不预填日期。
