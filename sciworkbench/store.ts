@@ -596,12 +596,24 @@ export class JsonFileStore implements Store {
   constructor(path: string) {
     this.#path = path;
   }
+  /** 宽容加载：损坏/未知版本时返回空（旧行为），供日常启动。 */
   async load(): Promise<LocusState> {
-    if (!existsSync(this.#path)) return emptyState();
+    try { return await this.loadStrict(); } catch { return emptyState(); }
+  }
+  /** 严格加载：损坏/未知版本**显式报错**（不静默成空），供隔离恢复与完整性检查。 */
+  async loadStrict(): Promise<LocusState> {
+    if (!existsSync(this.#path)) throw new Error(`数据文件不存在：${this.#path}`);
+    let p: Partial<LocusState> & { version?: number };
     try {
-      const p = JSON.parse(readFileSync(this.#path, "utf8")) as Partial<LocusState> & { version?: number };
-      const v = p.version ?? 0;
-      if (v !== 2 && v !== 3 && v !== 4 && v !== 5 && v !== 6 && v !== 7 && v !== STATE_VERSION) return emptyState();
+      p = JSON.parse(readFileSync(this.#path, "utf8")) as Partial<LocusState> & { version?: number };
+    } catch {
+      throw new Error("数据文件损坏：JSON 解析失败（不静默清空）。");
+    }
+    const v = p.version ?? 0;
+    if (v !== 2 && v !== 3 && v !== 4 && v !== 5 && v !== 6 && v !== 7 && v !== STATE_VERSION) {
+      throw new Error(`未知数据版本 v${v}（不静默清空）。`);
+    }
+    {
       // v2–v7 → v8：保留既有数据，补空新实体。
       // 原件 hash **不再加载重算**（5C）：历史 hash 原样保留；查重指纹另存（旧记录指纹=既有 hash 口径）。
       const assets = (p.assets ?? []).map((a) => ({ ...a, fingerprint: a.fingerprint ?? a.hash }));
@@ -671,8 +683,6 @@ export class JsonFileStore implements Store {
         }),
         chats: p.chats ?? [],
       };
-    } catch {
-      return emptyState();
     }
   }
   async save(state: LocusState): Promise<void> {

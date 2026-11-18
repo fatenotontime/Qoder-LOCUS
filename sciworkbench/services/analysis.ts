@@ -272,7 +272,7 @@ export function editResult(
 // 性质区分观察/假设/解释/待验证/人工判断；引用固定版本；AI 草稿带 draft 标记，须人工确认。
 
 const NATURES: ReportBlockNature[] = ["observation", "hypothesis", "interpretation", "to_verify", "human_judgment"];
-const BLOCK_REF_KINDS = ["result", "measurement", "table", "card", "execution", "protocol", "subquestion", "snapshot", "note"];
+const BLOCK_REF_KINDS = ["result", "measurement", "table", "card", "execution", "protocol", "subquestion", "snapshot", "asset", "note"];
 const NATURE_LABEL: Record<ReportBlockNature, string> = {
   observation: "观察", hypothesis: "假设", interpretation: "解释", to_verify: "待验证", human_judgment: "人工判断",
 };

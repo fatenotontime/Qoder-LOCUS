@@ -559,7 +559,8 @@ function topicTodosHtml() {
   if (!rows.length) rows.push(`<div class="item"><p class="hint">当前没有待办。</p></div>`);
   if (mechCount) rows.push(`<div class="item"><div class="meta">机械草稿 ${mechCount} 张</div><p class="hint">旧逐段拆分，开发调试用，不计入语义知识。</p></div>`);
   rows.push(acceptancePanelHtml());
-  rows.push(`<div class="item"><div class="meta">暂藏 / 未实现</div><p class="hint">未实现：Zotero 实时连接、报告导出、实验图 AI 重排；手写 OCR 未验证。见 docs/stage5/02_HIDDEN_FEATURES.md。</p></div>`);
+  rows.push(`<div class="item"><div class="meta">暂藏 / 未实现</div><p class="hint">未实现：Zotero 实时连接、实验图 AI 重排；手写 OCR 未验证。见 docs/stage5/02_HIDDEN_FEATURES.md。</p></div>`);
+  rows.push(`<div class="item"><div class="meta">导出与恢复</div><p class="hint">整体导出含 manifest；恢复在隔离文件校验，不覆盖主数据。</p><button id="lib-export">整体导出</button><input type="file" id="lib-restore-file" accept=".json"/><button id="lib-restore">隔离恢复校验</button><div class="refnet-body" id="lib-restore-out"></div></div>`);
   return rows.join("");
 }
 
@@ -1323,6 +1324,12 @@ const REPORT_NATURES = [["observation", "观察"], ["hypothesis", "假设"], ["i
 const natureLabel = (n) => (REPORT_NATURES.find(([k]) => k === n)?.[1] ?? n);
 const refDisplay = (r) => r.version ? `${r.label}（${r.kind} ${r.version}）` : r.label;
 
+/** 触发浏览器下载（本地服务带 content-disposition）。 */
+function download(path) {
+  const a = document.createElement("a");
+  a.href = path; a.download = ""; document.body.append(a); a.click(); a.remove();
+}
+
 function blockRowHtml(b, i) {
   return `<div class="reprow" data-bid="${esc(b.id)}" data-refs="${esc(JSON.stringify(b.refs ?? []))}">
     <div class="repmove"><button class="rep-up" title="上移">↑</button><button class="rep-down" title="下移">↓</button><span class="hint">#${i + 1}</span></div>
@@ -1333,7 +1340,9 @@ function blockRowHtml(b, i) {
       <span class="badge ${b.draft ? "warn" : "confirm"}">${b.draft ? "AI 草稿待确认" : "已确认"}</span>
       ${b.draft ? `<button class="rep-confirm">确认</button>` : ""}
       <button class="rep-del">删除</button>
-    </div></div>`;
+    </div>
+    ${(b.refs ?? []).filter((r) => r.kind !== "note").length ? `<div class="refchips">${b.refs.filter((r) => r.kind !== "note").map((r) => `<span class="refchip">${esc(refDisplay(r))} <button class="ref-back" data-kind="${esc(r.kind)}" data-id="${esc(r.id)}">回查</button></span>`).join("")}</div>` : ""}
+    <div class="refnet-body"></div></div>`;
 }
 
 function reportHtml(r) {
@@ -1346,7 +1355,11 @@ function reportHtml(r) {
       <button class="rep-draft">由任务生成草稿</button>
     </div>
     <input class="rep-reason" placeholder="修订原因（必填，留历史）"/>
-    <button class="primary rep-preview">预览改动</button>
+    <div class="repaddrow">
+      <button class="primary rep-preview">预览改动</button>
+      <button class="rep-docx" data-repid="${r.id}">Word 导出</button>
+      <button class="rep-trace" data-repid="${r.id}">追溯包</button>
+    </div>
     <div class="rep-diff"></div>
     ${r.history.length ? `<details class="mini"><summary>历史（${r.history.length}）</summary>${r.history.map((h) => `<p class="hint">r${h.revision} · ${esc(h.at)} · ${esc(h.reason)}</p>`).join("")}</details>` : ""}
   </details>`;
@@ -1701,6 +1714,31 @@ $("#right-content").addEventListener("click", async (ev) => {
       const sib = ev.target.classList.contains("rep-up") ? row.previousElementSibling : row.nextElementSibling;
       if (sib) { ev.target.classList.contains("rep-up") ? parent.insertBefore(row, sib) : parent.insertBefore(sib, row); ui.dirty = true; }
       return;
+    }
+    if (ev.target.classList.contains("ref-back")) {
+      const body = ev.target.closest(".reprow").querySelector(".refnet-body");
+      const kind = ev.target.dataset.kind, id = ev.target.dataset.id;
+      await runJob(ev.target, "来源回查", async () => {
+        const r = await api.backtrace(kind, id, "both");
+        const byKind = {};
+        for (const n of r.nodes) (byKind[n.kind] ??= []).push(n.label);
+        body.innerHTML = `<div class="diffbox">${Object.entries(byKind).map(([k, arr]) => `<p class="hint"><b>${esc(k)}</b> ${arr.map(esc).join("、")}</p>`).join("")}${r.pending.length ? `<p class="hint">缺项：${r.pending.map(esc).join("；")}</p>` : ""}</div>`;
+        setStatus(`回查 ${r.nodes.length} 个节点`);
+      }); return;
+    }
+    if (ev.target.classList.contains("rep-docx")) { download(`/api/reports/${encodeURIComponent(ev.target.dataset.repid)}/export.docx`); setStatus("Word 已导出（快照，外部编辑不回流）"); return; }
+    if (ev.target.classList.contains("rep-trace")) { download(`/api/reports/${encodeURIComponent(ev.target.dataset.repid)}/traceability.zip`); setStatus("追溯包已导出（含版本索引/许可过滤/manifest）"); return; }
+    if (ev.target.id === "lib-export") { download("/api/export/all.zip"); setStatus("整体导出已下载"); return; }
+    if (ev.target.id === "lib-restore") {
+      const f = document.querySelector("#lib-restore-file")?.files?.[0];
+      const out = $("#lib-restore-out");
+      if (!f) { showBanner("先选择导出的 state.json。"); return; }
+      await runBusy(ev.target, "隔离恢复校验", async () => {
+        const json = await readTextFile(f);
+        const r = await api.restore(json);
+        out.innerHTML = `<div class="diffbox"><p class="hint">版本 v${r.version} · 隔离文件 ${esc(r.isolatedPath)}</p><p class="hint">${Object.entries(r.counts).map(([k, v]) => `${esc(k)} ${v}`).join(" · ")}</p></div>`;
+        setStatus("恢复校验通过（未覆盖主数据）");
+      }); return;
     }
     if (ev.target.classList.contains("rep-confirm")) {
       const box = ev.target.closest(".rep"); const repId = box.dataset.repid;

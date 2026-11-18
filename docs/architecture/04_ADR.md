@@ -26,6 +26,8 @@
 
 | ADR-0020 | 分析初稿**块化**：报告从固定四类 `sections` 改为**有序块** `blocks`（`order`＋`nature`∈观察/假设/解释/待验证/人工判断＋固定 `refs`〔kind/id/version〕＋`draft` AI 草稿标记＋块内 `history`）；**块级 diff 预览→接受→新版本**（`preview` 不改状态，`apply` 以 `baseRevision` 乐观并发，不符返回 **409＋currentRevision**，不覆盖新结果）；AI 草稿 `draft=true` 须人工 `confirm`；store **v8**，v2–v7 迁移把旧四类按序展开为块（旧自由文字来源记为 `note` 引用，修订号不变、幂等） | accepted（阶段6 6A-1） | `03_DOMAIN_RUNTIME` §对象/§报告块；`01_DOMAIN_SCHEMA` ReportBlock；`tests/analysis.test.ts`、`tests/web-loop.test.ts` |
 
+| ADR-0021 | 阶段6 **6A-2/6A-3/6A-4/6A-5**：①**真实引用网络**由 state 的**实际引用字段**确定性建边（affiliation/provenance/lineage/support），`traverseNetwork` 按关系类型且可限方向/类别——回查是**网络非串联链**；分析结果一律标 `external` 明示**无内部 Run**。②**改动命中**：`classifyChange` 区分科学改动（value/unit/criteria/…→needs_review）与标题/备注（→no_recompute 不误报），`changeHits` 给下游报告块/结果/分析的**具体复核对象**。③**导出**：零依赖 ZIP（deflate）＋最小 DOCX（Word 可打开；块顺序/性质/固定引用清单）；**外部 Word 编辑不回流为审计**。④**追溯包**：版本索引（固定版本）＋**逐附件许可过滤**（CC BY/CC0/PD 可，NC/ND/未标排除并登记）＋sha256 manifest＋NOTICE。⑤**整体导出＋隔离恢复**：包内含 manifest；`loadStrict` 损坏/未知版本**显式报错**（load 仍宽容），恢复写入**临时隔离文件**、**绝不覆盖主数据** | accepted（阶段6） | 03_DOMAIN_RUNTIME §报告/§ADR；ADR-0013/0014/0015；`tests/references.test.ts`、`tests/export.test.ts`；DOCX 经 office-docx 读回 9 块校验 |
+
 ## 待补 ADR（阶段2 之后）
 
 并发冲突的具体解决交互、跨会话暂存/恢复的存储形态、来源定位的精度门槛、AI 任务熔断参数、匿名演示会话清理策略。均**待实测或用户评审**，不预填日期。

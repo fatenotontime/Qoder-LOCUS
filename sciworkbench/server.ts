@@ -5,6 +5,7 @@
  */
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { randomUUID } from "node:crypto";
 import { dirname, extname, join, normalize, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -67,6 +68,8 @@ import {
   createChat, chatScopeSnapshot, chatHistoryInput, appendChatTurn, applyChatResponse,
   failChat, cancelChat, retryChat, adoptProposal,
 } from "./services/analysis.ts";
+import { traverseNetwork, changeHits } from "./services/references.ts";
+import { buildReportDocx, buildTraceabilityPackage, buildWholeLibraryPackage, inspectLibraryJson, countsOf } from "./services/export.ts";
 import { addPaperAttachment, createPaper, importBibliography, linkPaperTopic, updatePaper } from "./services/papers.ts";
 import { applyKnowledge, mapKnowledgeCards, prepareKnowledge } from "./services/knowledge.ts";
 
@@ -167,6 +170,11 @@ export async function createApp(store: Store) {
     res.end(payload);
   };
 
+  const sendBinary = (res: ServerResponse, status: number, buf: Buffer, filename: string, type: string) => {
+    res.writeHead(status, { "content-type": type, "content-disposition": `attachment; filename="${filename}"`, "cache-control": "no-store" });
+    res.end(buf);
+  };
+
   const serveStatic = (res: ServerResponse, urlPath: string) => {
     const rel = urlPath === "/" ? "index.html" : decodeURIComponent(urlPath.replace(/^\/+/, ""));
     const target = resolve(PUBLIC_DIR, normalize(rel));
@@ -187,6 +195,31 @@ export async function createApp(store: Store) {
 
       if (method === "GET" && path === "/api/state") { send(res, 200, state); return; }
       if (method === "GET" && path === "/api/ai/status") { send(res, 200, describeConfig(getAiConfig())); return; }
+      const repDocx = path.match(/^\/api\/reports\/([^/]+)\/export\.docx$/);
+      if (method === "GET" && repDocx) {
+        const rep = state.reports.find((r) => r.id === decodeURIComponent(repDocx[1]));
+        if (!rep) { send(res, 404, { error: "报告不存在" }); return; }
+        sendBinary(res, 200, buildReportDocx(state, rep), `report-${rep.id}.docx`, "application/vnd.openxmlformats-officedocument.wordprocessingml.document"); return;
+      }
+      const repTrace = path.match(/^\/api\/reports\/([^/]+)\/traceability\.zip$/);
+      if (method === "GET" && repTrace) {
+        const t = buildTraceabilityPackage(state, decodeURIComponent(repTrace[1]));
+        sendBinary(res, 200, t.buffer, `traceability-${decodeURIComponent(repTrace[1])}.zip`, "application/zip"); return;
+      }
+      if (method === "GET" && path === "/api/export/all.zip") {
+        sendBinary(res, 200, buildWholeLibraryPackage(state), "locus-library.zip", "application/zip"); return;
+      }
+      if (method === "GET" && path === "/api/backtrace") {        const kind = url.searchParams.get("kind") ?? "";
+        const id = url.searchParams.get("id") ?? "";
+        const dir = (url.searchParams.get("dir") as "down" | "up" | "both" | null) ?? "both";
+        const kinds = url.searchParams.get("edgeKinds");
+        const t = traverseNetwork(state, `${kind}:${id}`, {
+          direction: dir,
+          edgeKinds: kinds ? (kinds.split(",") as never) : undefined,
+        });
+        if (!t.start) { send(res, 404, { error: `节点不存在：${kind}:${id}` }); return; }
+        send(res, 200, { ok: true, start: t.start, nodes: t.nodes, edges: t.edges, downstreamByKind: t.downstreamByKind, pending: t.pending }); return;
+      }
       if (method === "GET" && path.startsWith("/api/jobs/")) {
         const job = jobs.get(decodeURIComponent(path.slice("/api/jobs/".length)));
         if (!job) { send(res, 404, { error: "任务不存在" }); return; }
@@ -733,6 +766,25 @@ export async function createApp(store: Store) {
           send(res, 200, { ok: true }); return;
         }
         // ── 5E：分析任务 / 方法推荐 / 结果提交 / 初步报告 / 上下文对话 ──
+        if (path === "/api/restore") {
+          const json = String(body.json ?? "");
+          const chk = inspectLibraryJson(json, body.sha256 ? String(body.sha256) : undefined);
+          if (!chk.ok) { send(res, 422, { error: chk.error }); return; }
+          // 隔离恢复：写入临时文件并严格加载；**绝不覆盖主实例数据文件**。
+          const target = join(tmpdir(), `locus-restore-${Date.now()}.json`);
+          writeFileSync(target, json, "utf8");
+          let restored: LocusState;
+          try { restored = await new JsonFileStore(target).loadStrict(); }
+          catch (e) { send(res, 422, { error: `恢复失败：${(e as Error).message}` }); return; }
+          send(res, 200, { ok: true, isolatedPath: target, version: restored.version, counts: countsOf(restored) }); return;
+        }
+        if (path === "/api/change-hits") {          const r = changeHits(state, {
+            kind: String(body.kind ?? ""), id: String(body.id ?? ""),
+            fields: Array.isArray(body.fields) ? (body.fields as string[]).map(String) : undefined,
+            withdrawn: body.withdrawn === true,
+          });
+          send(res, 200, { ok: true, ...r }); return;
+        }
         if (path === "/api/analysis/tasks") {
           const r = createAnalysisTask(state, {
             topicId: String(body.topicId ?? ""), subquestionId: body.subquestionId as string | undefined,
