@@ -1449,7 +1449,8 @@ document.addEventListener("focusout", (ev) => {
 // 实验图（中栏）：点节点选择步骤 + 图下固定区编辑（保存追加新快照）
 document.addEventListener("click", (ev) => {
   const t = ev.target;
-  if (t.classList.contains("dnode")) { if (ui.nav === "protocol") { ui.stepSel = t.closest(".dnode").dataset.step; renderMiddle(); } return; }
+  const node = t.closest(".dnode");
+  if (node) { if (ui.nav === "protocol") { ui.stepSel = node.dataset.step; renderMiddle(); } return; }
   if (t.id === "step-cancel") { ui.stepSel = null; renderMiddle(); return; }
   if (t.id === "step-add") {
     const op = ($("#newstep-op")?.value ?? "").trim();
