@@ -3,7 +3,7 @@
 // 防护：所有写操作禁用按钮 + 处理中提示 + 内联错误 + 可重试；离开前脏检查。
 import { api } from "./lib/api.js";
 import { computeLanes, timeLabel, durationSourceOf } from "./lib/lanes.js";
-import { fmtTime, fmtEnum, fmtVersion, fmtNameOnce } from "./lib/format.js";
+import { fmtTime, fmtEnum, fmtVersion, fmtNameOnce, fmtKind } from "./lib/format.js";
 import { refLabel, reconTag, topicObjects } from "./lib/refs.js";
 import {
   topbarTopicHtml, emptyTopicGuideHtml, navHtml, panelErrorHtml, sidebarListHtml,
@@ -485,7 +485,7 @@ function openTableMax(tid) {
     <div class="tblmax-body">
       ${tableGridHtml(t, true).html}
       <div id="tblmax-raw" hidden><pre>${esc(asset?.text ?? "")}</pre></div>
-      ${cell ? `<div class="row celledit"><label>单元格 r${cell.row}·c${cell.col}</label>
+      ${cell ? `<div class="row celledit"><label>单元格 行${cell.row}·列${cell.col}</label>
         <input data-field="cellValue" value="${esc(t.rows[cell.row]?.[cell.col] ?? "")}" />
         <input data-field="cellReason" placeholder="更正原因（必填）" />
         <button class="save-cell">保存单元格</button><button class="cancel-cell">取消</button></div>` : `<p class="hint">点单元格可更正；改值需原因。</p>`}
@@ -657,8 +657,8 @@ function renderRecordImport(box) {
   box.innerHTML = `
     <details class="mini" ${state.executions.length ? "" : "open"}>
       <summary>创建执行（进准备稿）</summary>
-      ${ps.length ? `<select id="exec-proto">${ps.map((p) => `<option value="${p.id}">${esc(p.name)}（r${p.revision}）</option>`).join("")}</select>
-      <select id="exec-tmpl"><option value="">不用模板</option>${tmpls.map((t) => `<option value="${t.id}">模板 r${t.protocolRevision} · ${t.fields.length} 字段</option>`).join("")}</select>
+      ${ps.length ? `<select id="exec-proto">${ps.map((p) => `<option value="${p.id}">${esc(p.name)}（${fmtVersion(p.revision)}）</option>`).join("")}</select>
+      <select id="exec-tmpl"><option value="">不用模板</option>${tmpls.map((t) => `<option value="${t.id}">模板 ${fmtVersion(t.protocolRevision)} · ${t.fields.length} 字段</option>`).join("")}</select>
       <button class="primary" id="exec-start">创建执行</button>
       <p class="hint">创建后进入准备稿：可登记本次差异，确认快照后才开始补记录；实际开始另行记录。之后方案修订不影响本执行。</p>` : `<p class="hint">先在「方案与图」创建方案。</p>`}
     </details>`;
@@ -802,15 +802,16 @@ function impactHtml(entityIds) {
       return `<details class="mini imp" ${i === imps[0] ? "open" : ""}>
         <summary><span class="badge ${i.status === "failed" ? "exclude" : i.status === "stale" ? "warn" : i.status === "completed" ? "confirm" : "cand-pending"}">${STATUS[i.status]}</span>
           ${esc(i.change.summary)} <span class="hint">${esc(fmtTime(i.createdAt))}</span></summary>
-        <div class="hint">结论口径：<strong>${esc(dispLabel)}</strong>${i.status === "stale" ? "（旧结论仅供历史查看，已有更新改动）" : ""}${i.error ? ` · 错误：${esc(i.error)}` : ""}</div>
+        <div class="hint">结论口径：<strong>${esc(dispLabel)}</strong>${i.status === "stale" ? "（旧结论仅供历史查看，已有更新改动）" : ""}</div>
+        ${i.error ? `<details class="mini"><summary>错误详情（折叠）</summary><pre class="perr-detail-body">${esc(i.error)}</pre></details>` : ""}
         ${i.deterministic.timeShifts.length ? `<div class="hint">确定性时间传播：${esc(i.deterministic.note)}</div>
           <table class="grid"><thead><tr><th>步骤</th><th>平移(min)</th><th>主线总时长(min)</th></tr></thead><tbody>
           ${i.deterministic.timeShifts.map((s) => `<tr><td>${esc(s.op)}</td><td>${s.deltaMin > 0 ? "+" : ""}${s.deltaMin}</td><td>${s.newTotalMin}</td></tr>`).join("")}</tbody></table>`
           : `<div class="hint">${esc(i.deterministic.note)}</div>`}
         ${i.summary ? `<div>${esc(i.summary)}</div>` : ""}
         ${i.items.length ? `<div class="hint">逐条（${i.items.length}）：</div>${i.items.map((it) => `<div class="impitem">
-          <span class="badge secondary">${esc(it.category)}</span> <strong>${esc(it.finding)}</strong>
-          <div class="hint">对象：${esc(it.targetKind)} ${esc(it.targetId)}${it.targetRevision ? ` r${it.targetRevision}` : ""} · 理由：${esc(it.reason)}</div>
+          <span class="badge secondary">${esc(fmtEnum(it.category))}</span> <strong>${esc(it.finding)}</strong>
+          <div class="hint">对象：${esc(fmtKind(it.targetKind))} ${esc(it.targetId)}${it.targetRevision ? ` ${fmtVersion(it.targetRevision)}` : ""} · 理由：${esc(it.reason)}</div>
           ${it.evidenceRefs.length ? `<div class="hint">证据：${it.evidenceRefs.map(esc).join("、")}</div>` : ""}
           ${it.unknowns.length ? `<div class="hint warn">未知：${it.unknowns.map(esc).join("、")}</div>` : ""}
           ${it.suggestedAction ? `<div class="hint">建议：${esc(it.suggestedAction)}</div>` : ""}
@@ -909,7 +910,7 @@ function preparationHtml(e, p, baseSnap) {
   </div>`;
   return `
     <div class="item" data-id="${e.id}">
-      <div class="meta">${esc(p?.name ?? e.protocolId)} · 准备稿 · 基础 r${e.preparation?.baseRevision ?? e.protocolRevision} · <span class="badge cand-pending">未确认</span></div>
+      <div class="meta">${esc(p?.name ?? e.protocolId)} · 准备稿 · 基础 ${fmtVersion(e.preparation?.baseRevision ?? e.protocolRevision)} · <span class="badge cand-pending">未确认</span></div>
       <p class="hint">准备≠已做实验：这里登记本次差异；确认快照后进入记录状态，实际开始另行记录。源方案不被改动。</p>
       ${baseSnap ? diagramHtml(p, baseSnap) : `<p class="hint warn">基础方案快照缺失。</p>`}
       <div class="pane-title">本次差异（${adj.length}）</div>
@@ -941,7 +942,7 @@ function recordHtml() {
   const hasStart = e.events.some((ev) => ev.kind === "start");
   return `
     <div class="item" data-id="${e.id}">
-      <div class="meta">${esc(p?.name ?? e.protocolId)} · 固定 r${e.protocolRevision}${nAdj ? ` ＋ 本次差异 ${nAdj} 条` : ""} · <span class="badge ${e.status === "paused" ? "warn" : e.status === "active" ? "confirm" : ""}">${e.status}</span>${e.templateId ? " · 模板" : ""}</div>
+      <div class="meta">${esc(p?.name ?? e.protocolId)} · 固定 ${fmtVersion(e.protocolRevision)}${nAdj ? ` ＋ 本次差异 ${nAdj} 条` : ""} · <span class="badge ${e.status === "paused" ? "warn" : e.status === "active" ? "confirm" : ""}">${fmtEnum(e.status)}</span>${e.templateId ? " · 模板" : ""}</div>
       ${e.origin === "reconstructed" ? `<div class="hint"><span class="badge warn">文献重构</span> 本执行为历史文献重构（非本地实际实验）：事件与数值均为原文陈述的补记，来源原件 ${esc(state.assets.find((a) => a.id === e.sourceAssetId)?.name ?? e.sourceAssetId ?? "未标")}。</div>` : ""}
       ${e.preparation?.confirmedAt ? `<div class="hint">本次快照确认于 ${esc(fmtTime(e.preparation.confirmedAt))}（基础 ${fmtVersion(e.preparation.baseRevision)}${nAdj ? ` ＋ ${nAdj} 条差异` : "，无差异"}）；源方案后续不影响本次。</div>` : ""}
       <div class="hint">数据完整度：步骤记录 ${(snap?.steps.length ?? 0) - missing.length}/${snap?.steps.length ?? 0}${missing.length ? ` · 未记录：${missing.map((s) => esc(s.op)).join("、")}` : ""}${unknownDur ? ` · ${unknownDur} 步时长未知（不按 0 计）` : ""}</div>
@@ -996,13 +997,13 @@ function recordHtml() {
       }).join("") || `<p class="hint">暂无样品（左栏新建）。</p>`}
       <details class="mini"><summary>新增测量（固定样品状态版本）</summary>
         ${samples.length ? `<div class="row"><select id="meas-sample">${samples.map((s) => `<option value="${s.id}">${esc(s.shortName)} ${esc(s.displayName)}</option>`).join("")}</select>
-          <select id="meas-srev">${samples[0].states.map((st) => `<option value="${st.revision}">状态 ${st.revision}</option>`).join("")}</select></div>
+          <select id="meas-srev">${samples[0].states.map((st) => `<option value="${st.revision}">状态 ${fmtVersion(st.revision)}</option>`).join("")}</select></div>
         <div class="row"><input id="meas-value" placeholder="测量值（必填）" /><input id="meas-unit" placeholder="单位" /></div>
         <div class="row"><input id="meas-method" placeholder="方法" /><input id="meas-instr" placeholder="仪器" /></div>
         <div class="row"><input id="meas-note" placeholder="备注" /><button class="primary" id="meas-add">记录测量</button></div>` : `<p class="hint">先建样品。</p>`}
       </details>
       ${meas.map((m) => `<div class="item meas" data-id="${m.id}">
-        <div class="meta">${esc(state.samples.find((s) => s.id === m.sampleId)?.shortName ?? m.sampleId)} · 样品状态 ${m.sampleStateRevision}${m.cellRef ? ` · 回链表 r${m.cellRef.row}c${m.cellRef.col}` : ""}${reconTag(state, "measurement", m.id) ? ` · <span class="badge warn">文献重构</span>（数值为原文陈述，非本地测量）` : ""}</div>
+        <div class="meta">${esc(state.samples.find((s) => s.id === m.sampleId)?.shortName ?? m.sampleId)} · 样品状态 ${fmtVersion(m.sampleStateRevision)}${m.cellRef ? ` · 回链表 行${m.cellRef.row}列${m.cellRef.col}` : ""}${reconTag(state, "measurement", m.id) ? ` · <span class="badge warn">文献重构</span>（数值为原文陈述，非本地测量）` : ""}</div>
         <div class="row"><input data-field="mValue" value="${esc(m.value)}" /><input data-field="mUnit" value="${esc(m.unit)}" />
           <input data-field="mMethod" value="${esc(m.method)}" /><input data-field="mInstr" value="${esc(m.instrument)}" /></div>
         <div class="row"><input data-field="mNote" value="${esc(m.note)}" /><input data-field="mReason" placeholder="修改原因（必填）" />
@@ -1066,7 +1067,7 @@ function chatRightHtml() {
   if (!c) return `<p class="hint">选择会话后：这里显示范围、建议采纳与最近一次冻结快照。</p>`;
   const q = c.subquestionId ? state.subquestions.find((x) => x.id === c.subquestionId) : null;
   let h = `<p><b>范围</b>：课题「${esc(topicName(c.topicId) ?? c.topicId)}」${q ? ` → 子问题「${esc(q.question)}」` : ""}</p>
-    <ul>${c.scope.map((r) => `<li>${esc(refLabel(state, r))} <span class="hint">${r.kind}:${r.id}</span></li>`).join("") || `<li class="hint">未选对象（仅课题层）。</li>`}</ul>
+    <ul>${c.scope.map((r) => `<li>${esc(refLabel(state, r))} <span class="hint">${fmtKind(r.kind)}:${r.id}</span></li>`).join("") || `<li class="hint">未选对象（仅课题层）。</li>`}</ul>
     <p class="hint"><b>建议采纳</b>：讨论不修改对象；逐条预览＋人工确认后才写入目标。</p>`;
   const proposals = c.messages.flatMap((m) => m.proposals.map((p, i) => ({ m, p, i })));
   h += proposals.length
@@ -1092,7 +1093,7 @@ function ocrHtml(asset) {
       </details>
     </div>
     ${ocrs.map((o) => `<div class="item ocr" data-id="${o.id}">
-      <div class="meta"><span class="badge ${o.extraction === "ai" ? "ai" : ""}">${o.extraction}</span>
+      <div class="meta"><span class="badge ${o.extraction === "ai" ? "ai" : ""}">${fmtEnum(o.extraction)}</span>
         <span class="badge ${o.status === "confirmed" ? "confirm" : "cand-pending"}">${o.status === "confirmed" ? "已确认" : "草稿"}</span> · 第${o.revision}版</div>
       <div class="row"><label>转录</label><input data-field="oRaw" value="${esc(o.rawText)}" /></div>
       ${Object.entries(o.fields).map(([k, v]) => `<div class="row"><label>${esc(k)}</label><input data-ofkey="${esc(k)}" value="${esc(v)}" /></div>`).join("")}
@@ -1118,7 +1119,7 @@ function renderRecordTools(box) {
         <div class="row"><input data-field="stHandling" placeholder="处理" /><input data-field="stUse" placeholder="用途" /></div>
         <div class="row"><input data-field="stNote" placeholder="备注" /><button class="smp-state">追加状态</button></div>
       </details>
-      <div class="hint">历史：${s.states.map((st) => `r${st.revision} ${esc(st.amount.value)}${esc(st.amount.unit)}${st.amount.estimated ? "(估)" : ""}`).join(" → ")}</div>
+      <div class="hint">历史：${s.states.map((st) => `${fmtVersion(st.revision)} ${esc(st.amount.value)}${esc(st.amount.unit)}${st.amount.estimated ? "(估)" : ""}`).join(" → ")}</div>
     </div>`).join("") || `<p class="hint">暂无样品。</p>`}
     <details class="mini"><summary>新建样品</summary>
       <div class="row"><input id="smp-short" placeholder="短号（唯一，如 S1）" /><input id="smp-display" placeholder="显示名（可后改）" /></div>
@@ -1362,7 +1363,7 @@ $("#right-content").addEventListener("change", (ev) => {
   if (ev.target.id === "proto-rev") { ui.viewRev = Number(ev.target.value); ui.stepSel = null; renderMiddle(); renderRight(); }
   if (ev.target.id === "meas-sample") {
     const s = state.samples.find((x) => x.id === ev.target.value);
-    $("#meas-srev").innerHTML = (s?.states ?? []).map((st) => `<option value="${st.revision}">状态 ${st.revision}</option>`).join("");
+    $("#meas-srev").innerHTML = (s?.states ?? []).map((st) => `<option value="${st.revision}">状态 ${fmtVersion(st.revision)}</option>`).join("");
   }
   if (ev.target.classList.contains("grp")) {
     const id = ev.target.dataset.id;

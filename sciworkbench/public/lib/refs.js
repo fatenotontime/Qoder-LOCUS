@@ -2,7 +2,7 @@
  * 分析与对话共用：对象引用读取与展示（纯函数，无 DOM）。
  * 供 app.js（对话页）与 lib/pages/analysis.js（分析页）导入，避免复制两份。
  */
-import { fmtTime } from "./format.js";
+import { fmtTime, fmtKind } from "./format.js";
 
 /** 把任意字符串里的 ISO 时间替换成本地短格式（用于服务端生成的摘要文本）。 */
 export const deIso = (s) => String(s ?? "").replace(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z/g, (m) => fmtTime(m));
@@ -10,6 +10,7 @@ export const deIso = (s) => String(s ?? "").replace(/\d{4}-\d{2}-\d{2}T\d{2}:\d{
 /** 服务端摘要文本里可能夹带的英文枚举/裸版本 → 中文（仅用于展示）。 */
 export const humanVer = (s) => String(s ?? "")
   .replace(/rev (\d+)/g, "第$1版")
+  .replace(/\br(\d+)\b/g, "第$1版")
   .replace(/ai-draft/g, "模型草稿").replace(/reconstructed/g, "重构")
   .replace(/unreviewed/g, "待审").replace(/need_info/g, "待补")
   .replace(/exploratory/g, "探索中").replace(/declared/g, "已定")
@@ -63,7 +64,7 @@ export function refLabel(state, ref) {
     case "card": { const c = state.cards.find((x) => x.id === ref.id); label = `知识卡 · ${c?.scope || Object.values(c?.extracted?.fields ?? {})[0] || ref.id}`; break; }
     case "asset": label = `原件 · ${state.assets.find((x) => x.id === ref.id)?.name ?? ref.id}`; break;
     case "subquestion": label = `子问题 · ${state.subquestions.find((x) => x.id === ref.id)?.question ?? ref.id}`; break;
-    default: label = `${ref.kind}:${ref.id}`;
+    default: label = `${fmtKind(ref.kind)}:${ref.id}`;
   }
   return label + missingTag(state, ref.kind, ref.id);
 }

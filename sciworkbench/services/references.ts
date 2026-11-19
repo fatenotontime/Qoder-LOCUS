@@ -54,6 +54,14 @@ const KIND_CN: Record<NetKind, string> = {
   task: "分析任务", result: "分析结果", report: "分析初稿", block: "报告块", chat: "对话",
 };
 
+/** 展示词表（与前端 format.js 同构；NetNode 标签/版本一律中文，锁7）。 */
+const ROLE_CN: Record<string, string> = { fulltext: "正文", supplement: "补充材料", other: "其他" };
+const AUDIT_CN: Record<string, string> = { unreviewed: "待审", need_info: "待补", confirm: "已确认", exclude: "已排除", skip: "已跳过" };
+const SOURCE_CN: Record<string, string> = { user: "自建", public: "公开", manual: "人工", ai: "模型", draft: "草稿", "ai-draft": "模型草稿", reconstructed: "重构" };
+const STATUS_CN: Record<string, string> = { active: "进行中", paused: "已暂停", done: "已结束", preparing: "准备中", recording: "记录中" };
+const NATURE_CN: Record<string, string> = { observation: "观察", hypothesis: "假设", interpretation: "解释", to_verify: "待验证", human_judgment: "人工判断" };
+const ver = (n: number | string): string => `第${n}版`;
+
 /** 从 state 确定性建边（不推断、不补造正常实体；缺件挂明示缺口节点）。 */
 export function buildNetwork(state: LocusState): Network {
   const nodes = new Map<string, NetNode>();
@@ -79,7 +87,7 @@ export function buildNetwork(state: LocusState): Network {
 
   const paper = (id: string): NetNode | undefined => {
     const p = state.papers.find((x) => x.id === id);
-    return p ? { key: key("paper", p.id), kind: "paper", id: p.id, label: p.title || p.id, version: `r${p.revision}` } : undefined;
+    return p ? { key: key("paper", p.id), kind: "paper", id: p.id, label: p.title || p.id, version: ver(p.revision) } : undefined;
   };
   const asset = (id: string, label?: string): NetNode => {
     const a = state.assets.find((x) => x.id === id);
@@ -103,7 +111,7 @@ export function buildNetwork(state: LocusState): Network {
   }
   for (const att of state.attachments) {
     const pn = paper(att.paperId);
-    const an: NetNode = { key: key("attachment", att.id), kind: "attachment", id: att.id, label: `附件 ${att.role}`, version: att.version || undefined };
+    const an: NetNode = { key: key("attachment", att.id), kind: "attachment", id: att.id, label: `附件 · ${ROLE_CN[att.role] ?? att.role}`, version: att.version || undefined };
     if (pn) link(pn, an, "affiliation", "human");
     else add(an);
     // 附件指向原件（若有）
@@ -113,7 +121,7 @@ export function buildNetwork(state: LocusState): Network {
 
   // 知识卡 → 原件（provenance）与 论文（affiliation）
   for (const c of state.cards) {
-    const cn: NetNode = { key: key("card", c.id), kind: "card", id: c.id, label: c.rawText.slice(0, 30) || c.id, version: `核对 ${c.audit}` };
+    const cn: NetNode = { key: key("card", c.id), kind: "card", id: c.id, label: c.rawText.slice(0, 30) || c.id, version: `核对 ${AUDIT_CN[c.audit] ?? c.audit}` };
     link(asset(c.assetId), cn, "provenance", c.extraction === "ai" ? "run" : "human", c.mechanical ? "机械草稿（开发调试）" : undefined);
     if (c.paperId) { const pn = paper(c.paperId); if (pn) link(pn, cn, "affiliation", "human"); }
     for (const sp of c.spans ?? []) link(asset(sp.assetId), cn, "provenance", "run", sp.matched ? undefined : "定位未匹配");
@@ -121,13 +129,13 @@ export function buildNetwork(state: LocusState): Network {
 
   // 方案 → 来源原件（provenance）/ 执行（lineage）/ 模板
   for (const pr of state.protocols) {
-    const pn: NetNode = { key: key("protocol", pr.id), kind: "protocol", id: pr.id, label: pr.name, version: `r${pr.revision}（${pr.sourceKind}）` };
+    const pn: NetNode = { key: key("protocol", pr.id), kind: "protocol", id: pr.id, label: pr.name, version: `${ver(pr.revision)}（${SOURCE_CN[pr.sourceKind] ?? pr.sourceKind}）` };
     add(pn);
     const tp = nodes.get(key("topic", pr.topicId)); if (tp) link(tp, pn, "affiliation", "human");
     if (pr.sourceAssetId) link(asset(pr.sourceAssetId), pn, "provenance", pr.sourceKind === "ai-draft" ? "run" : "human", pr.sourceKind === "reconstructed" ? "由公开材料重构" : undefined);
   }
   for (const tpl of state.templates) {
-    const tn: NetNode = { key: key("template", tpl.id), kind: "template", id: tpl.id, label: `模板 r${tpl.protocolRevision}`, version: tpl.humanConfirmed ? "已确认" : "未确认" };
+    const tn: NetNode = { key: key("template", tpl.id), kind: "template", id: tpl.id, label: `模板 · ${ver(tpl.protocolRevision)}`, version: tpl.humanConfirmed ? "已确认" : "未确认" };
     const pn = nodes.get(key("protocol", tpl.protocolId));
     if (pn) link(pn, tn, "lineage", tpl.humanConfirmed ? "human" : "run");
     else add(tn);
@@ -136,7 +144,7 @@ export function buildNetwork(state: LocusState): Network {
   // 执行 → 方案（lineage）；执行 → 样品（provenance）
   for (const e of state.executions) {
     const recon = e.origin === "reconstructed";
-    const en: NetNode = { key: key("execution", e.id), kind: "execution", id: e.id, label: `执行 r${e.protocolRevision}${recon ? "（文献重构）" : ""}`, version: e.phase === "preparing" ? "准备稿未确认" : e.status };
+    const en: NetNode = { key: key("execution", e.id), kind: "execution", id: e.id, label: `执行 · ${ver(e.protocolRevision)}${recon ? "（文献重构）" : ""}`, version: e.phase === "preparing" ? "准备稿未确认" : (STATUS_CN[e.status] ?? e.status) };
     add(en);
     const pn = nodes.get(key("protocol", e.protocolId));
     const proto = state.protocols.find((p) => p.id === e.protocolId);
@@ -173,20 +181,20 @@ export function buildNetwork(state: LocusState): Network {
   // 测量 → 样品（lineage，固定样品状态 revision）；测量 → 数据表（provenance，若回链单元格）
   for (const m of state.measurements) {
     const recon = (m.origin ?? state.samples.find((s) => s.id === m.sampleId)?.origin) === "reconstructed";
-    const mn: NetNode = { key: key("measurement", m.id), kind: "measurement", id: m.id, label: `${m.value}${m.unit ? ` ${m.unit}` : ""}${recon ? "（文献重构）" : ""}`, version: `样品状态 r${m.sampleStateRevision} · rev ${m.revision}` };
+    const mn: NetNode = { key: key("measurement", m.id), kind: "measurement", id: m.id, label: `${m.value}${m.unit ? ` ${m.unit}` : ""}${recon ? "（文献重构）" : ""}`, version: `样品状态 ${ver(m.sampleStateRevision)} · ${ver(m.revision)}` };
     const sn = nodes.get(key("sample", m.sampleId));
     if (sn) link(sn, mn, "lineage", "human");
     else add(mn);
     if (m.cellRef) {
       const tbl = state.tables.find((t) => t.id === m.cellRef!.tableId);
       const tn = tbl
-        ? (nodes.get(key("table", tbl.id)) ?? { key: key("table", tbl.id), kind: "table", id: tbl.id, label: `${tbl.name}${tbl.origin === "reconstructed" ? "（文献重构）" : ""}`, version: `rev ${tbl.revision}` })
+        ? (nodes.get(key("table", tbl.id)) ?? { key: key("table", tbl.id), kind: "table", id: tbl.id, label: `${tbl.name}${tbl.origin === "reconstructed" ? "（文献重构）" : ""}`, version: ver(tbl.revision) })
         : gapNode("table", m.cellRef.tableId);
       link(tn, mn, "provenance", "human", `单元格 r${m.cellRef.row},c${m.cellRef.col}`);
     }
   }
   for (const t of state.tables) {
-    const tn: NetNode = { key: key("table", t.id), kind: "table", id: t.id, label: `${t.name}${t.origin === "reconstructed" ? "（文献重构）" : ""}`, version: `rev ${t.revision}` };
+    const tn: NetNode = { key: key("table", t.id), kind: "table", id: t.id, label: `${t.name}${t.origin === "reconstructed" ? "（文献重构）" : ""}`, version: ver(t.revision) };
     add(tn);
     link(asset(t.assetId), tn, "provenance", "run");
   }
@@ -205,7 +213,7 @@ export function buildNetwork(state: LocusState): Network {
   // 结果 → 任务（lineage）；结果 → 结果附件（provenance）；无内部 Run 显式标注
   for (const r of state.analysisResults) {
     const rn: NetNode = {
-      key: key("result", r.id), kind: "result", id: r.id, label: `${r.method}（rev ${r.revision}）`,
+      key: key("result", r.id), kind: "result", id: r.id, label: `${r.method}（${ver(r.revision)}）`,
       version: r.reproducible ? "可复现" : `不可复现：${r.missing.join("；")}`,
       external: true, pending: ["无内部 Run（外部工具/人工处理，本站不重建专业软件）"],
     };
@@ -217,13 +225,13 @@ export function buildNetwork(state: LocusState): Network {
 
   // 报告 → 块（affiliation）；块 → 引用对象（support/lineage/provenance）
   for (const rep of state.reports) {
-    const rpn: NetNode = { key: key("report", rep.id), kind: "report", id: rep.id, label: `分析初稿 r${rep.revision}`, version: `钉住 ${rep.pinned.resultIds.length} 结果` };
+    const rpn: NetNode = { key: key("report", rep.id), kind: "report", id: rep.id, label: `分析初稿 ${ver(rep.revision)}`, version: `钉住 ${rep.pinned.resultIds.length} 结果` };
     add(rpn);
     const tp = nodes.get(key("topic", rep.topicId)); if (tp) link(tp, rpn, "affiliation", "human");
     if (rep.pinned.taskId) { const kn = nodes.get(key("task", rep.pinned.taskId)); if (kn) link(kn, rpn, "lineage", "human"); }
     for (const rid of rep.pinned.resultIds) { const rn = nodes.get(key("result", rid)); if (rn) link(rn, rpn, "support", "human", "钉住结果"); }
     for (const b of rep.blocks) {
-      const bn: NetNode = { key: key("block", b.id), kind: "block", id: b.id, label: b.text.slice(0, 30) || `块#${b.order + 1}`, version: `${b.nature}${b.draft ? " · AI草稿" : ""}` };
+      const bn: NetNode = { key: key("block", b.id), kind: "block", id: b.id, label: b.text.slice(0, 30) || `块#${b.order + 1}`, version: `${NATURE_CN[b.nature] ?? b.nature}${b.draft ? " · AI草稿" : ""}` };
       link(rpn, bn, "affiliation", "human");
       for (const ref of b.refs) {
         if (ref.kind === "note" || ref.kind === "snapshot") continue; // 注记/快照哈希非证据对象，不作缺件
@@ -248,15 +256,15 @@ export function buildNetwork(state: LocusState): Network {
 /** 把一个应用层 ref（ObjectRef/块引用）映射为网络节点（不存在则 undefined，不补造）。 */
 export function nodeForRef(state: LocusState, ref: { kind: string; id: string }): NetNode | undefined {
   switch (ref.kind) {
-    case "execution": { const e = state.executions.find((x) => x.id === ref.id); return e ? { key: key("execution", e.id), kind: "execution", id: e.id, label: `执行 r${e.protocolRevision}` } : undefined; }
-    case "protocol": { const p = state.protocols.find((x) => x.id === ref.id); return p ? { key: key("protocol", p.id), kind: "protocol", id: p.id, label: p.name, version: `r${p.revision}` } : undefined; }
+    case "execution": { const e = state.executions.find((x) => x.id === ref.id); return e ? { key: key("execution", e.id), kind: "execution", id: e.id, label: `执行 · ${ver(e.protocolRevision)}` } : undefined; }
+    case "protocol": { const p = state.protocols.find((x) => x.id === ref.id); return p ? { key: key("protocol", p.id), kind: "protocol", id: p.id, label: p.name, version: ver(p.revision) } : undefined; }
     case "measurement": { const m = state.measurements.find((x) => x.id === ref.id); return m ? { key: key("measurement", m.id), kind: "measurement", id: m.id, label: m.value } : undefined; }
     case "table": { const t = state.tables.find((x) => x.id === ref.id); return t ? { key: key("table", t.id), kind: "table", id: t.id, label: t.name } : undefined; }
     case "card": { const c = state.cards.find((x) => x.id === ref.id); return c ? { key: key("card", c.id), kind: "card", id: c.id, label: c.rawText.slice(0, 30) } : undefined; }
     case "asset": { const a = state.assets.find((x) => x.id === ref.id); return a ? { key: key("asset", a.id), kind: "asset", id: a.id, label: a.name } : undefined; }
     case "subquestion": { const q = state.subquestions.find((x) => x.id === ref.id); return q ? { key: key("subquestion", q.id), kind: "subquestion", id: q.id, label: q.question } : undefined; }
     case "result": { const r = state.analysisResults.find((x) => x.id === ref.id); return r ? { key: key("result", r.id), kind: "result", id: r.id, label: r.method, external: true } : undefined; }
-    case "report": { const r = state.reports.find((x) => x.id === ref.id); return r ? { key: key("report", r.id), kind: "report", id: r.id, label: `分析初稿 r${r.revision}` } : undefined; }
+    case "report": { const r = state.reports.find((x) => x.id === ref.id); return r ? { key: key("report", r.id), kind: "report", id: r.id, label: `分析初稿 ${ver(r.revision)}` } : undefined; }
     default: return undefined;
   }
 }

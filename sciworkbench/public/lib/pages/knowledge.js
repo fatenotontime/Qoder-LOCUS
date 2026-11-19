@@ -45,7 +45,7 @@ export function knowledgeLeftHtml(state, ui) {
 }
 
 function firstQuote(c) {
-  return (c.spans?.[0]?.quote) || c.locator?.sectionQuote || "";
+  return c.spans?.find((s) => s.matched)?.quote || c.locator?.sectionQuote || "";
 }
 
 export function knowledgeWorkspaceHtml(state, ui) {
@@ -128,7 +128,8 @@ export function renderKnowledgeForm(box) {
     ctx.renderRight();
     const job = await pollKnowledgeJob(r.jobId);
     await ctx.refreshAfterJob();
-    ctx.setStatus(job.status === "done" ? job.message : `知识提取失败：${job.error ?? ""}`);
+    if (job.status === "done") { ctx.setStatus(job.message); }
+    else { const h = ctx.humanError(job.error ?? ""); ctx.setStatus("知识提取失败，详情见错误面板。"); ctx.setError("right", { panel: "right", message: `知识提取失败：${h.message}`, detail: h.detail, retry: null }); }
   }));
   $("#dbg-import").addEventListener("click", (ev) => ctx.runBusy(ev.target, "导入机械草稿", async () => {
     const r = await ctx.api.importLiterature($("#dbg-name").value || "debug.md", $("#dbg-text").value, "draft", ui.topicId || undefined);

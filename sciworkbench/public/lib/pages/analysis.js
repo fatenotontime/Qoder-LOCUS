@@ -4,7 +4,7 @@
  * 行为与拆分前一致：DOM、文案、接口、请求时序均不变。
  */
 import { esc } from "../views.js";
-import { fmtVersion, fmtTime } from "../format.js";
+import { fmtVersion, fmtTime, fmtKind } from "../format.js";
 import { humanVer, deIso, refLabel, reconTag, missingTag, topicObjects } from "../refs.js";
 
 let ctx = null;
@@ -70,7 +70,7 @@ export function renderAnalysisForm(box) {
 export function snapshotHtml(snap) {
   return `<details class="mini" open><summary>冻结上下文快照 · ${esc(snap.summary)}</summary>
     <p class="hint">目的：${esc(snap.purpose)}<br/>模型：${esc(snap.model)} · ${esc(fmtTime(snap.at))}<br/>hash：${esc(snap.hash)}</p>
-    ${snap.fragments.map((f, i) => `<details class="mini"><summary>碎片 ${i + 1} · ${esc(f.label)} · ${esc(humanVer(f.version))} · ${f.ref.kind}:${f.ref.id}</summary><pre>${esc(deIso(humanVer(f.excerpt)))}</pre></details>`).join("")}
+    ${snap.fragments.map((f, i) => `<details class="mini"><summary>碎片 ${i + 1} · ${esc(f.label)} · ${esc(humanVer(f.version))} · ${esc(fmtKind(f.ref.kind))}:${f.ref.id}</summary><pre>${esc(deIso(humanVer(f.excerpt)))}</pre></details>`).join("")}
   </details>`;
 }
 
@@ -127,7 +127,7 @@ export function blockRowHtml(b, i, state) {
 }
 
 export function reportHtml(state, ui, r) {
-  return `<details class="mini rep" data-repid="${r.id}" ${r.id === ui.reportId ? "open" : ""}><summary>分析初稿 r${r.revision} · 钉住 ${r.pinned.resultIds.length} 结果${r.pinned.snapshotHash ? ` · 快照 ${r.pinned.snapshotHash.slice(0, 8)}…` : ""}</summary>
+  return `<details class="mini rep" data-repid="${r.id}" ${r.id === ui.reportId ? "open" : ""}><summary>分析初稿 ${fmtVersion(r.revision)} · 钉住 ${r.pinned.resultIds.length} 结果${r.pinned.snapshotHash ? ` · 快照 ${r.pinned.snapshotHash.slice(0, 8)}…` : ""}</summary>
     <p class="hint">块＝性质＋固定引用；改动→预览→新版本。</p>
     <div class="repblocks">${r.blocks.map((b, i) => blockRowHtml(b, i, state)).join("") || `<p class="hint">尚无块。</p>`}</div>
     <div class="repaddrow">
@@ -169,7 +169,7 @@ export function renderBlockDiff(el, diff, reportId) {
 
 export function resultHtml(state, r) {
   const atts = r.assetIds.map((id) => state.assets.find((a) => a.id === id)).filter(Boolean);
-  return `<details class="mini"><summary>结果 · ${esc(r.method)} ${r.reproducible ? `<span class="badge confirm">可复现</span>` : `<span class="badge warn">不可复现</span>`} · r${r.revision}</summary>
+  return `<details class="mini"><summary>结果 · ${esc(r.method)} ${r.reproducible ? `<span class="badge confirm">可复现</span>` : `<span class="badge warn">不可复现</span>`} · ${fmtVersion(r.revision)}</summary>
     <p>参数：${esc(r.params) || "（未填）"}</p>
     ${r.adoptedRecommendation ? `<p class="hint">采纳推荐：${esc(r.adoptedRecommendation)}</p>` : r.reason ? `<p class="hint">不采纳理由：${esc(r.reason)}</p>` : ""}
     ${r.note ? `<p class="hint">备注：${esc(r.note)}</p>` : ""}
@@ -330,7 +330,7 @@ export function bindAnalysis(c) {
           const r = await api.backtrace(kind, id, "both");
           const byKind = {};
           for (const n of r.nodes) (byKind[n.kind] ??= []).push(n.label);
-          body.innerHTML = `<div class="diffbox">${Object.entries(byKind).map(([k, arr]) => `<p class="hint"><b>${esc(k)}</b> ${arr.map(esc).join("、")}</p>`).join("")}${r.pending.length ? `<p class="hint">缺项：${r.pending.map(esc).join("；")}</p>` : ""}</div>`;
+          body.innerHTML = `<div class="diffbox">${Object.entries(byKind).map(([k, arr]) => `<p class="hint"><b>${esc(fmtKind(k))}</b> ${arr.map(esc).join("、")}</p>`).join("")}${r.pending.length ? `<p class="hint">缺项：${r.pending.map(esc).join("；")}</p>` : ""}</div>`;
           ctx.setStatus(`回查 ${r.nodes.length} 个节点`);
         }); return;
       }
@@ -372,7 +372,7 @@ export function bindAnalysis(c) {
         const blocks = collectReportBlocks(box);
         await runBusy(ev.target, "接受改动", async () => {
           const r = await api.applyReport(repId, baseRevision, blocks, reason);
-          ui.reportId = repId; ui.dirty = false; await refresh(); ctx.setStatus(`改动已接受：新版本 r${r.revision}（留历史）`);
+          ui.reportId = repId; ui.dirty = false; await refresh(); ctx.setStatus(`改动已接受：新版本 ${fmtVersion(r.revision)}（留历史）`);
         }); return;
       }
     } catch (e) { const h = ctx.humanError(e); ctx.setError("mid", { panel: "mid", message: h.message, detail: h.detail, retry: null }); }

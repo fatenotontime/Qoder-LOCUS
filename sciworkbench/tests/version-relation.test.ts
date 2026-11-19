@@ -55,7 +55,7 @@ test("版本-1 固定旧版→独立版本节点（第1版·固定），与当�
   assert.ok(net.edges.some((e) => e.from === vkey && e.to === `execution:${w.execId}` && e.edgeKind === "lineage"));
   // 当前版固定时才有直接边；此处固定旧版，不应有直接 方案→执行 边
   assert.ok(!net.edges.some((e) => e.from === `protocol:${w.protoId}` && e.to === `execution:${w.execId}`));
-  assert.ok(net.nodes.get(`protocol:${w.protoId}`)!.version!.includes("r2")); // 主节点为当前版
+  assert.ok(net.nodes.get(`protocol:${w.protoId}`)!.version!.includes("第2版")); // 主节点为当前版
 });
 
 test("版本-2 硬约束：方案更新后 changeHits 仍命中固定旧版的执行（传播不被切断）", async () => {
