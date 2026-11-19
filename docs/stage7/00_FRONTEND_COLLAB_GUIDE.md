@@ -64,13 +64,15 @@
 - 选择语义不变：**必选**（直接引用的数据及其来源方案 / 记录，锁定、不可取消）、**默认已选**（可取消）、**其他可选**（折叠）。
 - 缺来源的数据显示缺口，可说明，不伪造、不阻塞。
 - 选择结果仍写入同一份候选数据；快照冻结逻辑与「查看表格」入口保持。不逐项显示推荐理由。
-- **数据来自后端只读接口**（规格见 `02_CONTEXT_MAP_API_PROMPT.md`，交付前以代码为准）：
+- **数据来自后端只读接口**（已交付，ADR-0027；以代码为准）：
   - `GET /api/analysis/map?topicId=&subquestionId=&pick=table:ID,measurement:ID`：建任务前，按所选数据推导。
   - `GET /api/analysis/tasks/:id/map`：任务已建，按当前选择。
-  - 节点：`{key, kind, id, label, role, selectable, gaps}`；`role` 取 `core`（必选，锁定）/ `selected`（已选）/ `optional`（可选未选）/ `context`（仅供看清来源，不可选）。
-  - 边：`{from, to, edgeKind, establishedBy}`，只来自 `buildNetwork`，**不要在前端自行连线或补边**。
-  - `gaps` 给出缺口短词（如「来源缺失」），`truncated` 为真表示节点被截断，界面须提示。
-- **必选推导已收进后端**（测量 → 样品 → 执行 → 方案）。新界面不要再各自实现一份，直接用接口返回的 `core`；选择变更仍走现有 `POST /api/analysis/tasks/:id/candidates`，建任务仍走现有创建接口。
+  - 返回 `{ ok, scope:{ topicId, subquestionId?, taskId?, frozen? }, nodes, edges, gaps, truncated }`。
+  - 节点：`{ key, kind, id, label, version?, external?, role, selectable, gaps:[{code,label}] }`；`role` 取 `core`（必选，锁定）/ `selected`（已选）/ `optional`（可选未选）/ `context`（仅供看清来源，不可选）；`selectable = role∈{selected,optional}`。
+  - 边：`{ from, to, edgeKind, establishedBy, note? }`，只来自 `buildNetwork`，**不要在前端自行连线或补边**。
+  - `gaps` 汇总为 `[{ key, code, label }]`（label 为中文短词，如「来源缺失」）；`truncated` 为真表示节点被截断（上限 300），界面须提示。
+  - 错误：`topicId` 缺失/不存在、任务不存在 → **404**；`pick` 项不存在/不属本课题/类型不支持 → **422**。
+- **必选推导已收进后端**（测量 → 样品 → 执行 → 方案，纯函数 `deriveCore`）。新界面不要再各自实现一份，直接用接口返回的 `core`；选择变更仍走现有 `POST /api/analysis/tasks/:id/candidates`，建任务仍走现有创建接口。
 - 接口只读，不会写数据、不触发 AI。
 
 ## 五、动效通则

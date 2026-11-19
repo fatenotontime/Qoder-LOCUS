@@ -38,6 +38,8 @@
 
 | ADR-0026 | 记录页「意外影响到哪一环节」由**单选改多选**（2026-11-19 用户拍板）：一次意外可勾选多个受影响步骤；仍记为**一条** `deviation` 事件（文本列出全部受影响步骤），不改源方案 | accepted（用户 2026-11-19） | `public/app.js`（`stepsTableHtml`）；HANDOFF 遗留项结案 |
 
+| ADR-0027 | **上下文地图只读接口（后端）**（2026-11-19 用户拍板；提示词原写 ADR-0024，编号已被占用改 0027）。新增 `GET /api/analysis/map`（建任务前，按 `pick` 推导）与 `GET /api/analysis/tasks/:id/map`（任务当前选择）；返回 `{scope,nodes(role:core/selected/optional/context),edges,gaps,truncated}`。**节点/边一律来自 `buildNetwork`**（不补造、不新增边类型、同课题≠连线）；**必选自动推导后端化**为纯函数 `deriveCore`（测量→样品→执行→方案），与前端既有逻辑结果一致，**前端旧推导暂留**（待地图界面接入后再删）；可选对象类型＝`resolveFragment` 支持的 kind；只读（不写 state/不 save/不起 job）；节点上限 300，超出 `truncated`；`topicId` 缺/不存在→404，`pick` 坏→422 | accepted（用户 2026-11-19） | `services/context-map.ts`、`server.ts`；`tests/context-map.test.ts` |
+
 ## 待补 ADR（阶段2 之后）
 
 并发冲突的具体解决交互、跨会话暂存/恢复的存储形态、来源定位的精度门槛、AI 任务熔断参数、匿名演示会话清理策略。均**待实测或用户评审**，不预填日期。

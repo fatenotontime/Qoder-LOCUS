@@ -49,3 +49,11 @@
 | `backtrace(originKind)` | 纯函数 → 该类型的回查链原型 | 回查网络 |
 | `ImpactAssessment` 状态机 | `transition(state,event)` | 03 Edit Impact |
 | AI 配置/模型 | `GET /api/ai/status`、`POST /api/ai/config`（保存即落盘本机 `ai-config.json`）、`DELETE /api/ai/config`（删盘）、`POST /api/ai/test`、`POST /api/ai/models`（可用模型列表 + 联通性） | ADR-0024；Key 不入 Git/日志/导出 |
+| 上下文地图（只读） | `GET /api/analysis/map?topicId=&subquestionId=&pick=table:ID,measurement:ID`（建任务前，按所选数据推导）、`GET /api/analysis/tasks/:id/map`（任务当前选择） | ADR-0027；节点/边来自 `buildNetwork`，不补造 |
+
+### 上下文地图返回结构（ADR-0027）
+
+`{ ok, scope:{topicId,subquestionId?,taskId?,frozen?}, nodes:[{key,kind,id,label,version?,external?,role,selectable,gaps:[{code,label}]}], edges:[{from,to,edgeKind,establishedBy,note?}], gaps:[{key,code,label}], truncated }`
+- `role`：`core`（必选，锁定）/`selected`（候选已选）/`optional`（候选未选）/`context`（仅看来源，不可选）；`selectable = role∈{selected,optional}`。
+- 只读：不写 state、不 save、不调 AI、不起 job；节点上限 300，超出 `truncated:true`；同一 state 结果顺序确定（按 key/边排序）。
+- 错误：`topicId` 缺失/不存在、任务不存在 → 404；`pick` 项不存在/不属本课题/类型不支持 → 422。

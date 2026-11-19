@@ -71,6 +71,7 @@ import {
   failChat, cancelChat, retryChat, adoptProposal, recoverInterruptedChats,
 } from "./services/analysis.ts";
 import { traverseNetwork, changeHits } from "./services/references.ts";
+import { buildContextMap, parsePicks } from "./services/context-map.ts";
 import { buildReportDocx, buildTraceabilityPackage, buildWholeLibraryPackage, inspectLibraryJson, countsOf } from "./services/export.ts";
 import { addPaperAttachment, createPaper, importBibliography, linkPaperTopic, updatePaper } from "./services/papers.ts";
 import { applyKnowledge, mapKnowledgeCards, prepareKnowledge } from "./services/knowledge.ts";
@@ -236,6 +237,22 @@ export async function createApp(store: Store, opts: { aiConfigPath?: string } = 
         });
         if (!t.start) { send(res, 404, { error: `节点不存在：${kind}:${id}` }); return; }
         send(res, 200, { ok: true, start: t.start, nodes: t.nodes, edges: t.edges, downstreamByKind: t.downstreamByKind, pending: t.pending }); return;
+      }
+      // 上下文地图（只读；ADR-0027）：建任务前按 pick 推导 / 任务按当前选择。
+      if (method === "GET" && path === "/api/analysis/map") {
+        const topicId = url.searchParams.get("topicId") ?? "";
+        if (!topicId) { send(res, 404, { error: "缺少 topicId。" }); return; }
+        const pick = parsePicks(url.searchParams.get("pick"));
+        const map = buildContextMap(state, { topicId, subquestionId: url.searchParams.get("subquestionId") ?? undefined, pick });
+        send(res, 200, map); return;
+      }
+      const taskMap = path.match(/^\/api\/analysis\/tasks\/([^/]+)\/map$/);
+      if (method === "GET" && taskMap) {
+        const taskId = decodeURIComponent(taskMap[1]);
+        const task = state.analysisTasks.find((t) => t.id === taskId);
+        if (!task) { send(res, 404, { error: `分析任务不存在：${taskId}` }); return; }
+        const map = buildContextMap(state, { topicId: task.topicId, subquestionId: task.subquestionId, taskId });
+        send(res, 200, map); return;
       }
       if (method === "GET" && path.startsWith("/api/jobs/")) {
         const job = jobs.get(decodeURIComponent(path.slice("/api/jobs/".length)));
