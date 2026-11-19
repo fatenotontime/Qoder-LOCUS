@@ -30,8 +30,8 @@
 
 ## 三、当前状态（2026-11-19 交接时点）
 
-- 分支 `main`，功能提交至 `2fefb58`（前端 B+C），记录至 `34ca3b1`；已推 GitHub。
-- **阶段 0–6 全部完成并验收**；前端纠偏 A、B1–B7、B 功能补齐、C 轻量打磨完成。**阶段 7 未开始**，进入前听用户指令。
+- 分支 `main`，功能提交至 `194226f`（模型设置落盘＋archify A/C/E＋意外影响多选，S02-T44）；已推 GitHub。
+- **阶段 0–6 全部完成并验收**；前端纠偏 A、B1–B7、B 功能补齐、C 轻量打磨、模型设置落盘完成。**阶段 7 未开始**，进入前听用户指令（注意工作区已有未跟踪的 `docs/stage7/` 拆分线）。
 - 测试：`cd sciworkbench && npm test` → **193 项全过**（含 `tests/ai-config.test.ts`、`tests/archify.test.ts`）；逐页真渲染检查 `node scripts/frontend-text-check.ts` → **7/7**（该脚本含「真渲染」判定：缺 navitem 或状态仍「连接中」即失败，防 JS 报错假通过）。
 - 运行实例：**5184**＝验收实例（`data/acceptance-darwin.json`）；**5187**＝达尔文演示（`data/demo-darwin.json`，已重启加载新后端；**AI 配置需用户在页面重填**）。
 - 推送若经代理 7897 失败：`git -c http.proxy= -c https.proxy= push` 直连。
