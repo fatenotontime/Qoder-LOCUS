@@ -139,8 +139,21 @@ export function buildNetwork(state: LocusState): Network {
     const en: NetNode = { key: key("execution", e.id), kind: "execution", id: e.id, label: `执行 r${e.protocolRevision}${recon ? "（文献重构）" : ""}`, version: e.phase === "preparing" ? "准备稿未确认" : e.status };
     add(en);
     const pn = nodes.get(key("protocol", e.protocolId));
-    if (pn) link(pn, en, "lineage", "human", `固定方案 r${e.protocolRevision}`);
-    else for (const tid of [e.topicId]) { const tp = nodes.get(key("topic", tid)); if (tp) link(tp, en, "affiliation", "human"); }
+    const proto = state.protocols.find((p) => p.id === e.protocolId);
+    if (pn && proto) {
+      const pinned = e.protocolRevision;
+      if (pinned !== proto.revision) {
+        // 固定旧版：独立版本节点（与当前版区分）。当前方案 → 版本节点 → 执行，
+        // 保证方案更新后 changeHits 仍沿版本节点传播命中旧版执行（传播路径不被切断）。
+        const vkey = `${pn.key}@r${pinned}`;
+        if (!nodes.has(vkey)) link(pn, { key: vkey, kind: "protocol", id: proto.id, label: `${proto.name} · 第${pinned}版（固定）`, version: `第${pinned}版（固定）` }, "lineage", "human", `历史版本 r${pinned}`);
+        link(nodes.get(vkey)!, en, "lineage", "human", `固定方案 r${pinned}`);
+      } else {
+        link(pn, en, "lineage", "human", `固定方案 r${pinned}（当前版）`);
+      }
+    } else {
+      for (const tid of [e.topicId]) { const tp = nodes.get(key("topic", tid)); if (tp) link(tp, en, "affiliation", "human"); }
+    }
     const tp2 = nodes.get(key("topic", e.topicId)); if (tp2 && pn) link(tp2, en, "affiliation", "human");
     if (recon && e.sourceAssetId) link(asset(e.sourceAssetId), en, "provenance", "human", "重构执行的文献来源");
     // 确认快照：执行记其基础方案版本；缺项如实登记
