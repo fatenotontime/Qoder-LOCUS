@@ -6,7 +6,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { emptyState, type LocusState } from "../store.ts";
-import { createTopic, createSubquestion, importMeasurements, importLiterature } from "../services/app.ts";
+import { createTopic, createSubquestion, importMeasurements, importLiterature, reviewCard } from "../services/app.ts";
 import { createProtocol, startExecution, confirmPreparation, createSample, addMeasurement } from "../services/experiment.ts";
 import { createPaper, addPaperAttachment } from "../services/papers.ts";
 import { createAnalysisTask, buildSnapshot, applyRecommendation, submitResult, archiveResultFile, createReport, applyReportEdit } from "../services/analysis.ts";
@@ -22,6 +22,7 @@ async function fullWorld() {
   const p = createPaper(s, { title: "Laccase pH study", topicIds: [t.topic.id] }); s = p.state;
   const att = addPaperAttachment(s, { paperId: p.paper.id, name: "lit.md", text: "An acidic optimum near pH 4 was reported.", role: "fulltext", version: "v1" }); s = att.state;
   const lit = await importLiterature(s, { name: "lit.md", text: "段落：pH 4 时活性最高。", mode: "draft", topicId: t.topic.id }); s = lit.state;
+  for (const c of s.cards) s = reviewCard(s, c.id, { audit: "confirm" }); // 选用前须人工确认（锁5）
   const cardId = s.cards[0].id;
   // 让卡带 paperId（按附件关联）——直接使用既有卡（迁移/导入会经附件关联论文）
   const pr = createProtocol(s, {

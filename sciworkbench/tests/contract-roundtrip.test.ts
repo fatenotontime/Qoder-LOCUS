@@ -5,7 +5,7 @@
  */
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createTopic, createSubquestion, importLiterature, importMeasurements } from "../services/app.ts";
+import { createTopic, createSubquestion, importLiterature, importMeasurements, reviewCard } from "../services/app.ts";
 import { createProtocol, startExecution, confirmPreparation, createSample, addMeasurement } from "../services/experiment.ts";
 import { createAnalysisTask, setTaskCandidates } from "../services/analysis.ts";
 import { emptyState, type LocusState } from "../store.ts";
@@ -24,6 +24,7 @@ async function world() {
   const m = addMeasurement(s, { topicId: t.topic.id, sampleId: smp.sample.id, sampleStateRevision: 1, value: "90", unit: "days" }); s = m.state;
   const tab = importMeasurements(s, { name: "c.csv", csv: "x,y\n1,2\n3,4", topicId: t.topic.id }); s = tab.state;
   const lit = await importLiterature(s, { name: "l.md", text: "段一\n\n段二", mode: "draft", topicId: t.topic.id }); s = lit.state;
+  for (const c of s.cards) s = reviewCard(s, c.id, { audit: "confirm" }); // 前端「默认已选」只列 confirm 卡（analysis.js conf 过滤）
   return { s, topicId: t.topic.id, subqId: q.subquestion.id, execId: e.execution.id, protoId: p.protocol.id, measId: m.measurement.id, tableId: tab.state.tables[0].id, cardIds: s.cards.map((c) => c.id) };
 }
 

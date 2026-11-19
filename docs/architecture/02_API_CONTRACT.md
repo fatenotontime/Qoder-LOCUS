@@ -33,6 +33,8 @@
 4. 报告数值/图表绑定 `resultRef`（固定 revision）；解释绑定 evidence/task。
 5. 影响任务：`status` 与 `assessment` 分离；**failure ⇒ 不显示 no_supported_impact_found**。
 6. 较新改动到达 ⇒ 旧影响分析置 `stale`，引用旧快照供查，**不覆盖**。
+7. **生命周期字段不随内容编辑走**（S02-T50）：`draft/audit/humanConfirmed/status` 等由存储继承，普通编辑端点忽略客户端值；状态转换仅专用端点（如 `confirmReportBlock`、`reviewCard`）。历史由系统追加，客户端不得覆盖。
+8. **人工确认全入口＋冻结前复检**（S02-T50，锁5）：知识卡选用（核心/候选/对话范围）须 `audit=confirm`；取消选择（`included:false`）不拦；`buildSnapshot`/`chatScopeSnapshot` 冻结前统一复检，兜底旧任务遗留未审卡。
 
 ## 4. 来源定位（复用 01 §6）
 

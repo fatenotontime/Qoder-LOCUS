@@ -112,7 +112,7 @@ function download(path) {
 }
 
 export function blockRowHtml(b, i) {
-  return `<div class="reprow" data-bid="${esc(b.id)}" data-refs="${esc(JSON.stringify(b.refs ?? []))}">
+  return `<div class="reprow" data-bid="${esc(b.id)}" data-draft="${b.draft ? "1" : ""}" data-refs="${esc(JSON.stringify(b.refs ?? []))}">
     <div class="repmove"><button class="rep-up" title="上移">↑</button><button class="rep-down" title="下移">↓</button><span class="hint">#${i + 1}</span></div>
     <select class="rep-nature">${REPORT_NATURES.map(([k, l]) => `<option value="${k}" ${k === b.nature ? "selected" : ""}>${l}</option>`).join("")}</select>
     <textarea class="rep-text" rows="2">${esc(b.text)}</textarea>
@@ -152,7 +152,7 @@ export function collectReportBlocks(repEl) {
     try { refs = JSON.parse(row.dataset.refs || "[]"); } catch {}
     const labels = row.querySelector(".rep-refs").value.split(/[;；]/).map((s) => s.trim()).filter(Boolean);
     const outRefs = labels.map((lab, j) => refs[j] ? { ...refs[j], label: lab } : { kind: "note", id: "", version: "", label: lab });
-    return { id: row.dataset.bid || undefined, nature: row.querySelector(".rep-nature").value, text: row.querySelector(".rep-text").value.trim(), refs: outRefs };
+    return { id: row.dataset.bid || undefined, nature: row.querySelector(".rep-nature").value, text: row.querySelector(".rep-text").value.trim(), refs: outRefs, draft: row.dataset.draft === "1" };
   });
 }
 
