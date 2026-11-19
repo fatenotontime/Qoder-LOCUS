@@ -68,9 +68,10 @@ test("类9  标题行+块标记行（保留原行仅标注）", () => {
   assert.equal(t.rows.length, 2);
 });
 
-test("类10 键列独占占位行丢弃", () => {
+test("类10 键列独占占位行：保留并标注（零猜测保行，T49-3）", () => {
   const r = imp("ID,Name\nr0,x\nr1,\nr2,\n");
-  assert.equal(r.state.tables[0].rows.length, 1);
+  assert.equal(r.state.tables[0].rows.length, 3);
+  assert.deepEqual(r.state.tables[0].markerRows, [1, 2]);
 });
 
 test("类11 仪器导出（首行无分隔符）→ 422 拒绝", () => {
@@ -102,6 +103,26 @@ test("类16 analyseTable 显式 headerRows 与 auto 一致处不漂移", () => {
   const rows = [["A", "B"], ["C", "D"], ["1", "2"]];
   assert.deepEqual(analyseTable(rows, 2).columns, ["A/C", "B/D"]);
   assert.deepEqual(analyseTable(rows, 1).columns, ["A", "B"]);
+});
+
+test("类17 稀疏单格数据行：不因非空格数删行（T49-3 回归）", () => {
+  const r = imp("v,note\n1,\n2,3\n");
+  assert.deepEqual(r.state.tables[0].rows, [["1", ""], ["2", "3"]]);
+  assert.deepEqual(r.state.tables[0].markerRows, [0]); // 仅标注
+});
+
+test("类18 非数字数据行保留；表中单格文本行（非首列）不丢弃", () => {
+  const r = imp("a,b\nfoo,bar\n,note\n1,2\n");
+  assert.deepEqual(r.state.tables[0].rows, [["foo", "bar"], ["", "note"], ["1", "2"]]);
+  assert.deepEqual(r.state.tables[0].markerRows, [1]);
+});
+
+test("类19 块内首列单格数字行：是数据不是标题，保留入表体", () => {
+  const r = imp("T,\nA,B\n1,2\n5,\n");
+  const t = r.state.tables[0];
+  assert.equal(t.name, "m.csv · T");
+  assert.deepEqual(t.rows, [["1", "2"], ["5", ""]]);
+  assert.deepEqual(t.markerRows, [1]);
 });
 
 // ── 跨来源真实 csv（单一来源语料之外的泛用性抽查）─────────────

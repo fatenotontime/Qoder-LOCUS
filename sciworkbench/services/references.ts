@@ -112,20 +112,23 @@ export function buildNetwork(state: LocusState): Network {
 
   // 执行 → 方案（lineage）；执行 → 样品（provenance）
   for (const e of state.executions) {
-    const en: NetNode = { key: key("execution", e.id), kind: "execution", id: e.id, label: `执行 r${e.protocolRevision}`, version: e.phase === "preparing" ? "准备稿未确认" : e.status };
+    const recon = e.origin === "reconstructed";
+    const en: NetNode = { key: key("execution", e.id), kind: "execution", id: e.id, label: `执行 r${e.protocolRevision}${recon ? "（文献重构）" : ""}`, version: e.phase === "preparing" ? "准备稿未确认" : e.status };
     add(en);
     const pn = nodes.get(key("protocol", e.protocolId));
     if (pn) link(pn, en, "lineage", "human", `固定方案 r${e.protocolRevision}`);
     else for (const tid of [e.topicId]) { const tp = nodes.get(key("topic", tid)); if (tp) link(tp, en, "affiliation", "human"); }
     const tp2 = nodes.get(key("topic", e.topicId)); if (tp2 && pn) link(tp2, en, "affiliation", "human");
+    if (recon && e.sourceAssetId) link(asset(e.sourceAssetId), en, "provenance", "human", "重构执行的文献来源");
     // 确认快照：执行记其基础方案版本；缺项如实登记
     const pending: string[] = [];
+    if (recon) pending.push("历史文献重构（非本地实际实验；数值为原文陈述）");
     if ((e.phase ?? "recording") === "preparing") pending.push("执行准备稿未确认（无冻结快照）");
     if (!e.events.length) pending.push("尚无实际步骤事件");
     if (pending.length) nodes.set(en.key, { ...nodes.get(en.key)!, pending });
   }
   for (const s of state.samples) {
-    const sn: NetNode = { key: key("sample", s.id), kind: "sample", id: s.id, label: `${s.shortName}（${s.displayName}）`, version: `状态 ${s.states.length} 条` };
+    const sn: NetNode = { key: key("sample", s.id), kind: "sample", id: s.id, label: `${s.shortName}（${s.displayName}）${s.origin === "reconstructed" ? "（文献重构）" : ""}`, version: `状态 ${s.states.length} 条` };
     add(sn);
     if (s.executionId) { const en = nodes.get(key("execution", s.executionId)); if (en) link(en, sn, "provenance", "human"); }
     const tp = nodes.get(key("topic", s.topicId)); if (tp) link(tp, sn, "affiliation", "human");
@@ -133,14 +136,15 @@ export function buildNetwork(state: LocusState): Network {
 
   // 测量 → 样品（lineage，固定样品状态 revision）；测量 → 数据表（provenance，若回链单元格）
   for (const m of state.measurements) {
-    const mn: NetNode = { key: key("measurement", m.id), kind: "measurement", id: m.id, label: `${m.value}${m.unit ? ` ${m.unit}` : ""}`, version: `样品状态 r${m.sampleStateRevision} · rev ${m.revision}` };
+    const recon = (m.origin ?? state.samples.find((s) => s.id === m.sampleId)?.origin) === "reconstructed";
+    const mn: NetNode = { key: key("measurement", m.id), kind: "measurement", id: m.id, label: `${m.value}${m.unit ? ` ${m.unit}` : ""}${recon ? "（文献重构）" : ""}`, version: `样品状态 r${m.sampleStateRevision} · rev ${m.revision}` };
     const sn = nodes.get(key("sample", m.sampleId));
     if (sn) link(sn, mn, "lineage", "human");
     else add(mn);
     if (m.cellRef) link({ key: key("table", m.cellRef.tableId), kind: "table", id: m.cellRef.tableId, label: state.tables.find((t) => t.id === m.cellRef!.tableId)?.name ?? m.cellRef.tableId }, mn, "provenance", "human", `单元格 r${m.cellRef.row},c${m.cellRef.col}`);
   }
   for (const t of state.tables) {
-    const tn: NetNode = { key: key("table", t.id), kind: "table", id: t.id, label: t.name, version: `rev ${t.revision}` };
+    const tn: NetNode = { key: key("table", t.id), kind: "table", id: t.id, label: `${t.name}${t.origin === "reconstructed" ? "（文献重构）" : ""}`, version: `rev ${t.revision}` };
     add(tn);
     link(asset(t.assetId), tn, "provenance", "run");
   }

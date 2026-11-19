@@ -5,7 +5,7 @@
  */
 import { esc } from "../views.js";
 import { fmtVersion, fmtTime } from "../format.js";
-import { humanVer, deIso, refLabel, topicObjects } from "../refs.js";
+import { humanVer, deIso, refLabel, reconTag, topicObjects } from "../refs.js";
 
 let ctx = null;
 
@@ -23,8 +23,8 @@ export function renderAnalysisForm(box) {
   const subqs = state.subquestions.filter((s) => s.topicId === ui.topicId);
   const conf = cards.filter((c) => c.audit === "confirm");
   const dataSources = [
-    ...tables.map((t) => ({ kind: "table", id: t.id, label: `数据表 · ${t.name}` })),
-    ...meas.map((m) => ({ kind: "measurement", id: m.id, label: `测量 · ${state.samples.find((s) => s.id === m.sampleId)?.shortName ?? ""} ${m.value}${m.unit}` })),
+    ...tables.map((t) => ({ kind: "table", id: t.id, label: refLabel(state, { kind: "table", id: t.id }) })),
+    ...meas.map((m) => ({ kind: "measurement", id: m.id, label: refLabel(state, { kind: "measurement", id: m.id }) })),
   ];
   box.innerHTML = `
     <details class="mini" open>
@@ -36,8 +36,8 @@ export function renderAnalysisForm(box) {
       <p class="hint">默认已选（关联度高的已入候选知识卡，可取消）：</p>
       ${conf.length ? conf.map((c) => `<label class="ctxpick"><input type="checkbox" class="an-def" data-id="${c.id}" checked/> ${esc(c.scope || c.rawText.slice(0, 24))}</label>`).join("") : `<p class="hint">暂无已入候选卡。</p>`}
       <details class="mini"><summary>其他可选（折叠：方案/执行）</summary>
-        ${protos.map((p) => `<label class="ctxpick"><input type="checkbox" class="an-opt2" data-kind="protocol" data-id="${p.id}"/> 方案 · ${esc(p.name)}</label>`).join("")}
-        ${execs.map((e) => `<label class="ctxpick"><input type="checkbox" class="an-opt2" data-kind="execution" data-id="${e.id}"/> 执行 · ${esc(state.protocols.find((p) => p.id === e.protocolId)?.name ?? e.id)}</label>`).join("")}
+        ${protos.map((p) => `<label class="ctxpick"><input type="checkbox" class="an-opt2" data-kind="protocol" data-id="${p.id}"/> ${esc(refLabel(state, { kind: "protocol", id: p.id }))}</label>`).join("")}
+        ${execs.map((e) => `<label class="ctxpick"><input type="checkbox" class="an-opt2" data-kind="execution" data-id="${e.id}"/> ${esc(refLabel(state, { kind: "execution", id: e.id }))}</label>`).join("")}
       </details>
       <button class="primary" id="an-create">创建任务（必选项自动锁定）</button>
     </details>`;
@@ -111,7 +111,7 @@ function download(path) {
   a.href = path; a.download = ""; document.body.append(a); a.click(); a.remove();
 }
 
-export function blockRowHtml(b, i) {
+export function blockRowHtml(b, i, state) {
   return `<div class="reprow" data-bid="${esc(b.id)}" data-draft="${b.draft ? "1" : ""}" data-refs="${esc(JSON.stringify(b.refs ?? []))}">
     <div class="repmove"><button class="rep-up" title="上移">↑</button><button class="rep-down" title="下移">↓</button><span class="hint">#${i + 1}</span></div>
     <select class="rep-nature">${REPORT_NATURES.map(([k, l]) => `<option value="${k}" ${k === b.nature ? "selected" : ""}>${l}</option>`).join("")}</select>
@@ -122,14 +122,14 @@ export function blockRowHtml(b, i) {
       ${b.draft ? `<button class="rep-confirm">确认</button>` : ""}
       <button class="rep-del">删除</button>
     </div>
-    ${(b.refs ?? []).filter((r) => r.kind !== "note").length ? `<div class="refchips">${b.refs.filter((r) => r.kind !== "note").map((r) => `<span class="refchip">${esc(refDisplay(r))} <button class="ref-back" data-kind="${esc(r.kind)}" data-id="${esc(r.id)}">回查</button></span>`).join("")}</div>` : ""}
+    ${(b.refs ?? []).filter((r) => r.kind !== "note").length ? `<div class="refchips">${b.refs.filter((r) => r.kind !== "note").map((r) => `<span class="refchip">${esc(refDisplay(r))}${state ? esc(reconTag(state, r.kind, r.id)) : ""} <button class="ref-back" data-kind="${esc(r.kind)}" data-id="${esc(r.id)}">回查</button></span>`).join("")}</div>` : ""}
     <div class="refnet-body"></div></div>`;
 }
 
 export function reportHtml(state, ui, r) {
   return `<details class="mini rep" data-repid="${r.id}" ${r.id === ui.reportId ? "open" : ""}><summary>分析初稿 r${r.revision} · 钉住 ${r.pinned.resultIds.length} 结果${r.pinned.snapshotHash ? ` · 快照 ${r.pinned.snapshotHash.slice(0, 8)}…` : ""}</summary>
     <p class="hint">块＝性质＋固定引用；改动→预览→新版本。</p>
-    <div class="repblocks">${r.blocks.map(blockRowHtml).join("") || `<p class="hint">尚无块。</p>`}</div>
+    <div class="repblocks">${r.blocks.map((b, i) => blockRowHtml(b, i, state)).join("") || `<p class="hint">尚无块。</p>`}</div>
     <div class="repaddrow">
       <select class="rep-newnature">${REPORT_NATURES.map(([k, l]) => `<option value="${k}">${l}</option>`).join("")}</select>
       <button class="rep-add">＋ 添加块</button>
@@ -312,7 +312,7 @@ export function bindAnalysis(c) {
         const nature = box.querySelector(".rep-newnature").value;
         const row = document.createElement("div");
         row.className = "reprow"; row.dataset.bid = ""; row.dataset.refs = "[]";
-        row.innerHTML = blockRowHtml({ id: "", nature, text: "", refs: [], draft: false }, box.querySelectorAll(".repblocks .reprow").length);
+        row.innerHTML = blockRowHtml({ id: "", nature, text: "", refs: [], draft: false }, box.querySelectorAll(".repblocks .reprow").length, ctx.getState());
         box.querySelector(".repblocks").append(row);
         ui.dirty = true; return;
       }
@@ -350,7 +350,7 @@ export function bindAnalysis(c) {
           const r = await api.draftReport(repId);
           const holder = box.querySelector(".repblocks");
           const base = holder.querySelectorAll(".reprow").length;
-          (r.blocks ?? []).forEach((b, i) => { const row = document.createElement("div"); row.className = "reprow"; row.dataset.bid = ""; row.dataset.refs = esc(JSON.stringify(b.refs ?? [])); row.innerHTML = blockRowHtml({ ...b, id: "" }, base + i); holder.append(row); });
+          (r.blocks ?? []).forEach((b, i) => { const row = document.createElement("div"); row.className = "reprow"; row.dataset.bid = ""; row.dataset.refs = esc(JSON.stringify(b.refs ?? [])); row.innerHTML = blockRowHtml({ ...b, id: "" }, base + i, ctx.getState()); holder.append(row); });
           ui.dirty = true; ctx.setStatus(`草稿块 ${r.blocks.length} 个已入编辑器（未保存，须预览→接受）`);
         }); return;
       }

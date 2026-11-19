@@ -15,17 +15,38 @@ export const humanVer = (s) => String(s ?? "")
   .replace(/exploratory/g, "探索中").replace(/declared/g, "已定")
   .replace(/confirm/g, "已确认").replace(/exclude/g, "已排除").replace(/\bskip\b/g, "已跳过");
 
+/** 历史文献重构对象 → 展示后缀（非本地实测，全链路明示）。 */
+export function reconTag(state, kind, id) {
+  if (kind === "execution") return state.executions.find((x) => x.id === id)?.origin === "reconstructed" ? "（文献重构）" : "";
+  if (kind === "protocol") return state.protocols.find((x) => x.id === id)?.sourceKind === "reconstructed" ? "（文献重构）" : "";
+  if (kind === "table") return state.tables.find((x) => x.id === id)?.origin === "reconstructed" ? "（文献重构）" : "";
+  if (kind === "measurement") {
+    const m = state.measurements.find((x) => x.id === id);
+    const o = m?.origin ?? state.samples.find((s) => s.id === m?.sampleId)?.origin;
+    return o === "reconstructed" ? "（文献重构）" : "";
+  }
+  if (kind === "sample") return state.samples.find((x) => x.id === id)?.origin === "reconstructed" ? "（文献重构）" : "";
+  if (kind === "result") {
+    // 结果沿任务核心/已选候选继承来源性质（与后端 refOrigin 一致）。
+    const res = state.analysisResults.find((x) => x.id === id);
+    const task = res && state.analysisTasks.find((t) => t.id === res.taskId);
+    const refs = task ? [...task.core, ...task.optional.filter((o) => o.included).map((o) => o.ref)] : [];
+    if (refs.some((r) => reconTag(state, r.kind, r.id))) return "（文献重构）";
+  }
+  return "";
+}
+
 /** 对象引用 → 人话标签。 */
 export function refLabel(state, ref) {
   switch (ref.kind) {
-    case "execution": { const e = state.executions.find((x) => x.id === ref.id); const p = e && state.protocols.find((x) => x.id === e.protocolId); return `执行 · ${p?.name ?? ref.id}`; }
-    case "protocol": return `方案 · ${state.protocols.find((x) => x.id === ref.id)?.name ?? ref.id}`;
+    case "execution": { const e = state.executions.find((x) => x.id === ref.id); const p = e && state.protocols.find((x) => x.id === e.protocolId); return `执行 · ${p?.name ?? ref.id}${reconTag(state, "execution", ref.id)}`; }
+    case "protocol": return `方案 · ${state.protocols.find((x) => x.id === ref.id)?.name ?? ref.id}${reconTag(state, "protocol", ref.id)}`;
     case "measurement": {
       const mr = state.measurements.find((x) => x.id === ref.id);
-      if (mr) { const s = state.samples.find((x) => x.id === mr.sampleId); return `测量 · ${s?.shortName ?? ""} ${mr.value}${mr.unit}`; }
+      if (mr) { const s = state.samples.find((x) => x.id === mr.sampleId); return `测量 · ${s?.shortName ?? ""} ${mr.value}${mr.unit}${reconTag(state, "measurement", ref.id)}`; }
       return `测量原件 · ${state.assets.find((x) => x.id === ref.id)?.name ?? ref.id}`;
     }
-    case "table": return `数据表 · ${state.tables.find((x) => x.id === ref.id)?.name ?? ref.id}`;
+    case "table": return `数据表 · ${state.tables.find((x) => x.id === ref.id)?.name ?? ref.id}${reconTag(state, "table", ref.id)}`;
     case "card": { const c = state.cards.find((x) => x.id === ref.id); return `知识卡 · ${c?.scope || Object.values(c?.extracted?.fields ?? {})[0] || ref.id}`; }
     case "asset": return `原件 · ${state.assets.find((x) => x.id === ref.id)?.name ?? ref.id}`;
     case "subquestion": return `子问题 · ${state.subquestions.find((x) => x.id === ref.id)?.question ?? ref.id}`;

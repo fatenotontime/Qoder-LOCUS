@@ -75,33 +75,38 @@ export function resolveFragment(state: LocusState, ref: ObjectRef): ContextFragm
       const p = state.protocols.find((x) => x.id === e.protocolId);
       const snap = effectiveSnapshot(state, e);
       const prep = (e.phase ?? "recording") === "preparing";
+      const recon = e.origin === "reconstructed";
       const lines = [
+        ...(recon ? ["性质：历史文献重构（非本地实际实验；数值为原文陈述，未实测）"] : []),
         `方案：${p?.name ?? e.protocolId}（基础 r${e.protocolRevision}${prep ? "，准备稿未确认" : ""}）`,
         `目的：${snap?.purpose ?? "（未写）"}`,
         `步骤：${(snap?.steps ?? []).map((s) => `${s.op}${s.durationMin === null ? "(时长未知)" : `(${s.durationMin}min${s.estimated ? "估" : ""})`}`).join(" → ")}`,
         `事件（${e.events.length}）：${e.events.map((ev) => `[${ev.kind}] ${ev.text}${ev.actual.durationMin !== undefined ? ` 实际${ev.actual.durationMin}min` : ""}`).join("；") || "无"}`,
         `状态：${e.status}`,
       ];
-      return { ...base, label: `执行 · ${p?.name ?? e.protocolId}`, version: `r${e.protocolRevision}${e.preparation?.snapshot ? `＋${e.preparation.adjustments.length}差异` : ""}`, excerpt: cap(lines.join("\n")) };
+      return { ...base, label: `执行 · ${p?.name ?? e.protocolId}${recon ? "（文献重构）" : ""}`, version: `r${e.protocolRevision}${e.preparation?.snapshot ? `＋${e.preparation.adjustments.length}差异` : ""}`, excerpt: cap(lines.join("\n")) };
     }
     case "protocol": {
       const p = state.protocols.find((x) => x.id === ref.id);
       if (!p) throw new AppError(404, `方案不存在：${ref.id}`);
       const snap = p.revisions[p.revisions.length - 1];
-      return { ...base, label: `方案 · ${p.name}`, version: `r${p.revision}`, excerpt: cap(`目的：${snap.purpose}\n步骤：${snap.steps.map((s) => `${s.op}${s.durationMin === null ? "(时长未知)" : `(${s.durationMin}min)`}`).join(" → ")}\n判据：${snap.criteria}`) };
+      const recon = p.sourceKind === "reconstructed";
+      return { ...base, label: `方案 · ${p.name}${recon ? "（文献重构）" : ""}`, version: `r${p.revision}`, excerpt: cap(`${recon ? "性质：方法按历史文献重构（非本地实测方案）\n" : ""}目的：${snap.purpose}\n步骤：${snap.steps.map((s) => `${s.op}${s.durationMin === null ? "(时长未知)" : `(${s.durationMin}min)`}`).join(" → ")}\n判据：${snap.criteria}`) };
     }
     case "measurement": {
       const m = state.measurements.find((x) => x.id === ref.id);
       if (!m) throw new AppError(404, `测量不存在：${ref.id}`);
       const smp = state.samples.find((x) => x.id === m.sampleId);
-      return { ...base, label: `测量 · ${smp?.shortName ?? m.sampleId}`, version: `样品状态 r${m.sampleStateRevision} · rev ${m.revision}`, excerpt: `值 ${m.value} ${m.unit} · 方法 ${m.method || "（未写）"} · 仪器 ${m.instrument || "（未写）"} · 时间 ${m.time}${m.note ? ` · 注：${m.note}` : ""}` };
+      const recon = (m.origin ?? smp?.origin) === "reconstructed";
+      return { ...base, label: `测量 · ${smp?.shortName ?? m.sampleId}${recon ? "（文献重构）" : ""}`, version: `样品状态 r${m.sampleStateRevision} · rev ${m.revision}`, excerpt: `${recon ? "（历史文献重构数值，非本地测量）" : ""}值 ${m.value} ${m.unit} · 方法 ${m.method || "（未写）"} · 仪器 ${m.instrument || "（未写）"} · 时间 ${m.time}${m.note ? ` · 注：${m.note}` : ""}` };
     }
     case "table": {
       const t = state.tables.find((x) => x.id === ref.id);
       if (!t) throw new AppError(404, `数据表不存在：${ref.id}`);
       const head = t.columns.join(" | ");
       const rows = t.rows.slice(0, 30).map((r) => r.join(" | ")).join("\n");
-      return { ...base, label: `数据表 · ${t.name}`, version: `rev ${t.revision}`, excerpt: cap(`${head}\n${rows}${t.rows.length > 30 ? `\n…（共 ${t.rows.length} 行，摘录前 30 行）` : ""}${t.markerRows?.length ? `\n（含 ${t.markerRows.length} 个块标记行，非测量行）` : ""}`) };
+      const recon = t.origin === "reconstructed";
+      return { ...base, label: `数据表 · ${t.name}${recon ? "（文献重构）" : ""}`, version: `rev ${t.revision}`, excerpt: cap(`${recon ? "（历史文献重构数据，非本地实测）\n" : ""}${head}\n${rows}${t.rows.length > 30 ? `\n…（共 ${t.rows.length} 行，摘录前 30 行）` : ""}${t.markerRows?.length ? `\n（含 ${t.markerRows.length} 个标记行：疑似标题/备注/占位，保留原样待人工核对）` : ""}`) };
     }
     case "card": {
       const c = state.cards.find((x) => x.id === ref.id);

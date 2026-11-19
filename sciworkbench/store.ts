@@ -194,8 +194,10 @@ export interface MeasurementTableRecord {
   readonly name: string;
   readonly columns: string[];
   readonly rows: string[][];
-  /** 块标记行下标（原件中的分块标题行，如时间块；保留原行、仅标注，非测量行）。 */
+  /** 块标记行下标（疑似标题/备注/占位/分块标记行；保留原行、仅标注，不删行）。 */
   readonly markerRows?: number[];
+  /** 数据来源性质：reconstructed=历史文献重构（非本地实测）；缺省视为 user。 */
+  readonly origin?: "user" | "public" | "reconstructed";
   readonly columnMeta: ColumnMeta[];
   readonly note: string;
   readonly revision: number;
@@ -319,6 +321,10 @@ export interface ExecutionRecord {
   readonly phase?: "preparing" | "recording";
   readonly preparation?: ExecutionPreparation | null;
   readonly status: "active" | "paused" | "done";
+  /** reconstructed=按历史文献重构的执行（非本地实际实验）；缺省视为 user。 */
+  readonly origin?: "user" | "reconstructed";
+  /** 重构执行的文献来源原件。 */
+  readonly sourceAssetId?: string;
   readonly events: ExecEvent[];
   readonly pausedState?: {
     readonly at: string;
@@ -349,7 +355,7 @@ export interface SampleRecord {
   /** 稳定短号：引用用 id，改名不破引用。 */
   readonly shortName: string;
   readonly displayName: string;
-  readonly origin: "user" | "public";
+  readonly origin: "user" | "public" | "reconstructed";
   readonly states: SampleStateEntry[];
   readonly createdAt: string;
 }
@@ -366,6 +372,8 @@ export interface MeasurementRecord {
   readonly value: string;
   readonly unit: string;
   readonly cellRef?: { readonly tableId: string; readonly row: number; readonly col: number };
+  /** 继承样品来源性质：reconstructed=历史文献重构数值（非本地测量）；缺省视为 user。 */
+  readonly origin?: "user" | "public" | "reconstructed";
   readonly note: string;
   readonly revision: number;
   readonly history: RevisionEntry[];

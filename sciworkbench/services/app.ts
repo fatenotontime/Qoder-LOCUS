@@ -94,6 +94,7 @@ export function parseCsv(text: string, delim = ","): string[][] {
 }
 
 /** 自动判断表头行数：两级表头须符合**合并单元格**语义——第二级在首级空缺处有续列。 */
+const NUMERIC_CELL = /^[-+]?\d*\.?\d+(e[-+]?\d+)?$/i;
 function autoHeaderLevels(cleaned: string[][], h: number): number {
   const l1 = cleaned[h] ?? [];
   const l2 = cleaned[h + 1] ?? [];
@@ -102,8 +103,7 @@ function autoHeaderLevels(cleaned: string[][], h: number): number {
   const n2 = l2.filter((c) => c.trim() !== "").length;
   if (n2 < 2) return 1;
   // 第二级全为数值 → 是数据行而非列名（单级表头中间有空列时不误吞数据）。
-  const numeric = /^[-+]?\d*\.?\d+(e[-+]?\d+)?$/i;
-  if (l2.every((c) => c.trim() === "" || numeric.test(c.trim()))) return 1;
+  if (l2.every((c) => c.trim() === "" || NUMERIC_CELL.test(c.trim()))) return 1;
   return l2.some((c, i) => c.trim() !== "" && (l1[i] ?? "").trim() === "") ? 2 : 1;
 }
 
@@ -113,7 +113,7 @@ export interface TableBlock {
   rows: string[][];
 }
 
-/** 按标题行/全空行把整文件切成多个表块（EnzymeML 导出常多表叠放）。 */
+/** 按标题行/全空行把整文件切成多个表块（EnzymeML 导出常多表叠放）。零猜测保行：只有**块边界处**（尚无开块）的首列单格文本行按块格式语义作标题（文字进块名，不丢失）；开块中的单格行（如 r1 占位键行）一律保留入表体。 */
 export function splitBlocks(rows: string[][]): TableBlock[] {
   const blocks: TableBlock[] = [];
   let cur: TableBlock | null = null;
@@ -122,10 +122,8 @@ export function splitBlocks(rows: string[][]): TableBlock[] {
   for (const r of rows) {
     const filled = r.filter((c) => c.trim() !== "");
     if (filled.length === 0) { close(); continue; }
-    if (filled.length === 1) {
-      // 仅首列单格行是章节标题；其余单格行是列表残行/备注，不作标题也不入表体。
-      if (r.findIndex((c) => c.trim() !== "") === 0) { close(); lastTitle = filled[0].trim(); }
-      continue;
+    if (!cur && filled.length === 1 && r.findIndex((c) => c.trim() !== "") === 0 && !NUMERIC_CELL.test(filled[0].trim())) {
+      lastTitle = filled[0].trim(); continue;
     }
     if (!cur) cur = { title: lastTitle, rows: [] };
     cur.rows.push(r);
@@ -135,42 +133,43 @@ export function splitBlocks(rows: string[][]): TableBlock[] {
 }
 
 /**
- * 表分析（单个表块内）：识别表头（合并单元格两级时组名前向填充），
- * 首尾全空列裁剪，保留全部数据行并标出**块标记行**（如时间块标题，非测量行）。
+ * 表分析（单个表块内）：识别表头（合并单元格两级时组名前向填充），首尾全空列裁剪。
+ * **零猜测保行**：不删任何行——单格/非数字/占位行都可能是有效数据；
+ * 疑似标题/备注/占位/块标记行只标 markerRows（保留原样，供人工核对）。
  * headerRows：1 / 2 / "auto"（默认自动）。
  */
 export function analyseTable(rows: string[][], headerRows: 1 | 2 | "auto" = "auto"): { columns: string[]; body: string[][]; markerRows: number[] } {
   const nonEmpty = (r: string[]) => r.filter((c) => c.trim() !== "").length;
-  // 单格行是标题/章节标记，不属于表格本体（分块时已剥离，这里再兜底）。
-  const cleaned = rows.filter((r) => nonEmpty(r) >= 2);
   let h = 0;
-  for (let i = 0; i < Math.min(cleaned.length, 12); i++) {
-    if (nonEmpty(cleaned[i]) >= 2) { h = i; break; }
+  for (let i = 0; i < Math.min(rows.length, 12); i++) {
+    if (nonEmpty(rows[i]) >= 2) { h = i; break; }
   }
-  const levels = headerRows === "auto" ? autoHeaderLevels(cleaned, h) : headerRows;
-  // 宽度按“首/末非空列”裁剪，避免首尾全空列产生大量 colN 占位。
+  const levels = headerRows === "auto" ? autoHeaderLevels(rows, h) : headerRows;
+  // 宽度按“首/末非空列”裁剪（仅去掉首尾全空列，无损），按全部行计算。
   let first = Number.POSITIVE_INFINITY;
   let last = 0;
-  for (const r of cleaned) r.forEach((c, i) => { if (c.trim() !== "") { if (i < first) first = i; if (i + 1 > last) last = i + 1; } });
+  for (const r of rows) r.forEach((c, i) => { if (c.trim() !== "") { if (i < first) first = i; if (i + 1 > last) last = i + 1; } });
   if (!Number.isFinite(first)) first = 0;
   const at = (r: string[] | undefined, i: number) => (r?.[first + i] ?? "").trim();
   let group = "";
   const columns = Array.from({ length: last - first }, (_, i) => {
-    const a = at(cleaned[h], i);
-    const b = levels === 2 ? at(cleaned[h + 1], i) : "";
+    const a = at(rows[h], i);
+    const b = levels === 2 ? at(rows[h + 1], i) : "";
     if (a) group = a;
     const parts = levels === 2 ? (a && b ? [a, b] : b ? [group, b] : a ? [a] : []) : a ? [a] : [];
     return parts.join("/") || `col${i + 1}`;
   });
-  const body = cleaned.slice(h + levels)
-    .map((r) => Array.from({ length: last - first }, (_, i) => at(r, i)))
-    .filter((r) => nonEmpty(r) >= 2);
-  // 块标记行：非空格数 ≤ 表头一半、且集中在前缀列（原件中的分块标题，如 "0,Time [min],…"）。
+  // 表头前的单格行（疑似标题/备注）也保留入表体，仅标注。
+  const body = [...rows.slice(0, h), ...rows.slice(h + levels)]
+    .map((r) => Array.from({ length: last - first }, (_, i) => at(r, i)));
   const headFilled = columns.filter((c) => !/^col\d+$/.test(c)).length;
   const markerRows: number[] = [];
   body.forEach((r, i) => {
     const idx = r.map((c, j) => (c !== "" ? j : -1)).filter((j) => j >= 0);
-    if (idx.length >= 2 && idx.length * 2 <= headFilled && idx.every((j, k) => j === k)) markerRows.push(i);
+    // 单格/全空行：疑似标题、备注或占位（也可能是缺测值的有效数据行）→ 标注不删。
+    if (idx.length <= 1) { markerRows.push(i); return; }
+    // 块标记行：非空格集中在前缀列且远少于表头列数（如 "0,Time [min],…"）。
+    if (idx.length * 2 <= headFilled && idx.every((j, k) => j === k)) markerRows.push(i);
   });
   return { columns, body, markerRows };
 }
@@ -614,7 +613,7 @@ export function detectProfile(rows: string[][]): FormatProfile {
  * 导入 CSV/TSV → **一张或多张表格**（保留行列结构），供按表/列核对。
  * profile：plain-table（单表矩形）/ enzymeML-blocks（标题行+分块+合并表头+标记行）/ 默认 auto 判定。
  */
-export function importMeasurements(state: LocusState, input: { name: string; csv: string; topicId?: string; headerRows?: 1 | 2 | "auto"; profile?: FormatProfile | "auto" }): ImportResult {
+export function importMeasurements(state: LocusState, input: { name: string; csv: string; topicId?: string; headerRows?: 1 | 2 | "auto"; profile?: FormatProfile | "auto"; origin?: "user" | "public" | "reconstructed" }): ImportResult {
   const name = input.name ?? "";
   assertCsvName(name);
   const text = stripBom(input.csv ?? "");
@@ -644,6 +643,7 @@ export function importMeasurements(state: LocusState, input: { name: string; csv
       rows: b.body,
       columnMeta: b.columns.map<ColumnMeta>((cname) => ({ name: cname, unit: "", decision: "unreviewed" })),
       markerRows: b.markerRows,
+      origin: input.origin === "public" || input.origin === "reconstructed" ? input.origin : undefined,
       note: "",
       revision: 1,
       history: [],

@@ -4,7 +4,7 @@
 import { api } from "./lib/api.js";
 import { computeLanes, timeLabel, durationSourceOf } from "./lib/lanes.js";
 import { fmtTime, fmtEnum, fmtVersion, fmtNameOnce } from "./lib/format.js";
-import { refLabel, topicObjects } from "./lib/refs.js";
+import { refLabel, reconTag, topicObjects } from "./lib/refs.js";
 import {
   topbarTopicHtml, emptyTopicGuideHtml, navHtml, panelErrorHtml, sidebarListHtml,
   topicOverviewHtml, topicTodosHtml, subqBlockHtml, nextStepHtml, NAV_ITEMS,
@@ -461,8 +461,8 @@ function tableGridHtml(t, big) {
   const folded = [];
   const rows = t.rows.map((r, ri) => {
     const isMarker = markers.has(ri);
-    if (!isMarker && isEmptyRow(r) && foldEmpty) { folded.push(ri + 1); return ""; }
-    return `<tr${isMarker ? ` class="marker" title="块标记行：原件中的分块标题（非测量行），保留原样"` : ""}>${t.columns.map((_, ci) => `<td class="cell" data-row="${ri}" data-col="${ci}">${esc(r[ci] ?? "")}</td>`).join("")}</tr>`;
+    if (isEmptyRow(r) && foldEmpty) { folded.push(ri + 1); return ""; }
+    return `<tr${isMarker ? ` class="marker" title="标记行：疑似标题/备注/占位或分块标记，保留原样待人工核对（不删行）"` : ""}>${t.columns.map((_, ci) => `<td class="cell" data-row="${ri}" data-col="${ci}">${esc(r[ci] ?? "")}</td>`).join("")}</tr>`;
   }).join("");
   const note = folded.length
     ? `<p class="hint">已折叠 ${folded.length} 个全空行（仅展示层；原件字节未改，零值与标记行不折叠）：第 ${folded.slice(0, 12).join("、")}${folded.length > 12 ? "…" : ""} 行</p>`
@@ -478,7 +478,7 @@ function openTableMax(tid) {
   const wrap = document.createElement("div");
   wrap.id = "table-max"; wrap.className = "item"; wrap.dataset.id = t.id;
   wrap.innerHTML = `
-    <div class="tblmax-head"><strong>${esc(t.name)}</strong> <span class="hint">${t.rows.length} 行（${t.rows.length - markers.size} 数据 · ${markers.size} 标记）× ${t.columns.length} 列 · 原件 ${asset?.bytes ?? 0}B</span>
+    <div class="tblmax-head"><strong>${esc(t.name)}</strong>${t.origin === "reconstructed" ? ` <span class="badge warn">文献重构</span>` : ""} <span class="hint">${t.rows.length} 行（含 ${markers.size} 个标记行：疑似标题/备注/占位，保留待核对）× ${t.columns.length} 列 · 原件 ${asset?.bytes ?? 0}B${t.origin === "reconstructed" ? " · 历史文献重构数据，非本地实测" : ""}</span>
       <button id="tblmax-fold">${foldEmpty ? "展开全空行" : "折叠全空行"}</button>
       <button id="tblmax-csv">查看原始 CSV</button>
       <button id="tblmax-close">关闭</button></div>
@@ -942,6 +942,7 @@ function recordHtml() {
   return `
     <div class="item" data-id="${e.id}">
       <div class="meta">${esc(p?.name ?? e.protocolId)} · 固定 r${e.protocolRevision}${nAdj ? ` ＋ 本次差异 ${nAdj} 条` : ""} · <span class="badge ${e.status === "paused" ? "warn" : e.status === "active" ? "confirm" : ""}">${e.status}</span>${e.templateId ? " · 模板" : ""}</div>
+      ${e.origin === "reconstructed" ? `<div class="hint"><span class="badge warn">文献重构</span> 本执行为历史文献重构（非本地实际实验）：事件与数值均为原文陈述的补记，来源原件 ${esc(state.assets.find((a) => a.id === e.sourceAssetId)?.name ?? e.sourceAssetId ?? "未标")}。</div>` : ""}
       ${e.preparation?.confirmedAt ? `<div class="hint">本次快照确认于 ${esc(fmtTime(e.preparation.confirmedAt))}（基础 ${fmtVersion(e.preparation.baseRevision)}${nAdj ? ` ＋ ${nAdj} 条差异` : "，无差异"}）；源方案后续不影响本次。</div>` : ""}
       <div class="hint">数据完整度：步骤记录 ${(snap?.steps.length ?? 0) - missing.length}/${snap?.steps.length ?? 0}${missing.length ? ` · 未记录：${missing.map((s) => esc(s.op)).join("、")}` : ""}${unknownDur ? ` · ${unknownDur} 步时长未知（不按 0 计）` : ""}</div>
       ${e.status === "active" && !hasStart ? `<div class="row"><button class="primary" id="exec-begin">记录实际开始</button><span class="hint">由人记录，系统不代填。</span></div>` : ""}
@@ -989,7 +990,7 @@ function recordHtml() {
           <div class="row"><input class="smp-name" value="${esc(s.displayName)}" placeholder="名称" />
             ${s.shortName !== s.displayName ? `<span class="hint">编号 ${esc(s.shortName)}</span>` : ""}
             <button class="smp-rename">改名</button></div>
-          <div class="hint">总量：${esc(last?.amount.value ?? "—")} ${esc(last?.amount.unit ?? "")}${last?.amount.estimated ? "（估计）" : ""} · 拆分：${s.states.length} 个状态${last?.handling ? ` · 处理：${esc(last.handling)}` : ""}${last?.use ? ` · 用途：${esc(last.use)}` : ""}</div>
+          <div class="hint">总量：${esc(last?.amount.value ?? "—")} ${esc(last?.amount.unit ?? "")}${last?.amount.estimated ? "（估计）" : ""} · 拆分：${s.states.length} 个状态${last?.handling ? ` · 处理：${esc(last.handling)}` : ""}${last?.use ? ` · 用途：${esc(last.use)}` : ""}${s.origin === "reconstructed" ? ` · <span class="badge warn">文献重构</span>（非本地样品）` : ""}</div>
           <div class="hint">测量结果：${mOfS.length ? mOfS.map((m) => `${esc(m.value)}${esc(m.unit)}`).join("、") : "（无）"}</div>
         </div>`;
       }).join("") || `<p class="hint">暂无样品（左栏新建）。</p>`}
@@ -1001,7 +1002,7 @@ function recordHtml() {
         <div class="row"><input id="meas-note" placeholder="备注" /><button class="primary" id="meas-add">记录测量</button></div>` : `<p class="hint">先建样品。</p>`}
       </details>
       ${meas.map((m) => `<div class="item meas" data-id="${m.id}">
-        <div class="meta">${esc(state.samples.find((s) => s.id === m.sampleId)?.shortName ?? m.sampleId)} · 样品状态 ${m.sampleStateRevision}${m.cellRef ? ` · 回链表 r${m.cellRef.row}c${m.cellRef.col}` : ""}</div>
+        <div class="meta">${esc(state.samples.find((s) => s.id === m.sampleId)?.shortName ?? m.sampleId)} · 样品状态 ${m.sampleStateRevision}${m.cellRef ? ` · 回链表 r${m.cellRef.row}c${m.cellRef.col}` : ""}${reconTag(state, "measurement", m.id) ? ` · <span class="badge warn">文献重构</span>（数值为原文陈述，非本地测量）` : ""}</div>
         <div class="row"><input data-field="mValue" value="${esc(m.value)}" /><input data-field="mUnit" value="${esc(m.unit)}" />
           <input data-field="mMethod" value="${esc(m.method)}" /><input data-field="mInstr" value="${esc(m.instrument)}" /></div>
         <div class="row"><input data-field="mNote" value="${esc(m.note)}" /><input data-field="mReason" placeholder="修改原因（必填）" />
@@ -1027,10 +1028,10 @@ function renderChatForm(box) {
       <p class="hint">默认已选（已入候选知识卡，可取消）：</p>
       ${conf.length ? conf.map((c) => `<label class="ctxpick"><input type="checkbox" class="ch-scope" data-kind="card" data-id="${c.id}" checked/> ${esc(c.scope || c.rawText.slice(0, 24))}</label>`).join("") : `<p class="hint">暂无。</p>`}
       <details class="mini"><summary>其他可选（折叠：执行/测量/表/方案/其余卡）</summary>
-        ${execs.map((e) => row("execution", e.id, `执行 · ${state.protocols.find((p) => p.id === e.protocolId)?.name ?? e.id}`)).join("")}
-        ${meas.map((m) => row("measurement", m.id, `测量 · ${state.samples.find((s) => s.id === m.sampleId)?.shortName ?? ""} ${m.value}${m.unit}`)).join("")}
-        ${tables.map((t) => row("table", t.id, `数据表 · ${t.name}`)).join("")}
-        ${protos.map((p) => row("protocol", p.id, `方案 · ${p.name}`)).join("")}
+        ${execs.map((e) => row("execution", e.id, refLabel(state, { kind: "execution", id: e.id }))).join("")}
+        ${meas.map((m) => row("measurement", m.id, refLabel(state, { kind: "measurement", id: m.id }))).join("")}
+        ${tables.map((t) => row("table", t.id, refLabel(state, { kind: "table", id: t.id }))).join("")}
+        ${protos.map((p) => row("protocol", p.id, refLabel(state, { kind: "protocol", id: p.id }))).join("")}
         ${cards.filter((c) => c.audit !== "confirm").map((c) => row("card", c.id, `知识卡 · ${c.scope || c.rawText.slice(0, 20)}`)).join("")}
       </details>
       <button class="primary" id="ch-create">创建会话</button>
@@ -1109,7 +1110,7 @@ function renderRecordTools(box) {
   box.innerHTML = `
     <div class="pane-title">样品（短号稳定，改名不破引用）</div>
     ${samples.map((s) => `<div class="item smp" data-id="${s.id}">
-      <div class="meta"><strong>${esc(s.shortName)}</strong> · ${s.states.length} 状态</div>
+      <div class="meta"><strong>${esc(s.shortName)}</strong> · ${s.states.length} 状态${s.origin === "reconstructed" ? ` · <span class="badge warn">文献重构</span>` : ""}</div>
       <div class="row"><input data-field="smpName" value="${esc(s.displayName)}" /><button class="smp-rename">改名</button></div>
       <details class="mini"><summary>追加状态（分样/处理/用途）</summary>
         <div class="row"><input data-field="stValue" placeholder="用量（必填）" /><input data-field="stUnit" placeholder="单位" />

@@ -99,6 +99,25 @@ const xmlEsc = (s: string): string => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;
 
 const NATURE_CN: Record<string, string> = { observation: "观察", hypothesis: "假设", interpretation: "解释", to_verify: "待验证", human_judgment: "人工判断" };
 
+/** 引用对象的来源性质：reconstructed=历史文献重构（导出须明示，非本地实测）。 */
+function refOrigin(state: LocusState, kind: string, id: string): "reconstructed" | undefined {
+  if (kind === "execution") return state.executions.find((e) => e.id === id)?.origin === "reconstructed" ? "reconstructed" : undefined;
+  if (kind === "measurement") {
+    const m = state.measurements.find((x) => x.id === id);
+    return (m?.origin ?? state.samples.find((s) => s.id === m?.sampleId)?.origin) === "reconstructed" ? "reconstructed" : undefined;
+  }
+  if (kind === "table") return state.tables.find((t) => t.id === id)?.origin === "reconstructed" ? "reconstructed" : undefined;
+  if (kind === "protocol") return state.protocols.find((p) => p.id === id)?.sourceKind === "reconstructed" ? "reconstructed" : undefined;
+  if (kind === "result") {
+    // 结果沿任务核心/已选候选继承来源性质：任一上游为文献重构 → 结果明示。
+    const res = state.analysisResults.find((x) => x.id === id);
+    const task = res && state.analysisTasks.find((t) => t.id === res.taskId);
+    const refs = task ? [...task.core, ...task.optional.filter((o) => o.included).map((o) => o.ref)] : [];
+    if (refs.some((r) => refOrigin(state, r.kind, r.id) === "reconstructed")) return "reconstructed";
+  }
+  return undefined;
+}
+
 function para(text: string, opts: { bold?: boolean; size?: number } = {}): string {
   const rpr = opts.bold ? `<w:rPr><w:b/><w:sz w:val="${(opts.size ?? 22) * 2}"/></w:rPr>` : `<w:rPr><w:sz w:val="${(opts.size ?? 22) * 2}"/></w:rPr>`;
   return `<w:p><w:pPr>${opts.bold ? "<w:spacing w:before=\"120\"/>" : ""}</w:pPr><w:r>${rpr}<w:t xml:space="preserve">${xmlEsc(text)}</w:t></w:r></w:p>`;
@@ -112,12 +131,14 @@ export function buildReportDocx(state: LocusState, rep: PreliminaryReportRecord)
   body.push(para(`分析初稿 · 修订 r${rep.revision} · 导出 ${now()}`, { size: 18 }));
   body.push(para("（本文件为导出快照：在 Word 等外部编辑器中修改不会回流为本站审计记录。）", { size: 18 }));
   const blocks = [...rep.blocks].sort((a, b) => a.order - b.order);
+  const anyRecon = blocks.some((b) => b.refs.some((r) => refOrigin(state, r.kind, r.id) === "reconstructed"));
+  if (anyRecon) body.push(para("（本报告含历史文献重构数据：相关引用非本地实测，数值为文献原文陈述，逐条见引用标注。）", { size: 18 }));
   if (!blocks.length) body.push(para("（尚无块）"));
   blocks.forEach((b: ReportBlock, i) => {
     body.push(para(`${i + 1}. [${NATURE_CN[b.nature] ?? b.nature}]${b.draft ? "（AI 草稿·待确认）" : ""}`, { bold: true }));
     body.push(para(b.text));
     const refs = b.refs.filter((r) => r.kind !== "note");
-    if (refs.length) body.push(para(`引用：${refs.map((r) => `${r.label}（${r.kind} ${r.version || "未标版本"}）`).join("；")}`, { size: 18 }));
+    if (refs.length) body.push(para(`引用：${refs.map((r) => `${r.label}（${r.kind} ${r.version || "未标版本"}${refOrigin(state, r.kind, r.id) === "reconstructed" ? " · 历史文献重构，非本地实测" : ""}）`).join("；")}`, { size: 18 }));
     const notes = b.refs.filter((r) => r.kind === "note");
     if (notes.length) body.push(para(`来源：${notes.map((n) => n.label).join("；")}`, { size: 18 }));
   });
@@ -161,9 +182,9 @@ export function buildTraceabilityPackage(state: LocusState, reportId: string): T
   const docx = buildReportDocx(state, rep);
 
   // 版本索引：报告块引用的固定版本（不指向 latest）
-  const refs: { blockOrder: number; nature: string; kind: string; id: string; version: string; label: string }[] = [];
+  const refs: { blockOrder: number; nature: string; kind: string; id: string; version: string; label: string; origin?: string }[] = [];
   for (const b of [...rep.blocks].sort((x, y) => x.order - y.order)) {
-    for (const r of b.refs) if (r.kind !== "note") refs.push({ blockOrder: b.order, nature: b.nature, kind: r.kind, id: r.id, version: r.version, label: r.label });
+    for (const r of b.refs) if (r.kind !== "note") refs.push({ blockOrder: b.order, nature: b.nature, kind: r.kind, id: r.id, version: r.version, label: r.label, origin: refOrigin(state, r.kind, r.id) });
   }
   const versionIndex: Record<string, unknown> = {
     report: { id: rep.id, revision: rep.revision, topic: topic?.name ?? rep.topicId, generatedAt: now() },

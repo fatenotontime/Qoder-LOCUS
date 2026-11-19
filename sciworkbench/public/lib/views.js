@@ -75,7 +75,7 @@ export function sidebarListHtml(state, ui) {
       const prep = (e.phase ?? "recording") === "preparing";
       const badge = prep ? "准备稿" : fmtEnum(e.status);
       return `<div class="material ${e.id === ui.executionId ? "active" : ""}" data-eid="${e.id}">
-        <div class="m-title">${esc(p?.name ?? "执行")} <span class="badge">${badge}</span></div>
+        <div class="m-title">${esc(p?.name ?? "执行")} <span class="badge">${badge}</span>${e.origin === "reconstructed" ? ` <span class="badge warn">文献重构</span>` : ""}</div>
         <div class="m-meta">${prep ? `${e.preparation?.adjustments.length ?? 0} 条差异待确认` : `${e.events.length} 条记录`}</div></div>`;
     }), "暂无执行。");
   }

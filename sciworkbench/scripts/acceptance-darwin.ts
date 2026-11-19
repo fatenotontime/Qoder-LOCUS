@@ -48,7 +48,7 @@ const cInfer = mkCard("作者据稀少事实推断：约 14/100 植物种子可�
 const cMartens = mkCard("马滕斯在真实海水实测：98 粒中 18 粒漂浮 42 天且仍能萌发（干湿交替）。", "of his seeds floated for 42 days, and were then capable of germination", { 对象: "马滕斯实测", 比例: "18/98", 天: "42" }, "high");
 const cCaveat = mkCard("作者自述：暴露于海浪者漂浮时间应短于静水实验 → 传播估计或需下修。", "plants exposed to the waves would float for a less time than those protected from violent movement", { 类型: "作者修正意见", 方向: "下修" }, "high");
 mkCard("鸽嗉囊中的种子在人工海水漂浮 30 天，取出后几乎全部萌发。", "some taken out of the crop of a pigeon, which had floated on artificial salt-water for 30 days, to my surprise nearly all germinated", { 对象: "鸽嗉囊种子", 天: "30" }, "medium");
-const proto = createProtocol(s, { topicId, name: "海水浸泡萌发试验（干燥 vs 新鲜）", sourceKind: "user", purpose: "比较新鲜与干燥茎枝/果实在海水中的漂浮时长与浸后萌发", criteria: "记录漂浮天数（新鲜 vs 干燥）与浸后是否萌发；未量化条件明示未知", unknowns: ["海水盐度未写明", "温度未写明", "浸泡容器未写明"], steps: [
+const proto = createProtocol(s, { topicId, name: "海水浸泡萌发试验（干燥 vs 新鲜）", sourceKind: "reconstructed", sourceAssetId: assetId, purpose: "比较新鲜与干燥茎枝/果实在海水中的漂浮时长与浸后萌发（按达尔文 1859 原文重构，非本地实测方案）", criteria: "记录漂浮天数（新鲜 vs 干燥）与浸后是否萌发；未量化条件明示未知", unknowns: ["海水盐度未写明", "温度未写明", "浸泡容器未写明"], steps: [
   { id: "s1", op: "采集 94 种带熟果的茎枝与果实", params: {}, note: "", durationMin: null, estimated: false, branch: null, observeEnd: "" },
   { id: "s2", op: "干燥部分茎枝（保留新鲜组作对照）", params: {}, note: "", durationMin: null, estimated: false, branch: null, observeEnd: "" },
   { id: "s3", op: "置于海水浸泡并计时", params: {}, note: "盐度/温度原文未写明", durationMin: null, estimated: false, branch: null, observeEnd: "" },
@@ -57,18 +57,19 @@ const proto = createProtocol(s, { topicId, name: "海水浸泡萌发试验（干
 const exec = startExecution(s, { topicId, protocolId: proto.protocol.id }); s = exec.state;
 s = updatePreparation(s, exec.execution.id, { adjustments: [{ stepId: "s3", field: "note", after: "海水（盐度/温度未写明）", reason: "原文未量化，明示缺项，不补造" }], notes: "浸泡条件缺量化；计时口径：新鲜 vs 干燥对照。" }).state;
 s = confirmPreparation(s, exec.execution.id).state;
-s = appendEvent(s, exec.execution.id, { kind: "start", text: "实际开始：干燥茎枝与对照置于海水", backfilled: true }).state;
-s = appendEvent(s, exec.execution.id, { kind: "step", stepId: "s3", text: "浸泡计时开始（记录漂浮天数）", backfilled: true }).state;
-s = appendEvent(s, exec.execution.id, { kind: "note", text: "缺项：海水盐度/温度未写明；容器未写明。" }).state;
-const sample = createSample(s, { topicId, executionId: exec.execution.id, shortName: "SEA-94", amount: { value: "94", unit: "plants" } }); s = sample.state;
-const mHazel = addMeasurement(s, { topicId, sampleId: sample.sample.id, sampleStateRevision: 1, value: "90", unit: "days", method: "干燥后浸泡-种植", note: "榛子（干燥）漂浮天数" }); s = mHazel.state;
-s = addMeasurement(s, { topicId, sampleId: sample.sample.id, sampleStateRevision: 1, value: "85", unit: "days", method: "干燥后浸泡-种植", note: "芦笋（干燥）漂浮天数" }).state;
-s = importMeasurements(s, { name: "darwin-flotation.csv", csv: FLOAT_CSV, topicId }).state;
-s = importMeasurements(s, { name: "darwin-dispersal-estimates.csv", csv: DISP_CSV, topicId }).state;
+s = appendEvent(s, exec.execution.id, { kind: "note", text: "本执行为历史文献重构（达尔文 1859 第十一章）：非本地实际实验，事件与数值均为原文陈述的补记。", backfilled: true }).state;
+s = appendEvent(s, exec.execution.id, { kind: "start", text: "文献重构补记：干燥茎枝与对照置于海水（原文叙述）", backfilled: true }).state;
+s = appendEvent(s, exec.execution.id, { kind: "step", stepId: "s3", text: "文献重构补记：浸泡计时（漂浮天数为原文陈述）", backfilled: true }).state;
+s = appendEvent(s, exec.execution.id, { kind: "note", text: "缺项：海水盐度/温度未写明；容器未写明。", backfilled: true }).state;
+const sample = createSample(s, { topicId, executionId: exec.execution.id, shortName: "SEA-94", amount: { value: "94", unit: "plants" }, note: "原文所述 94 种植物的文献重构样品，非本地样品" }); s = sample.state;
+const mHazel = addMeasurement(s, { topicId, sampleId: sample.sample.id, sampleStateRevision: 1, value: "90", unit: "days", method: "干燥后浸泡-种植（原文陈述）", note: "榛子（干燥）漂浮天数：达尔文 1859 原文陈述，非本地测量" }); s = mHazel.state;
+s = addMeasurement(s, { topicId, sampleId: sample.sample.id, sampleStateRevision: 1, value: "85", unit: "days", method: "干燥后浸泡-种植（原文陈述）", note: "芦笋（干燥）漂浮天数：达尔文 1859 原文陈述，非本地测量" }).state;
+s = importMeasurements(s, { name: "darwin-flotation.csv", csv: FLOAT_CSV, topicId, origin: "reconstructed" }).state;
+s = importMeasurements(s, { name: "darwin-dispersal-estimates.csv", csv: DISP_CSV, topicId, origin: "reconstructed" }).state;
 const tableId = s.tables[0].id;
 const task = createAnalysisTask(s, { topicId, subquestionId: s.subquestions[0].id, title: "传播量级与漂浮时长（干燥 vs 新鲜）", core: [{ kind: "table", id: tableId }, { kind: "measurement", id: mHazel.measurement.id }], optional: [{ ref: { kind: "card", id: cInfer }, included: true }, { ref: { kind: "card", id: cMartens }, included: true }, { ref: { kind: "card", id: cCaveat }, included: true }] }); s = task.state;
 const csv = archiveResultFile(s, { name: "flotation-summary.csv", content: "group,float_days\nfresh,多数数日内下沉\ndried,榛子90; 芦笋23->85; Helosciadium 2->>90", topicId }); s = csv.state;
-const res = submitResult(s, task.task.id, { method: "表格统计（按新鲜/干燥分组）", params: "分组口径见所附 CSV；浸泡天数取原文陈述", assetIds: [csv.asset.id], note: "逐物件漂浮与萌发事实汇总" }); s = res.state;
+const res = submitResult(s, task.task.id, { method: "表格统计（按新鲜/干燥分组）", params: "分组口径见所附 CSV；浸泡天数取原文陈述", assetIds: [csv.asset.id], note: "逐物件漂浮与萌发事实汇总（历史文献重构：数值为达尔文 1859 原文陈述，非本地实测）" }); s = res.state;
 const report = createReport(s, { topicId, taskId: task.task.id }); s = report.state;
 const rid = report.report.id;
 const b = [
