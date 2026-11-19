@@ -48,7 +48,7 @@ test("5E-1 任务核心须来自执行/测量；幽灵引用拒绝；候选去�
   const r = createAnalysisTask(w.s, {
     topicId: w.topicId, subquestionId: w.subqId, title: "pH-活性分析",
     core: [{ kind: "execution", id: w.execId }, { kind: "table", id: w.tableId }],
-    optional: [{ kind: "card", id: w.cardId }, { kind: "execution", id: w.execId }],
+    optional: [{ ref: { kind: "card", id: w.cardId }, included: true }, { ref: { kind: "execution", id: w.execId }, included: true }],
   });
   assert.equal(r.task.optional.length, 1); // 与核心重复的候选被去掉
   assert.equal(r.task.optional[0].included, true);
@@ -58,7 +58,7 @@ test("5E-2 候选可取消；快照只含核心＋已选候选＋子问题；版
   const w = await world();
   let s = createAnalysisTask(w.s, {
     topicId: w.topicId, subquestionId: w.subqId, title: "t",
-    core: [{ kind: "execution", id: w.execId }], optional: [{ kind: "card", id: w.cardId }],
+    core: [{ kind: "execution", id: w.execId }], optional: [{ ref: { kind: "card", id: w.cardId }, included: true }],
   }).state;
   const tid = s.analysisTasks[0].id;
   const snap1 = buildSnapshot(s, s.analysisTasks[0], "求最适 pH", "m", "analysis_recommend/v1");

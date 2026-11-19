@@ -57,3 +57,10 @@
 - `role`：`core`（必选，锁定）/`selected`（候选已选）/`optional`（候选未选）/`context`（仅看来源，不可选）；`selectable = role∈{selected,optional}`。
 - 只读：不写 state、不 save、不调 AI、不起 job；节点上限 300，超出 `truncated:true`；同一 state 结果顺序确定（按 key/边排序）。
 - 错误：`topicId` 缺失/不存在、任务不存在 → 404；`pick` 项不存在/不属本课题/类型不支持 → 422。
+
+### 分析任务写契约（S02-T50，契约往返测试 `tests/contract-roundtrip.test.ts` 守护）
+
+- `POST /api/analysis/tasks`：`{ topicId, subquestionId?, title, core:[{kind,id}], optional?:[{ref:{kind,id}, included:boolean}] }`。
+- `POST /api/analysis/tasks/:id/candidates`：`{ optional:[{ref:{kind,id}, included:boolean}] }`（全量回传当前候选）。
+- **两端点 optional 形状一致**，与存储结构 `AnalysisTaskRecord.optional` 相同；不接受扁平 `{kind,id}`（422 明示结构要求）。
+- `included:false` 保留为未选候选（界面「其他可选」），不丢弃；创建时与核心重复的候选静默去重（前端必选自动推导可能重叠），保存候选时核心对象入候选 → 422。

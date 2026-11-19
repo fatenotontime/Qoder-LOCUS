@@ -37,6 +37,15 @@ function cleanRef(v: unknown): ObjectRef {
   return { kind: kind as ObjectRef["kind"], id };
 }
 
+/** 候选项统一契约（创建与保存候选共用）：{ref:{kind,id}, included}；included:false 保留为未选候选。 */
+function cleanOptionalItem(state: LocusState, v: unknown): { ref: ObjectRef; included: boolean } {
+  const o = (v ?? {}) as Record<string, unknown>;
+  if (!o.ref || typeof o.ref !== "object") throw new AppError(422, "候选项须为 {ref:{kind,id},included} 结构。");
+  const ref = cleanRef(o.ref);
+  resolveFragment(state, ref);
+  return { ref, included: o.included === true };
+}
+
 /** 解析引用为快照碎片：标签＋固定版本＋实际发送摘录。不存在即拒绝，不补造。 */
 export function resolveFragment(state: LocusState, ref: ObjectRef): ContextFragment {
   const base = { ref };
@@ -115,10 +124,9 @@ export function createAnalysisTask(
   }
   for (const r of core) resolveFragment(state, r);
   const coreKeys = new Set(core.map((r) => `${r.kind}:${r.id}`));
-  const optional = (input.optional ?? []).map(cleanRef)
-    .filter((r) => !coreKeys.has(`${r.kind}:${r.id}`))
-    .map((ref) => ({ ref, included: true }));
-  for (const o of optional) resolveFragment(state, o.ref);
+  // 与核心重复的候选静默去重（前端必选自动推导可能与「其他可选」勾选重叠）。
+  const optional = (input.optional ?? []).map((v) => cleanOptionalItem(state, v))
+    .filter((o) => !coreKeys.has(`${o.ref.kind}:${o.ref.id}`));
   const task: AnalysisTaskRecord = {
     id: `atask_${randomUUID()}`, topicId: input.topicId, subquestionId, title,
     core, optional, resultIds: [], createdAt: now(), updatedAt: now(),
@@ -135,10 +143,9 @@ export function setTaskCandidates(
   if (!cur) throw new AppError(404, `分析任务不存在：${taskId}`);
   const coreKeys = new Set(cur.core.map((r) => `${r.kind}:${r.id}`));
   const list = optional.map((o) => {
-    const ref = cleanRef(o.ref);
-    if (coreKeys.has(`${ref.kind}:${ref.id}`)) throw new AppError(422, "核心对象不能放入可取消候选。");
-    resolveFragment(state, ref);
-    return { ref, included: o.included === true };
+    const item = cleanOptionalItem(state, o);
+    if (coreKeys.has(`${item.ref.kind}:${item.ref.id}`)) throw new AppError(422, "核心对象不能放入可取消候选。");
+    return item;
   });
   const task: AnalysisTaskRecord = { ...cur, optional: list, updatedAt: now() };
   return { state: { ...state, analysisTasks: state.analysisTasks.map((t) => (t.id === taskId ? task : t)) }, task };

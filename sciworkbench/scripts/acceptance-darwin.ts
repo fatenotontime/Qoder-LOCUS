@@ -66,7 +66,7 @@ s = addMeasurement(s, { topicId, sampleId: sample.sample.id, sampleStateRevision
 s = importMeasurements(s, { name: "darwin-flotation.csv", csv: FLOAT_CSV, topicId }).state;
 s = importMeasurements(s, { name: "darwin-dispersal-estimates.csv", csv: DISP_CSV, topicId }).state;
 const tableId = s.tables[0].id;
-const task = createAnalysisTask(s, { topicId, subquestionId: s.subquestions[0].id, title: "传播量级与漂浮时长（干燥 vs 新鲜）", core: [{ kind: "table", id: tableId }, { kind: "measurement", id: mHazel.measurement.id }], optional: [{ kind: "card", id: cInfer }, { kind: "card", id: cMartens }, { kind: "card", id: cCaveat }] }); s = task.state;
+const task = createAnalysisTask(s, { topicId, subquestionId: s.subquestions[0].id, title: "传播量级与漂浮时长（干燥 vs 新鲜）", core: [{ kind: "table", id: tableId }, { kind: "measurement", id: mHazel.measurement.id }], optional: [{ ref: { kind: "card", id: cInfer }, included: true }, { ref: { kind: "card", id: cMartens }, included: true }, { ref: { kind: "card", id: cCaveat }, included: true }] }); s = task.state;
 const csv = archiveResultFile(s, { name: "flotation-summary.csv", content: "group,float_days\nfresh,多数数日内下沉\ndried,榛子90; 芦笋23->85; Helosciadium 2->>90", topicId }); s = csv.state;
 const res = submitResult(s, task.task.id, { method: "表格统计（按新鲜/干燥分组）", params: "分组口径见所附 CSV；浸泡天数取原文陈述", assetIds: [csv.asset.id], note: "逐物件漂浮与萌发事实汇总" }); s = res.state;
 const report = createReport(s, { topicId, taskId: task.task.id }); s = report.state;

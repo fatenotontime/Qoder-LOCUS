@@ -33,7 +33,7 @@ async function fullWorld() {
   const smp = createSample(s, { topicId: t.topic.id, executionId: e.execution.id, shortName: "S1", amount: { value: "5", unit: "mL" } }); s = smp.state;
   const m = addMeasurement(s, { topicId: t.topic.id, sampleId: smp.sample.id, sampleStateRevision: 1, value: "0.42", unit: "U/mL" }); s = m.state;
   const tab = importMeasurements(s, { name: "d.csv", csv: "t,v\n0,1\n1,2", topicId: t.topic.id }); s = tab.state;
-  const task = createAnalysisTask(s, { topicId: t.topic.id, subquestionId: q.subquestion.id, title: "pH 分析", core: [{ kind: "measurement", id: m.measurement.id }, { kind: "table", id: s.tables[0].id }], optional: [{ kind: "card", id: cardId }] }).state;
+  const task = createAnalysisTask(s, { topicId: t.topic.id, subquestionId: q.subquestion.id, title: "pH 分析", core: [{ kind: "measurement", id: m.measurement.id }, { kind: "table", id: s.tables[0].id }], optional: [{ ref: { kind: "card", id: cardId }, included: true }] }).state;
   const tid = task.analysisTasks[0].id;
   s = applyRecommendation(task, tid, REC, "raw", buildSnapshot(task, task.analysisTasks[0], "目的", "m", "analysis_recommend/v1")).state;
   const csv = archiveResultFile(s, { name: "r.csv", content: "pH,Km\n3,0.5\n4,0.4", topicId: t.topic.id }); s = csv.state;
