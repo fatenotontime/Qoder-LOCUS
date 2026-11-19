@@ -36,22 +36,36 @@ export function reconTag(state, kind, id) {
   return "";
 }
 
+/** 引用对象在库中找不到 → 缺口标记（与后端缺件节点一致；note/snapshot 非证据对象，不标缺）。 */
+export function missingTag(state, kind, id) {
+  if (kind === "measurement") return (state.measurements.some((x) => x.id === id) || state.assets.some((x) => x.id === id)) ? "" : "（缺失）";
+  const coll = {
+    execution: state.executions, protocol: state.protocols, table: state.tables, card: state.cards,
+    asset: state.assets, subquestion: state.subquestions, result: state.analysisResults, report: state.reports, sample: state.samples,
+  }[kind];
+  if (!coll) return "";
+  return coll.some((x) => x.id === id) ? "" : "（缺失）";
+}
+
 /** 对象引用 → 人话标签。 */
 export function refLabel(state, ref) {
+  let label;
   switch (ref.kind) {
-    case "execution": { const e = state.executions.find((x) => x.id === ref.id); const p = e && state.protocols.find((x) => x.id === e.protocolId); return `执行 · ${p?.name ?? ref.id}${reconTag(state, "execution", ref.id)}`; }
-    case "protocol": return `方案 · ${state.protocols.find((x) => x.id === ref.id)?.name ?? ref.id}${reconTag(state, "protocol", ref.id)}`;
+    case "execution": { const e = state.executions.find((x) => x.id === ref.id); const p = e && state.protocols.find((x) => x.id === e.protocolId); label = `执行 · ${p?.name ?? ref.id}${reconTag(state, "execution", ref.id)}`; break; }
+    case "protocol": label = `方案 · ${state.protocols.find((x) => x.id === ref.id)?.name ?? ref.id}${reconTag(state, "protocol", ref.id)}`; break;
     case "measurement": {
       const mr = state.measurements.find((x) => x.id === ref.id);
-      if (mr) { const s = state.samples.find((x) => x.id === mr.sampleId); return `测量 · ${s?.shortName ?? ""} ${mr.value}${mr.unit}${reconTag(state, "measurement", ref.id)}`; }
-      return `测量原件 · ${state.assets.find((x) => x.id === ref.id)?.name ?? ref.id}`;
+      if (mr) { const s = state.samples.find((x) => x.id === mr.sampleId); label = `测量 · ${s?.shortName ?? ""} ${mr.value}${mr.unit}${reconTag(state, "measurement", ref.id)}`; }
+      else label = `测量原件 · ${state.assets.find((x) => x.id === ref.id)?.name ?? ref.id}`;
+      break;
     }
-    case "table": return `数据表 · ${state.tables.find((x) => x.id === ref.id)?.name ?? ref.id}${reconTag(state, "table", ref.id)}`;
-    case "card": { const c = state.cards.find((x) => x.id === ref.id); return `知识卡 · ${c?.scope || Object.values(c?.extracted?.fields ?? {})[0] || ref.id}`; }
-    case "asset": return `原件 · ${state.assets.find((x) => x.id === ref.id)?.name ?? ref.id}`;
-    case "subquestion": return `子问题 · ${state.subquestions.find((x) => x.id === ref.id)?.question ?? ref.id}`;
-    default: return `${ref.kind}:${ref.id}`;
+    case "table": label = `数据表 · ${state.tables.find((x) => x.id === ref.id)?.name ?? ref.id}${reconTag(state, "table", ref.id)}`; break;
+    case "card": { const c = state.cards.find((x) => x.id === ref.id); label = `知识卡 · ${c?.scope || Object.values(c?.extracted?.fields ?? {})[0] || ref.id}`; break; }
+    case "asset": label = `原件 · ${state.assets.find((x) => x.id === ref.id)?.name ?? ref.id}`; break;
+    case "subquestion": label = `子问题 · ${state.subquestions.find((x) => x.id === ref.id)?.question ?? ref.id}`; break;
+    default: label = `${ref.kind}:${ref.id}`;
   }
+  return label + missingTag(state, ref.kind, ref.id);
 }
 
 /** 当前课题下可被分析/对话引用的对象集合。 */

@@ -28,6 +28,8 @@ export interface NetNode {
   /** 无内部 Run 的结果：显式标注，供回查时明示。 */
   readonly external?: boolean;
   readonly pending?: string[];
+  /** 缺件节点：被引用却在库中找不到的对象（明示缺口，不补造成正常实体）。 */
+  readonly gap?: string;
 }
 
 export interface NetEdge {
@@ -45,15 +47,35 @@ export interface Network {
 
 const key = (kind: NetKind, id: string): string => `${kind}:${id}`;
 
-/** 从 state 确定性建边（不推断、不补造；无引用字段处不建边）。 */
+/** 类型 → 中文（缺口提示用，避免英文枚举直出；锁7）。 */
+const KIND_CN: Record<NetKind, string> = {
+  topic: "课题", subquestion: "子问题", paper: "论文", attachment: "附件", asset: "原件", card: "知识卡",
+  protocol: "方案", template: "记录模板", execution: "执行", sample: "样品", measurement: "测量", table: "数据表",
+  task: "分析任务", result: "分析结果", report: "分析初稿", block: "报告块", chat: "对话",
+};
+
+/** 从 state 确定性建边（不推断、不补造正常实体；缺件挂明示缺口节点）。 */
 export function buildNetwork(state: LocusState): Network {
   const nodes = new Map<string, NetNode>();
   const edges: NetEdge[] = [];
   const add = (n: NetNode) => { if (!nodes.has(n.key)) nodes.set(n.key, n); };
+  const addPending = (n: NetNode, msg: string) => {
+    const cur = nodes.get(n.key);
+    if (!cur) return;
+    const pending = cur.pending ?? [];
+    if (!pending.includes(msg)) nodes.set(n.key, { ...cur, pending: [...pending, msg] });
+  };
   const link = (from: NetNode, to: NetNode, edgeKind: EdgeKind, establishedBy: "run" | "human", note?: string) => {
     add(from); add(to);
     edges.push({ from: from.key, to: to.key, edgeKind, establishedBy, note });
+    // 缺口传播：任一端为缺件节点 → 另一端明示登记依赖缺失（不静默跳过、不画看似正常的关系）。
+    if (from.gap) addPending(to, `依赖的${KIND_CN[from.kind]}缺失（${from.id}）`);
+    if (to.gap) addPending(from, `依赖的${KIND_CN[to.kind]}缺失（${to.id}）`);
   };
+  /** 被引用却找不到的对象 → 缺件节点（明示缺口，标签带「缺失」前缀）。 */
+  const gapNode = (kind: NetKind, id: string): NetNode => ({
+    key: key(kind, id), kind, id, label: `（缺失${KIND_CN[kind]}）${id}`, gap: `引用的${KIND_CN[kind]}不存在（id：${id}）`,
+  });
 
   const paper = (id: string): NetNode | undefined => {
     const p = state.papers.find((x) => x.id === id);
@@ -61,7 +83,8 @@ export function buildNetwork(state: LocusState): Network {
   };
   const asset = (id: string, label?: string): NetNode => {
     const a = state.assets.find((x) => x.id === id);
-    return { key: key("asset", id), kind: "asset", id, label: label ?? a?.name ?? id };
+    if (a) return { key: key("asset", id), kind: "asset", id, label: label ?? a.name };
+    return { ...gapNode("asset", id), label: `（缺失原件）${label ?? id}` };
   };
 
   // 专题 / 子问题
@@ -125,7 +148,7 @@ export function buildNetwork(state: LocusState): Network {
     if (recon) pending.push("历史文献重构（非本地实际实验；数值为原文陈述）");
     if ((e.phase ?? "recording") === "preparing") pending.push("执行准备稿未确认（无冻结快照）");
     if (!e.events.length) pending.push("尚无实际步骤事件");
-    if (pending.length) nodes.set(en.key, { ...nodes.get(en.key)!, pending });
+    if (pending.length) { const cur = nodes.get(en.key)!; nodes.set(en.key, { ...cur, pending: [...(cur.pending ?? []), ...pending] }); }
   }
   for (const s of state.samples) {
     const sn: NetNode = { key: key("sample", s.id), kind: "sample", id: s.id, label: `${s.shortName}（${s.displayName}）${s.origin === "reconstructed" ? "（文献重构）" : ""}`, version: `状态 ${s.states.length} 条` };
@@ -141,7 +164,13 @@ export function buildNetwork(state: LocusState): Network {
     const sn = nodes.get(key("sample", m.sampleId));
     if (sn) link(sn, mn, "lineage", "human");
     else add(mn);
-    if (m.cellRef) link({ key: key("table", m.cellRef.tableId), kind: "table", id: m.cellRef.tableId, label: state.tables.find((t) => t.id === m.cellRef!.tableId)?.name ?? m.cellRef.tableId }, mn, "provenance", "human", `单元格 r${m.cellRef.row},c${m.cellRef.col}`);
+    if (m.cellRef) {
+      const tbl = state.tables.find((t) => t.id === m.cellRef!.tableId);
+      const tn = tbl
+        ? (nodes.get(key("table", tbl.id)) ?? { key: key("table", tbl.id), kind: "table", id: tbl.id, label: `${tbl.name}${tbl.origin === "reconstructed" ? "（文献重构）" : ""}`, version: `rev ${tbl.revision}` })
+        : gapNode("table", m.cellRef.tableId);
+      link(tn, mn, "provenance", "human", `单元格 r${m.cellRef.row},c${m.cellRef.col}`);
+    }
   }
   for (const t of state.tables) {
     const tn: NetNode = { key: key("table", t.id), kind: "table", id: t.id, label: `${t.name}${t.origin === "reconstructed" ? "（文献重构）" : ""}`, version: `rev ${t.revision}` };
@@ -155,8 +184,8 @@ export function buildNetwork(state: LocusState): Network {
     add(kn);
     if (task.subquestionId) { const qn = nodes.get(key("subquestion", task.subquestionId)); if (qn) link(qn, kn, "affiliation", "human"); }
     for (const ref of [...task.core, ...task.optional.filter((o) => o.included).map((o) => o.ref)]) {
-      const upstream = nodeForRef(state, ref);
-      if (upstream) link(upstream, kn, ref.kind === "card" ? "support" : "lineage", "human");
+      const upstream = nodeForRef(state, ref) ?? gapNode(ref.kind as NetKind, ref.id);
+      link(upstream, kn, ref.kind === "card" ? "support" : "lineage", "human");
     }
   }
 
@@ -184,9 +213,8 @@ export function buildNetwork(state: LocusState): Network {
       const bn: NetNode = { key: key("block", b.id), kind: "block", id: b.id, label: b.text.slice(0, 30) || `块#${b.order + 1}`, version: `${b.nature}${b.draft ? " · AI草稿" : ""}` };
       link(rpn, bn, "affiliation", "human");
       for (const ref of b.refs) {
-        if (ref.kind === "note") continue;
-        const upstream = nodeForRef(state, { kind: ref.kind as never, id: ref.id });
-        if (!upstream) continue;
+        if (ref.kind === "note" || ref.kind === "snapshot") continue; // 注记/快照哈希非证据对象，不作缺件
+        const upstream = nodeForRef(state, { kind: ref.kind as never, id: ref.id }) ?? gapNode(ref.kind as NetKind, ref.id);
         const ek: EdgeKind = ref.kind === "card" ? "support" : ref.kind === "result" ? "support" : ref.kind === "asset" ? "provenance" : "lineage";
         link(upstream, bn, ek, "human", `固定版本 ${ref.version || "未标"}`);
       }
@@ -198,7 +226,7 @@ export function buildNetwork(state: LocusState): Network {
     const cn: NetNode = { key: key("chat", c.id), kind: "chat", id: c.id, label: `对话（${c.messages.length} 消息）` };
     add(cn);
     const tp = nodes.get(key("topic", c.topicId)); if (tp) link(tp, cn, "affiliation", "human");
-    for (const ref of c.scope) { const up = nodeForRef(state, ref); if (up) link(up, cn, "support", "human"); }
+    for (const ref of c.scope) { const up = nodeForRef(state, ref) ?? gapNode(ref.kind as NetKind, ref.id); link(up, cn, "support", "human"); }
   }
 
   return { nodes, edges };
@@ -269,7 +297,7 @@ export function traverseNetwork(state: LocusState, startKey: string, opts: Trave
     const to = net.nodes.get(e.to);
     if (to) (downstreamByKind[e.edgeKind] ??= []).push(to);
   }
-  const pending = nodes.flatMap((n) => n.pending ?? []);
+  const pending = nodes.flatMap((n) => [...(n.pending ?? []), ...(n.gap ? [n.gap] : [])]);
   return { start, nodes, edges: usedEdges, downstreamByKind, pending };
 }
 

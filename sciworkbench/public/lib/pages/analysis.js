@@ -5,7 +5,7 @@
  */
 import { esc } from "../views.js";
 import { fmtVersion, fmtTime } from "../format.js";
-import { humanVer, deIso, refLabel, reconTag, topicObjects } from "../refs.js";
+import { humanVer, deIso, refLabel, reconTag, missingTag, topicObjects } from "../refs.js";
 
 let ctx = null;
 
@@ -122,7 +122,7 @@ export function blockRowHtml(b, i, state) {
       ${b.draft ? `<button class="rep-confirm">确认</button>` : ""}
       <button class="rep-del">删除</button>
     </div>
-    ${(b.refs ?? []).filter((r) => r.kind !== "note").length ? `<div class="refchips">${b.refs.filter((r) => r.kind !== "note").map((r) => `<span class="refchip">${esc(refDisplay(r))}${state ? esc(reconTag(state, r.kind, r.id)) : ""} <button class="ref-back" data-kind="${esc(r.kind)}" data-id="${esc(r.id)}">回查</button></span>`).join("")}</div>` : ""}
+    ${(b.refs ?? []).filter((r) => r.kind !== "note").length ? `<div class="refchips">${b.refs.filter((r) => r.kind !== "note").map((r) => `<span class="refchip">${esc(refDisplay(r))}${state ? esc(reconTag(state, r.kind, r.id)) + esc(missingTag(state, r.kind, r.id)) : ""} <button class="ref-back" data-kind="${esc(r.kind)}" data-id="${esc(r.id)}">回查</button></span>`).join("")}</div>` : ""}
     <div class="refnet-body"></div></div>`;
 }
 
