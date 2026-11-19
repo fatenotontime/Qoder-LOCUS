@@ -123,3 +123,26 @@ test("第二步：逐块落库——job 运行中已能看到中间 created（�
     assert.equal(sawPartial, true); // 任务结束前已有卡片落库（卡片级流式）
   } finally { app.close(); ai.server.close(); clearAiConfig(); }
 });
+
+test("第二步：暂停/继续——暂停保留已出，继续补完剩余块", async () => {
+  const ref = { chunk: 0 };
+  const ai = await fakeAi(ref, 300); const { app, base } = await setup();
+  try {
+    await post(base, "/api/ai/config", { baseUrl: `http://127.0.0.1:${ai.port}`, model: "fake", key: "k" });
+    const pid = await mkPaper(base);
+    const r = await post(base, "/api/knowledge/jobs", { paperId: pid, purpose: "P" });
+    await new Promise((rr) => setTimeout(rr, 200));
+    await post(base, `/api/knowledge/jobs/${r.data.jobId}/pause`, {});
+    let j: any = {};
+    for (let i = 0; i < 60; i++) { j = await get(base, `/api/jobs/${r.data.jobId}`); if (j.status === "paused") break; await new Promise((rr) => setTimeout(rr, 60)); }
+    assert.equal(j.status, "paused");
+    const createdOnPause = j.result.created;
+    // 继续
+    await post(base, `/api/knowledge/jobs/${r.data.jobId}/resume`, {});
+    const done = await poll(base, r.data.jobId);
+    assert.equal(done.status, "done");
+    const st = await get(base, "/api/state");
+    assert.equal(st.cards.length, 3); // 未重复
+    assert.ok(st.cards.length >= createdOnPause);
+  } finally { app.close(); ai.server.close(); clearAiConfig(); }
+});

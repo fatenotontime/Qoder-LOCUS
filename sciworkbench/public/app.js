@@ -11,7 +11,7 @@ import {
 } from "./lib/views.js";
 
 let state = { topics: [], subquestions: [], assets: [], papers: [], attachments: [], cards: [], tables: [], adoptions: [], mappings: [], comparisons: [], protocols: [], templates: [], executions: [], samples: [], measurements: [], impacts: [], ocrs: [], analysisTasks: [], analysisResults: [], reports: [], chats: [] };
-const ui = { nav: "topic", topicId: "", assetId: null, paperId: null, attId: null, tableId: null, highlight: null, cell: null, dirty: false, busy: false, cardFilter: "all", groupSel: new Set(), batch: null, ack: false, protocolId: null, executionId: null, stepSel: null, viewRev: null, editEventId: null, pauseSuggest: null, prepExtra: 0, taskId: null, chatId: null, reportId: null, navCollapsed: false, kzTab: "todo", cardOpen: null, kzJob: null };
+const ui = { nav: "topic", topicId: "", assetId: null, paperId: null, attId: null, tableId: null, highlight: null, cell: null, dirty: false, busy: false, cardFilter: "all", groupSel: new Set(), batch: null, ack: false, protocolId: null, executionId: null, stepSel: null, viewRev: null, editEventId: null, pauseSuggest: null, prepExtra: 0, taskId: null, chatId: null, reportId: null, navCollapsed: false, kzTab: "todo", cardOpen: null, kzJob: null, suppressRecheck: null };
 let lastAction = null; // { label, run }
 
 // A2 分区报错：只在触发它的面板内显示（left/mid/right），可关闭、带重试。
@@ -136,14 +136,28 @@ async function runBusy(btn, label, fn) {
   finally { ui.busy = false; if (btn) { btn.disabled = false; btn.textContent = old; } }
 }
 
-/** 后台 job 专用：只禁用发起按钮，不锁全局——等待期可继续编辑（后端合并写回保证不覆盖）。 */
+/** 后台 AI job：并发上限 1，超出显示「排队中」；只禁用发起按钮，不锁全局编辑。 */
+let aiActive = 0;
+const AI_MAX = 1;
+const aiWaiters = [];
 async function runJob(btn, label, fn) {
+  const old = btn?.textContent;
+  if (aiActive >= AI_MAX) {
+    if (btn) { btn.disabled = true; btn.textContent = "排队中…"; }
+    setStatus(`${label}：排队中…`);
+    await new Promise((res) => aiWaiters.push(res));
+    if (btn) { btn.disabled = false; btn.textContent = old; }
+  }
+  aiActive++;
   const panel = PANEL_OF(btn); clearError(panel);
-  const old = btn?.textContent; if (btn) { btn.disabled = true; btn.textContent = "后台运行中…"; }
+  if (btn) { btn.disabled = true; btn.textContent = "后台运行中…"; }
   setStatus(`${label}…`);
   try { await fn(); }
   catch (e) { const h = humanError(e); setError(panel, { panel, message: `${label}失败：${h.message}`, detail: h.detail, retry: () => runJob(btn, label, fn) }); }
-  finally { if (btn) { btn.disabled = false; btn.textContent = old; } }
+  finally {
+    if (btn) { btn.disabled = false; btn.textContent = old; }
+    aiActive--; const next = aiWaiters.shift(); if (next) next();
+  }
 }
 
 function currentAsset() { return state.assets.find((a) => a.id === ui.assetId) ?? null; }
@@ -605,7 +619,7 @@ async function pollKnowledgeJob(jobId) {
     const job = await api.getJob(jobId);
     ui.kzJob = { id: jobId, status: job.status, done: job.done ?? 0, total: job.total ?? 0, created: job.result?.created ?? 0, chunkErrors: job.result?.chunkErrors ?? [], cancelled: job.result?.cancelled, message: job.message };
     renderRight();
-    if (job.status === "done" || job.status === "error") return job;
+    if (job.status === "done" || job.status === "error" || job.status === "paused") return job;
     await new Promise((r) => setTimeout(r, 700));
   }
   return { status: "error", error: "等待超时" };
@@ -726,7 +740,10 @@ function diagramHtml(p, snap) {
       <div class="dmeta">${offset !== null ? `<span class="dtime">${timeLabel(offset, approx)}</span>` : ""}${bar}${s.observeEnd ? `<span class="hint">终点:${esc(s.observeEnd)}</span>` : ""}</div>
     </div>`;
   };
-  let html = `<div class="diagram" style="grid-template-columns:repeat(${L.cols},minmax(110px,1fr))">`;
+  // B3：时间等比——列宽按主线各步分钟数；未知/0 用最短基准（≥1）
+  const weightOf = (m) => Math.max(1, m.step.durationMin ?? 1);
+  const colTemplate = L.main.map((m) => `minmax(96px,${weightOf(m)}fr)`).join(" ");
+  let html = `<div class="diagram" style="grid-template-columns:${colTemplate}">`;
   L.main.forEach((m, i) => {
     html += `<div class="dcell" style="grid-column:${i + 1};grid-row:1">${node(m.step, m.offset, m.approx)}${i < L.main.length - 1 ? `<span class="darrow-h">→</span>` : ""}</div>`;
   });
@@ -743,7 +760,7 @@ function diagramHtml(p, snap) {
   });
   const estCount = snap.steps.filter((s) => s.estimated).length;
   const unkCount = snap.steps.filter((s) => s.durationMin === null).length;
-  html += `</div><p class="hint">横轴：时间（步序，列宽等分）；纵轴：线程／泳道。虚线＝估计或时长未知${unkCount ? `（未知 ${unkCount} 步不按 0，其后为下界）` : ""}${estCount ? `（估计 ${estCount} 步）` : ""}；已知主线 ${L.totalKnown}min。</p>`;
+  html += `</div><p class="hint">横轴：时间（等比，按各步分钟数；未知/未计时按最短基准）；纵轴：线程／泳道。虚线＝估计或时长未知${unkCount ? `（未知 ${unkCount} 步不按 0，其后为下界）` : ""}${estCount ? `（估计 ${estCount} 步）` : ""}；已知主线 ${L.totalKnown}min。</p>`;
   return html;
 }
 
@@ -754,7 +771,7 @@ function stepEditorHtml(p, snap) {
   const paramsText = Object.entries(s.params).map(([k, v]) => `${k}=${v}`).join("\n");
   const mainOpts = (cur) => snap.steps.filter((x) => !x.branch).map((x) => `<option value="${x.id}" ${x.id === cur ? "selected" : ""}>${esc(x.op)}</option>`).join("");
   return `<div class="stepeditor">
-    <div class="meta">${ui.stepSel === "new" ? "新步骤" : `编辑步骤 · ${esc(s.op)}`}（保存 → 方案 r${p.revision + 1}）</div>
+    <div class="meta">${ui.stepSel === "new" ? "新步骤" : `编辑步骤 · ${esc(s.op)}`}（保存 → 方案第${p.revision + 1}版）</div>
     <div class="row"><label>操作</label><input id="se-op" value="${esc(s.op)}" /></div>
     <div class="row"><label>时长(分)</label><input id="se-dur" type="number" min="0" value="${s.durationMin ?? ""}" placeholder="空=未知" />
       <label><input id="se-est" type="checkbox" ${s.estimated ? "checked" : ""}/> 估计</label>
@@ -1047,13 +1064,23 @@ function renderAnalysisForm(box) {
   $("#an-create").addEventListener("click", (ev) => runBusy(ev.target, "创建分析任务", async () => {
     const core = [...$$(".an-data:checked")].map((x) => ({ kind: x.dataset.kind, id: x.dataset.id }));
     if (!core.length) { notify("mid", "请至少选择一个数据表/测量作为必选数据。"); return; }
+    // B5 必选自动推导：所选测量 → 样品 → 执行 → 方案，一并锁定为必选
+    const seen = new Set(core.map((r) => `${r.kind}:${r.id}`));
+    for (const d of [...core]) {
+      if (d.kind !== "measurement") continue;
+      const m = state.measurements.find((x) => x.id === d.id);
+      const s = m && state.samples.find((x) => x.id === m.sampleId);
+      if (s?.executionId && !seen.has(`execution:${s.executionId}`)) { seen.add(`execution:${s.executionId}`); core.push({ kind: "execution", id: s.executionId }); }
+      const e = s?.executionId && state.executions.find((x) => x.id === s.executionId);
+      if (e && !seen.has(`protocol:${e.protocolId}`)) { seen.add(`protocol:${e.protocolId}`); core.push({ kind: "protocol", id: e.protocolId }); }
+    }
     const optional = [
       ...[...$$(".an-def:checked")].map((x) => ({ ref: { kind: "card", id: x.dataset.id }, included: true })),
       ...[...$$(".an-opt2:checked")].map((x) => ({ ref: { kind: x.dataset.kind, id: x.dataset.id }, included: true })),
       ...[...$$(".an-def:not(:checked)")].map((x) => ({ ref: { kind: "card", id: x.dataset.id }, included: false })),
     ];
     const r = await api.createAnalysisTask({ topicId: ui.topicId, subquestionId: $("#an-subq").value || undefined, title: $("#an-title").value, core, optional });
-    ui.taskId = r.taskId; await refresh(); setStatus("分析任务已创建：必选数据已锁定");
+    ui.taskId = r.taskId; await refresh(); setStatus("分析任务已创建：必选数据已锁定（含关联执行/方案）");
   }));
 }
 
@@ -1202,13 +1229,31 @@ function resultHtml(r) {
   </details>`;
 }
 
+/** B5：核心数据在快照之后是否被更新（用于「需要复核」提示）。 */
+function analysisUpstreamChanged(t) {
+  if (!t.snapshot) return false;
+  const at = t.snapshot.at;
+  const changedAfter = (obj) => { const h = obj?.history ?? []; const last = h.length ? h[h.length - 1].at : (obj?.createdAt ?? ""); return last > at; };
+  for (const r of t.core) {
+    if (r.kind === "measurement") { const m = state.measurements.find((x) => x.id === r.id); if (m && changedAfter(m)) return true; }
+    if (r.kind === "table") { const tb = state.tables.find((x) => x.id === r.id); if (tb && changedAfter(tb)) return true; }
+    if (r.kind === "execution") { const e = state.executions.find((x) => x.id === r.id); if (e && (e.updatedAt ?? "") > at) return true; }
+  }
+  return false;
+}
+
 function analysisRightHtml() {
   const t = currentTask();
   if (!t) return `<p class="hint">选择分析任务后：这里做推荐、提交结果、写分析初稿。</p>`;
   const rec = t.recommendation;
   const results = t.resultIds.map((id) => state.analysisResults.find((r) => r.id === id)).filter(Boolean);
   const reps = state.reports.filter((r) => r.taskId === t.id);
-  let h = `<details class="mini" open><summary>方法推荐（含验收项；预期产物≠预设结论）</summary>
+  let h = "";
+  if (t.snapshot && ui.suppressRecheck !== t.id && analysisUpstreamChanged(t)) {
+    h += `<div class="item recheck"><div class="meta">需要复核</div><p class="hint">核心数据在快照之后有更新，当前分析基于旧快照。</p>
+      <div class="row"><button class="primary" id="an-recheck">重新推荐（新快照）</button><button id="an-keep">保留旧快照</button></div></div>`;
+  }
+  h += `<details class="mini" open><summary>方法推荐（含验收项；预期产物≠预设结论）</summary>
     <textarea id="an-purpose" rows="2" placeholder="研究目的（必填，如：估计 pH3 下酶活半衰期并比较 pH5）"></textarea>
     <button class="primary" id="an-recommend">${rec ? "重新推荐（生成新快照）" : "发起方法推荐"}</button>`;
   if (rec) {
@@ -1387,6 +1432,12 @@ document.addEventListener("click", (ev) => {
   if (t.classList.contains("kzq-item")) { ui.kzTab = "todo"; ui.cardOpen = t.dataset.cid; renderMiddle(); return; }
   if (t.classList.contains("kz-locate")) { ui.highlight = t.dataset.quote || null; renderShell(); const m = document.querySelector("#kz-text mark"); if (m) m.scrollIntoView({ block: "center" }); return; }
   if (t.classList.contains("kzq-cancel")) { if (ui.kzJob?.id) api.cancelKnowledgeJob(ui.kzJob.id).then(() => setStatus("已请求取消：保留已出内容")).catch(() => {}); return; }
+  if (t.classList.contains("kzq-pause")) { if (ui.kzJob?.id) api.pauseKnowledgeJob(ui.kzJob.id).then(() => { ui.kzJob = { ...ui.kzJob, status: "paused" }; renderRight(); setStatus("已请求暂停：保留已出内容"); }).catch(() => {}); return; }
+  if (t.classList.contains("kzq-resume")) {
+    if (ui.kzJob?.id) { ui.kzJob = { ...ui.kzJob, status: "running" }; renderRight();
+      api.resumeKnowledgeJob(ui.kzJob.id).then(() => pollKnowledgeJob(ui.kzJob.id)).then((job) => refreshAfterJob().then(() => setStatus(job.status === "done" ? job.message : "已暂停"))).catch(() => {}); }
+    return;
+  }
   if (t.classList.contains("kzq-retry")) {
     const idx = Number(t.dataset.index);
     if (ui.kzJob?.id) { t.disabled = true; api.retryKnowledgeChunk(ui.kzJob.id, idx)
@@ -1479,6 +1530,13 @@ document.addEventListener("click", (ev) => {
       ui.dirty = false; await refresh(); setStatus("步骤已记录（实际值入本次执行，不改源方案）");
     }); return;
   }
+  // B5 上游复核：重算 / 保留旧快照
+  if (t.id === "an-recheck") {
+    const task = currentTask(); if (!task?.snapshot) return;
+    runJob(t, "重新推荐", async () => { const r = await api.recommendMethods(task.id, task.snapshot.purpose); await pollJob(r.jobId, "方法推荐"); ui.suppressRecheck = null; await refreshAfterJob(); setStatus("已按新快照重新推荐"); });
+    return;
+  }
+  if (t.id === "an-keep") { const task = currentTask(); ui.suppressRecheck = task?.id ?? null; renderRight(); setStatus("保留旧快照（已忽略复核提示）"); return; }
   const smpRename = t.closest(".smp-rename");
   if (smpRename) {
     const row = smpRename.closest(".smprow"); const id = row.dataset.id; const name = row.querySelector(".smp-name").value.trim();

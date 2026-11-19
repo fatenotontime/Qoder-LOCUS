@@ -243,8 +243,9 @@ export function knowledgeQueueHtml(state, ui) {
   const queue = kzCards(state, ui).filter((c) => c.extraction === "ai" && KZ_PART(c) === "todo");
   const j = ui.kzJob;
   const task = j ? `<div class="kzq-task">
-    <span class="hint">${j.status === "running" ? `抽取中 ${j.done}/${j.total} 段，已出 ${j.created} 张` : (j.cancelled ? `已取消，保留已出 ${j.created} 张` : esc(j.message ?? ""))}</span>
-    ${j.status === "running" ? `<button class="kzq-cancel">取消</button>` : ""}
+    <span class="hint">${j.status === "running" ? `抽取中 ${j.done}/${j.total} 段，已出 ${j.created} 张` : (j.status === "paused" ? `已暂停：已出 ${j.created} 张` : (j.cancelled ? `已取消，保留已出 ${j.created} 张` : esc(j.message ?? "")))}</span>
+    ${j.status === "running" ? `<button class="kzq-pause">暂停</button><button class="kzq-cancel">取消</button>` : ""}
+    ${j.status === "paused" ? `<button class="kzq-resume">继续</button><button class="kzq-cancel">取消</button>` : ""}
   </div>${(j.chunkErrors ?? []).map((e) => `<div class="kzq-err">第 ${e.index + 1} 段失败 · <button class="kzq-retry" data-index="${e.index}">重试</button></div>`).join("")}` : "";
   return `<div class="kzq">
     <div class="kzq-head">AI 待审队列 <span class="badge">新增 ${queue.length}</span></div>

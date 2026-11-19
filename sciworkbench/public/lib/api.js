@@ -55,6 +55,8 @@ export const api = {
   async importBibliography(format, text) { return json("/api/papers/import-bibliography", { format, text }); },
   async knowledgeJob(input) { return json("/api/knowledge/jobs", input); },
   async cancelKnowledgeJob(id) { return json(`/api/knowledge/jobs/${encodeURIComponent(id)}/cancel`, {}); },
+  async pauseKnowledgeJob(id) { return json(`/api/knowledge/jobs/${encodeURIComponent(id)}/pause`, {}); },
+  async resumeKnowledgeJob(id) { return json(`/api/knowledge/jobs/${encodeURIComponent(id)}/resume`, {}); },
   async retryKnowledgeChunk(id, index) { return json(`/api/knowledge/jobs/${encodeURIComponent(id)}/retry-chunk`, { index }); },
   // ── 5E：分析任务 / 方法推荐 / 结果提交 / 初步报告 / 上下文对话 ──
   async createAnalysisTask(input) { return json("/api/analysis/tasks", input); },

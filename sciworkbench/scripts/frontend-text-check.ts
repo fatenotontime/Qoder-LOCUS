@@ -45,7 +45,8 @@ const runEdge = (url: string, profile: string) => spawnSync(EDGE, ["--headless=n
       const text = strip(dom);
       const hits: string[] = [];
       for (const [re, label] of FORBIDDEN) { const m = text.match(re); if (m) hits.push(`${label} → 「${m[0]}」`); }
-      if (dom.length < 500) hits.push("页面疑似未渲染（DOM 过小）");
+      // 确认真渲染（避免 app.js 报错时静默误判为通过）
+      if (dom.length < 500 || !dom.includes("navitem") || /id="status">连接中/.test(dom)) hits.push("页面疑似未渲染（应用未启动/JS 报错）");
       if (hits.length) { failed++; console.log(`✗ ${nav}: ${hits.join("；")}`); } else { console.log(`✓ ${nav}`); }
     } finally {
       rmSync(harness, { force: true });

@@ -327,6 +327,8 @@ export interface KnowledgeStreamHooks {
   onChunkCards?: (index: number, total: number, cards: unknown[], raw: string) => void | Promise<void>;
   onChunkError?: (index: number, total: number, error: Error, recoverable: boolean) => void | Promise<void>;
   isCancelled?: () => boolean;
+  /** 已完成的块（暂停后续跑时跳过，不重复生成）。 */
+  isDone?: (index: number) => boolean;
 }
 export interface KnowledgeStreamResult {
   total: number; processed: number; cancelled: boolean;
@@ -363,6 +365,7 @@ export async function extractKnowledgeProgressive(cfg: AiConfig, text: string, p
   const failed: KnowledgeStreamResult["failed"] = [];
   let processed = 0, cancelled = false;
   for (let i = 0; i < total; i++) {
+    if (hooks.isDone?.(i)) { processed++; continue; } // 暂停后续跑：跳过已完成块
     if (hooks.isCancelled?.()) { cancelled = true; break; }
     await hooks.onChunkStart?.(i, total);
     try {

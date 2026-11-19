@@ -109,7 +109,7 @@ export interface Job {
   done: number;
   total: number;
   message: string;
-  result?: { assetId?: string; created?: number; reminder?: boolean; protocolId?: string; impactId?: string; ocrIds?: string[]; discarded?: boolean; paperId?: string; skipped?: number; chunkErrors?: { index: number; error: string; recoverable: boolean }[]; cancelled?: boolean };
+  result?: { assetId?: string; created?: number; reminder?: boolean; protocolId?: string; impactId?: string; ocrIds?: string[]; discarded?: boolean; paperId?: string; skipped?: number; chunkErrors?: { index: number; error: string; recoverable: boolean }[]; cancelled?: boolean; paused?: boolean };
   error?: string;
 }
 
@@ -125,7 +125,7 @@ export async function createApp(store: Store) {
   const parsingAssets = new Set<string>();
   const recommendingTasks = new Set<string>();
   // 知识抽取流式任务的运行控制（取消 / 只重试失败块）
-  const knowledgeRuns = new Map<string, { cancel(): void; retryChunk(index: number): Promise<{ created: number; skipped: number }> }>();
+  const knowledgeRuns = new Map<string, { cancel(): void; pause(): void; resume(): void; retryChunk(index: number): Promise<{ created: number; skipped: number }> }>();
   const trimJobs = () => { if (jobs.size > 20) { for (const k of jobs.keys()) { if (jobs.size <= 20) break; jobs.delete(k); } } };
 
   /** 5E 对话 job：发送时冻结快照；写回前检查取消（在途请求无法中止，结果丢弃不写回）。 */
@@ -325,38 +325,31 @@ export async function createApp(store: Store) {
           const job: Job = { id, status: "running", done: 0, total: chunks.length, message: "语义提取中…", result: { paperId: paper.id, created: 0, skipped: 0, chunkErrors: [] } };
           jobs.set(id, job); trimJobs();
           const raws: { index: number; content: string }[] = [];
-          let cancelled = false;
-          // 串行落库：每块完成即 map→apply→save（重跑/重试按概述去重，不重复入库）
-          const persistChunk = async (raw: string, cards: unknown[]) => {
+          const doneSet = new Set<number>();
+          let cancelled = false, paused = false, running = false;
+          // 串行落库：每块完成即 map→apply→save（重跑/重试/续跑按概述去重，不重复入库）
+          const persistChunk = async (index: number, raw: string, cards: unknown[]) => {
             const mapped = mapKnowledgeCards(paper, assets, cards);
             const r = applyKnowledge(state, paper.id, mapped);
             state = r.state; await store.save(state);
+            doneSet.add(index);
             job.result!.created = (job.result!.created ?? 0) + r.created;
             job.result!.skipped = (job.result!.skipped ?? 0) + r.skipped;
             return r;
           };
-          knowledgeRuns.set(id, {
-            cancel: () => { cancelled = true; job.message = "取消中…（保留已出）"; },
-            retryChunk: async (index: number) => {
-              if (!Number.isInteger(index) || index < 0 || index >= chunks.length) throw new AppError(422, `块序号越界：${index}`);
-              const { cards, raw } = await extractKnowledgeChunk(cfg, jobInput.purpose, chunks[index], index, chunks.length);
-              raws.push({ index, content: raw });
-              const r = await persistChunk(raw, cards);
-              job.result!.chunkErrors = (job.result!.chunkErrors ?? []).filter((e) => e.index !== index);
-              job.done = Math.min(chunks.length, job.done + 1);
-              job.message = `第 ${index + 1}/${chunks.length} 段重试成功（已出 ${job.result!.created} 张）`;
-              return r;
-            },
-          });
-          void (async () => {
+          const finishIfSettled = () => { if (job.status === "done" && !(job.result?.chunkErrors?.length)) knowledgeRuns.delete(id); };
+          const runOnce = async () => {
+            if (running) return;
+            running = true;
             try {
               const res = await extractKnowledgeProgressive(cfg, text, jobInput.purpose, {
-                isCancelled: () => cancelled,
+                isCancelled: () => cancelled || paused,
+                isDone: (i) => doneSet.has(i),
                 onChunkStart: (i, total) => { job.total = total; job.message = `第 ${i + 1}/${total} 段，已出 ${job.result!.created} 张`; },
                 onChunkCards: async (i, total, cards, raw) => {
                   raws.push({ index: i, content: raw });
-                  await persistChunk(raw, cards);
-                  job.done = i + 1; job.message = `第 ${i + 1}/${total} 段，已出 ${job.result!.created} 张`;
+                  await persistChunk(i, raw, cards);
+                  job.done = doneSet.size; job.message = `第 ${i + 1}/${total} 段，已出 ${job.result!.created} 张`;
                 },
                 onChunkError: (i, total, err, recoverable) => {
                   job.result!.chunkErrors = [...(job.result!.chunkErrors ?? []), { index: i, error: err.message, recoverable }];
@@ -365,17 +358,32 @@ export async function createApp(store: Store) {
               });
               await store.save(state);
               writeAudit(paper.id, { raws, model: cfg.model }, "knowledge_extract");
-              job.result!.cancelled = res.cancelled;
-              job.status = "done";
-              job.message = res.cancelled
-                ? `已取消：保留已出 ${job.result!.created} 张`
-                : `完成：新增 ${job.result!.created} 张待审知识卡${job.result!.skipped ? `，跳过重复 ${job.result!.skipped}` : ""}${res.failed.length ? `，${res.failed.length} 段失败（可逐块重试）` : ""}（输入快照 ${snapshotHash.slice(0, 12)}）`;
+              if (cancelled) { job.result!.cancelled = true; job.status = "done"; job.message = `已取消：保留已出 ${job.result!.created} 张`; }
+              else if (paused) { job.result!.paused = true; job.status = "paused"; job.message = `已暂停：已出 ${job.result!.created} 张（可继续）`; }
+              else {
+                job.status = "done";
+                job.message = `完成：新增 ${job.result!.created} 张待审知识卡${job.result!.skipped ? `，跳过重复 ${job.result!.skipped}` : ""}${res.failed.length ? `，${res.failed.length} 段失败（可逐块重试）` : ""}（输入快照 ${snapshotHash.slice(0, 12)}）`;
+              }
             } catch (e) { job.status = "error"; job.error = (e as Error).message ?? "失败"; }
-            finally {
-              // 若仍有未解决的失败块，保留运行句柄以便逐块重试；全部解决后清理。
-              if (!(job.result?.chunkErrors?.length)) knowledgeRuns.delete(id);
-            }
-          })();
+            finally { running = false; finishIfSettled(); }
+          };
+          knowledgeRuns.set(id, {
+            cancel: () => { cancelled = true; job.message = "取消中…（保留已出）"; },
+            pause: () => { if (running) { paused = true; job.message = "暂停中…（保留已出）"; } else { job.status = "paused"; job.result!.paused = true; job.message = `已暂停：已出 ${job.result!.created} 张`; } },
+            resume: () => { if (running) return; paused = false; job.status = "running"; job.message = "继续抽取…"; void runOnce(); },
+            retryChunk: async (index: number) => {
+              if (!Number.isInteger(index) || index < 0 || index >= chunks.length) throw new AppError(422, `块序号越界：${index}`);
+              const { cards, raw } = await extractKnowledgeChunk(cfg, jobInput.purpose, chunks[index], index, chunks.length);
+              raws.push({ index, content: raw });
+              const r = await persistChunk(index, raw, cards);
+              job.result!.chunkErrors = (job.result!.chunkErrors ?? []).filter((e) => e.index !== index);
+              job.done = doneSet.size;
+              job.message = `第 ${index + 1}/${chunks.length} 段重试成功（已出 ${job.result!.created} 张）`;
+              if (job.status === "done") finishIfSettled();
+              return r;
+            },
+          });
+          void runOnce();
           send(res, 202, { ok: true, jobId: id, snapshotHash, total: chunks.length });
           return;
         }
@@ -384,6 +392,18 @@ export async function createApp(store: Store) {
           const run = knowledgeRuns.get(decodeURIComponent(kjCancel[1]));
           if (!run) { send(res, 404, { error: "该抽取任务不在运行（可能已完成/已结束）。" }); return; }
           run.cancel(); send(res, 200, { ok: true }); return;
+        }
+        const kjPause = path.match(/^\/api\/knowledge\/jobs\/([^/]+)\/pause$/);
+        if (kjPause) {
+          const run = knowledgeRuns.get(decodeURIComponent(kjPause[1]));
+          if (!run) { send(res, 404, { error: "该抽取任务不在运行。" }); return; }
+          run.pause(); send(res, 200, { ok: true }); return;
+        }
+        const kjResume = path.match(/^\/api\/knowledge\/jobs\/([^/]+)\/resume$/);
+        if (kjResume) {
+          const run = knowledgeRuns.get(decodeURIComponent(kjResume[1]));
+          if (!run) { send(res, 404, { error: "该抽取任务不在运行。" }); return; }
+          run.resume(); send(res, 200, { ok: true }); return;
         }
         const kjRetry = path.match(/^\/api\/knowledge\/jobs\/([^/]+)\/retry-chunk$/);
         if (kjRetry) {
