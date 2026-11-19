@@ -1,0 +1,45 @@
+/**
+ * 分析与对话共用：对象引用读取与展示（纯函数，无 DOM）。
+ * 供 app.js（对话页）与 lib/pages/analysis.js（分析页）导入，避免复制两份。
+ */
+import { fmtTime } from "./format.js";
+
+/** 把任意字符串里的 ISO 时间替换成本地短格式（用于服务端生成的摘要文本）。 */
+export const deIso = (s) => String(s ?? "").replace(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z/g, (m) => fmtTime(m));
+
+/** 服务端摘要文本里可能夹带的英文枚举/裸版本 → 中文（仅用于展示）。 */
+export const humanVer = (s) => String(s ?? "")
+  .replace(/rev (\d+)/g, "第$1版")
+  .replace(/ai-draft/g, "模型草稿").replace(/reconstructed/g, "重构")
+  .replace(/unreviewed/g, "待审").replace(/need_info/g, "待补")
+  .replace(/exploratory/g, "探索中").replace(/declared/g, "已定")
+  .replace(/confirm/g, "已确认").replace(/exclude/g, "已排除").replace(/\bskip\b/g, "已跳过");
+
+/** 对象引用 → 人话标签。 */
+export function refLabel(state, ref) {
+  switch (ref.kind) {
+    case "execution": { const e = state.executions.find((x) => x.id === ref.id); const p = e && state.protocols.find((x) => x.id === e.protocolId); return `执行 · ${p?.name ?? ref.id}`; }
+    case "protocol": return `方案 · ${state.protocols.find((x) => x.id === ref.id)?.name ?? ref.id}`;
+    case "measurement": {
+      const mr = state.measurements.find((x) => x.id === ref.id);
+      if (mr) { const s = state.samples.find((x) => x.id === mr.sampleId); return `测量 · ${s?.shortName ?? ""} ${mr.value}${mr.unit}`; }
+      return `测量原件 · ${state.assets.find((x) => x.id === ref.id)?.name ?? ref.id}`;
+    }
+    case "table": return `数据表 · ${state.tables.find((x) => x.id === ref.id)?.name ?? ref.id}`;
+    case "card": { const c = state.cards.find((x) => x.id === ref.id); return `知识卡 · ${c?.scope || Object.values(c?.extracted?.fields ?? {})[0] || ref.id}`; }
+    case "asset": return `原件 · ${state.assets.find((x) => x.id === ref.id)?.name ?? ref.id}`;
+    case "subquestion": return `子问题 · ${state.subquestions.find((x) => x.id === ref.id)?.question ?? ref.id}`;
+    default: return `${ref.kind}:${ref.id}`;
+  }
+}
+
+/** 当前课题下可被分析/对话引用的对象集合。 */
+export function topicObjects(state, ui) {
+  const tid = ui.topicId;
+  const execs = state.executions.filter((e) => !tid || e.topicId === tid);
+  const tables = state.tables.filter((t) => { const a = state.assets.find((x) => x.id === t.assetId); return !tid || !a?.topicId || a.topicId === tid; });
+  const meas = state.measurements.filter((m) => !tid || m.topicId === tid);
+  const protos = state.protocols.filter((p) => !tid || p.topicId === tid);
+  const cards = state.cards.filter((c) => { const p = state.papers.find((x) => x.id === c.paperId); return c.audit === "confirm" && (!tid || !p || !p.topicIds.length || p.topicIds.includes(tid)); });
+  return { execs, tables, meas, protos, cards };
+}

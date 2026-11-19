@@ -4,11 +4,13 @@
 import { api } from "./lib/api.js";
 import { computeLanes, timeLabel, durationSourceOf } from "./lib/lanes.js";
 import { fmtTime, fmtEnum, fmtVersion, fmtNameOnce } from "./lib/format.js";
+import { refLabel, topicObjects } from "./lib/refs.js";
 import {
   topbarTopicHtml, emptyTopicGuideHtml, navHtml, panelErrorHtml, sidebarListHtml,
-  topicOverviewHtml, topicTodosHtml, subqBlockHtml, nextStepHtml,
-  knowledgeLeftHtml, knowledgeWorkspaceHtml, knowledgeQueueHtml, NAV_ITEMS,
+  topicOverviewHtml, topicTodosHtml, subqBlockHtml, nextStepHtml, NAV_ITEMS,
 } from "./lib/views.js";
+import { knowledgeLeftHtml, knowledgeWorkspaceHtml, knowledgeQueueHtml, renderKnowledgeForm, bindKnowledge } from "./lib/pages/knowledge.js";
+import { renderAnalysisForm, currentTask, contextMapHtml, analysisRightHtml, snapshotHtml, bindAnalysis } from "./lib/pages/analysis.js";
 
 let state = { topics: [], subquestions: [], assets: [], papers: [], attachments: [], cards: [], tables: [], adoptions: [], mappings: [], comparisons: [], protocols: [], templates: [], executions: [], samples: [], measurements: [], impacts: [], ocrs: [], analysisTasks: [], analysisResults: [], reports: [], chats: [] };
 const ui = { nav: "topic", topicId: "", assetId: null, paperId: null, attId: null, tableId: null, highlight: null, cell: null, dirty: false, busy: false, cardFilter: "all", groupSel: new Set(), batch: null, ack: false, protocolId: null, executionId: null, stepSel: null, viewRev: null, editEventId: null, pauseSuggest: null, prepExtra: 0, taskId: null, chatId: null, reportId: null, navCollapsed: false, kzTab: "todo", cardOpen: null, kzJob: null, suppressRecheck: null };
@@ -48,15 +50,6 @@ function restoreUi() {
 const $ = (s) => document.querySelector(s);
 const $$ = (s) => document.querySelectorAll(s);
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
-/** 把任意字符串里的 ISO 时间替换成本地短格式（用于服务端生成的摘要文本）。 */
-const deIso = (s) => String(s ?? "").replace(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z/g, (m) => fmtTime(m));
-/** 服务端摘要文本里可能夹带的英文枚举/裸版本 → 中文（仅用于展示）。 */
-const humanVer = (s) => String(s ?? "")
-  .replace(/rev (\d+)/g, "第$1版")
-  .replace(/ai-draft/g, "模型草稿").replace(/reconstructed/g, "重构")
-  .replace(/unreviewed/g, "待审").replace(/need_info/g, "待补")
-  .replace(/exploratory/g, "探索中").replace(/declared/g, "已定")
-  .replace(/confirm/g, "已确认").replace(/exclude/g, "已排除").replace(/\bskip\b/g, "已跳过");
 const topicName = (id) => state.topics.find((t) => t.id === id)?.name;
 
 async function refresh() {
@@ -278,14 +271,14 @@ function renderMiddle() {
     return;
   }
   if (ui.nav === "analysis") {
-    const t = currentTask();
+    const t = currentTask(state, ui);
     $("#mid-title").textContent = t ? `上下文地图 · ${t.title}` : "上下文地图";
     if (!t) { note.hidden = true; content.textContent = "在左栏选择或创建分析任务。"; return; }
     note.hidden = false;
     note.textContent = t.snapshot
       ? `快照已冻结（hash ${t.snapshot.hash.slice(0, 12)}…）；改候选不回改旧快照。`
       : "未冻结：推荐时按核心＋候选＋目的冻结发送内容。";
-    content.innerHTML = contextMapHtml(t);
+    content.innerHTML = contextMapHtml(state, ui, t);
     return;
   }
   if (ui.nav === "chat") {
@@ -311,7 +304,7 @@ function renderRight() {
   }
   if (ui.nav === "protocol") { $("#right-title").textContent = "方案信息"; $("#right-content").innerHTML = protocolSideHtml(); return; }
   if (ui.nav === "record") { $("#right-title").textContent = "实验记录"; $("#right-content").innerHTML = recordHtml(); return; }
-  if (ui.nav === "analysis") { $("#right-title").textContent = "推荐 · 结果 · 分析初稿"; $("#right-content").innerHTML = analysisRightHtml(); return; }
+  if (ui.nav === "analysis") { $("#right-title").textContent = "推荐 · 结果 · 分析初稿"; $("#right-content").innerHTML = analysisRightHtml(state, ui); return; }
   if (ui.nav === "chat") { $("#right-title").textContent = "范围 · 来源 · 采纳"; $("#right-content").innerHTML = chatRightHtml(); return; }
   $("#right-title").textContent = "结构化结果";
   $("#right-content").innerHTML = `<p class="hint">在左栏选择工作对象。</p>`;
@@ -405,43 +398,6 @@ function paperHtml() {
 }
 
 /** 左栏：知识提取发起（目的必填）＋机械草稿调试入口（明确标记）。 */
-function renderKnowledgeForm(box) {
-  const p = currentPaper();
-  const atts = p ? state.attachments.filter((a) => a.paperId === p.id) : [];
-  const subqs = state.subquestions.filter((q) => !ui.topicId || q.topicId === ui.topicId);
-  box.innerHTML = `
-    <details class="mini" open>
-      <summary>语义提取（选文献＋目的）</summary>
-      ${p ? `<div class="hint">当前文献：${esc(p.title)}</div>
-        ${atts.length ? atts.map((a) => `<label class="cmppick"><input type="checkbox" class="k-att" value="${a.id}" checked/> ${esc(state.assets.find((x) => x.id === a.assetId)?.name ?? a.assetId)}（${ROLE_LABEL[a.role]}）</label>`).join("") : `<p class="hint warn">该条目无附件；先到「文献整理」导入。</p>`}
-        <textarea id="k-purpose" rows="2" placeholder="研究目的（必填）：围绕哪个研究问题提取？如：比较 pH 对 Km 的影响"></textarea>
-        ${subqs.length ? `<select id="k-subq"><option value="">（不挂子问题）</option>${subqs.map((q) => `<option value="${q.id}">${esc(q.question)}</option>`).join("")}</select>` : ""}
-        <button class="primary" id="k-start" ${atts.length ? "" : "disabled"}>发起语义提取（独立 AI 任务）</button>
-        <p class="hint">抽取单位是研究意义（数据＋条件/方法、结论＋依据、思路），不是逐行拆文本；结果进右栏待审区，须人工核对。等待期间可继续编辑，不会被覆盖。</p>`
-      : `<p class="hint">先在下方选择文献条目（或到「文献整理」新建）。</p>`}
-    </details>
-    <details class="mini">
-      <summary>机械草稿（开发调试）</summary>
-      <input id="dbg-name" placeholder="文件名" />
-      <textarea id="dbg-text" rows="2" placeholder="粘贴文本：逐段拆分为草稿卡，全部标记 mechanical"></textarea>
-      <button id="dbg-import">导入机械草稿</button>
-    </details>`;
-  const start = $("#k-start");
-  if (start) start.addEventListener("click", (ev) => runJob(ev.target, "语义知识提取", async () => {
-    const attachmentIds = [...$$(".k-att")].filter((x) => x.checked).map((x) => x.value);
-    const r = await api.knowledgeJob({ paperId: p.id, attachmentIds, purpose: $("#k-purpose").value, topicId: ui.topicId || undefined, subquestionId: $("#k-subq")?.value || undefined });
-    ui.kzJob = { id: r.jobId, status: "running", done: 0, total: r.total ?? 0, created: 0, chunkErrors: [], message: "语义提取中…" };
-    renderRight();
-    const job = await pollKnowledgeJob(r.jobId);
-    await refreshAfterJob();
-    setStatus(job.status === "done" ? job.message : `知识提取失败：${job.error ?? ""}`);
-  }));
-  $("#dbg-import").addEventListener("click", (ev) => runBusy(ev.target, "导入机械草稿", async () => {
-    const r = await api.importLiterature($("#dbg-name").value || "debug.md", $("#dbg-text").value, "draft", ui.topicId || undefined);
-    await refresh(); setStatus(`机械草稿已导入：${r.created} 张（全部标记 mechanical，仅供调试）`);
-  }));
-}
-
 /** 左栏文献工具：命名映射 + 条件比较（仅文献导航显示）。 */
 function renderLitTools(box) {
   if (ui.nav === "record") { renderRecordTools(box); return; }
@@ -612,18 +568,6 @@ async function refreshAfterJob() {
     return;
   }
   await refresh();
-}
-
-/** 知识抽取流式轮询：只更新右栏队列（不动中栏编辑），把进度/失败块反映到 ui.kzJob。 */
-async function pollKnowledgeJob(jobId) {
-  for (let i = 0; i < 2400; i++) {
-    const job = await api.getJob(jobId);
-    ui.kzJob = { id: jobId, status: job.status, done: job.done ?? 0, total: job.total ?? 0, created: job.result?.created ?? 0, chunkErrors: job.result?.chunkErrors ?? [], cancelled: job.result?.cancelled, message: job.message };
-    renderRight();
-    if (job.status === "done" || job.status === "error" || job.status === "paused") return job;
-    await new Promise((r) => setTimeout(r, 700));
-  }
-  return { status: "error", error: "等待超时" };
 }
 
 function renderProtocolImport(box) {
@@ -1067,85 +1011,12 @@ function recordHtml() {
 }
 
 // ── 5E：数据处理与分析 / 上下文AI对话 ──────────────────────
-function currentTask() { return state.analysisTasks.find((t) => t.id === ui.taskId) ?? null; }
 function currentChat() { return state.chats.find((c) => c.id === ui.chatId) ?? null; }
-function refLabel(ref) {
-  switch (ref.kind) {
-    case "execution": { const e = state.executions.find((x) => x.id === ref.id); const p = e && state.protocols.find((x) => x.id === e.protocolId); return `执行 · ${p?.name ?? ref.id}`; }
-    case "protocol": return `方案 · ${state.protocols.find((x) => x.id === ref.id)?.name ?? ref.id}`;
-    case "measurement": {
-      const mr = state.measurements.find((x) => x.id === ref.id);
-      if (mr) { const s = state.samples.find((x) => x.id === mr.sampleId); return `测量 · ${s?.shortName ?? ""} ${mr.value}${mr.unit}`; }
-      return `测量原件 · ${state.assets.find((x) => x.id === ref.id)?.name ?? ref.id}`;
-    }
-    case "table": return `数据表 · ${state.tables.find((x) => x.id === ref.id)?.name ?? ref.id}`;
-    case "card": { const c = state.cards.find((x) => x.id === ref.id); return `知识卡 · ${c?.scope || Object.values(c?.extracted?.fields ?? {})[0] || ref.id}`; }
-    case "asset": return `原件 · ${state.assets.find((x) => x.id === ref.id)?.name ?? ref.id}`;
-    case "subquestion": return `子问题 · ${state.subquestions.find((x) => x.id === ref.id)?.question ?? ref.id}`;
-    default: return `${ref.kind}:${ref.id}`;
-  }
-}
-function topicObjects() {
-  const tid = ui.topicId;
-  const execs = state.executions.filter((e) => !tid || e.topicId === tid);
-  const tables = state.tables.filter((t) => { const a = state.assets.find((x) => x.id === t.assetId); return !tid || !a?.topicId || a.topicId === tid; });
-  const meas = state.measurements.filter((m) => !tid || m.topicId === tid);
-  const protos = state.protocols.filter((p) => !tid || p.topicId === tid);
-  const cards = state.cards.filter((c) => { const p = state.papers.find((x) => x.id === c.paperId); return c.audit === "confirm" && (!tid || !p || !p.topicIds.length || p.topicIds.includes(tid)); });
-  return { execs, tables, meas, protos, cards };
-}
 const collectPicks = (cls) => [...$$(`.${cls}:checked`)].map((cb) => ({ kind: cb.dataset.kind, id: cb.dataset.id }));
-
-function renderAnalysisForm(box) {
-  if (!ui.topicId) { box.innerHTML = `<p class="hint">先在上方选择课题，再建分析任务。</p>`; return; }
-  const { execs, tables, meas, protos, cards } = topicObjects();
-  const subqs = state.subquestions.filter((s) => s.topicId === ui.topicId);
-  const conf = cards.filter((c) => c.audit === "confirm");
-  const dataSources = [
-    ...tables.map((t) => ({ kind: "table", id: t.id, label: `数据表 · ${t.name}` })),
-    ...meas.map((m) => ({ kind: "measurement", id: m.id, label: `测量 · ${state.samples.find((s) => s.id === m.sampleId)?.shortName ?? ""} ${m.value}${m.unit}` })),
-  ];
-  box.innerHTML = `
-    <details class="mini" open>
-      <summary>＋新建分析任务</summary>
-      <input id="an-title" placeholder="任务标题（如 传播量级汇总）"/>
-      <select id="an-subq"><option value="">（子问题）</option>${subqs.map((s) => `<option value="${s.id}">${esc(s.question)}</option>`).join("")}</select>
-      <p class="hint">选择数据（必选，锁定且不可取消）：</p>
-      ${dataSources.length ? dataSources.map((d) => `<label class="ctxpick"><input type="checkbox" class="an-data" data-kind="${d.kind}" data-id="${d.id}"/> ${esc(d.label)}</label>`).join("") : `<p class="hint">本课题暂无可分析数据（先导入数据表或记录测量）。</p>`}
-      <p class="hint">默认已选（关联度高的已入候选知识卡，可取消）：</p>
-      ${conf.length ? conf.map((c) => `<label class="ctxpick"><input type="checkbox" class="an-def" data-id="${c.id}" checked/> ${esc(c.scope || c.rawText.slice(0, 24))}</label>`).join("") : `<p class="hint">暂无已入候选卡。</p>`}
-      <details class="mini"><summary>其他可选（折叠：方案/执行）</summary>
-        ${protos.map((p) => `<label class="ctxpick"><input type="checkbox" class="an-opt2" data-kind="protocol" data-id="${p.id}"/> 方案 · ${esc(p.name)}</label>`).join("")}
-        ${execs.map((e) => `<label class="ctxpick"><input type="checkbox" class="an-opt2" data-kind="execution" data-id="${e.id}"/> 执行 · ${esc(state.protocols.find((p) => p.id === e.protocolId)?.name ?? e.id)}</label>`).join("")}
-      </details>
-      <button class="primary" id="an-create">创建任务（必选项自动锁定）</button>
-    </details>`;
-  $("#an-create").addEventListener("click", (ev) => runBusy(ev.target, "创建分析任务", async () => {
-    const core = [...$$(".an-data:checked")].map((x) => ({ kind: x.dataset.kind, id: x.dataset.id }));
-    if (!core.length) { notify("mid", "请至少选择一个数据表/测量作为必选数据。"); return; }
-    // B5 必选自动推导：所选测量 → 样品 → 执行 → 方案，一并锁定为必选
-    const seen = new Set(core.map((r) => `${r.kind}:${r.id}`));
-    for (const d of [...core]) {
-      if (d.kind !== "measurement") continue;
-      const m = state.measurements.find((x) => x.id === d.id);
-      const s = m && state.samples.find((x) => x.id === m.sampleId);
-      if (s?.executionId && !seen.has(`execution:${s.executionId}`)) { seen.add(`execution:${s.executionId}`); core.push({ kind: "execution", id: s.executionId }); }
-      const e = s?.executionId && state.executions.find((x) => x.id === s.executionId);
-      if (e && !seen.has(`protocol:${e.protocolId}`)) { seen.add(`protocol:${e.protocolId}`); core.push({ kind: "protocol", id: e.protocolId }); }
-    }
-    const optional = [
-      ...[...$$(".an-def:checked")].map((x) => ({ ref: { kind: "card", id: x.dataset.id }, included: true })),
-      ...[...$$(".an-opt2:checked")].map((x) => ({ ref: { kind: x.dataset.kind, id: x.dataset.id }, included: true })),
-      ...[...$$(".an-def:not(:checked)")].map((x) => ({ ref: { kind: "card", id: x.dataset.id }, included: false })),
-    ];
-    const r = await api.createAnalysisTask({ topicId: ui.topicId, subquestionId: $("#an-subq").value || undefined, title: $("#an-title").value, core, optional });
-    ui.taskId = r.taskId; await refresh(); setStatus("分析任务已创建：必选数据已锁定（含关联执行/方案）");
-  }));
-}
 
 function renderChatForm(box) {
   if (!ui.topicId) { box.innerHTML = `<p class="hint">先在上方选择课题，再创建对话。</p>`; return; }
-  const { execs, tables, meas, protos, cards } = topicObjects();
+  const { execs, tables, meas, protos, cards } = topicObjects(state, ui);
   const subqs = state.subquestions.filter((s) => s.topicId === ui.topicId);
   const conf = cards.filter((c) => c.audit === "confirm");
   const row = (kind, id, label) => `<label class="ctxpick"><input type="checkbox" class="ch-scope" data-kind="${kind}" data-id="${id}"/> ${esc(label)}</label>`;
@@ -1168,175 +1039,6 @@ function renderChatForm(box) {
     const r = await api.createChat({ topicId: ui.topicId, subquestionId: $("#ch-subq").value || undefined, scope: collectPicks("ch-scope") });
     ui.chatId = r.chatId; await refresh(); setStatus("会话已创建：在中栏开始讨论");
   }));
-}
-
-function snapshotHtml(snap) {
-  return `<details class="mini" open><summary>冻结上下文快照 · ${esc(snap.summary)}</summary>
-    <p class="hint">目的：${esc(snap.purpose)}<br/>模型：${esc(snap.model)} · ${esc(fmtTime(snap.at))}<br/>hash：${esc(snap.hash)}</p>
-    ${snap.fragments.map((f, i) => `<details class="mini"><summary>碎片 ${i + 1} · ${esc(f.label)} · ${esc(humanVer(f.version))} · ${f.ref.kind}:${f.ref.id}</summary><pre>${esc(deIso(humanVer(f.excerpt)))}</pre></details>`).join("")}
-  </details>`;
-}
-
-function contextMapHtml(t) {
-  const q = t.subquestionId ? state.subquestions.find((x) => x.id === t.subquestionId) : null;
-  const refOpen = (r) => {
-    if (r.kind === "table") return ` <button class="tbl-open" data-tid="${r.id}">查看表格</button>`;
-    if (r.kind === "measurement") {
-      const mr = state.measurements.find((x) => x.id === r.id);
-      const tb = state.tables.find((x) => x.assetId === r.id) || (mr?.cellRef ? state.tables.find((t) => t.id === mr.cellRef.tableId) : null);
-      return tb ? ` <button class="tbl-open" data-tid="${tb.id}">查看表格</button>` : ` <span class="hint">（无关联数据表）</span>`;
-    }
-    return "";
-  };
-  const inc = t.optional.map((o, i) => ({ o, i })).filter(({ o }) => o.included);
-  const others = t.optional.map((o, i) => ({ o, i })).filter(({ o }) => !o.included);
-  const cand = ({ o, i }) => `<li><label><input type="checkbox" class="cand-toggle" data-idx="${i}" ${o.included ? "checked" : ""}/> ${esc(refLabel(o.ref))}</label>${refOpen(o.ref)}</li>`;
-  return `
-    <p><b>课题「${esc(topicName(t.topicId) ?? t.topicId)}」${q ? ` → 子问题「${esc(q.question)}」` : ""}</b></p>
-    <p class="hint">必选（锁定，不可取消）：</p>
-    <ul>${t.core.map((r) => `<li>🔒 ${esc(refLabel(r))}${refOpen(r)}</li>`).join("") || `<li class="hint">无</li>`}</ul>
-    <p class="hint">默认已选（可取消）：</p>
-    ${inc.length ? `<ul>${inc.map(cand).join("")}</ul>` : `<p class="hint">无。</p>`}
-    ${others.length ? `<details class="mini"><summary>其他可选（${others.length}，折叠）</summary><ul>${others.map(cand).join("")}</ul></details>` : ""}
-    ${t.optional.length ? `<button id="cand-save">保存候选选择</button>` : `<p class="hint">无候选。</p>`}
-    ${t.snapshot ? snapshotHtml(t.snapshot) : ""}`;
-}
-
-const REPORT_NATURES = [["observation", "观察"], ["hypothesis", "假设"], ["interpretation", "解释"], ["to_verify", "待验证"], ["human_judgment", "人工判断"]];
-const natureLabel = (n) => (REPORT_NATURES.find(([k]) => k === n)?.[1] ?? n);
-const refDisplay = (r) => r.version ? `${r.label}（${humanVer(r.version)}）` : r.label;
-
-/** 触发浏览器下载（本地服务带 content-disposition）。 */
-function download(path) {
-  const a = document.createElement("a");
-  a.href = path; a.download = ""; document.body.append(a); a.click(); a.remove();
-}
-
-function blockRowHtml(b, i) {
-  return `<div class="reprow" data-bid="${esc(b.id)}" data-refs="${esc(JSON.stringify(b.refs ?? []))}">
-    <div class="repmove"><button class="rep-up" title="上移">↑</button><button class="rep-down" title="下移">↓</button><span class="hint">#${i + 1}</span></div>
-    <select class="rep-nature">${REPORT_NATURES.map(([k, l]) => `<option value="${k}" ${k === b.nature ? "selected" : ""}>${l}</option>`).join("")}</select>
-    <textarea class="rep-text" rows="2">${esc(b.text)}</textarea>
-    <input class="rep-refs" value="${esc((b.refs ?? []).map((r) => r.label).join("；"))}" placeholder="引用（分号分隔）"/>
-    <div class="reprowactions">
-      <span class="badge ${b.draft ? "warn" : "confirm"}">${b.draft ? "AI 草稿待确认" : "已确认"}</span>
-      ${b.draft ? `<button class="rep-confirm">确认</button>` : ""}
-      <button class="rep-del">删除</button>
-    </div>
-    ${(b.refs ?? []).filter((r) => r.kind !== "note").length ? `<div class="refchips">${b.refs.filter((r) => r.kind !== "note").map((r) => `<span class="refchip">${esc(refDisplay(r))} <button class="ref-back" data-kind="${esc(r.kind)}" data-id="${esc(r.id)}">回查</button></span>`).join("")}</div>` : ""}
-    <div class="refnet-body"></div></div>`;
-}
-
-function reportHtml(r) {
-  return `<details class="mini rep" data-repid="${r.id}" ${r.id === ui.reportId ? "open" : ""}><summary>分析初稿 r${r.revision} · 钉住 ${r.pinned.resultIds.length} 结果${r.pinned.snapshotHash ? ` · 快照 ${r.pinned.snapshotHash.slice(0, 8)}…` : ""}</summary>
-    <p class="hint">块＝性质＋固定引用；改动→预览→新版本。</p>
-    <div class="repblocks">${r.blocks.map(blockRowHtml).join("") || `<p class="hint">尚无块。</p>`}</div>
-    <div class="repaddrow">
-      <select class="rep-newnature">${REPORT_NATURES.map(([k, l]) => `<option value="${k}">${l}</option>`).join("")}</select>
-      <button class="rep-add">＋ 添加块</button>
-      <button class="rep-draft">由任务生成草稿</button>
-    </div>
-    <input class="rep-reason" placeholder="修订原因（必填，留历史）"/>
-    <div class="repaddrow">
-      <button class="primary rep-preview">预览改动</button>
-      <button class="rep-docx" data-repid="${r.id}">Word 导出</button>
-      <button class="rep-trace" data-repid="${r.id}">追溯包</button>
-    </div>
-    <div class="rep-diff"></div>
-    ${r.history.length ? `<details class="mini"><summary>历史（${r.history.length}）</summary>${r.history.map((h) => `<p class="hint">${fmtVersion(h.revision)} · ${esc(fmtTime(h.at))} · ${esc(h.reason)}</p>`).join("")}</details>` : ""}
-  </details>`;
-}
-
-function collectReportBlocks(repEl) {
-  return [...repEl.querySelectorAll(".repblocks .reprow")].map((row) => {
-    let refs = [];
-    try { refs = JSON.parse(row.dataset.refs || "[]"); } catch {}
-    const labels = row.querySelector(".rep-refs").value.split(/[;；]/).map((s) => s.trim()).filter(Boolean);
-    const outRefs = labels.map((lab, j) => refs[j] ? { ...refs[j], label: lab } : { kind: "note", id: "", version: "", label: lab });
-    return { id: row.dataset.bid || undefined, nature: row.querySelector(".rep-nature").value, text: row.querySelector(".rep-text").value.trim(), refs: outRefs };
-  });
-}
-
-function renderBlockDiff(el, diff, reportId) {
-  if (diff.same) { el.innerHTML = `<p class="hint">未检测到块改动。</p>`; return; }
-  const part = (label, arr, fmt) => arr.length ? `<p class="hint"><b>${label}</b> ${arr.map(fmt).join("；")}</p>` : "";
-  el.innerHTML = `<div class="diffbox">
-    ${part("新增", diff.added, (a) => `[${natureLabel(a.nature)}] ${esc(a.text)}`)}
-    ${part("删除", diff.removed, (a) => `[${natureLabel(a.nature)}] ${esc(a.text)}`)}
-    ${part("修改", diff.changed, (c) => `[${natureLabel(c.after.nature)}] ${esc(c.text)}（${c.fields.join("/")}）`)}
-    ${part("顺序", diff.reordered, (o) => `#${o.from + 1}→#${o.to + 1}`)}
-    <button class="primary rep-accept" data-repid="${reportId}" data-rev="${diff.baseRevision}">接受并保存为新版本</button></div>`;
-}
-
-function resultHtml(r) {
-  const atts = r.assetIds.map((id) => state.assets.find((a) => a.id === id)).filter(Boolean);
-  return `<details class="mini"><summary>结果 · ${esc(r.method)} ${r.reproducible ? `<span class="badge confirm">可复现</span>` : `<span class="badge warn">不可复现</span>`} · r${r.revision}</summary>
-    <p>参数：${esc(r.params) || "（未填）"}</p>
-    ${r.adoptedRecommendation ? `<p class="hint">采纳推荐：${esc(r.adoptedRecommendation)}</p>` : r.reason ? `<p class="hint">不采纳理由：${esc(r.reason)}</p>` : ""}
-    ${r.note ? `<p class="hint">备注：${esc(r.note)}</p>` : ""}
-    ${r.missing.length ? `<p class="hint">缺项：${r.missing.map(esc).join("；")}</p>` : ""}
-    <p class="hint">附件：${atts.map((a) => esc(a.name)).join("、") || "无"}</p>
-    <details class="mini"><summary>修订结果（留历史）</summary>
-      <div class="resedit" data-rid="${r.id}">
-        <input data-field="method" value="${esc(r.method)}"/>
-        <textarea data-field="params" rows="2">${esc(r.params)}</textarea>
-        <input data-field="note" value="${esc(r.note)}" placeholder="备注"/>
-        <input data-field="reason" placeholder="修订原因（必填）"/>
-        <button class="res-edit-save">保存修订</button>
-      </div></details>
-    ${r.history.length ? `<details class="mini"><summary>历史（${r.history.length}）</summary>${r.history.map((h) => `<p class="hint">${fmtVersion(h.revision)} · ${esc(fmtTime(h.at))} · ${esc(h.reason)} · 方法 ${esc(h.method)}</p>`).join("")}</details>` : ""}
-  </details>`;
-}
-
-/** B5：核心数据在快照之后是否被更新（用于「需要复核」提示）。 */
-function analysisUpstreamChanged(t) {
-  if (!t.snapshot) return false;
-  const at = t.snapshot.at;
-  const changedAfter = (obj) => { const h = obj?.history ?? []; const last = h.length ? h[h.length - 1].at : (obj?.createdAt ?? ""); return last > at; };
-  for (const r of t.core) {
-    if (r.kind === "measurement") { const m = state.measurements.find((x) => x.id === r.id); if (m && changedAfter(m)) return true; }
-    if (r.kind === "table") { const tb = state.tables.find((x) => x.id === r.id); if (tb && changedAfter(tb)) return true; }
-    if (r.kind === "execution") { const e = state.executions.find((x) => x.id === r.id); if (e && (e.updatedAt ?? "") > at) return true; }
-  }
-  return false;
-}
-
-function analysisRightHtml() {
-  const t = currentTask();
-  if (!t) return `<p class="hint">选择分析任务后：这里做推荐、提交结果、写分析初稿。</p>`;
-  const rec = t.recommendation;
-  const results = t.resultIds.map((id) => state.analysisResults.find((r) => r.id === id)).filter(Boolean);
-  const reps = state.reports.filter((r) => r.taskId === t.id);
-  let h = "";
-  if (t.snapshot && ui.suppressRecheck !== t.id && analysisUpstreamChanged(t)) {
-    h += `<div class="item recheck"><div class="meta">需要复核</div><p class="hint">核心数据在快照之后有更新，当前分析基于旧快照。</p>
-      <div class="row"><button class="primary" id="an-recheck">重新推荐（新快照）</button><button id="an-keep">保留旧快照</button></div></div>`;
-  }
-  h += `<details class="mini" open><summary>方法推荐（含验收项；预期产物≠预设结论）</summary>
-    <textarea id="an-purpose" rows="2" placeholder="研究目的（必填，如：估计 pH3 下酶活半衰期并比较 pH5）"></textarea>
-    <button class="primary" id="an-recommend">${rec ? "重新推荐（生成新快照）" : "发起方法推荐"}</button>`;
-  if (rec) {
-    h += rec.methods.map((m) => `<div class="item"><b>${esc(m.name)}</b> · 软件：${esc(m.software)}<p>${esc(m.rationale)}</p>
-      <p class="hint">预期产物：${m.expectedArtifacts.map(esc).join("；") || "（未列）"}</p>
-      <p class="hint">验收项：${m.acceptanceItems.map(esc).join("；") || "（未列）"}</p></div>`).join("");
-    if (rec.unknowns.length) h += `<p class="hint">未知/待补：${rec.unknowns.map(esc).join("；")}</p>`;
-    h += `<details class="mini"><summary>AI 原始返回</summary><pre>${esc(rec.raw)}</pre></details>`;
-  }
-  h += `</details>`;
-  h += `<details class="mini" ${results.length ? "" : "open"}><summary>提交处理结果（Origin/MATLAB 等外部工具允许）</summary>
-    <input id="res-method" placeholder="实际使用的方法（如 Origin 双指数衰减拟合）"/>
-    <textarea id="res-params" rows="2" placeholder="关键参数（拟合区间/初值/软件版本等；缺参数不标可复现）"></textarea>
-    <select id="res-adopt"><option value="">未采纳推荐（须填理由）</option>${(rec?.methods ?? []).map((m) => `<option value="${esc(m.name)}">采纳：${esc(m.name)}</option>`).join("")}</select>
-    <input id="res-reason" placeholder="不采纳理由（简短）"/>
-    <input id="res-note" placeholder="备注（可选）"/>
-    <input id="res-files" type="file" multiple accept=".csv,.tsv,.json,.txt,.md,.png,.jpg,.jpeg,.webp"/>
-    <p class="hint">只有图/脚本也可提交，但不标「可复现」；附数据文件（csv/tsv/json/txt/md）＋关键参数才可复现。</p>
-    <button class="primary" id="res-submit">提交结果</button></details>`;
-  h += results.map(resultHtml).join("");
-  h += `<details class="mini" open><summary>分析初稿（有序块 · 性质 · 固定引用 · 仅供参考，非最终结论）</summary>
-    <button id="rep-create">新建初稿（钉住结果）</button>
-    ${reps.map(reportHtml).join("") || `<p class="hint">暂无报告。</p>`}</details>`;
-  return h;
 }
 
 function chatHtml(c) {
@@ -1363,7 +1065,7 @@ function chatRightHtml() {
   if (!c) return `<p class="hint">选择会话后：这里显示范围、建议采纳与最近一次冻结快照。</p>`;
   const q = c.subquestionId ? state.subquestions.find((x) => x.id === c.subquestionId) : null;
   let h = `<p><b>范围</b>：课题「${esc(topicName(c.topicId) ?? c.topicId)}」${q ? ` → 子问题「${esc(q.question)}」` : ""}</p>
-    <ul>${c.scope.map((r) => `<li>${esc(refLabel(r))} <span class="hint">${r.kind}:${r.id}</span></li>`).join("") || `<li class="hint">未选对象（仅课题层）。</li>`}</ul>
+    <ul>${c.scope.map((r) => `<li>${esc(refLabel(state, r))} <span class="hint">${r.kind}:${r.id}</span></li>`).join("") || `<li class="hint">未选对象（仅课题层）。</li>`}</ul>
     <p class="hint"><b>建议采纳</b>：讨论不修改对象；逐条预览＋人工确认后才写入目标。</p>`;
   const proposals = c.messages.flatMap((m) => m.proposals.map((p, i) => ({ m, p, i })));
   h += proposals.length
@@ -1479,51 +1181,6 @@ document.addEventListener("click", (ev) => {
   if (ev.target.classList.contains("perr-detail")) { const d = bar.querySelector(".perr-detail-body"); if (d) d.hidden = !d.hidden; return; }
   if (ev.target.classList.contains("perr-retry")) { const r = errors[panel]?.retry; clearError(panel); if (r) r(); return; }
 });
-// 领域知识页（B2）：卡片审阅动作
-async function kzAct(fn, msg) {
-  try { await fn(); ui.dirty = false; await refresh(); setStatus(msg); }
-  catch (e) { const h = humanError(e); setError("mid", { panel: "mid", message: h.message, detail: h.detail, retry: null }); }
-}
-document.addEventListener("click", (ev) => {
-  const t = ev.target;
-  if (t.classList.contains("kztab")) { ui.kzTab = t.dataset.kztab; ui.cardOpen = null; renderMiddle(); return; }
-  if (t.classList.contains("kz-open")) { ui.cardOpen = ui.cardOpen === t.dataset.cid ? null : t.dataset.cid; renderMiddle(); return; }
-  if (t.classList.contains("kzq-item")) { ui.kzTab = "todo"; ui.cardOpen = t.dataset.cid; renderMiddle(); return; }
-  if (t.classList.contains("kz-locate")) { ui.highlight = t.dataset.quote || null; renderShell(); const m = document.querySelector("#kz-text mark"); if (m) m.scrollIntoView({ block: "center" }); return; }
-  if (t.classList.contains("kzq-cancel")) { if (ui.kzJob?.id) api.cancelKnowledgeJob(ui.kzJob.id).then(() => setStatus("已请求取消：保留已出内容")).catch(() => {}); return; }
-  if (t.classList.contains("kzq-pause")) { if (ui.kzJob?.id) api.pauseKnowledgeJob(ui.kzJob.id).then(() => { ui.kzJob = { ...ui.kzJob, status: "paused" }; renderRight(); setStatus("已请求暂停：保留已出内容"); }).catch(() => {}); return; }
-  if (t.classList.contains("kzq-resume")) {
-    if (ui.kzJob?.id) { ui.kzJob = { ...ui.kzJob, status: "running" }; renderRight();
-      api.resumeKnowledgeJob(ui.kzJob.id).then(() => pollKnowledgeJob(ui.kzJob.id)).then((job) => refreshAfterJob().then(() => setStatus(job.status === "done" ? job.message : "已暂停"))).catch(() => {}); }
-    return;
-  }
-  if (t.classList.contains("kzq-retry")) {
-    const idx = Number(t.dataset.index);
-    if (ui.kzJob?.id) { t.disabled = true; api.retryKnowledgeChunk(ui.kzJob.id, idx)
-      .then(async (r) => { await refreshAfterJob(); ui.kzJob = { ...ui.kzJob, chunkErrors: (ui.kzJob.chunkErrors ?? []).filter((e) => e.index !== idx), created: ui.kzJob.created + (r.created ?? 0) }; renderRight(); setStatus(`第 ${idx + 1} 段已重试（新增 ${r.created} 张）`); })
-      .catch((e) => { const h = humanError(e); setError("mid", { panel: "mid", message: h.message, detail: h.detail, retry: null }); t.disabled = false; }); }
-    return;
-  }
-  const cid = t.dataset.cid;
-  if (!cid) return;
-  if (t.classList.contains("kz-cand")) { kzAct(() => api.reviewCard(cid, { audit: "confirm" }), "已入候选"); return; }
-  if (t.classList.contains("kz-skip")) { kzAct(() => api.reviewCard(cid, { audit: "skip" }), "已跳过（可回来）"); return; }
-  if (t.classList.contains("kz-excl")) { const inp = t.closest(".kzcard")?.querySelector(".kz-exclr"); const reason = (inp?.value ?? "").trim(); kzAct(() => api.reviewCard(cid, reason ? { audit: "exclude", reason } : { audit: "exclude" }), "已排除"); return; }
-  if (t.classList.contains("kz-undo")) { kzAct(() => api.reviewCard(cid, { audit: "unreviewed" }), "已撤回（回到待审）"); return; }
-  if (t.classList.contains("kz-skipall")) {
-    if (!confirm("一键全部跳过：为时间紧准备，不推荐。确定跳过本页所有待审卡？")) return;
-    const ids = state.cards.filter((c) => (ui.paperId ? c.paperId === ui.paperId : true) && ["unreviewed", "need_info"].includes(c.audit)).map((c) => c.id);
-    kzAct(async () => { for (const id of ids) await api.reviewCard(id, { audit: "skip" }); }, `已跳过 ${ids.length} 张`);
-    return;
-  }
-});
-document.addEventListener("change", (ev) => {
-  if (ev.target.id === "kz-paper") { ui.paperId = ev.target.value; ui.assetId = null; ui.cardOpen = null; ui.highlight = null; ui.kzJob = null; clearAllErrors(); renderAll(); return; }
-  if (ev.target.classList.contains("kz-imp")) { const cid = ev.target.dataset.cid; kzAct(() => api.reviewCard(cid, { importance: ev.target.value || null }), "重要程度已记"); }
-});
-document.addEventListener("focusout", (ev) => {
-  if (ev.target.classList.contains("kz-note")) { const cid = ev.target.dataset.cid; kzAct(() => api.reviewCard(cid, { note: ev.target.value }), "备注已记"); }
-});
 // 实验图（中栏）：点节点选择步骤 + 图下固定区编辑（保存追加新快照）
 document.addEventListener("click", (ev) => {
   const t = ev.target;
@@ -1608,13 +1265,6 @@ document.addEventListener("click", (ev) => {
       ui.dirty = false; await refresh(); setStatus("步骤已记录（实际值入本次执行，不改源方案）");
     }); return;
   }
-  // B5 上游复核：重算 / 保留旧快照
-  if (t.id === "an-recheck") {
-    const task = currentTask(); if (!task?.snapshot) return;
-    runJob(t, "重新推荐", async () => { const r = await api.recommendMethods(task.id, task.snapshot.purpose); await pollJob(r.jobId, "方法推荐"); ui.suppressRecheck = null; await refreshAfterJob(); setStatus("已按新快照重新推荐"); });
-    return;
-  }
-  if (t.id === "an-keep") { const task = currentTask(); ui.suppressRecheck = task?.id ?? null; renderRight(); setStatus("保留旧快照（已忽略复核提示）"); return; }
   const smpRename = t.closest(".smp-rename");
   if (smpRename) {
     const row = smpRename.closest(".smprow"); const id = row.dataset.id; const name = row.querySelector(".smp-name").value.trim();
@@ -1671,14 +1321,6 @@ $("#material-list").addEventListener("click", (ev) => {
 });
 $("#mid-content").addEventListener("click", async (ev) => {
   if (ev.target.classList.contains("tbl-open")) { openTableMax(ev.target.dataset.tid); return; }
-  if (ev.target.id === "cand-save") {
-    const t = currentTask(); if (!t) return;
-    await runBusy(ev.target, "保存候选", async () => {
-      const optional = [...$$("#mid-content .cand-toggle")].map((cb) => ({ ref: t.optional[Number(cb.dataset.idx)].ref, included: cb.checked }));
-      await api.setTaskCandidates(t.id, optional);
-      await refresh(); setStatus("候选选择已保存（旧快照不受影响）");
-    }); return;
-  }
   if (ev.target.id === "chat-send") {
     const c = currentChat(); if (!c) return;
     const text = $("#chat-text").value.trim();
@@ -1734,119 +1376,6 @@ $("#right-content").addEventListener("click", async (ev) => {
   const val = (f) => item?.querySelector(`[data-field="${f}"]`)?.value ?? "";
   const splitList = (s) => String(s ?? "").split(/[,，]/).map((x) => x.trim()).filter(Boolean);
   try {
-    // ── 5E：推荐 / 结果 / 报告 / 采纳 ──
-    if (ev.target.id === "an-recommend") {
-      const t = currentTask(); if (!t) return;
-      const purpose = $("#an-purpose").value.trim();
-      if (!purpose) { notify("right", "推荐须写明研究目的。"); return; }
-      await runJob(ev.target, "方法推荐", async () => {
-        const r = await api.recommendMethods(t.id, purpose);
-        setStatus(`快照已冻结 ${r.snapshotHash.slice(0, 12)}…`);
-        await pollJob(r.jobId, "方法推荐");
-        await refreshAfterJob(); setStatus("方法推荐完成（含验收项）");
-      }); return;
-    }
-    if (ev.target.id === "res-submit") {
-      const t = currentTask(); if (!t) return;
-      await runBusy(ev.target, "提交结果", async () => {
-        const attachments = [];
-        for (const f of [...($("#res-files").files ?? [])]) {
-          const content = /^image\/(png|jpeg|webp)$/.test(f.type)
-            ? await new Promise((res, rej) => { const rd = new FileReader(); rd.onload = () => res(rd.result); rd.onerror = rej; rd.readAsDataURL(f); })
-            : await readTextFile(f);
-          attachments.push({ name: f.name, content });
-        }
-        const r = await api.submitResult(t.id, { method: $("#res-method").value, params: $("#res-params").value, reason: $("#res-reason").value, note: $("#res-note").value, adoptedRecommendation: $("#res-adopt").value || undefined, attachments });
-        await refresh(); setStatus(r.reproducible ? "结果已提交：可复现" : `结果已提交（不可复现：${r.missing.join("；")}）`);
-      }); return;
-    }
-    if (ev.target.classList.contains("res-edit-save")) {
-      const box = ev.target.closest(".resedit"); const rid = box.dataset.rid;
-      const before = state.analysisResults.find((r) => r.id === rid);
-      const v = (f) => box.querySelector(`[data-field="${f}"]`).value;
-      await runBusy(ev.target, "修订结果", async () => {
-        await api.editResult(rid, { method: v("method"), params: v("params"), note: v("note"), reason: v("reason") });
-        const fields = [];
-        if (before) { if (v("params") !== before.params) fields.push("params"); if (v("method") !== before.method) fields.push("method"); }
-        ui.dirty = false; await refresh(); setStatus("结果已修订（留历史，可复现性重算）");
-        await noteChangeHits("result", rid, fields);
-      }); return;
-    }
-    if (ev.target.id === "rep-create") {
-      const t = currentTask();
-      await runBusy(ev.target, "新建报告", async () => {
-        const r = await api.createReport(ui.topicId || t?.topicId, t?.id);
-        ui.reportId = r.reportId; await refresh(); setStatus("初稿已建（钉住结果与快照）");
-      }); return;
-    }
-    if (ev.target.classList.contains("rep-add")) {
-      const box = ev.target.closest(".rep");
-      const nature = box.querySelector(".rep-newnature").value;
-      const row = document.createElement("div");
-      row.className = "reprow"; row.dataset.bid = ""; row.dataset.refs = "[]";
-      row.innerHTML = blockRowHtml({ id: "", nature, text: "", refs: [], draft: false }, box.querySelectorAll(".repblocks .reprow").length);
-      box.querySelector(".repblocks").append(row);
-      ui.dirty = true; return;
-    }
-    if (ev.target.classList.contains("rep-del")) { ev.target.closest(".reprow").remove(); ui.dirty = true; return; }
-    if (ev.target.classList.contains("rep-up") || ev.target.classList.contains("rep-down")) {
-      const row = ev.target.closest(".reprow"); const parent = row.parentElement;
-      const sib = ev.target.classList.contains("rep-up") ? row.previousElementSibling : row.nextElementSibling;
-      if (sib) { ev.target.classList.contains("rep-up") ? parent.insertBefore(row, sib) : parent.insertBefore(sib, row); ui.dirty = true; }
-      return;
-    }
-    if (ev.target.classList.contains("ref-back")) {
-      const body = ev.target.closest(".reprow").querySelector(".refnet-body");
-      const kind = ev.target.dataset.kind, id = ev.target.dataset.id;
-      await runJob(ev.target, "来源回查", async () => {
-        const r = await api.backtrace(kind, id, "both");
-        const byKind = {};
-        for (const n of r.nodes) (byKind[n.kind] ??= []).push(n.label);
-        body.innerHTML = `<div class="diffbox">${Object.entries(byKind).map(([k, arr]) => `<p class="hint"><b>${esc(k)}</b> ${arr.map(esc).join("、")}</p>`).join("")}${r.pending.length ? `<p class="hint">缺项：${r.pending.map(esc).join("；")}</p>` : ""}</div>`;
-        setStatus(`回查 ${r.nodes.length} 个节点`);
-      }); return;
-    }
-    if (ev.target.classList.contains("rep-docx")) { download(`/api/reports/${encodeURIComponent(ev.target.dataset.repid)}/export.docx`); setStatus("Word 已导出（快照，外部编辑不回流）"); return; }
-    if (ev.target.classList.contains("rep-trace")) { download(`/api/reports/${encodeURIComponent(ev.target.dataset.repid)}/traceability.zip`); setStatus("追溯包已导出（含版本索引/许可过滤/manifest）"); return; }
-    if (ev.target.classList.contains("rep-confirm")) {
-      const box = ev.target.closest(".rep"); const repId = box.dataset.repid;
-      const bid = ev.target.closest(".reprow").dataset.bid;
-      await runBusy(ev.target, "确认草稿块", async () => {
-        await api.confirmReportBlock(repId, bid, "已人工核对");
-        await refresh(); setStatus("AI 草稿块已人工确认");
-      }); return;
-    }
-    if (ev.target.classList.contains("rep-draft")) {
-      const box = ev.target.closest(".rep"); const repId = box.dataset.repid;
-      await runBusy(ev.target, "生成草稿", async () => {
-        const r = await api.draftReport(repId);
-        const holder = box.querySelector(".repblocks");
-        const base = holder.querySelectorAll(".reprow").length;
-        (r.blocks ?? []).forEach((b, i) => { const row = document.createElement("div"); row.className = "reprow"; row.dataset.bid = ""; row.dataset.refs = esc(JSON.stringify(b.refs ?? [])); row.innerHTML = blockRowHtml({ ...b, id: "" }, base + i); holder.append(row); });
-        ui.dirty = true; setStatus(`草稿块 ${r.blocks.length} 个已入编辑器（未保存，须预览→接受）`);
-      }); return;
-    }
-    if (ev.target.classList.contains("rep-preview")) {
-      const box = ev.target.closest(".rep"); const repId = box.dataset.repid;
-      let blocks;
-      try { blocks = collectReportBlocks(box); } catch (e) { notify("right", String(e.message ?? e)); return; }
-      if (!blocks.length) { notify("right", "至少需要一个块。"); return; }
-      await runBusy(ev.target, "预览改动", async () => {
-        const r = await api.previewReport(repId, blocks);
-        renderBlockDiff(box.querySelector(".rep-diff"), r.diff, repId);
-        setStatus(r.diff.same ? "未检测到改动。" : "已生成块级 diff，确认后接受为新版本。");
-      }); return;
-    }
-    if (ev.target.classList.contains("rep-accept")) {
-      const box = ev.target.closest(".rep"); const repId = ev.target.dataset.repid; const baseRevision = Number(ev.target.dataset.rev);
-      const reason = box.querySelector(".rep-reason").value.trim();
-      if (!reason) { notify("right", "报告修订必须填写原因（留历史）。"); return; }
-      const blocks = collectReportBlocks(box);
-      await runBusy(ev.target, "接受改动", async () => {
-        const r = await api.applyReport(repId, baseRevision, blocks, reason);
-        ui.reportId = repId; ui.dirty = false; await refresh(); setStatus(`改动已接受：新版本 r${r.revision}（留历史）`);
-      }); return;
-    }
     if (ev.target.classList.contains("chat-adopt")) {
       const c = currentChat(); if (!c) return;
       await runBusy(ev.target, "采纳建议", async () => {
@@ -2269,6 +1798,16 @@ $("#ai-models-list").addEventListener("click", (ev) => {
   if (!b) return;
   $("#ai-model").value = b.dataset.model;
   $("#ai-msg").textContent = `已填入模型名：${b.dataset.model}（点「保存配置」生效）`;
+});
+
+// 领域知识积累 / 数据处理与分析 两页的渲染与事件（拆分到 lib/pages/*，行为不变）。
+bindKnowledge({
+  getState: () => state, ui, api, $, $$, refresh, refreshAfterJob, renderAll, renderShell, renderMiddle, renderRight,
+  setStatus, setError, humanError, runBusy, runJob, notify, pollJob, noteChangeHits, clearAllErrors,
+});
+bindAnalysis({
+  getState: () => state, ui, api, $, $$, refresh, refreshAfterJob, renderAll, renderShell, renderMiddle, renderRight,
+  setStatus, setError, humanError, runBusy, runJob, notify, pollJob, noteChangeHits, clearAllErrors,
 });
 
 refreshAiState().catch(() => {});

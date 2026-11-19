@@ -8,8 +8,8 @@ import assert from "node:assert/strict";
 import {
   topbarTopicHtml, emptyTopicGuideHtml, navHtml, panelErrorHtml, sidebarListHtml,
   topicOverviewHtml, topicTodosHtml, subqBlockHtml, nextStepHtml,
-  knowledgeLeftHtml, knowledgeWorkspaceHtml, knowledgeQueueHtml,
 } from "../public/lib/views.js";
+import { knowledgeLeftHtml, knowledgeWorkspaceHtml, knowledgeQueueHtml } from "../public/lib/pages/knowledge.js";
 import { fmtTime, fmtEnum, fmtVersion, fmtNameOnce } from "../public/lib/format.js";
 
 const ISO = "2026-11-18T12:35:11.046Z";
