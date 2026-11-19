@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>LOCUS · 科研上下文工作台</title>
   <link rel="stylesheet" href="/styles.css" />
-  <meta name="locus-note" content="本地开发版：左栏 导航/本页列表 · 中栏 主工作区 · 右栏 规范识别结果；AI 配置仅进程内存" />
+  <meta name="locus-note" content="本地开发版：左栏 导航/本页列表 · 中栏 主工作区 · 右栏 规范识别结果；模型设置在左栏底部（保存后本机留存，不入库）" />
 </head>
 <body>
   <header class="topbar">
@@ -14,31 +14,22 @@
     <div class="status" id="status">连接中…</div>
   </header>
 
-  <details class="aiconfig" id="aiconfig">
-    <summary><strong>AI 配置</strong> <span class="hint" id="ai-state">读取中…</span></summary>
-    <div class="row">
-      <input id="ai-base" placeholder="接口地址 baseUrl" />
-      <input id="ai-model" placeholder="模型名" />
-      <input id="ai-key" type="password" placeholder="Key（仅进程内存，不落盘/日志/Git）" />
-      <input id="ai-timeout" type="number" min="5" max="600" placeholder="超时(秒) 默认120" />
-      <button class="primary" id="ai-save">保存配置</button>
-      <button id="ai-test">测试连接</button>
-      <button id="ai-clear">清除</button>
-    </div>
-    <p class="hint" id="ai-msg"></p>
-  </details>
-
   <div class="app">
     <!-- 领域知识页专用：窄导航条（可点开） -->
     <nav class="navrail" id="navrail" hidden></nav>
     <!-- 左：导航（上层）＋ 本页列表（下层）；领域知识页切为原文区 -->
     <aside class="pane left">
-      <nav class="nav" id="nav"></nav>
-      <div id="err-left"></div>
-      <div id="kz-left" hidden></div>
-      <div id="sec-materials">
-        <div class="pane-title" id="materials-title">材料</div>
-        <div class="materials" id="material-list"></div>
+      <div class="leftscroll">
+        <nav class="nav" id="nav"></nav>
+        <div id="err-left"></div>
+        <div id="kz-left" hidden></div>
+        <div id="sec-materials">
+          <div class="pane-title" id="materials-title">材料</div>
+          <div class="materials" id="material-list"></div>
+        </div>
+      </div>
+      <div class="leftfoot">
+        <button id="ai-open" class="modelbtn">模型设置 <span class="hint" id="ai-state">读取中…</span></button>
       </div>
     </aside>
 
@@ -69,6 +60,24 @@
     <div class="drawer-head"><strong id="drawer-title">修订历史</strong><button id="drawer-close">关闭</button></div>
     <div class="drawer-meta" id="drawer-meta"></div>
     <div id="drawer-body"></div>
+  </aside>
+
+  <!-- 模型设置（左下角入口打开）：保存后本机留存（数据目录 ai-config.json），不入库 -->
+  <aside class="drawer" id="aipanel" hidden>
+    <div class="drawer-head"><strong>模型设置</strong><button id="ai-close">关闭</button></div>
+    <div class="drawer-meta" id="ai-state-2">读取中…</div>
+    <div class="row"><input id="ai-base" placeholder="接口地址 baseUrl" /></div>
+    <div class="row"><input id="ai-model" placeholder="模型名" /></div>
+    <div class="row"><input id="ai-key" type="password" placeholder="Key（保存后本机留存，不入库）" /></div>
+    <div class="row"><input id="ai-timeout" type="number" min="5" max="600" placeholder="超时(秒) 默认120" /></div>
+    <div class="row">
+      <button class="primary" id="ai-save">保存配置</button>
+      <button id="ai-test">测试连接</button>
+      <button id="ai-models">检测可用模型</button>
+      <button id="ai-clear">清除</button>
+    </div>
+    <p class="hint" id="ai-msg"></p>
+    <div id="ai-models-list" hidden></div>
   </aside>
 
   <script type="module" src="/app.js"></script>

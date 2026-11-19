@@ -48,3 +48,4 @@
 | `propagate({changeKind, target})` | 纯函数 → 受影响集合 + 复核类别 | LIN03/I06 |
 | `backtrace(originKind)` | 纯函数 → 该类型的回查链原型 | 回查网络 |
 | `ImpactAssessment` 状态机 | `transition(state,event)` | 03 Edit Impact |
+| AI 配置/模型 | `GET /api/ai/status`、`POST /api/ai/config`（保存即落盘本机 `ai-config.json`）、`DELETE /api/ai/config`（删盘）、`POST /api/ai/test`、`POST /api/ai/models`（可用模型列表 + 联通性） | ADR-0024；Key 不入 Git/日志/导出 |

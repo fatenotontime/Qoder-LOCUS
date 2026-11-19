@@ -39,3 +39,12 @@ export function computeLanes(steps) {
 export function timeLabel(offset, approx) {
   return `${approx ? "t≥" : "t≈"}${offset}min`;
 }
+
+/** 时长来源（四类）：规定/计算/估计/未知；旧数据按 estimated/durationMin 推导。 */
+export function durationSourceOf(s) {
+  const src = s && s.durationSource;
+  if (src === "fixed" || src === "estimated" || src === "computed" || src === "unknown") return src;
+  if (s == null || s.durationMin === null || s.durationMin === undefined) return "unknown";
+  if (s.estimated) return "estimated";
+  return "fixed";
+}

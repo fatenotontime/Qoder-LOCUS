@@ -43,11 +43,24 @@ function cleanSteps(steps: unknown): ProtocolStep[] {
     const o = (s ?? {}) as Record<string, unknown>;
     const op = str(o.op);
     if (!op) throw new AppError(422, `第 ${i + 1} 步操作不能为空。`);
-    const d = o.durationMin;
-    const durationMin = d === null || d === undefined || d === "" ? null : Number(d);
-    if (durationMin !== null && (!Number.isFinite(durationMin) || durationMin < 0)) {
+    const rawSrc = str(o.durationSource);
+    const durationSource = (rawSrc === "fixed" || rawSrc === "estimated" || rawSrc === "computed" || rawSrc === "unknown") ? rawSrc : undefined;
+    const numOrNull = (v: unknown): number | null => (v === null || v === undefined || v === "" ? null : Number(v));
+    const amount = numOrNull(o.amount);
+    const ratePerMin = numOrNull(o.ratePerMin);
+    const slackMin = numOrNull(o.slackMin);
+    let durationMin = numOrNull(o.durationMin);
+    // 由量·速率计算：用量 ÷ 速率 → 时长；无法计算则视为未知（不猜）。
+    if (durationSource === "computed") {
+      durationMin = (amount !== null && ratePerMin !== null && Number.isFinite(amount) && Number.isFinite(ratePerMin) && ratePerMin > 0 && amount >= 0)
+        ? Math.round((amount / ratePerMin) * 1000) / 1000
+        : null;
+    } else if (durationMin !== null && (!Number.isFinite(durationMin) || durationMin < 0)) {
       throw new AppError(422, `第 ${i + 1} 步时长须为非负数或留空（未知）。`);
     }
+    // 时长来源收敛：计算未得出/非计算且无时长 → 未知；显式来源优先，否则按 estimated/时长推导。
+    const src: ProtocolStep["durationSource"] =
+      durationMin === null ? "unknown" : (durationSource ?? (o.estimated === true ? "estimated" : "fixed"));
     const params: Record<string, string> = {};
     if (o.params && typeof o.params === "object") {
       for (const [k, v] of Object.entries(o.params as Record<string, unknown>)) params[str(k)] = str(v);
@@ -58,7 +71,11 @@ function cleanSteps(steps: unknown): ProtocolStep[] {
       params,
       note: str(o.note),
       durationMin,
-      estimated: o.estimated === true,
+      estimated: src === "estimated",
+      durationSource: src,
+      amount,
+      ratePerMin,
+      slackMin,
       branch: str(o.branch) || null,
       branchFrom: str(o.branchFrom) || null,
       mergeInto: str(o.mergeInto) || null,
@@ -720,7 +737,7 @@ export function editMeasurement(
 
 // ── 影响分析（ARC06/ARC07：确定性传播独立；AI 分栏；失败≠无影响）──
 
-/** 确定性时间传播：比较前后步骤时长，下游主线步骤起始时间平移；未知时长不计入并说明。 */
+/** 确定性时间传播：比较前后步骤时长，下游主线步骤起始时间平移；等待余量先吸收延迟；未知时长不计入并说明。 */
 export function computeTimeShifts(prev: ProtocolStep[], next: ProtocolStep[]): { timeShifts: ImpactRecord["deterministic"]["timeShifts"]; note: string } {
   const prevById = new Map(prev.map((s) => [s.id, s]));
   const mainNext = next.filter((s) => s.branch === null);
@@ -728,22 +745,31 @@ export function computeTimeShifts(prev: ProtocolStep[], next: ProtocolStep[]): {
   const timeShifts: { stepId: string; op: string; deltaMin: number; newTotalMin: number }[] = [];
   let cum = 0;
   let unknownCount = 0;
+  let absorbedTotal = 0;
   for (const s of mainNext) {
     const before = prevById.get(s.id);
     if (before && before.durationMin !== null && s.durationMin !== null && before.durationMin !== s.durationMin) {
-      const delta = s.durationMin - before.durationMin;
-      cum += delta;
-      timeShifts.push({ stepId: s.id, op: s.op, deltaMin: delta, newTotalMin: total });
+      cum += s.durationMin - before.durationMin;
+      timeShifts.push({ stepId: s.id, op: s.op, deltaMin: cum, newTotalMin: total });
     } else if (cum !== 0) {
       timeShifts.push({ stepId: s.id, op: s.op, deltaMin: cum, newTotalMin: total });
     }
+    // 等待余量：本步之后的累计平移先被其 slack 吸收（种子/提前同理），不顺延其后步骤。
+    const slack = Math.max(0, s.slackMin ?? 0);
+    if (slack > 0 && cum !== 0) {
+      const absorbed = Math.min(Math.abs(cum), slack) * (cum > 0 ? 1 : -1);
+      cum -= absorbed;
+      absorbedTotal += Math.abs(absorbed);
+    }
     if (s.durationMin === null) unknownCount++;
   }
-  const note = timeShifts.length > 0
-    ? `主线总时长（已知部分）变为 ${total} 分钟；${unknownCount > 0 ? `另有 ${unknownCount} 步时长未知，未计入。` : ""}`
-    : unknownCount > 0
-      ? `有 ${unknownCount} 步时长未知，未计入总时长；无已知时长变化。`
-      : "主线步骤时长无变化，无确定性时间传播。";
+  const parts: string[] = [];
+  if (timeShifts.length > 0) parts.push(`主线总时长（已知部分）变为 ${total} 分钟`);
+  if (absorbedTotal > 0) parts.push(`其中 ${absorbedTotal} 分钟被等待余量吸收，未顺延其后`);
+  if (unknownCount > 0) parts.push(`另有 ${unknownCount} 步时长未知，未计入`);
+  const note = parts.length > 0
+    ? `${parts.join("；")}。`
+    : "主线步骤时长无变化，无确定性时间传播。";
   return { timeShifts, note };
 }
 

@@ -2,7 +2,7 @@
 // 左：课题/子问题/材料与导入；中：原始材料（可高亮定位）；右：结构化结果与核对。
 // 防护：所有写操作禁用按钮 + 处理中提示 + 内联错误 + 可重试；离开前脏检查。
 import { api } from "./lib/api.js";
-import { computeLanes, timeLabel } from "./lib/lanes.js";
+import { computeLanes, timeLabel, durationSourceOf } from "./lib/lanes.js";
 import { fmtTime, fmtEnum, fmtVersion, fmtNameOnce } from "./lib/format.js";
 import {
   topbarTopicHtml, emptyTopicGuideHtml, navHtml, panelErrorHtml, sidebarListHtml,
@@ -565,7 +565,8 @@ function fmtSnapshot(s) {
   const L = computeLanes(s.steps);
   const mainById = new Map(L.main.map((m) => [m.step.id, m]));
   for (const st of s.steps) {
-    const dur = st.durationMin === null ? "时长未知" : `${st.durationMin}min${st.estimated ? "（估计）" : ""}`;
+    const dsrc = durationSourceOf(st);
+    const dur = dsrc === "unknown" ? "时长未知" : `${st.durationMin}min${dsrc === "estimated" ? "（估计）" : dsrc === "computed" ? "（由量·速率计算）" : ""}`;
     const branch = st.branch ? `［支路:${st.branch}］` : "";
     if (!st.branch) {
       const m = mainById.get(st.id);
@@ -730,14 +731,14 @@ function renderRecordImport(box) {
 function diagramHtml(p, snap) {
   const L = computeLanes(snap.steps);
   const node = (s, offset, approx) => {
-    const unknown = s.durationMin === null;
-    const bar = unknown
+    const src = durationSourceOf(s);
+    const bar = src === "unknown"
       ? `<span class="dbar unknown" title="时长未知（不按 0）">时长未知</span>`
-      : `<span class="dbar ${s.estimated ? "est" : "fixed"}">${s.durationMin}min${s.estimated ? "·估" : ""}</span>`;
+      : `<span class="dbar ${src === "estimated" ? "est" : src === "computed" ? "computed" : "fixed"}" title="${src === "computed" ? "由量·速率计算" : src === "estimated" ? "估计" : "方案规定"}">${s.durationMin}min${src === "estimated" ? "·估" : src === "computed" ? "·算" : ""}</span>`;
     const op = s.op.length > 16 ? `${s.op.slice(0, 16)}…` : s.op;
     return `<div class="dnode ${ui.stepSel === s.id ? "sel" : ""}" data-step="${s.id}" title="${esc(s.op)}">
       <div class="dop">${esc(op)}</div>
-      <div class="dmeta">${offset !== null ? `<span class="dtime">${timeLabel(offset, approx)}</span>` : ""}${bar}${s.observeEnd ? `<span class="hint">终点:${esc(s.observeEnd)}</span>` : ""}</div>
+      <div class="dmeta">${offset !== null ? `<span class="dtime">${timeLabel(offset, approx)}</span>` : ""}${bar}${s.slackMin ? `<span class="hint">余量:${s.slackMin}min</span>` : ""}${s.observeEnd ? `<span class="hint">终点:${esc(s.observeEnd)}</span>` : ""}</div>
     </div>`;
   };
   // B3：时间等比——列宽按主线各步分钟数；未知/0 用最短基准（≥1）
@@ -758,23 +759,79 @@ function diagramHtml(p, snap) {
       <div class="dlane-nodes">${lane.steps.map((s) => node(s, null, false)).join(`<span class="darrow-h">→</span>`)}</div>
     </div>`;
   });
-  const estCount = snap.steps.filter((s) => s.estimated).length;
-  const unkCount = snap.steps.filter((s) => s.durationMin === null).length;
-  html += `</div><p class="hint">横轴：时间（等比，按各步分钟数；未知/未计时按最短基准）；纵轴：线程／泳道。虚线＝估计或时长未知${unkCount ? `（未知 ${unkCount} 步不按 0，其后为下界）` : ""}${estCount ? `（估计 ${estCount} 步）` : ""}；已知主线 ${L.totalKnown}min。</p>`;
+  const estCount = snap.steps.filter((s) => durationSourceOf(s) === "estimated").length;
+  const compCount = snap.steps.filter((s) => durationSourceOf(s) === "computed").length;
+  const unkCount = snap.steps.filter((s) => durationSourceOf(s) === "unknown").length;
+  html += `</div><p class="hint">横轴：时间（等比，按各步分钟数；未知/未计时按最短基准）；纵轴：线程／泳道。虚线＝估计或时长未知${unkCount ? `（未知 ${unkCount} 步不按 0，其后为下界）` : ""}${estCount ? `（估计 ${estCount} 步）` : ""}；·算＝由量·速率计算${compCount ? `（${compCount} 步）` : ""}；已知主线 ${L.totalKnown}min。</p>`;
   return html;
 }
 
+/** 触发浏览器下载（Blob/字符串）。 */
+function downloadBlob(name, data, type) {
+  const blob = data instanceof Blob ? data : new Blob([data], { type });
+  const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = name;
+  document.body.append(a); a.click(); a.remove(); URL.revokeObjectURL(a.href);
+}
+
+/** 取当前应用样式表文本，用于自包含导出（离线保真；失败则退化为仅结构）。 */
+async function appCss() { try { return await (await fetch("/styles.css")).text(); } catch { return ""; } }
+
+/** archify E：导出实验图为自包含 HTML（内联 CSS + 图结构，离线可看）。 */
+async function exportDiagramHtml(p, snap) {
+  const el = document.querySelector(".diagram");
+  if (!el) { setStatus("未找到实验图"); return; }
+  const css = await appCss();
+  const doc = `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8" /><title>${esc(p.name)} · 实验图</title><style>${css}</style></head>
+<body style="padding:16px;background:#f7f7f5">
+<h1 style="font:600 18px/1.4 system-ui,'Microsoft YaHei',sans-serif">${esc(p.name)} · 实验图（${fmtVersion(snap.revision)}）</h1>
+<p style="color:#525862;font-size:13px">离线快照 · 由 LOCUS 导出 · ${fmtTime(snap.at)}</p>
+${el.outerHTML}
+</body></html>`;
+  downloadBlob(`${p.name}_实验图_${fmtVersion(snap.revision)}.html`, doc, "text/html;charset=utf-8");
+  setStatus("实验图已导出为 HTML（离线可看）");
+}
+
+/** archify E：导出实验图为 PNG（SVG foreignObject → canvas 栅格化，2× 缩放；无第三方库）。 */
+async function exportDiagramPng(p, snap) {
+  const el = document.querySelector(".diagram");
+  if (!el) { setStatus("未找到实验图"); return; }
+  const rect = el.getBoundingClientRect();
+  const w = Math.max(1, Math.ceil(rect.width)), h = Math.max(1, Math.ceil(rect.height));
+  const css = await appCss();
+  const inner = new XMLSerializer().serializeToString(el);
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}"><foreignObject x="0" y="0" width="${w}" height="${h}"><div xmlns="http://www.w3.org/1999/xhtml" style="background:#f7f7f5"><style>${css}</style>${inner}</div></foreignObject></svg>`;
+  const img = new Image();
+  img.onload = () => {
+    try {
+      const scale = 2;
+      const c = document.createElement("canvas"); c.width = w * scale; c.height = h * scale;
+      const ctx = c.getContext("2d"); ctx.scale(scale, scale); ctx.fillStyle = "#f7f7f5"; ctx.fillRect(0, 0, w, h);
+      ctx.drawImage(img, 0, 0);
+      c.toBlob((b) => { if (b) { downloadBlob(`${p.name}_实验图_${fmtVersion(snap.revision)}.png`, b, "image/png"); setStatus("实验图已导出为 PNG"); } else setStatus("PNG 生成失败，可改用「导出图 HTML」"); }, "image/png");
+    } catch { setStatus("PNG 生成失败（浏览器限制），可改用「导出图 HTML」"); }
+  };
+  img.onerror = () => setStatus("PNG 导出失败（浏览器不支持），可改用「导出图 HTML」");
+  img.src = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg);
+}
+
 function stepEditorHtml(p, snap) {
-  const s = ui.stepSel === "new" ? { id: "", op: "", params: {}, note: "", durationMin: null, estimated: false, branch: null, observeEnd: "" } : snap.steps.find((x) => x.id === ui.stepSel);
+  const s = ui.stepSel === "new" ? { id: "", op: "", params: {}, note: "", durationMin: null, estimated: false, durationSource: "unknown", amount: null, ratePerMin: null, slackMin: null, branch: null, observeEnd: "" } : snap.steps.find((x) => x.id === ui.stepSel);
   if (!s) return `<div class="stepeditor"><p class="hint">点击图中节点编辑步骤；保存将追加方案新快照（旧版本不动）。</p>
     <div class="row"><input id="newstep-op" placeholder="新步骤操作名" /><button id="step-add">添加步骤</button><button disabled title="占位：AI 重排未接入">AI 重排（未实现）</button></div></div>`;
   const paramsText = Object.entries(s.params).map(([k, v]) => `${k}=${v}`).join("\n");
   const mainOpts = (cur) => snap.steps.filter((x) => !x.branch).map((x) => `<option value="${x.id}" ${x.id === cur ? "selected" : ""}>${esc(x.op)}</option>`).join("");
+  const src = durationSourceOf(s);
+  const srcOpt = (v, l) => `<option value="${v}" ${src === v ? "selected" : ""}>${l}</option>`;
   return `<div class="stepeditor">
     <div class="meta">${ui.stepSel === "new" ? "新步骤" : `编辑步骤 · ${esc(s.op)}`}（保存 → 方案第${p.revision + 1}版）</div>
     <div class="row"><label>操作</label><input id="se-op" value="${esc(s.op)}" /></div>
-    <div class="row"><label>时长(分)</label><input id="se-dur" type="number" min="0" value="${s.durationMin ?? ""}" placeholder="空=未知" />
-      <label><input id="se-est" type="checkbox" ${s.estimated ? "checked" : ""}/> 估计</label>
+    <div class="row"><label>时长来源</label>
+      <select id="se-dursrc">${srcOpt("fixed", "规定")}${srcOpt("computed", "由量·速率计算")}${srcOpt("estimated", "估计")}${srcOpt("unknown", "未知")}</select>
+      <span class="dur-fixed" ${src === "computed" || src === "unknown" ? "hidden" : ""}><label>时长(分)</label><input id="se-dur" type="number" min="0" value="${s.durationMin ?? ""}" placeholder="空=未知" /></span>
+      <span class="dur-comp" ${src === "computed" ? "" : "hidden"}><label>用量</label><input id="se-amount" type="number" min="0" value="${s.amount ?? ""}" placeholder="用量" />
+        <label>速率(量/分)</label><input id="se-rate" type="number" min="0" value="${s.ratePerMin ?? ""}" placeholder="量/分钟" />
+        <span class="hint">时长＝用量÷速率</span></span>
+      <label>等待余量(分)</label><input id="se-slack" type="number" min="0" value="${s.slackMin ?? ""}" placeholder="余量，吸收延迟" />
       <label>支路</label><input id="se-branch" value="${esc(s.branch ?? "")}" placeholder="空=主线" /></div>
     <div class="row"><label>分叉自</label><select id="se-fork"><option value="">（未指定）</option>${mainOpts(s.branchFrom)}</select>
       <label>汇合入</label><select id="se-merge"><option value="">（未指定）</option>${mainOpts(s.mergeInto)}</select>
@@ -831,6 +888,8 @@ function protocolMainHtml() {
       <div class="row"><label>查看版本</label>
         <select id="proto-rev">${p.revisions.map((r) => `<option value="${r.revision}" ${r.revision === snap.revision ? "selected" : ""}>${fmtVersion(r.revision)} · ${esc(r.reason)}</option>`).join("")}</select>
         <button id="proto-export">导出 JSON</button>
+        <button id="diagram-html">导出图 HTML</button>
+        <button id="diagram-png">导出图 PNG</button>
         <button class="history-btn">快照历史(${p.revisions.length})</button></div>
       ${viewingOld ? `<p class="hint warn">正在查看旧快照 ${fmtVersion(snap.revision)}（只读）；编辑将基于最新 ${fmtVersion(p.revision)} 追加。</p>` : ""}
       ${diagramHtml(p, snap)}
@@ -884,7 +943,7 @@ function stepsTableHtml(e, snap) {
       <td><input data-f="amount" value="${esc(last?.actual.amount ?? "")}" placeholder="用量" /></td>
       <td><input data-f="dur" type="number" min="0" value="${last?.actual.durationMin ?? ""}" placeholder="分" /></td>
       <td><label class="hint"><input type="checkbox" data-f="incident" ${dev ? "checked" : ""}/> 意外</label>
-        <select data-f="target">${others.map((x) => `<option value="${x.id}">影响:${esc(x.op)}</option>`).join("") || `<option value="">（无其它步骤）</option>`}</select></td>
+        <div class="devtargets">${others.map((x) => `<label class="hint"><input type="checkbox" data-f="target" value="${x.id}" data-op="${esc(x.op)}"/> 影响:${esc(x.op)}</label>`).join("") || `<span class="hint">（无其它步骤）</span>`}</div></td>
       <td><button class="steptbl-save">${last ? "更新" : "记录"}</button>${dev ? ` <span class="hint warn">已标意外</span>` : ""}</td>
     </tr>`;
   }).join("");
@@ -1482,17 +1541,34 @@ document.addEventListener("click", (ev) => {
     const params = {};
     for (const line of $("#se-params").value.split(/\n/)) { const i = line.indexOf("="); if (i > 0) params[line.slice(0, i).trim()] = line.slice(i + 1).trim(); }
     const durRaw = $("#se-dur").value;
+    const amountRaw = $("#se-amount")?.value ?? "";
+    const rateRaw = $("#se-rate")?.value ?? "";
+    const src = $("#se-dursrc")?.value ?? "fixed";
     const edited = {
       id: ui.stepSel === "new" ? undefined : ui.stepSel,
       op: $("#se-op").value, params, note: $("#se-note").value,
+      durationSource: src,
       durationMin: durRaw === "" ? null : Number(durRaw),
-      estimated: $("#se-est").checked, branch: $("#se-branch").value.trim() || null, observeEnd: $("#se-end").value,
+      amount: amountRaw === "" ? null : Number(amountRaw),
+      ratePerMin: rateRaw === "" ? null : Number(rateRaw),
+      slackMin: ($("#se-slack")?.value ?? "") === "" ? null : Number($("#se-slack").value),
+      estimated: src === "estimated", branch: $("#se-branch").value.trim() || null, observeEnd: $("#se-end").value,
       branchFrom: $("#se-fork")?.value || null, mergeInto: $("#se-merge")?.value || null,
     };
     const steps = ui.stepSel === "new" ? [...latest.steps, edited] : latest.steps.map((s) => (s.id === ui.stepSel ? { ...s, ...edited, id: s.id } : s));
     runBusy(t, "保存步骤", async () => { await api.editProtocol(p.id, { steps, reason: $("#se-reason").value }); ui.stepSel = null; ui.dirty = false; await refresh(); setStatus("步骤已保存（追加新快照，旧版本不动）"); }); return;
   }
 });
+// 时长来源切换：规定/估计 → 时长输入；由量·速率计算 → 用量/速率；未知 → 两者皆隐。
+document.addEventListener("change", (ev) => {
+  if (ev.target.id !== "se-dursrc") return;
+  const v = ev.target.value;
+  const fixed = document.querySelector(".dur-fixed");
+  const comp = document.querySelector(".dur-comp");
+  if (fixed) fixed.hidden = v === "computed" || v === "unknown";
+  if (comp) comp.hidden = v !== "computed";
+});
+
 // 通用（中栏或右栏皆可）：修订/快照历史、方案导出 JSON、影响分析运行
 document.addEventListener("click", (ev) => {
   const t = ev.target;
@@ -1511,6 +1587,8 @@ document.addEventListener("click", (ev) => {
     const aEl = document.createElement("a"); aEl.href = URL.createObjectURL(blob); aEl.download = `${p.name}_${fmtVersion(snap.revision)}.json`;
     aEl.click(); URL.revokeObjectURL(aEl.href); setStatus("已导出当前快照 JSON"); return;
   }
+  if (t.id === "diagram-html") { const p = currentProtocol(); if (!p) return; runBusy(t, "导出图 HTML", () => exportDiagramHtml(p, viewSnapshot(p))); return; }
+  if (t.id === "diagram-png") { const p = currentProtocol(); if (!p) return; runBusy(t, "导出图 PNG", () => exportDiagramPng(p, viewSnapshot(p))); return; }
   if (t.classList.contains("imp-run")) {
     const iid = t.dataset.id;
     runJob(t, "AI 影响评估", async () => { const r = await api.runImpact(iid); const res = await pollJob(r.jobId, "影响评估"); await refreshAfterJob(); setStatus(res.discarded ? "已有更新改动：旧评估被丢弃（stale 守卫）" : "影响评估完成"); }); return;
@@ -1522,11 +1600,11 @@ document.addEventListener("click", (ev) => {
     const amount = row.querySelector('[data-f="amount"]').value.trim();
     const durRaw = row.querySelector('[data-f="dur"]').value.trim();
     const incident = row.querySelector('[data-f="incident"]').checked;
-    const targetSel = row.querySelector('[data-f="target"]');
-    const targetOp = (targetSel?.selectedOptions?.[0]?.textContent ?? "").replace(/^影响:/, "");
+    const targetEls = [...row.querySelectorAll('[data-f="target"]:checked')];
+    const targetOps = targetEls.map((el) => el.dataset.op).filter(Boolean);
     runBusy(stepBtn, "记录步骤", async () => {
       await api.appendEvent(ui.executionId, { kind: "step", stepId: sid, text: opText, actual: { ...(amount ? { amount } : {}), ...(durRaw !== "" ? { durationMin: Number(durRaw) } : {}) } });
-      if (incident && targetSel?.value) await api.appendEvent(ui.executionId, { kind: "deviation", stepId: sid, text: `意外：影响到「${targetOp}」` });
+      if (incident && targetOps.length) await api.appendEvent(ui.executionId, { kind: "deviation", stepId: sid, text: `意外：影响到${targetOps.map((o) => `「${o}」`).join("")}` });
       ui.dirty = false; await refresh(); setStatus("步骤已记录（实际值入本次执行，不改源方案）");
     }); return;
   }
@@ -2134,12 +2212,19 @@ window.addEventListener("beforeunload", (e) => { if (ui.dirty) { e.preventDefaul
 
 async function refreshAiState() {
   const s = await api.aiStatus();
-  $("#ai-state").textContent = s.configured
-    ? `已配置 · ${s.model}`
-    : "未配置";
-  // A3：未配置时自动展开，便于填写；已配置时保持折叠（由用户控制）。
-  $("#aiconfig").open = !s.configured;
+  const label = s.configured ? `已配置 · ${s.model}` : "未配置";
+  $("#ai-state").textContent = label;
+  const st2 = $("#ai-state-2");
+  if (st2) st2.textContent = s.configured ? `已配置 · ${s.model} @ ${s.baseUrl}` : "未配置：填写接口地址 / 模型 / Key 后保存。";
+  // 已保存的配置回填到表单（Key 不回显，留空即可不改）。
+  if (s.configured) {
+    if (!$("#ai-base").value) $("#ai-base").value = s.baseUrl;
+    if (!$("#ai-model").value) $("#ai-model").value = s.model;
+    if (!$("#ai-timeout").value && s.timeoutMs) $("#ai-timeout").value = Math.round(s.timeoutMs / 1000);
+  }
 }
+$("#ai-open").addEventListener("click", () => { $("#aipanel").hidden = false; refreshAiState().catch(() => {}); });
+$("#ai-close").addEventListener("click", () => { $("#aipanel").hidden = true; });
 $("#ai-save").addEventListener("click", async (ev) => {
   const btn = ev.target, old = btn.textContent;
   btn.disabled = true; btn.textContent = "处理中…"; $("#ai-msg").textContent = "";
@@ -2154,7 +2239,7 @@ $("#ai-save").addEventListener("click", async (ev) => {
   } catch (e) { const h = humanError(e); $("#ai-msg").textContent = `保存失败：${h.message}`; }
   finally { btn.disabled = false; btn.textContent = old; }
 });
-$("#ai-clear").addEventListener("click", (ev) => runBusy(ev.target, "清除 AI 配置", async () => { await api.clearAiConfig(); await refreshAiState(); setStatus("AI 配置已清除"); }));
+$("#ai-clear").addEventListener("click", (ev) => runBusy(ev.target, "清除模型配置", async () => { await api.clearAiConfig(); $("#ai-models-list").hidden = true; await refreshAiState(); setStatus("模型配置已清除"); }));
 $("#ai-test").addEventListener("click", (ev) => {
   const btn = ev.target, old = btn.textContent;
   btn.disabled = true; btn.textContent = "测试中…"; $("#ai-msg").textContent = "";
@@ -2162,6 +2247,28 @@ $("#ai-test").addEventListener("click", (ev) => {
     .then((r) => { $("#ai-msg").textContent = (r.ok ? "✓ " : "✗ ") + r.message; })
     .catch((e) => { $("#ai-msg").textContent = "测试失败：" + (e.status === 400 ? "未配置（先保存再测）" : String(e.message ?? e)); })
     .finally(() => { btn.disabled = false; btn.textContent = old; });
+});
+$("#ai-models").addEventListener("click", (ev) => {
+  const btn = ev.target, old = btn.textContent;
+  const box = $("#ai-models-list");
+  btn.disabled = true; btn.textContent = "检测中…"; $("#ai-msg").textContent = "";
+  api.listAiModels()
+    .then((r) => {
+      $("#ai-msg").textContent = (r.ok ? "✓ " : "✗ ") + r.message;
+      if (r.ok && r.models.length) {
+        box.innerHTML = `<div class="hint">可用模型（点选填入）：</div>${r.models.map((m) => `<button type="button" class="moption" data-model="${esc(m)}">${esc(m)}</button>`).join("")}`;
+        box.hidden = false;
+      } else { box.hidden = true; }
+    })
+    .catch((e) => { $("#ai-msg").textContent = "检测失败：" + (e.status === 400 ? "未配置（先保存再测）" : String(e.message ?? e)); box.hidden = true; })
+    .finally(() => { btn.disabled = false; btn.textContent = old; });
+});
+// 点选可用模型 → 填入模型名输入框（不自动保存）。
+$("#ai-models-list").addEventListener("click", (ev) => {
+  const b = ev.target.closest(".moption");
+  if (!b) return;
+  $("#ai-model").value = b.dataset.model;
+  $("#ai-msg").textContent = `已填入模型名：${b.dataset.model}（点「保存配置」生效）`;
 });
 
 refreshAiState().catch(() => {});

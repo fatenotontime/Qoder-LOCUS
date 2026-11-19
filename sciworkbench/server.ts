@@ -1,7 +1,8 @@
 /**
  * LOCUS 最小 Web 闭环 — 零依赖本地服务（v2）。
  * 运行：node server.ts   （默认 http://127.0.0.1:5173）
- * AI 配置：启动时从环境变量读取，仅进程内存（见 services/ai.ts）。绝不写入文件/日志/Git。
+ * AI 配置：启动时读环境变量，其次读本机数据目录下的 ai-config.json（见 services/ai-config.ts）。
+ * 网页保存/清除会同步落盘/删盘；配置文件含 Key，仅本机、不入 Git/日志/导出。
  */
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
@@ -10,7 +11,8 @@ import { randomUUID } from "node:crypto";
 import { dirname, extname, join, normalize, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { JsonFileStore, type LocusState, type Store } from "./store.ts";
-import { AiError, clearAiConfig, describeConfig, getAiConfig, setAiConfig, testAiConnection } from "./services/ai.ts";
+import { AiError, clearAiConfig, describeConfig, getAiConfig, listAiModels, setAiConfig, testAiConnection } from "./services/ai.ts";
+import { loadAiConfigFile, removeAiConfigFile, saveAiConfigFile } from "./services/ai-config.ts";
 import {
   AppError,
   addManualCard,
@@ -77,6 +79,8 @@ const HERE = fileURLToPath(new URL(".", import.meta.url));
 const PUBLIC_DIR = join(HERE, "public");
 const DATA_PATH = process.env.LOCUS_DATA ?? join(HERE, "data", "state.json");
 const AUDIT_DIR = join(dirname(DATA_PATH), "audit");
+/** AI 配置落盘位置：随数据目录（`sciworkbench/data/` 已被 .gitignore 覆盖）。含 Key，不入库。 */
+const AI_CONFIG_PATH = process.env.LOCUS_AI_CONFIG ?? join(dirname(DATA_PATH), "ai-config.json");
 const PORT = Number(process.env.PORT ?? process.argv[2] ?? 5173);
 const MAX_BODY = 8 * 1024 * 1024;
 
@@ -113,7 +117,13 @@ export interface Job {
   error?: string;
 }
 
-export async function createApp(store: Store) {
+export async function createApp(store: Store, opts: { aiConfigPath?: string } = {}) {
+  const aiConfigPath = opts.aiConfigPath;
+  // 启动读回本机保存的 AI 配置（环境变量优先；两者都无则未配置）。
+  if (aiConfigPath && !getAiConfig()) {
+    const saved = loadAiConfigFile(aiConfigPath);
+    if (saved) setAiConfig({ baseUrl: saved.baseUrl, model: saved.model, key: saved.key, timeoutMs: saved.timeoutMs });
+  }
   let state: LocusState = await store.load();
   // 启动恢复：服务重启后仍为 running 的模型消息成孤儿 → 标失败可重试（job 仅在内存）。
   {
@@ -233,7 +243,12 @@ export async function createApp(store: Store) {
         send(res, 200, job);
         return;
       }
-      if (method === "DELETE" && path === "/api/ai/config") { clearAiConfig(); send(res, 200, describeConfig(getAiConfig())); return; }
+      if (method === "DELETE" && path === "/api/ai/config") {
+        clearAiConfig();
+        if (aiConfigPath) removeAiConfigFile(aiConfigPath);
+        send(res, 200, describeConfig(getAiConfig()));
+        return;
+      }
       if (method === "GET" && path.startsWith("/api/source/")) {
         send(res, 200, sourceView(state, decodeURIComponent(path.slice("/api/source/".length))));
         return;
@@ -249,9 +264,11 @@ export async function createApp(store: Store) {
         const body = raw ? (JSON.parse(raw) as Record<string, unknown>) : {};
 
         if (path === "/api/ai/config") {
-          const ok = setAiConfig({ baseUrl: body.baseUrl, model: body.model, key: body.key });
-          if (!ok) { send(res, 400, { error: "AI 配置不完整：需要 baseUrl / model / key（仅进程内存，不落盘）。" }); return; }
-          send(res, 200, describeConfig(getAiConfig()));
+          const ok = setAiConfig({ baseUrl: body.baseUrl, model: body.model, key: body.key, timeoutMs: body.timeoutMs });
+          if (!ok) { send(res, 400, { error: "AI 配置不完整：需要 baseUrl / model / key。" }); return; }
+          const cfg = getAiConfig()!;
+          if (aiConfigPath) saveAiConfigFile(aiConfigPath, cfg); // 落盘：重启后仍可用；文件在本机数据目录，不入库
+          send(res, 200, describeConfig(cfg));
           return;
         }
         if (path === "/api/topics") {
@@ -864,6 +881,12 @@ export async function createApp(store: Store) {
           const r = await testAiConnection(cfg);
           send(res, 200, r); return;
         }
+        if (path === "/api/ai/models") {
+          const cfg = getAiConfig();
+          if (!cfg) { send(res, 400, { error: "未配置 AI：先填写三项并保存。" }); return; }
+          const r = await listAiModels(cfg);
+          send(res, 200, r); return;
+        }
         if (path === "/api/change-hits") {          const r = changeHits(state, {
             kind: String(body.kind ?? ""), id: String(body.id ?? ""),
             fields: Array.isArray(body.fields) ? (body.fields as string[]).map(String) : undefined,
@@ -1028,10 +1051,10 @@ export async function createApp(store: Store) {
 import { pathToFileURL } from "node:url";
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const store = new JsonFileStore(DATA_PATH);
-  const app = await createApp(store);
+  const app = await createApp(store, { aiConfigPath: AI_CONFIG_PATH });
   app.listen(PORT, "127.0.0.1", () => {
     const d = describeConfig(getAiConfig());
     console.log(`LOCUS dev server: http://127.0.0.1:${PORT}  (data: ${DATA_PATH})`);
-    console.log(`AI: ${d.configured ? `已配置 model=${d.model} @ ${d.baseUrl}` : "未配置（在网页「AI 配置」里填写即可；仅进程内存）"}`);
+    console.log(`AI: ${d.configured ? `已配置 model=${d.model} @ ${d.baseUrl}` : "未配置（在左下角「模型设置」里填写；保存后本机留存，不入库）"}`);
   });
 }

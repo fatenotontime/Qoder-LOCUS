@@ -23,7 +23,7 @@
 - **前端文案**：导航/按钮短词（≤4字优先）；架构文档已定义术语不写长句解释；禁过度说明。渲染可见文本不得出现：ISO 时间（`\d{4}-\d{2}-\d{2}T`）、英文枚举（unreviewed/declared/exploratory/ai-draft）、裸版本（`rev N`，一律「第N版」且正文不显版本仅历史露出）、原始报错（fetch failed）、docs 路径、「（全部课题）」。时间格式 `11-18 12:35`。
 - **`public/app.js` 是纯 JS**，严禁混入 TS 类型语法（曾致整页挂掉）；纯渲染函数在 `public/lib/views.js`、格式化在 `public/lib/format.js`，改渲染优先改这两处并补 `tests/frontend-render.test.ts` 断言。
 - **控件挪栏必须挪处理器**：中栏控件用文档级 click 监听器承接；点击命中用 `closest()` 不用 `target.classList`。
-- **AI 配置**：仅进程内存，重启失效；界面当前模型 mimo-v2.6-flash 保持原样；Key 用本地 `.env` 由用户自填，**默认不读不打印 Key**。
+- **AI 配置**：**本机落盘** `<数据目录>/ai-config.json`（含 Key 明文、不入库；启动读回，环境变量优先；ADR-0024）；界面当前模型 mimo-v2.6-flash 保持原样；Key 用本地 `.env`/`.env.ai` 由用户自填，**默认不读不打印 Key**；左下角「模型设置」可测试连接与列出可用模型。
 - **私人材料**：达尔文/密立根测试包仅内部验收用，**不进 `public/samples/`、不入公开仓库**。
 - **验证一律离屏**，浏览器只用 Edge（不启 Chrome）；关键节点**截图由用户截**，agent 只引用真实存在的路径（`record/screenshots/`）。
 - 不改他人分支既有记录；不重写已推送历史；工作区内未跟踪的用户材料（如 `vibe_images/`、`record/screenshots/from-pictures/`、`reference reseach data/` 下用户自行解压的目录）**不删不擅自提交**。
@@ -32,7 +32,7 @@
 
 - 分支 `main`，功能提交至 `2fefb58`（前端 B+C），记录至 `34ca3b1`；已推 GitHub。
 - **阶段 0–6 全部完成并验收**；前端纠偏 A、B1–B7、B 功能补齐、C 轻量打磨完成。**阶段 7 未开始**，进入前听用户指令。
-- 测试：`cd sciworkbench && npm test` → **187 项全过**；逐页真渲染检查 `node scripts/frontend-text-check.ts` → **7/7**（该脚本含「真渲染」判定：缺 navitem 或状态仍「连接中」即失败，防 JS 报错假通过）。
+- 测试：`cd sciworkbench && npm test` → **193 项全过**（含 `tests/ai-config.test.ts`、`tests/archify.test.ts`）；逐页真渲染检查 `node scripts/frontend-text-check.ts` → **7/7**（该脚本含「真渲染」判定：缺 navitem 或状态仍「连接中」即失败，防 JS 报错假通过）。
 - 运行实例：**5184**＝验收实例（`data/acceptance-darwin.json`）；**5187**＝达尔文演示（`data/demo-darwin.json`，已重启加载新后端；**AI 配置需用户在页面重填**）。
 - 推送若经代理 7897 失败：`git -c http.proxy= -c https.proxy= push` 直连。
 
@@ -45,12 +45,13 @@
 
 ## 五、遗留与待拍板（均已如实登记，动之前先问用户）
 
-见 `docs/stage6/04_FRONTEND_REVIEW.md`「未做」节：
-- §三.8 界面「详情」原始响应完整覆盖（目前仅 recommend 有「AI 原始返回」折叠，其余留痕于 audit）。
-- 意外影响环节目前单选（需求语义待确认是否多选）。
-- 实验图合同剩余缺口：逐节点来源展示、HTML/PNG 导出。
+见 `docs/stage6/04_FRONTEND_REVIEW.md`「未做」节与「六、修订（S02-T42 / S02-T44）」：
+- §三.8 界面「详情」原始响应完整覆盖（目前仅 recommend 有「AI 原始返回」折叠，其余留痕于 audit；仍**未内联**）。
+- 意外影响环节已**改多选**（S02-T44，ADR-0026）；一次意外可勾多个受影响步骤。
+- experiment-archify 合同**剩余唯一缺口**：逐节点「原方案来源/现场补充/未决项」标记（条款8）。A/C/E（由量·速率计算／等待余量吸收延迟／导出 HTML·PNG）已于 S02-T44 补做（ADR-0025）。
 - 密立根 Table XX 待用户转录；真实手写 OCR 未经真实模型验证。
-- 阶段 7 范围未定。
+- **实验图 PNG 导出未在真实浏览器点击实测**（离屏无法验证下载内容）；HTML 导出为纯字符串构造。
+- 阶段 7 未开始；`docs/stage7/` 已有**用户新增的协作者指南与拆分提示词**（未跟踪，勿擅动）。
 
 ## 六、每轮收尾（AGENTS.md 摘要，全文以 AGENTS.md 为准）
 

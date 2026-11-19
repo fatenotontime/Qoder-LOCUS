@@ -32,6 +32,12 @@
 
 | ADR-0023 | 阶段6收尾 B：知识抽取**暂停/继续**——逐块流式任务可暂停（保留已出，任务 `paused`，运行句柄保留），`isDone` 跳已完成块后续跑补完（重跑去重，不重复入库）；前端 AI job **并发上限 1**，超出显示「排队中」 | accepted（用户 2026-11-19） | `services/ai.ts`、`server.ts`、`txt`前端；`tests/ai-stream.test.ts` |
 
+| ADR-0024 | **模型设置：后端 Key 落盘 + 可用模型测试 + 入口移到左下角**（2026-11-19 用户拍板）。①配置**落盘**到本机数据目录 `<数据目录>/ai-config.json`（`sciworkbench/data/` 已被 .gitignore 覆盖，含 Key 明文、文件权限 0600；不入 Git/日志/导出），启动时读回（**环境变量优先**，其次文件）；POST `/api/ai/config` 保存即写盘、DELETE 即删盘。②新增 `POST /api/ai/models`：`GET {baseUrl}/models` 返回**可用模型列表 + 联通性**（Key 无效/地址不通/不支持分别明示）。③入口从顶部横幅移出，改为**左栏左下角「模型设置」按钮 → 设置抽屉**。**修订 ADR-0012**：Key 由「不持久化」改为「**本机落盘**、仍不入 Git/日志/导出」 | accepted（用户 2026-11-19） | `services/ai-config.ts`、`services/ai.ts`、`server.ts`、`public/index.html`、`public/app.js`；`tests/ai-config.test.ts` |
+
+| ADR-0025 | **archify 缺口 A/C/E**（2026-11-19 用户拍板补做，合同 `docs/stage5/05_EXPERIMENT_ARCHIFY_CONTRACT.md`）。**A**：时长第2类「由量·速率计算」——`ProtocolStep` 增 `durationSource`(fixed/computed/estimated/unknown)＋`amount`＋`ratePerMin`，`computed` 时 `durationMin=用量÷速率`；速率缺失/非正→未知（**不猜**）。**C**：确定性时间传播**等待余量先吸收延迟**——`ProtocolStep` 增 `slackMin`，`computeTimeShifts` 在该步先吸收累计平移再下传，余量不足部分吸收，note 明示吸收量。**E**：实验图**导出本地 HTML**（自包含内联 CSS，离线可看）与 **PNG**（`SVG foreignObject`→`canvas` 栅格化，2×，无第三方库）。合同条款2「节点邻近编辑」仍**不做**（合同不强制） | accepted（用户 2026-11-19） | `store.ts`、`services/experiment.ts`、`public/lib/lanes.js`、`public/app.js`；`tests/archify.test.ts` |
+
+| ADR-0026 | 记录页「意外影响到哪一环节」由**单选改多选**（2026-11-19 用户拍板）：一次意外可勾选多个受影响步骤；仍记为**一条** `deviation` 事件（文本列出全部受影响步骤），不改源方案 | accepted（用户 2026-11-19） | `public/app.js`（`stepsTableHtml`）；HANDOFF 遗留项结案 |
+
 ## 待补 ADR（阶段2 之后）
 
 并发冲突的具体解决交互、跨会话暂存/恢复的存储形态、来源定位的精度门槛、AI 任务熔断参数、匿名演示会话清理策略。均**待实测或用户评审**，不预填日期。

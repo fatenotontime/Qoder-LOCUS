@@ -3,6 +3,7 @@ export const api = {
   async getState() { return json("/api/state"); },
   async aiStatus() { return json("/api/ai/status"); },
   async aiTest() { return json("/api/ai/test", {}); },
+  async listAiModels() { return json("/api/ai/models", {}); },
   async setAiConfig(baseUrl, model, key, timeoutMs) { return json("/api/ai/config", { baseUrl, model, key, timeoutMs }); },
   async clearAiConfig() { return fetch("/api/ai/config", { method: "DELETE" }).then((r) => r.json()); },
   async getJob(id) { return json(`/api/jobs/${encodeURIComponent(id)}`); },

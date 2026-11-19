@@ -222,11 +222,27 @@ export interface ProtocolStep {
   readonly note: string;
   readonly durationMin: number | null;
   readonly estimated: boolean;
+  /** 时长来源（四类）：规定 / 由量·速率计算 / 估计 / 未知。缺省按 estimated/durationMin 推导（旧数据兼容）。 */
+  readonly durationSource?: "fixed" | "estimated" | "computed" | "unknown";
+  /** 由量·速率计算时：用量（与速率同口径的数值）。 */
+  readonly amount?: number | null;
+  /** 由量·速率计算时：速率（单位：量/分钟）。 */
+  readonly ratePerMin?: number | null;
+  /** 等待余量（分钟）：上游延迟在此步被吸收，不顺延其后（如隔夜温育有缓冲）。 */
+  readonly slackMin?: number | null;
   readonly branch: string | null;
   /** 支路锚点（可选，追加式）：分叉自主线哪一步之后、汇合入主线哪一步之前。未指定则明示不猜。 */
   readonly branchFrom?: string | null;
   readonly mergeInto?: string | null;
   readonly observeEnd: string;
+}
+
+/** 时长来源判定（含旧数据推导）：显式 durationSource 优先，否则按 estimated/durationMin 推导。 */
+export function durationSourceOf(s: { durationMin?: number | null; estimated?: boolean; durationSource?: ProtocolStep["durationSource"] }): "fixed" | "estimated" | "computed" | "unknown" {
+  if (s.durationSource === "fixed" || s.durationSource === "estimated" || s.durationSource === "computed" || s.durationSource === "unknown") return s.durationSource;
+  if (s.durationMin === null || s.durationMin === undefined) return "unknown";
+  if (s.estimated) return "estimated";
+  return "fixed";
 }
 
 /** 方案修订：整版快照，追加式；引用固定 revision，不指向 latest。 */

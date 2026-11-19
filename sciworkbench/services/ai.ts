@@ -1,6 +1,6 @@
 /**
  * OpenAI 兼容 AI 解析（健壮版 v3）。
- * 配置：运行时可从网页设置，仅进程内存；重启失效；不写文件/浏览器持久存储/日志/Git。
+ * 配置：运行时可从网页设置；内存态 + 本机数据目录落盘（见 services/ai-config.ts，含 Key，不入库）。
  * 任务：文献抽取 / 方案解析 / 手写识别 为三个独立任务，各自 prompt 与输出结构，不混用。
  * 健壮性：JSON 提取容错；解析失败重试一次；对超时/429/5xx 有上限重试；文献分块并回报进度；原始响应回传供审计。
  */
@@ -152,6 +152,34 @@ export async function testAiConnection(cfg: AiConfig): Promise<{ ok: boolean; ki
     const err = e as Error;
     const msg = err.name === "AbortError" ? `连接超时（${Math.round(timeoutMs / 1000)}s）。` : "地址不通或网络不可达。";
     return { ok: false, kind: "unreachable", message: msg };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/** 可用模型：连通性 + 模型列表（GET /models）。返回明确结果与模型 id 列表。 */
+export async function listAiModels(cfg: AiConfig): Promise<{ ok: boolean; kind: "ok" | "unreachable" | "auth" | "other"; models: string[]; message: string }> {
+  const timeoutMs = cfg.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(`${cfg.baseUrl}/models`, {
+      method: "GET",
+      headers: { authorization: `Bearer ${cfg.key}` },
+      signal: controller.signal,
+    });
+    if (res.ok) {
+      const data = (await res.json().catch(() => ({}))) as { data?: { id?: unknown }[] };
+      const models = (data.data ?? []).map((m) => String(m.id ?? "").trim()).filter(Boolean);
+      return { ok: true, kind: "ok", models, message: models.length ? `可用模型 ${models.length} 个。` : "连接成功，但未返回模型列表。" };
+    }
+    if (res.status === 401 || res.status === 403) return { ok: false, kind: "auth", models: [], message: "Key 无效或无权限。" };
+    if (res.status === 404) return { ok: false, kind: "other", models: [], message: "该地址不支持模型列表（404）。可改用「测试连接」。" };
+    return { ok: false, kind: "other", models: [], message: `请求失败：HTTP ${res.status}` };
+  } catch (e) {
+    const err = e as Error;
+    const msg = err.name === "AbortError" ? `连接超时（${Math.round(timeoutMs / 1000)}s）。` : "地址不通或网络不可达。";
+    return { ok: false, kind: "unreachable", models: [], message: msg };
   } finally {
     clearTimeout(timer);
   }
