@@ -6,6 +6,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync, renameSync } from "node:fs";
 import { createHash, randomUUID } from "node:crypto";
 import { dirname } from "node:path";
+import { assertKnowledgeShape, emptyKnowledge, type KnowledgeState } from "./domain/knowledge.ts";
 
 /** 查重口径：逻辑内容（剥 BOM + CRLF→LF），与传输编码无关；原件文本仍逐字保存。 */
 export function canonicalText(t: string): string {
@@ -592,12 +593,14 @@ export interface LocusState {
   readonly analysisResults: AnalysisResultRecord[];
   readonly reports: PreliminaryReportRecord[];
   readonly chats: ChatSessionRecord[];
+  /** 知识命名空间（合同 §4）。空库为各集合空数组。 */
+  readonly knowledge: KnowledgeState;
 }
 
-export const STATE_VERSION = 8;
+export const STATE_VERSION = 9;
 
 export function emptyState(): LocusState {
-  return { version: STATE_VERSION, topics: [], subquestions: [], assets: [], papers: [], attachments: [], cards: [], tables: [], adoptions: [], mappings: [], comparisons: [], protocols: [], templates: [], executions: [], samples: [], measurements: [], impacts: [], ocrs: [], analysisTasks: [], analysisResults: [], reports: [], chats: [] };
+  return { version: STATE_VERSION, topics: [], subquestions: [], assets: [], papers: [], attachments: [], cards: [], tables: [], adoptions: [], mappings: [], comparisons: [], protocols: [], templates: [], executions: [], samples: [], measurements: [], impacts: [], ocrs: [], analysisTasks: [], analysisResults: [], reports: [], chats: [], knowledge: emptyKnowledge() };
 }
 
 export interface Store {
@@ -620,11 +623,15 @@ export class JsonFileStore implements Store {
   constructor(path: string) {
     this.#path = path;
   }
-  /** 宽容加载：损坏/未知版本时返回空（旧行为），供日常启动。 */
+  /**
+   * 加载：**仅当文件确实不存在时**返回空状态（可新建）；
+   * 文件存在但解析/版本/结构不合法时显式失败（不静默成空工作台，合同 §4.1）。
+   */
   async load(): Promise<LocusState> {
-    try { return await this.loadStrict(); } catch { return emptyState(); }
+    if (!existsSync(this.#path)) return emptyState();
+    return this.loadStrict();
   }
-  /** 严格加载：损坏/未知版本**显式报错**（不静默成空），供隔离恢复与完整性检查。 */
+  /** 严格加载：文件不存在亦显式报错（供隔离恢复与完整性检查）。 */
   async loadStrict(): Promise<LocusState> {
     if (!existsSync(this.#path)) throw new Error(`数据文件不存在：${this.#path}`);
     let p: Partial<LocusState> & { version?: number };
@@ -634,11 +641,17 @@ export class JsonFileStore implements Store {
       throw new Error("数据文件损坏：JSON 解析失败（不静默清空）。");
     }
     const v = p.version ?? 0;
-    if (v !== 2 && v !== 3 && v !== 4 && v !== 5 && v !== 6 && v !== 7 && v !== STATE_VERSION) {
+    if (v !== 2 && v !== 3 && v !== 4 && v !== 5 && v !== 6 && v !== 7 && v !== 8 && v !== STATE_VERSION) {
       throw new Error(`未知数据版本 v${v}（不静默清空）。`);
     }
+    if (v === STATE_VERSION) {
+      // 当前版本：逐结构校验，不重建；缺 knowledge / 缺集合 / 未知 schemaVersion → 拒绝（不补空）。
+      if (p.knowledge === undefined) throw new Error("数据损坏：当前版本缺 knowledge 命名空间（不静默补空）。");
+      assertKnowledgeShape(p.knowledge);
+      return p as LocusState;
+    }
     {
-      // v2–v7 → v8：保留既有数据，补空新实体。
+      // v2–v8 → v9：保留既有数据，补空新实体与空 knowledge 命名空间（既有对象和值深度相等）。
       // 原件 hash **不再加载重算**（5C）：历史 hash 原样保留；查重指纹另存（旧记录指纹=既有 hash 口径）。
       const assets = (p.assets ?? []).map((a) => ({ ...a, fingerprint: a.fingerprint ?? a.hash }));
       // 存量文献原件 → 论文条目 + 正文附件（题录未提供处留空，不补造）；已有附件的原件不重复建。
@@ -706,6 +719,7 @@ export class JsonFileStore implements Store {
           return { ...(rep as PreliminaryReportRecord), blocks };
         }),
         chats: p.chats ?? [],
+        knowledge: emptyKnowledge(),
       };
     }
   }

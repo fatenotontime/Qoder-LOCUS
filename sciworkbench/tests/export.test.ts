@@ -107,16 +107,20 @@ test("6A-5 整体导出＋隔离恢复：manifest 校验；损坏/版本未知/�
   assert.equal(tampered.hashOk, false);
 });
 
-test("6A-5 loadStrict：损坏文件抛错（不静默成空）；load 宽容返回空", async () => {
+test("6A-5 loadStrict/load：损坏文件均抛错（不静默成空）；仅文件不存在才新建", async () => {
   const bad = join(tmpdir(), `locus-bad-${Date.now()}.json`);
   writeFileSync(bad, "{ broken", "utf8");
   await assert.rejects(() => new JsonFileStore(bad).loadStrict(), /损坏/);
-  const lenient = await new JsonFileStore(bad).load();
-  assert.deepEqual(lenient.topics, []);
+  await assert.rejects(() => new JsonFileStore(bad).load(), /损坏/); // 存在但损坏 → 不静默成空
   rmSync(bad, { force: true });
   // 未知版本
   const ver = join(tmpdir(), `locus-ver-${Date.now()}.json`);
   writeFileSync(ver, JSON.stringify({ version: 99, topics: [] }), "utf8");
   await assert.rejects(() => new JsonFileStore(ver).loadStrict(), /未知数据版本/);
+  await assert.rejects(() => new JsonFileStore(ver).load(), /未知数据版本/);
   rmSync(ver, { force: true });
+  // 文件不存在 → load 可新建为空状态
+  const missing = join(tmpdir(), `locus-none-${Date.now()}.json`);
+  const fresh = await new JsonFileStore(missing).load();
+  assert.deepEqual(fresh.topics, []);
 });

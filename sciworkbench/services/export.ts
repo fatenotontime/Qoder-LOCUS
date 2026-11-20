@@ -8,6 +8,8 @@
 import { createHash } from "node:crypto";
 import { deflateRawSync } from "node:zlib";
 import type { LocusState, PreliminaryReportRecord, ReportBlock } from "../store.ts";
+import { STATE_VERSION } from "../store.ts";
+import { assertKnowledgeShape } from "../domain/knowledge.ts";
 import { AppError } from "./app.ts";
 import { buildNetwork, type NetNode } from "./references.ts";
 
@@ -268,6 +270,10 @@ export function countsOf(state: LocusState): Record<string, number> {
     protocols: state.protocols.length, executions: state.executions.length, samples: state.samples.length,
     measurements: state.measurements.length, analysisTasks: state.analysisTasks.length,
     analysisResults: state.analysisResults.length, reports: state.reports.length, chats: state.chats.length,
+    knowledgeItems: state.knowledge?.items.length ?? 0, knowledgeContexts: state.knowledge?.contexts.length ?? 0,
+    knowledgeThemes: state.knowledge?.themes.length ?? 0, knowledgeDatasets: state.knowledge?.datasets.length ?? 0,
+    knowledgeComparisons: state.knowledge?.comparisons.length ?? 0, knowledgeSnapshots: state.knowledge?.snapshots.length ?? 0,
+    knowledgeRuns: state.knowledge?.extractionRuns.length ?? 0, sourceVersions: state.knowledge?.sourceVersions.length ?? 0,
   };
 }
 
@@ -310,6 +316,11 @@ export function inspectLibraryJson(json: string, expectedSha256?: string): Resto
   }
   const hashOk = expectedSha256 ? sha256(json) === expectedSha256 : undefined;
   if (expectedSha256 && !hashOk) return { ok: false, error: "损坏：sha256 与 manifest 不符（文件可能被改动）。", hashOk };
+  // 当前版本必须带合规的 knowledge 命名空间（结构校验，不只验 version 字段）。
+  if (parsed.version === STATE_VERSION) {
+    try { assertKnowledgeShape((parsed as Partial<LocusState>).knowledge); }
+    catch (e) { return { ok: false, error: `损坏：${(e as Error).message}`, hashOk }; }
+  }
   return { ok: true, version: parsed.version, counts: countsOf(parsed), hashOk };
 }
 
