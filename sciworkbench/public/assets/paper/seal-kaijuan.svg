@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="26" height="26" viewBox="0 0 52 52" role="img" aria-label="开卷">
+  <title>开卷</title>
+  <g fill="none" stroke="#aa4936" stroke-linecap="round" stroke-linejoin="round">
+    <path stroke-width="3.1" d="M6.2 4.1 44.8 4.3Q47.8 4.3 47.9 7.3l.1 37.9q-.1 2.8-3.1 2.9L7.3 48q-3-.1-3.1-3L4 7q.1-2.9 2.2-2.9Z"/>
+    <path stroke-width="1.25" opacity=".62" d="M7 7.5l.1 1.2m1.8-1.5 4 .1m29.4.1 2.1.1m.9 2.6-.2 2.1M7.2 43.3l.2 1.7 3.5.2m29.9-.2 2.6.1m1.8-.9.1-2.4"/>
+    <g stroke-width="2.45">
+      <path d="M9.9 14h12.1M8.8 23.8h14.3M14.2 14.6v12.6c0 5.5-1.7 10.4-5.1 13.3M19.4 14.5v26.4"/>
+      <path d="M30.8 11.4l2.1 3.2m7-3.5-2 3.7M29.7 17.5h12.1M27.8 22.4h15.8m-9.3-4.2c-1.7 4.4-4.2 8.1-7.2 10.8m9.4-6.1c1.8 2.8 4 4.9 7.2 6.7M30.2 29.8h9.5v5.2h-8.3v3.8c0 1.5.9 2 2.3 2h5.7c1.6 0 2.2-.6 2.4-2.3"/>
+    </g>
+  </g>
+</svg>

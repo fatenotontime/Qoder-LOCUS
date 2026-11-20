@@ -296,7 +296,7 @@ export function bindAnalysis(c) {
           await api.editResult(rid, { method: v("method"), params: v("params"), note: v("note"), reason: v("reason") });
           const fields = [];
           if (before) { if (v("params") !== before.params) fields.push("params"); if (v("method") !== before.method) fields.push("method"); }
-          ui.dirty = false; await refresh(); ctx.setStatus("结果已修订（留历史，可复现性重算）");
+          ctx.setDirty(false); await refresh(); ctx.setStatus("结果已修订（留历史，可复现性重算）");
           await ctx.noteChangeHits("result", rid, fields);
         }); return;
       }
@@ -314,13 +314,13 @@ export function bindAnalysis(c) {
         row.className = "reprow"; row.dataset.bid = ""; row.dataset.refs = "[]";
         row.innerHTML = blockRowHtml({ id: "", nature, text: "", refs: [], draft: false }, box.querySelectorAll(".repblocks .reprow").length);
         box.querySelector(".repblocks").append(row);
-        ui.dirty = true; return;
+        ctx.setDirty(true); return;
       }
-      if (ev.target.classList.contains("rep-del")) { ev.target.closest(".reprow").remove(); ui.dirty = true; return; }
+      if (ev.target.classList.contains("rep-del")) { ev.target.closest(".reprow").remove(); ctx.setDirty(true); return; }
       if (ev.target.classList.contains("rep-up") || ev.target.classList.contains("rep-down")) {
         const row = ev.target.closest(".reprow"); const parent = row.parentElement;
         const sib = ev.target.classList.contains("rep-up") ? row.previousElementSibling : row.nextElementSibling;
-        if (sib) { ev.target.classList.contains("rep-up") ? parent.insertBefore(row, sib) : parent.insertBefore(sib, row); ui.dirty = true; }
+        if (sib) { ev.target.classList.contains("rep-up") ? parent.insertBefore(row, sib) : parent.insertBefore(sib, row); ctx.setDirty(true); }
         return;
       }
       if (ev.target.classList.contains("ref-back")) {
@@ -351,7 +351,7 @@ export function bindAnalysis(c) {
           const holder = box.querySelector(".repblocks");
           const base = holder.querySelectorAll(".reprow").length;
           (r.blocks ?? []).forEach((b, i) => { const row = document.createElement("div"); row.className = "reprow"; row.dataset.bid = ""; row.dataset.refs = esc(JSON.stringify(b.refs ?? [])); row.innerHTML = blockRowHtml({ ...b, id: "" }, base + i); holder.append(row); });
-          ui.dirty = true; ctx.setStatus(`草稿块 ${r.blocks.length} 个已入编辑器（未保存，须预览→接受）`);
+          ctx.setDirty(true); ctx.setStatus(`草稿块 ${r.blocks.length} 个已入编辑器（未保存，须预览→接受）`);
         }); return;
       }
       if (ev.target.classList.contains("rep-preview")) {
@@ -372,7 +372,7 @@ export function bindAnalysis(c) {
         const blocks = collectReportBlocks(box);
         await runBusy(ev.target, "接受改动", async () => {
           const r = await api.applyReport(repId, baseRevision, blocks, reason);
-          ui.reportId = repId; ui.dirty = false; await refresh(); ctx.setStatus(`改动已接受：新版本 r${r.revision}（留历史）`);
+          ui.reportId = repId; ctx.setDirty(false); await refresh(); ctx.setStatus(`改动已接受：新版本 r${r.revision}（留历史）`);
         }); return;
       }
     } catch (e) { const h = ctx.humanError(e); ctx.setError("mid", { panel: "mid", message: h.message, detail: h.detail, retry: null }); }

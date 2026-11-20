@@ -9,32 +9,95 @@ const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<
 const topicName = (state, id) => state.topics.find((t) => t.id === id)?.name;
 
 export const NAV_ITEMS = [
-  ["topic", "课题展示"], ["papers", "文献整理"], ["knowledge", "领域知识积累"],
-  ["protocol", "实验方案管理"], ["record", "实验执行与记录"], ["analysis", "数据处理与分析"], ["chat", "上下文 AI 对话"],
+  ["topic", "课题"], ["papers", "文献"], ["knowledge", "知识"],
+  ["protocol", "方案"], ["record", "记录"], ["analysis", "分析"], ["chat", "对话"],
 ];
+
+/** 书脊与封面共用的一字印。 */
+export const NAV_CHARS = {
+  topic: "课", papers: "文", knowledge: "知", protocol: "案",
+  record: "行", analysis: "析", chat: "谈",
+};
+
+export function navChar(kind) { return NAV_CHARS[kind] ?? "课"; }
+
+/** 导航线性图标（随文字颜色走，24 栅格）。 */
+const NAV_ICONS = {
+  topic: `<path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H19v18H6.5A2.5 2.5 0 0 1 4 18.5z"/><path d="M4 17.5A2.5 2.5 0 0 1 6.5 15H19"/>`,
+  papers: `<path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4"/><path d="M9 12h6M9 16h6"/>`,
+  knowledge: `<path d="M12 3 4 7l8 4 8-4z"/><path d="m4 12 8 4 8-4"/><path d="m4 17 8 4 8-4"/>`,
+  protocol: `<path d="M9 3h6"/><path d="M10 3v6l-5 9a2 2 0 0 0 1.8 3h10.4A2 2 0 0 0 19 18l-5-9V3"/><path d="M8.2 15h7.6"/>`,
+  record: `<rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4V2.8h6V4"/><path d="m9 13 2 2 4-4"/>`,
+  analysis: `<path d="M4 20V4"/><path d="M4 20h16"/><path d="M8 16v-5M12 16V7M16 16v-3"/>`,
+  chat: `<path d="M21 12a8 8 0 0 1-8 8H5l-2 2V12a8 8 0 0 1 8-8h2a8 8 0 0 1 8 8z"/><path d="M8 12h8M8 15.5h5"/>`,
+};
+
+export function navIcon(kind, size = 18) {
+  const body = NAV_ICONS[kind] ?? NAV_ICONS.topic;
+  return `<svg viewBox="0 0 24 24" width="${size}" height="${size}" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">${body}</svg>`;
+}
 
 /** 页头「当前课题」：单课题显示名称，多课题下拉，无课题显示提示。 */
 export function topbarTopicHtml(state, ui) {
-  if (!state.topics.length) return `<span class="curtopic none">尚无课题</span>`;
-  if (state.topics.length === 1) return `<span class="curtopic">当前课题：<b>${esc(state.topics[0].name)}</b></span>`;
-  return `<label class="curtopic">当前课题
-    <select id="topic-select">${state.topics.map((t) => `<option value="${t.id}" ${t.id === ui.topicId ? "selected" : ""}>${esc(t.name)}</option>`).join("")}</select></label>`;
+  if (!state.topics.length) return `<span class="curtopic none"><span class="ct-kicker">未开卷</span><span class="ct-empty">先建课题</span></span>`;
+  if (state.topics.length === 1) return `<span class="curtopic"><span class="ct-kicker">当前课题</span><b>${esc(state.topics[0].name)}</b></span>`;
+  return `<label class="curtopic"><span class="ct-kicker">当前课题</span>
+    <select id="topic-select" aria-label="切换课题">${state.topics.map((t) => `<option value="${t.id}" ${t.id === ui.topicId ? "selected" : ""}>${esc(t.name)}</option>`).join("")}</select></label>`;
 }
 
 /** 无课题时中间区引导：只留「创建课题（名称＋研究问题）」。 */
 export function emptyTopicGuideHtml() {
-  return `<div class="item empty-guide"><div class="meta">开始：创建课题</div>
-    <p class="hint">只需名称与研究问题即可开始，不需要先准备材料。</p>
-    <input id="topic-name" placeholder="课题名称" />
-    <input id="topic-q" placeholder="研究问题" />
-    <button class="primary" id="topic-create">创建课题</button></div>`;
+  return `<div class="empty-guide empty-first" data-empty="topic">
+    <div class="empty-seal" aria-hidden="true">课</div>
+    <div class="eyebrow">未开卷</div>
+    <h2>创建第一个课题</h2>
+    <p class="empty-sub">只需名称与研究问题即可开始，不需要先准备材料。</p>
+    <div class="field"><label for="topic-name">课题名称</label><input id="topic-name" placeholder="例如：SLAC 漆酶动力学表征" /></div>
+    <div class="field"><label for="topic-q">研究问题</label><input id="topic-q" placeholder="想回答的科学问题" /></div>
+    <div class="empty-actions"><button class="primary" id="topic-create">开卷</button></div>
+    <p class="empty-foot">之后按「文 → 知 → 案 → 行 → 析 → 谈」逐步积累上下文。</p>
+  </div>`;
 }
 
-/** 侧栏上层：七个导航项（全站可折叠，默认展开）。 */
+/** 课题页的研究流程带：六步闭环，点步骤直达对应页。 */
+export function topicFlowHtml(state, ui) {
+  const topics = ui.topicId ? state.topics.filter((t) => t.id === ui.topicId) : state.topics;
+  if (!topics.length) return "";
+  const t = topics[0];
+  const paperIds = new Set(state.papers.filter((p) => p.topicIds.includes(t.id)).map((p) => p.id));
+  const cards = state.cards.filter((c) => paperIds.has(c.paperId) || state.assets.find((a) => a.id === c.assetId)?.topicId === t.id);
+  const confirmed = cards.filter((c) => c.audit === "confirm").length;
+  const execs = state.executions.filter((e) => e.topicId === t.id);
+  const steps = [
+    ["papers", "文", "文献", state.papers.filter((p) => p.topicIds.includes(t.id)).length, "篇"],
+    ["knowledge", "知", "知识", cards.length, "张", cards.length ? `${confirmed} 已确认` : ""],
+    ["protocol", "案", "方案", state.protocols.filter((p) => p.topicId === t.id).length, "份"],
+    ["record", "行", "执行", execs.length, "次", execs.length ? `${execs.filter((e) => e.status === "active").length} 进行中` : ""],
+    ["analysis", "析", "分析", state.analysisTasks.filter((x) => x.topicId === t.id).length, "个"],
+    ["chat", "谈", "对话", state.chats.filter((c) => c.topicId === t.id).length, "段"],
+  ];
+  const nextIdx = steps.findIndex(([, , , n]) => !n);
+  const html = steps.map(([k, char, label, n, unit, sub], i) => {
+    const hasData = n > 0;
+    return `<button class="goto flowstep ${hasData ? "hasdata" : ""} ${i === nextIdx ? "next" : ""}" data-goto="${k}" title="前往${label}">
+      <span class="flowdot" aria-hidden="true">${char}</span>
+      <span class="flowlabel">${label}</span>
+      <span class="flowcount"><b>${n}</b> ${unit}</span>
+      ${sub ? `<span class="flowsub">${esc(sub)}</span>` : ""}
+    </button>`;
+  }).join("");
+  return `<div class="flowcard">
+    <div class="flowhead"><span class="eyebrow">研究流程</span><span class="flowhint">每一步的产出都保留来源与版本，可回溯到原文或记录。</span></div>
+    <div class="flow">${html}</div>
+  </div>`;
+}
+
+/** 书脊：七枚一字印，当前页朱砂底。collapsed 保留给旧调用方，书脊始终显示文字。 */
 export function navHtml(ui, collapsed) {
-  return `<button class="navtoggle" id="nav-toggle" title="${collapsed ? "展开导航" : "收起导航"}">${collapsed ? "»" : "«"}</button>
-    <div class="navitems">${NAV_ITEMS.map(([k, label]) =>
-      `<button class="navitem ${k === ui.nav ? "active" : ""}" data-nav="${k}" title="${esc(label)}"><span class="navico">${esc(label[0])}</span><span class="navlabel">${esc(label)}</span></button>`).join("")}</div>`;
+  return `<div class="navitems"${collapsed ? ' data-collapsed="1"' : ""}>${NAV_ITEMS.map(([k, label]) =>
+    `<button class="navitem ${k === ui.nav ? "active" : ""}" data-nav="${k}" title="${esc(label)}"${k === ui.nav ? ' aria-current="page"' : ""}>
+      <span class="navsigil" aria-hidden="true">${navChar(k)}</span><span class="navlabel">${esc(label)}</span>
+    </button>`).join("")}</div>`;
 }
 
 /** 分区报错条：可关闭、带重试、附「详情」。 */
@@ -48,10 +111,15 @@ export function panelErrorHtml(err) {
     <pre class="perr-detail-body" hidden>${esc(err.detail ?? "（无）")}</pre></div>`;
 }
 
-/** 侧栏下层：本页列表。 */
+/** 侧栏下层：本页列表。课题页显示课题目录。 */
 export function sidebarListHtml(state, ui) {
   const arc = (rows, empty) => rows.length ? rows.join("") : `<p class="hint">${empty}</p>`;
-  if (ui.nav === "topic") return "";
+  if (ui.nav === "topic") {
+    return arc(state.topics.map((t) => `<button class="material topic-row ${t.id === ui.topicId ? "active" : ""}" data-topicpick="${t.id}" type="button">
+      <div class="m-title">${esc(t.name)}</div>
+      <div class="m-meta">${esc(t.researchQuestion || "研究问题待补")}</div>
+    </button>`), "还没有课题：先在中间开卷。");
+  }
   if (ui.nav === "papers" || ui.nav === "knowledge") {
     const ps = state.papers.filter((p) => !ui.topicId || p.topicIds.includes(ui.topicId) || !p.topicIds.length);
     return arc(ps.map((p) => {

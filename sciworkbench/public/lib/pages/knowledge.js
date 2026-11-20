@@ -139,7 +139,7 @@ export function renderKnowledgeForm(box) {
 // ── 事件 ────────────────────────────────────────────────────
 
 async function kzAct(fn, msg) {
-  try { await fn(); ctx.ui.dirty = false; await ctx.refresh(); ctx.setStatus(msg); }
+  try { await fn(); ctx.setDirty(false); await ctx.refresh(); ctx.setStatus(msg); }
   catch (e) { const h = ctx.humanError(e); ctx.setError("mid", { panel: "mid", message: h.message, detail: h.detail, retry: null }); }
 }
 
@@ -170,13 +170,23 @@ export function bindKnowledge(c) {
     const loc = t.closest?.(".kz-locate");
     if (loc) { ui.highlight = loc.dataset.quote || null; renderShell(); const m = document.querySelector("#kz-text mark"); if (m) m.scrollIntoView({ block: "center" }); return; }
     const CANCEL = t.closest?.(".kzq-cancel");
-    if (CANCEL) { if (ui.kzJob?.id) api.cancelKnowledgeJob(ui.kzJob.id).then(() => ctx.setStatus("已请求取消：保留已出内容")).catch(() => {}); return; }
+    if (CANCEL) {
+      if (ui.kzJob?.id) api.cancelKnowledgeJob(ui.kzJob.id).then(() => ctx.setStatus("已请求取消：保留已出内容"))
+        .catch((e) => { const h = ctx.humanError(e); ctx.setError("right", { panel: "right", message: `取消任务失败：${h.message}`, detail: h.detail, retry: null }); });
+      return;
+    }
     const PAUSE = t.closest?.(".kzq-pause");
-    if (PAUSE) { if (ui.kzJob?.id) api.pauseKnowledgeJob(ui.kzJob.id).then(() => { ui.kzJob = { ...ui.kzJob, status: "paused" }; ctx.renderRight(); ctx.setStatus("已请求暂停：保留已出内容"); }).catch(() => {}); return; }
+    if (PAUSE) {
+      if (ui.kzJob?.id) { ctx.setStatus("正在请求暂停…");
+        api.pauseKnowledgeJob(ui.kzJob.id).then(() => { ui.kzJob = { ...ui.kzJob, status: "paused" }; ctx.renderRight(); ctx.setStatus("已请求暂停：保留已出内容"); })
+          .catch((e) => { const h = ctx.humanError(e); ctx.setError("right", { panel: "right", message: `暂停任务失败：${h.message}`, detail: h.detail, retry: null }); }); }
+      return;
+    }
     const RESUME = t.closest?.(".kzq-resume");
     if (RESUME) {
-      if (ui.kzJob?.id) { ui.kzJob = { ...ui.kzJob, status: "running" }; ctx.renderRight();
-        api.resumeKnowledgeJob(ui.kzJob.id).then(() => pollKnowledgeJob(ui.kzJob.id)).then((job) => ctx.refreshAfterJob().then(() => ctx.setStatus(job.status === "done" ? job.message : "已暂停"))).catch(() => {}); }
+      if (ui.kzJob?.id) { ui.kzJob = { ...ui.kzJob, status: "running" }; ctx.renderRight(); ctx.setStatus("正在恢复任务…");
+        api.resumeKnowledgeJob(ui.kzJob.id).then(() => pollKnowledgeJob(ui.kzJob.id)).then((job) => ctx.refreshAfterJob().then(() => ctx.setStatus(job.status === "done" ? job.message : "已恢复")))
+          .catch((e) => { const h = ctx.humanError(e); ctx.setError("right", { panel: "right", message: `恢复任务失败：${h.message}`, detail: h.detail, retry: null }); }); }
       return;
     }
     const RETRY = t.closest?.(".kzq-retry");

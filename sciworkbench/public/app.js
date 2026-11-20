@@ -6,8 +6,8 @@ import { computeLanes, timeLabel, durationSourceOf } from "./lib/lanes.js";
 import { fmtTime, fmtEnum, fmtVersion, fmtNameOnce } from "./lib/format.js";
 import { refLabel, topicObjects } from "./lib/refs.js";
 import {
-  topbarTopicHtml, emptyTopicGuideHtml, navHtml, panelErrorHtml, sidebarListHtml,
-  topicOverviewHtml, topicTodosHtml, subqBlockHtml, nextStepHtml, NAV_ITEMS,
+  topbarTopicHtml, emptyTopicGuideHtml, navHtml, navChar, panelErrorHtml, sidebarListHtml,
+  topicOverviewHtml, topicFlowHtml, topicTodosHtml, subqBlockHtml, nextStepHtml, NAV_ITEMS,
 } from "./lib/views.js";
 import { knowledgeLeftHtml, knowledgeWorkspaceHtml, knowledgeQueueHtml, renderKnowledgeForm, bindKnowledge } from "./lib/pages/knowledge.js";
 import { renderAnalysisForm, currentTask, contextMapHtml, analysisRightHtml, snapshotHtml, bindAnalysis } from "./lib/pages/analysis.js";
@@ -15,6 +15,23 @@ import { renderAnalysisForm, currentTask, contextMapHtml, analysisRightHtml, sna
 let state = { topics: [], subquestions: [], assets: [], papers: [], attachments: [], cards: [], tables: [], adoptions: [], mappings: [], comparisons: [], protocols: [], templates: [], executions: [], samples: [], measurements: [], impacts: [], ocrs: [], analysisTasks: [], analysisResults: [], reports: [], chats: [] };
 const ui = { nav: "topic", topicId: "", assetId: null, paperId: null, attId: null, tableId: null, highlight: null, cell: null, dirty: false, busy: false, cardFilter: "all", groupSel: new Set(), batch: null, ack: false, protocolId: null, executionId: null, stepSel: null, viewRev: null, editEventId: null, pauseSuggest: null, prepExtra: 0, taskId: null, chatId: null, reportId: null, navCollapsed: false, kzTab: "todo", cardOpen: null, kzJob: null, suppressRecheck: null };
 let lastAction = null; // { label, run }
+function setDirty(value) {
+  const next = Boolean(value);
+  const changed = ui.dirty !== next;
+  ui.dirty = next;
+  const badge = document.getElementById("dirty-badge");
+  if (!badge) return;
+  badge.getAnimations().forEach((a) => a.cancel());
+  if (next) {
+    badge.hidden = false;
+    if (changed && !prefersReducedMotion()) badge.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 160, easing: "ease-out" });
+  } else if (!badge.hidden) {
+    if (prefersReducedMotion()) badge.hidden = true;
+    else badge.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 160, easing: "ease-in" }).finished
+      .then(() => { if (!ui.dirty) badge.hidden = true; })
+      .catch(() => {});
+  }
+}
 
 // A2 分区报错：只在触发它的面板内显示（left/mid/right），可关闭、带重试。
 const errors = { left: null, mid: null, right: null };
@@ -52,6 +69,541 @@ const $$ = (s) => document.querySelectorAll(s);
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const topicName = (id) => state.topics.find((t) => t.id === id)?.name;
 
+// ── 双卷主题与换卷动效 ─────────────────────────────────────
+const THEME_KEY = "locus.theme.v1";
+const wait = (ms) => new Promise((res) => setTimeout(res, ms));
+const nextFrame = () => new Promise((res) => requestAnimationFrame(() => requestAnimationFrame(res)));
+function prefersReducedMotion() { return window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false; }
+function currentTheme() { return document.documentElement.dataset.theme === "tech" ? "tech" : "paper"; }
+function applyTheme(theme, { persist = true } = {}) {
+  const t = theme === "tech" ? "tech" : "paper";
+  document.documentElement.dataset.theme = t;
+  document.body.classList.toggle("theme-tech", t === "tech");
+  if (persist) { try { localStorage.setItem(THEME_KEY, t); } catch {} }
+  const seal = $("#theme-seal");
+  if (seal) {
+    seal.setAttribute("aria-pressed", t === "tech" ? "true" : "false");
+    seal.title = t === "paper" ? "宣纸卷 · 点击换光卷" : "光卷 · 点击换宣纸";
+  }
+  const meta = $("#theme-color");
+  if (meta) meta.content = t === "tech" ? "#070d0f" : "#f2ede2";
+}
+let switchingTheme = false;
+function sealAnchor(btn) {
+  const r = (btn || $("#theme-seal"))?.getBoundingClientRect();
+  return r && r.width ? { x: r.left + r.width / 2, y: r.top + r.height / 2 }
+                     : { x: innerWidth / 2, y: innerHeight / 2 };
+}
+async function quickSwitchTheme(btn) {
+  if (switchingTheme || replaying) return;
+  const next = currentTheme() === "paper" ? "tech" : "paper";
+  if (prefersReducedMotion()) { applyTheme(next); return; }
+  switchingTheme = true;
+  const origin = sealAnchor(btn);
+  // 标识自己先合卷再开卷，随后整页换卷
+  if (btn) btn.classList.add("is-curling");
+  await wait(280);
+  if (btn) btn.classList.remove("is-curling");
+  await wait(150);
+  // 亮→暗：界面拆成蓝图、由光标群重建成光卷；暗→亮：从朱印晕开的墨洗
+  if (next === "tech") await runSwarmRebuild(next);
+  else await runInkBloom(next, { origin });
+  switchingTheme = false;
+  setStatus(next === "tech" ? "已换光卷" : "已换宣纸");
+}
+let replaying = false;
+const FIG_CURSOR_COLORS = ["#e0472f", "#e8833a", "#d9a520", "#2f9e6f", "#3b7fd6", "#6a54c9", "#c74d92", "#3aa8b8"];
+
+function figEl(cls, css) {
+  const d = document.createElement("div");
+  d.className = cls;
+  if (css) d.style.cssText = css;
+  return d;
+}
+function figRect(sel) {
+  const el = typeof sel === "string" ? $(sel) : sel;
+  return el ? el.getBoundingClientRect() : null;
+}
+function typeText(el, text, delay, msPerChar = 55) {
+  const t0 = performance.now() + delay;
+  let i = 0;
+  const step = () => {
+    if (!el.isConnected) return;
+    const n = Math.min(text.length, Math.max(0, Math.ceil((performance.now() - t0) / msPerChar)));
+    if (n > i) { i = n; el.textContent = text.slice(0, i); }
+    if (i < text.length) requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
+}
+// 光标群：围着朱印聚拢，随后散开在各元素间游走，靠近时互相让位
+function startSwarmFlock(host, origin) {
+  const cursors = [];
+  const total = 16;
+  for (let i = 0; i < total; i++) {
+    const el = document.createElement("span");
+    el.className = "fig-pointer";
+    el.style.setProperty("--c", FIG_CURSOR_COLORS[i % FIG_CURSOR_COLORS.length]);
+    el.innerHTML = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M1.4 1.2 14.6 6.4 8.9 8.6 6.9 14.8Z"/></svg>';
+    host.append(el);
+    const a = (i / total) * Math.PI * 2;
+    const rad = 20 + (i % 5) * 14;
+    const x = origin.x + Math.cos(a) * rad;
+    const y = origin.y + Math.sin(a) * rad * 0.75;
+    cursors.push({ el, x, y, vx: 0, vy: 0, tx: x, ty: y, ph: i * 1.93, onArrive: null });
+  }
+  let raf = 0, last = performance.now(), hand = 0, running = true;
+  const tick = (now) => {
+    if (!running) return;
+    const dt = Math.min(48, Math.max(8, now - last));
+    last = now;
+    for (const c of cursors) {
+      const dx = c.tx - c.x, dy = c.ty - c.y;
+      const dist = Math.hypot(dx, dy) || 1;
+      const speed = Math.min(0.95, dist * 0.018);
+      const dvx = (dx / dist) * speed + Math.cos(now * 0.0017 + c.ph) * 0.05;
+      const dvy = (dy / dist) * speed + Math.sin(now * 0.0014 + c.ph * 1.4) * 0.05;
+      c.vx += (dvx - c.vx) * 0.085;
+      c.vy += (dvy - c.vy) * 0.085;
+      c.x += c.vx * dt;
+      c.y += c.vy * dt;
+    }
+    for (let i = 0; i < cursors.length; i++) {
+      for (let j = i + 1; j < cursors.length; j++) {
+        const a = cursors[i], b = cursors[j];
+        const dx = b.x - a.x, dy = b.y - a.y, d = Math.hypot(dx, dy);
+        if (!d || d > 48) continue;
+        const f = ((48 - d) / 48) * 0.7 * (dt / 16), ux = dx / d, uy = dy / d;
+        a.x -= ux * f; a.y -= uy * f;
+        b.x += ux * f; b.y += uy * f;
+      }
+    }
+    for (const c of cursors) {
+      if (c.onArrive && Math.hypot(c.tx - c.x, c.ty - c.y) < 24) {
+        const fire = c.onArrive;
+        c.onArrive = null;
+        fire();
+      }
+      const rot = Math.atan2(c.vy, c.vx) * 57.2958 + 135;
+      c.el.style.transform = `translate(${c.x.toFixed(1)}px, ${c.y.toFixed(1)}px) rotate(${(Number.isFinite(rot) ? rot : 135).toFixed(1)}deg)`;
+    }
+    raf = requestAnimationFrame(tick);
+  };
+  raf = requestAnimationFrame(tick);
+  return {
+    aim(x, y, onArrive) {
+      const c = cursors[hand++ % cursors.length];
+      if (c.onArrive) { const fire = c.onArrive; c.onArrive = null; fire(); }
+      c.tx = x; c.ty = y;
+      c.onArrive = onArrive || null;
+      return c;
+    },
+    all(x, y) {
+      cursors.forEach((c, i) => {
+        if (c.onArrive) { const fire = c.onArrive; c.onArrive = null; fire(); }
+        const a = (i / cursors.length) * Math.PI * 2;
+        c.tx = x + Math.cos(a) * (24 + (i % 4) * 14);
+        c.ty = y + Math.sin(a) * (18 + (i % 3) * 10);
+      });
+    },
+    roam() {
+      for (let k = 0; k < 5; k++) {
+        const c = cursors[Math.floor(Math.random() * cursors.length)];
+        if (c.onArrive) continue;
+        c.tx = 60 + Math.random() * Math.max(40, innerWidth - 120);
+        c.ty = 70 + Math.random() * Math.max(40, innerHeight - 140);
+      }
+    },
+    stop() { running = false; cancelAnimationFrame(raf); host.innerHTML = ""; },
+  };
+}
+function buildSwarmStage(bp) {
+  bp.innerHTML = "";
+  const vw = innerWidth, vh = innerHeight;
+  const timers = [];
+  const at = (ms, fn) => timers.push(setTimeout(fn, ms));
+
+  bp.append(figEl("fig-canvas"));
+  const rh = figEl("fig-ruler h");
+  for (let x = 0; x <= vw; x += 100) {
+    const n = figEl("num", `left:${x + 4}px`);
+    n.textContent = String(x);
+    rh.append(n);
+  }
+  bp.append(rh);
+  const rv = figEl("fig-ruler v");
+  for (let y = 100; y <= vh; y += 100) {
+    const n = figEl("num", `top:${y + 3}px`);
+    n.textContent = String(y);
+    rv.append(n);
+  }
+  bp.append(rv);
+  const board = figEl("fig-board");
+  for (const k of ["tl", "tr", "bl", "br"]) board.append(figEl(`fig-board-handle ${k}`));
+  const size = figEl("fig-board-size");
+  size.textContent = `${vw} × ${vh}`;
+  board.append(size);
+  bp.append(board);
+
+  const host = figEl("fig-pointers");
+  bp.append(host);
+  const flock = startSwarmFlock(host, sealAnchor($("#theme-seal")));
+  const hud = figEl("fig-hud");
+  hud.innerHTML = '<b>16</b> 光标 · <span class="fig-done">0</span> / <span class="fig-total">0</span> 图层';
+  bp.append(hud);
+  const doneEl = hud.querySelector(".fig-done"), totalEl = hud.querySelector(".fig-total");
+  let totalLayers = 0, doneLayers = 0;
+
+  // 图层画完即“变前沿”：把真实元素抬到遮罩之上，线框随即淡出
+  const liveEls = [];
+  const shellBody = $(".shell-body");
+  const goLive = (src, figNode) => {
+    if (!src || !src.isConnected || liveEls.includes(src)) return;
+    liveEls.push(src);
+    // 整页的堆叠上下文先压平，真元素才能越过遮罩逐层出现
+    if (shellBody) shellBody.style.zIndex = "auto";
+    if (getComputedStyle(src).position === "static") src.style.position = "relative";
+    src.style.zIndex = "212";
+    src.style.opacity = "0";
+    src.style.transition = "opacity .3s ease";
+    requestAnimationFrame(() => { if (src.isConnected) src.style.opacity = "1"; });
+    if (figNode) figNode.classList.add("is-done");
+  };
+
+  // 每个元素都是画布上的一个图层：光标飞到位置后，选框才落笔
+  const box = (r, opt = {}) => {
+    if (!r || r.width < 6 || r.height < 6) return null;
+    const x = Math.round(r.left), y = Math.round(r.top);
+    const w = Math.max(10, Math.round(r.width)), h = Math.max(10, Math.round(r.height));
+    const el = figEl("fig-el" + (opt.cls ? " " + opt.cls : ""), `left:${x}px;top:${y}px;width:${w}px;height:${h}px`);
+    if (opt.fill) el.style.background = opt.fill;
+    if (opt.handles !== false) for (const k of ["tl", "tr", "bl", "br"]) el.append(figEl(`fig-handle ${k}`));
+    if (opt.dim) {
+      const d = figEl("fig-dim");
+      d.textContent = `${w} × ${h}`;
+      if (opt.dimRight) { d.style.left = "calc(100% + 6px)"; d.style.top = "50%"; d.style.marginTop = "-7px"; }
+      else if (y + h + 26 > vh) { d.style.top = "auto"; d.style.bottom = "6px"; }
+      el.append(d);
+    }
+    let txt = null;
+    if (opt.text) {
+      txt = figEl("fig-txt");
+      if (opt.textCss) txt.style.cssText = opt.textCss;
+      el.append(txt);
+    }
+    bp.insertBefore(el, host);
+    totalLayers++;
+    totalEl.textContent = String(totalLayers);
+    const reveal = () => {
+      el.classList.add("on");
+      doneEl.textContent = String(++doneLayers);
+      if (txt) typeText(txt, opt.text, 140, 28);
+      if (opt.src) {
+        const hold = (txt ? 140 + opt.text.length * 28 : 0) + 420;
+        timers.push(setTimeout(() => goLive(opt.src, el), hold));
+      }
+    };
+    if (opt.cursor === false) requestAnimationFrame(() => requestAnimationFrame(reveal));
+    else flock.aim(x + 12, y + 12, reveal);
+    if (txt) flock.aim(x + Math.min(w - 16, 26 + opt.text.length * 7), y + Math.max(16, h / 2));
+    return el;
+  };
+  const boxOf = (sel, opt = {}) => {
+    const el = typeof sel === "string" ? $(sel) : sel;
+    if (!el) return null;
+    return box(el.getBoundingClientRect(), { ...opt, src: el });
+  };
+  const line = (x, y, w) => {
+    const el = figEl("fig-line", `left:${Math.round(x)}px;top:${Math.round(y)}px;width:${Math.round(w)}px`);
+    el.append(figEl("fig-end l"), figEl("fig-end r"));
+    bp.insertBefore(el, host);
+    flock.aim(x + 10, y - 8, () => el.classList.add("on"));
+  };
+
+  // 时间轴整体拉长，按“线条 → 栏 → 标题 → 导航 → 表单”一层一层显形
+  at(90, () => { rh.classList.add("on"); rv.classList.add("on"); board.classList.add("on"); });
+
+  let topbarFig = null, brandFig = null, sealFig = null;
+  at(300, () => { topbarFig = box(figRect(".topbar")); });
+
+  at(520, () => {
+    brandFig = box(figRect(".brand"), { text: "研迹 LOCUS", handles: false, textCss: "font-size:11px;letter-spacing:.16em;padding:9px 8px" });
+  });
+
+  at(760, () => { sealFig = box(figRect("#theme-seal"), { cls: "is-seal" }); });
+
+  // 顶栏整体一次变成真界面（品牌与朱印都在其中）
+  at(1560, () => {
+    const tb = $(".topbar");
+    if (!tb) return;
+    goLive(tb, topbarFig);
+    brandFig?.classList.add("is-done");
+    sealFig?.classList.add("is-done");
+  });
+
+  // 每栏先落框，过一拍再补标题，一栏一栏地显
+  [...$$(".pane")].slice(0, 3).forEach((p, i) => {
+    at(1010 + i * 300, () => box(p.getBoundingClientRect(), { dim: true }));
+    at(1150 + i * 300, () => {
+      const t = p.querySelector(".pane-title");
+      if (!t) return;
+      boxOf(t, { cls: "is-text", text: t.textContent.trim(), handles: false, textCss: "font-size:11px;letter-spacing:.12em;padding:2px" });
+    });
+  });
+
+  // 导航七格逐格出现（课题 → 对话）
+  [...$$(".nav.spine .navitem")].slice(0, 7).forEach((n, i) => at(1900 + i * 150, () => {
+    boxOf(n, {
+      dim: i === 0,
+      dimRight: i === 0,
+      handles: i === 0,
+      text: n.querySelector(".navsigil")?.textContent.trim() || "",
+      textCss: "font-size:13px;text-align:center;padding:10px 0;letter-spacing:.1em",
+    });
+  }));
+
+  [...$$(".pane .hint")].slice(0, 3).forEach((n, i) => at(2800 + i * 60, () => {
+    const label = n.textContent.trim().replace(/\s+/g, " ").slice(0, 24);
+    boxOf(n, { cls: "is-text", text: label, handles: false, textCss: "font-size:11px;padding:2px 4px" });
+  }));
+  // 中栏新建表单：整块作为一个图层，画完即变真界面
+  at(2960, () => {
+    const ca = $("#create-area");
+    if (ca && ca.getBoundingClientRect().height > 40) boxOf(ca, { dim: true, handles: false });
+  });
+
+  // 空状态全息徽记与文字同步登场
+  at(3080, () => {
+    const holo = $(".pane .es-seal") || $(".pane .empty-seal");
+    if (holo) boxOf(holo, { handles: false });
+  });
+
+  at(3180, () => {
+    const h2 = $(".empty-guide h2") || $(".pane h2");
+    if (h2) boxOf(h2, { cls: "is-text", text: h2.textContent.trim(), dim: true, textCss: "font-size:19px;font-weight:600;padding:12px 4px" });
+  });
+
+  at(3400, () => {
+    const btn = $(".pane .primary");
+    if (btn) boxOf(btn, { cls: "is-fill", fill: "#5fd3c8", dim: true, text: btn.textContent.trim(), textCss: "font-size:11px;color:#062a2a;padding:11px 0;text-align:center;width:100%" });
+  });
+
+  at(3640, () => boxOf("#topic-name", { handles: false, text: "例如：SLAC 漆酶动力学表征", textCss: "font-size:10px;padding:8px 10px;color:#8fb3b2" }));
+  at(3860, () => boxOf("#topic-q", { handles: false, text: "想回答的科学问题", textCss: "font-size:10px;padding:8px 10px;color:#8fb3b2" }));
+
+  [...$$(".pane .item")].slice(0, 2).forEach((n, i) => at(4100 + i * 210, () => {
+    const label = n.textContent.trim().replace(/\s+/g, " ").slice(0, 12);
+    boxOf(n, { handles: false, text: label, textCss: "font-size:10px;padding:8px 6px;color:#bcd6d4" });
+  }));
+
+  at(4520, () => boxOf(".pane .empty-sub", { cls: "is-text", text: "只需名称与研究问题即可开始…", handles: false, textCss: "font-size:10px;padding:3px 2px" }));
+  at(4720, () => boxOf(".pane .goto", { dim: true }));
+  at(4900, () => {
+    const tb = figRect(".topbar");
+    if (tb) line(24, tb.bottom + 3, vw - 48);
+  });
+
+  const roamTimer = setInterval(() => flock.roam(), 420);
+  bp._figCleanup = () => {
+    timers.forEach(clearTimeout);
+    clearInterval(roamTimer);
+    flock.stop();
+    document.documentElement.classList.remove("swarm-build");
+    liveEls.forEach((elm) => {
+      elm.style.position = "";
+      elm.style.zIndex = "";
+      elm.style.opacity = "";
+      elm.style.transition = "";
+    });
+    liveEls.length = 0;
+    if (shellBody) shellBody.style.zIndex = "";
+  };
+
+  // 全部图层都落笔后，光标群再聚回朱印，光卷才落定
+  return new Promise((resolve) => {
+    const t0 = performance.now();
+    const check = () => {
+      const elapsed = performance.now() - t0;
+      if (elapsed < 5000 || doneLayers < totalLayers) {
+        if (elapsed < 12000) { timers.push(setTimeout(check, 100)); return; }
+      }
+      clearInterval(roamTimer);
+      const o = sealAnchor($("#theme-seal"));
+      flock.all(o.x, o.y);
+      timers.push(setTimeout(resolve, 750));
+    };
+    timers.push(setTimeout(check, 5000));
+  });
+}
+// 亮→暗：整页摊成一张设计画布，光标群按图元重画这一页，随后光卷落定
+async function runSwarmRebuild(next, { rebuild = false } = {}) {
+  const layer = $("#replay-layer"), bp = $("#replay-blueprint");
+  const caption = layer.querySelector(".replay-caption");
+  if (caption) caption.textContent = rebuild ? "换卷 · 重绘" : "换卷";
+  layer.classList.add("is-fig");
+  // 暂时取消卷卡的裁切/毛玻璃，避免其层叠上下文把被抬升的真元素压回画布下
+  document.documentElement.classList.add("swarm-build");
+  const stageEnd = buildSwarmStage(bp);
+  // 遮罩盖好之前先切到目标主题：画完的图层直接以真界面出现
+  applyTheme(next);
+  layer.hidden = false;
+  layer.classList.remove("is-out");
+  await nextFrame();
+  layer.classList.add("is-on");
+  await stageEnd;
+  if (rebuild) renderAll();
+  await wait(160);
+  layer.classList.add("is-out");
+  await wait(380);
+  bp._figCleanup?.();
+  document.documentElement.classList.remove("swarm-build");
+  layer.classList.remove("is-on", "is-out", "is-fig");
+  layer.hidden = true;
+  bp.innerHTML = "";
+}
+// 暗→亮：古墨整屏垫底，宣纸色从朱印晕开，带湿纸墨边与飞溅
+function themePalette(theme) {
+  const probe = document.createElement("div");
+  probe.dataset.theme = theme;
+  probe.style.cssText = "position:fixed;left:-9999px;top:0;width:1px;height:1px";
+  document.body.append(probe);
+  const cs = getComputedStyle(probe);
+  const bg = cs.getPropertyValue("--bg").trim() || (theme === "tech" ? "#070d0f" : "#efe7d8");
+  probe.remove();
+  return bg;
+}
+async function runInkBloom(next, { origin, onApply } = {}) {
+  if (document.querySelector(".ink-bloom")) return;
+  const vw = innerWidth, vh = innerHeight, dpr = Math.min(devicePixelRatio || 1, 2);
+  const oldBg = themePalette(currentTheme());
+  const c = document.createElement("canvas");
+  c.className = "ink-bloom";
+  c.width = Math.round(vw * dpr); c.height = Math.round(vh * dpr);
+  const ctx = c.getContext("2d");
+  ctx.scale(dpr, dpr);
+  ctx.fillStyle = oldBg;
+  ctx.fillRect(0, 0, vw, vh);
+  document.body.append(c);
+  // 先垫满旧墨再换主题，覆盖层之下直接就是新宣纸，墨晕只负责揭开
+  applyTheme(next);
+  if (onApply) onApply();
+
+  const ox = origin?.x ?? vw / 2, oy = origin?.y ?? vh / 2;
+  const grains = [];
+  for (let i = 0; i < 900; i++) grains.push([Math.random() * vw, Math.random() * vh, Math.random() * 0.05]);
+  const maxR = Math.hypot(Math.max(ox, vw - ox), Math.max(oy, vh - oy)) + 90;
+  const grow = 780;
+  const ease = (p) => (p < .5 ? 4 * p * p * p : 1 - Math.pow(-2 * p + 2, 3) / 2);
+  const t0 = performance.now();
+
+  return new Promise((resolve) => {
+    function frame(now) {
+      const p = Math.min(1, (now - t0) / grow);
+      const e = ease(p);
+      const r = 10 + e * maxR;
+      const pts = [];
+      const N = 96;
+      for (let i = 0; i <= N; i++) {
+        const th = (i / N) * Math.PI * 2;
+        const wob = 1 + .055 * Math.sin(3 * th + p * 7) + .035 * Math.sin(7 * th - p * 11) + .018 * Math.sin(13 * th + p * 17);
+        pts.push([ox + Math.cos(th) * r * wob, oy + Math.sin(th) * r * wob]);
+      }
+      const trace = () => {
+        ctx.beginPath();
+        pts.forEach(([px, py], i) => (i ? ctx.lineTo(px, py) : ctx.moveTo(px, py)));
+        ctx.closePath();
+      };
+      ctx.clearRect(0, 0, vw, vh);
+      ctx.fillStyle = oldBg;
+      ctx.fillRect(0, 0, vw, vh);
+      ctx.globalCompositeOperation = "destination-out";
+      trace();
+      ctx.fill();
+      ctx.globalCompositeOperation = "source-over";
+      // 纸面颗粒
+      ctx.save();
+      trace();
+      ctx.clip();
+      for (let i = 0; i < grains.length; i++) {
+        const gx = grains[i][0], gy = grains[i][1];
+        if ((gx - ox) ** 2 + (gy - oy) ** 2 > (r * 1.06) ** 2) continue;
+        ctx.fillStyle = `rgba(90,64,40,${grains[i][2]})`;
+        ctx.fillRect(gx, gy, 1, 1);
+      }
+      ctx.restore();
+      // 湿纸墨边：贴着纸色前沿的一圈墨，外加琥珀微光
+      const rimA = 0.55 - 0.3 * e;
+      ctx.lineWidth = 9 + 7 * (1 - e);
+      ctx.strokeStyle = `rgba(96,62,36,${rimA})`;
+      ctx.shadowColor = `rgba(160,108,58,${rimA * .9})`;
+      ctx.shadowBlur = 24;
+      trace();
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+      // 墨点先于前沿在纸上洇开
+      ctx.fillStyle = `rgba(96,62,36,${rimA * .45})`;
+      for (let i = 0; i < 9; i++) {
+        const th = i * 2.399 + p * 3;
+        const rr = r * (0.9 + 0.06 * ((i * 37) % 10) / 10);
+        ctx.beginPath();
+        ctx.arc(ox + Math.cos(th) * rr, oy + Math.sin(th) * rr, 1.6 + ((i * 13) % 5), 0, Math.PI * 2);
+        ctx.fill();
+      }
+      if (p < 1) { requestAnimationFrame(frame); return; }
+      c.remove();
+      resolve();
+    }
+    requestAnimationFrame(frame);
+  });
+}
+async function replayAndRecast(btn) {
+  if (replaying || switchingTheme) return;
+  const next = currentTheme() === "paper" ? "tech" : "paper";
+  if (prefersReducedMotion()) {
+    applyTheme(next);
+    renderAll();
+    setStatus("已换卷并重绘");
+    return;
+  }
+  replaying = true;
+  if (btn) { btn.disabled = true; btn.setAttribute("aria-busy", "true"); }
+  const origin = sealAnchor(btn);
+  if (next === "tech") await runSwarmRebuild(next, { rebuild: true });
+  else await runInkBloom(next, { origin, onApply: renderAll });
+  if (btn) { btn.disabled = false; btn.removeAttribute("aria-busy"); }
+  replaying = false;
+  setStatus("已换卷并重绘");
+}
+
+function clearBootState() {
+  document.body.classList.add("booted");
+  const c = $("#mid-content");
+  c.classList.remove("boot-skel");
+  c.removeAttribute("aria-busy");
+}
+function bootFailure(e) {
+  const h = humanError(e);
+  const raw = String(e?.message ?? e ?? "");
+  const msg = h.message === raw ? "服务暂时不可用，请稍后重试。" : h.message;
+  notify("mid", `加载失败：${msg}`, h.detail);
+  clearBootState();
+  $("#mid-content").innerHTML = `<div class="empty-state boot-error">
+    <span class="es-seal" aria-hidden="true">迹</span>
+    <div class="es-eyebrow">卷宗未展开</div>
+    <h3>暂时读不到卷宗</h3>
+    <p>${esc(msg)}</p>
+    <div class="empty-actions"><button class="primary" id="boot-retry" type="button">重试读取</button></div>
+  </div>`;
+  $("#material-list").innerHTML = `<p class="hint">等待卷宗…</p>`;
+  $("#right-content").innerHTML = `<p class="hint">等待卷宗…</p>`;
+  setStatus("读取失败");
+}
+async function bootstrap() {
+  setStatus("读取卷宗…");
+  try { await refresh(); clearError("mid"); clearBootState(); setStatus("就绪"); }
+  catch (e) { bootFailure(e); }
+}
+
+
 async function refresh() {
   state = await api.getState();
   restoreUi();
@@ -68,9 +620,28 @@ async function refresh() {
   if (ui.chatId && !state.chats.some((c) => c.id === ui.chatId)) ui.chatId = null;
   if (ui.reportId && !state.reports.some((r) => r.id === ui.reportId)) ui.reportId = null;
   renderAll();
+  clearBootState();
 }
 
-function setStatus(m) { $("#status").textContent = m; }
+let lastLiveAt = 0, lastLiveText = "";
+function setStatus(m) {
+  const el = $("#status");
+  const previous = el.textContent;
+  el.textContent = m;
+  const kind = /失败|错误|无法|中断/.test(m) ? "error" : /连接中|处理中|运行中|中…/.test(m) ? "busy" : "ok";
+  el.dataset.state = kind;
+  if (previous !== m && previous && kind !== "busy" && !prefersReducedMotion()) {
+    el.getAnimations().forEach((a) => a.cancel());
+    el.animate([{ opacity: 0.25, transform: "translateY(2px)" }, { opacity: 1, transform: "translateY(0)" }], { duration: 160, easing: "ease-out" });
+  }
+  const live = $("#status-live");
+  if (!live || m === lastLiveText) return;
+  const now = Date.now();
+  if (kind === "busy" && now - lastLiveAt < 5000) return;
+  live.textContent = m;
+  lastLiveText = m;
+  lastLiveAt = now;
+}
 
 /** 按 BOM 解码文本文件（UTF-8 / UTF-16LE / UTF-16BE），避免 UTF-16 仪器导出被误判。 */
 async function readTextFile(file) {
@@ -118,15 +689,19 @@ async function noteChangeHits(kind, id, fields) {
 
 /** 所有写操作：禁用按钮 + 处理中 + 错误内联 + 可重试。 */
 async function runBusy(btn, label, fn) {
-  if (ui.busy) return;
+  if (ui.busy) { setStatus("另一项操作进行中，请稍候"); return false; }
   ui.busy = true;
   const panel = PANEL_OF(btn); clearError(panel);
-  const old = btn?.textContent; if (btn) { btn.disabled = true; btn.textContent = "处理中…"; }
+  const old = btn?.textContent; if (btn) { btn.disabled = true; btn.setAttribute("aria-busy", "true"); btn.textContent = "处理中…"; }
   lastAction = { label, run: () => runBusy(btn, label, fn) };
   setStatus(`${label}…`);
-  try { await fn(); }
-  catch (e) { const h = humanError(e); setError(panel, { panel, message: `${label}失败：${h.message}`, detail: h.detail, retry: lastAction.run }); }
-  finally { ui.busy = false; if (btn) { btn.disabled = false; btn.textContent = old; } }
+  try {
+    await fn();
+    if ($("#status").textContent === `${label}…`) setStatus(`${label}完成`);
+    return true;
+  }
+  catch (e) { const h = humanError(e); setStatus(`${label}失败`); setError(panel, { panel, message: `${label}失败：${h.message}`, detail: h.detail, retry: lastAction.run }); return false; }
+  finally { ui.busy = false; if (btn) { btn.disabled = false; btn.removeAttribute("aria-busy"); btn.textContent = old; } }
 }
 
 /** 后台 AI job：并发上限 1，超出显示「排队中」；只禁用发起按钮，不锁全局编辑。 */
@@ -136,19 +711,22 @@ const aiWaiters = [];
 async function runJob(btn, label, fn) {
   const old = btn?.textContent;
   if (aiActive >= AI_MAX) {
-    if (btn) { btn.disabled = true; btn.textContent = "排队中…"; }
+    if (btn) { btn.disabled = true; btn.setAttribute("aria-busy", "true"); btn.textContent = "排队中…"; }
     setStatus(`${label}：排队中…`);
     await new Promise((res) => aiWaiters.push(res));
-    if (btn) { btn.disabled = false; btn.textContent = old; }
+    if (btn) { btn.disabled = false; btn.removeAttribute("aria-busy"); btn.textContent = old; }
   }
   aiActive++;
   const panel = PANEL_OF(btn); clearError(panel);
-  if (btn) { btn.disabled = true; btn.textContent = "后台运行中…"; }
+  if (btn) { btn.disabled = true; btn.setAttribute("aria-busy", "true"); btn.textContent = "后台运行中…"; }
   setStatus(`${label}…`);
-  try { await fn(); }
-  catch (e) { const h = humanError(e); setError(panel, { panel, message: `${label}失败：${h.message}`, detail: h.detail, retry: () => runJob(btn, label, fn) }); }
+  try {
+    await fn();
+    if ($("#status").textContent === `${label}…`) setStatus(`${label}完成`);
+  }
+  catch (e) { const h = humanError(e); setStatus(`${label}失败`); setError(panel, { panel, message: `${label}失败：${h.message}`, detail: h.detail, retry: () => runJob(btn, label, fn) }); }
   finally {
-    if (btn) { btn.disabled = false; btn.textContent = old; }
+    if (btn) { btn.disabled = false; btn.removeAttribute("aria-busy"); btn.textContent = old; }
     aiActive--; const next = aiWaiters.shift(); if (next) next();
   }
 }
@@ -158,12 +736,51 @@ function currentAsset() { return state.assets.find((a) => a.id === ui.assetId) ?
 /** 切换前脏检查；返回 true 表示可离开。 */
 function guardLeave() {
   if (!ui.dirty) return true;
-  if (confirm("当前有未保存的编辑，确定离开？未保存内容会丢失。")) { ui.dirty = false; return true; }
+  if (confirm("当前有未保存的编辑，确定离开？未保存内容会丢失。")) { setDirty(false); return true; }
   return false;
 }
 
+/** 切换卷目：统一清掉上一页的临时选择，避免跨页残留。 */
+const navScrollPositions = new Map();
+let navTransitionId = 0;
+function navPanes() { return [document.querySelector(".pane.left"), document.querySelector(".pane.mid"), document.querySelector(".pane.right")]; }
+function saveNavScroll() {
+  navScrollPositions.set(ui.nav, navPanes().map((el) => el.scrollTop));
+}
+function restoreNavScroll() {
+  const positions = navScrollPositions.get(ui.nav);
+  navPanes().forEach((el, i) => { el.scrollTop = positions?.[i] ?? 0; });
+}
+async function activateNav(kind) {
+  if (kind === ui.nav || !guardLeave()) return;
+  const id = ++navTransitionId;
+  const panes = navPanes();
+  saveNavScroll();
+  panes.forEach((el) => el.getAnimations().forEach((a) => a.cancel()));
+  if (!prefersReducedMotion()) {
+    await Promise.all(panes.map((el) => {
+      const style = getComputedStyle(el);
+      return el.animate([
+        { opacity: Number(style.opacity), transform: style.transform },
+        { opacity: 0, transform: "translateY(-3px)" },
+      ], { duration: 120, easing: "ease-in" }).finished.catch(() => {});
+    }));
+  }
+  if (id !== navTransitionId) return;
+  clearAllErrors();
+  ui.nav = kind; ui.highlight = null; ui.cell = null; ui.tableId = null; ui.groupSel.clear(); ui.batch = null; ui.ack = false;
+  ui.stepSel = null; ui.viewRev = null; ui.editEventId = null; ui.pauseSuggest = null; ui.prepExtra = 0;
+  renderAll();
+  restoreNavScroll();
+  if (prefersReducedMotion()) return;
+  await Promise.all(panes.map((el) => el.animate([
+    { opacity: 0, transform: "translateY(6px)" },
+    { opacity: 1, transform: "translateY(0)" },
+  ], { duration: 200, easing: "cubic-bezier(.2,.8,.2,1)" }).finished.catch(() => {})));
+}
+
 function renderAll() {
-  if ($("#status").textContent === "连接中…") setStatus("就绪");
+  if (["连接中…", "读取卷宗…"].includes($("#status").textContent)) setStatus("就绪");
   renderShell();
   renderMiddle(); renderRight();
   saveUi();
@@ -175,20 +792,25 @@ function renderShell() {
   const kz = ui.nav === "knowledge";
   if (!kz) ui.kzJob = null;
   if (kz && !ui.paperId && state.papers.length) ui.paperId = state.papers[0].id;
+  if (ui.nav === "papers" && !ui.paperId) {
+    const pool = state.papers.filter((p) => !ui.topicId || p.topicIds.includes(ui.topicId) || !p.topicIds.length);
+    if (pool.length) ui.paperId = pool[0].id;
+  }
   // B5：进入分析页自动打开最近的分析任务
   if (ui.nav === "analysis" && !ui.taskId) {
     const ts = state.analysisTasks.filter((t) => !ui.topicId || t.topicId === ui.topicId).slice().sort((a, b) => b.createdAt.localeCompare(a.createdAt));
     if (ts.length) ui.taskId = ts[0].id;
   }
   document.querySelector(".app").classList.toggle("mode-knowledge", kz);
-  $("#navrail").hidden = !kz;
-  $("#nav").hidden = kz;
-  if (kz) $("#navrail").innerHTML = navHtml(ui, false); else $("#nav").innerHTML = navHtml(ui, ui.navCollapsed);
-  $("#nav").classList.toggle("collapsed", !!ui.navCollapsed);
+  document.querySelector(".app").classList.remove("nav-mini");
+  $("#navrail").hidden = true;
+  $("#nav").hidden = false;
+  $("#nav").innerHTML = navHtml(ui, false);
+  $("#nav").classList.remove("collapsed");
   $("#kz-left").hidden = !kz;
   if (kz) $("#kz-left").innerHTML = knowledgeLeftHtml(state, ui);
-  $("#sec-materials").hidden = kz || ui.nav === "topic";
-  $("#materials-title").textContent = { papers: "论文条目", protocol: "方案", record: "执行", analysis: "分析任务", chat: "对话会话" }[ui.nav] ?? "材料";
+  $("#sec-materials").hidden = kz;
+  $("#materials-title").textContent = ui.nav === "topic" ? "课题目录" : ({ papers: "论文条目", protocol: "方案", record: "执行", analysis: "分析任务", chat: "对话会话" }[ui.nav] ?? "材料");
   $("#material-list").innerHTML = kz ? "" : sidebarListHtml(state, ui);
   renderCreateArea();
   renderErrors();
@@ -197,7 +819,7 @@ function renderShell() {
 /** 中间「＋新建」区：本页的新建/上传表单与工具（不再放侧栏）。 */
 function renderCreateArea() {
   const box = $("#create-area"), tools = $("#tools-area");
-  if (ui.nav === "topic") { box.innerHTML = ""; tools.innerHTML = ""; return; }
+  if (ui.nav === "topic" || (ui.nav === "knowledge" && !state.papers.length)) { box.innerHTML = ""; tools.innerHTML = ""; return; }
   box.innerHTML = ""; tools.innerHTML = "";
   renderImportBox(box);
   renderLitTools(tools);
@@ -212,23 +834,53 @@ function renderImportBox(box) {
   if (ui.nav === "chat") { renderChatForm(box); return; }
   box.innerHTML = "";
 }
+const EMPTY_META = {
+  papers: { eyebrow: "文献卷尚空", actions: [] },
+  knowledge: { eyebrow: "知识卷尚空", actions: [["先去文献", "goto:papers"]] },
+  protocol: { eyebrow: "方案卷尚空", actions: [["从文献重构", "goto:papers"]] },
+  record: { eyebrow: "执行卷尚空", actions: [["先定方案", "goto:protocol"], ["开卷执行", "focus-create"]] },
+  analysis: { eyebrow: "分析卷尚空", actions: [["查看记录", "goto:record"]] },
+  chat: { eyebrow: "对话卷尚空", actions: [["回顾方案", "goto:protocol"]] },
+};
+function emptyStateHtml(kind, title, desc) {
+  const meta = !state.topics.length
+    ? { eyebrow: "未开卷", actions: [["先建课题", "goto:topic"]] }
+    : (EMPTY_META[kind] ?? { eyebrow: "本草目尚空", actions: [] });
+  const acts = (meta.actions ?? []).map(([label, act], i) =>
+    `<button class="empty-act ${i === 0 ? "primary" : ""}" type="button" data-act="${esc(act)}">${esc(label)}</button>`).join("");
+  return `<div class="empty-state" data-empty="${esc(kind)}">
+    <span class="es-seal" aria-hidden="true">${navChar(kind)}</span>
+    <div class="es-eyebrow">${esc(meta.eyebrow)}</div>
+    <h3>${esc(title)}</h3>
+    <p>${esc(!state.topics.length ? "先开卷建立课题，再回到本卷积累内容。" : desc)}</p>
+    ${acts ? `<div class="empty-actions">${acts}</div>` : ""}
+  </div>`;
+}
+function midEmpty(kind, title, desc) {
+  const c = $("#mid-content");
+  c.classList.add("is-empty");
+  c.innerHTML = emptyStateHtml(kind, title, desc);
+}
 function renderMiddle() {
   const note = $("#mid-note"), content = $("#mid-content");
+  document.body.dataset.nav = ui.nav;
+  content.classList.remove("is-empty", "rich");
   content.classList.toggle("kzw", ui.nav === "knowledge");
   if (ui.nav === "topic") {
     $("#mid-title").textContent = "课题";
     note.hidden = true;
     content.innerHTML = state.topics.length
-      ? topicOverviewHtml(state, ui) + subqBlockHtml(state, ui)
+      ? topicFlowHtml(state, ui) + topicOverviewHtml(state, ui) + subqBlockHtml(state, ui)
       : emptyTopicGuideHtml();
+    content.classList.add("rich");
     return;
   }
   if (ui.nav === "papers") {
     const p = currentPaper();
     const att = currentAttachment();
-    $("#mid-title").textContent = att ? `附件原文 · ${state.assets.find((a) => a.id === att.assetId)?.name ?? ""}` : "附件原文";
-    if (!p) { note.hidden = true; content.textContent = "在左栏选择或新建论文条目。"; return; }
-    if (!att) { note.hidden = false; note.textContent = "无附件；右栏导入（只归档）。"; content.textContent = ""; return; }
+    $("#mid-title").textContent = att ? `文献原文 · ${state.assets.find((a) => a.id === att.assetId)?.name ?? ""}` : "文献原文";
+    if (!p) { note.hidden = true; $("#mid-title").textContent = "文献条目"; midEmpty("papers", state.papers.length ? "还没有选择论文条目" : "还没有论文条目", "在左栏创建条目，或在上方导入题录；附件在右栏管理。"); return; }
+    if (!att) { note.hidden = true; midEmpty("papers", "这个条目还没有附件", "在右栏导入正文或补充材料；导入后这里显示可定位的原文。"); return; }
     const asset = state.assets.find((a) => a.id === att.assetId);
     note.hidden = false; note.textContent = `角色：${ROLE_LABEL[att.role]}${att.version ? " · 版本 " + att.version : ""} · 原件 ${asset?.bytes ?? 0}B`;
     content.innerHTML = esc(asset?.text ?? "");
@@ -237,13 +889,16 @@ function renderMiddle() {
   if (ui.nav === "knowledge") {
     $("#mid-title").textContent = "卡片审阅";
     note.hidden = true;
+    if (!state.papers.length) { midEmpty("knowledge", "还没有可审的卡片", "先在文献卷建立条目并导入附件，再回到知识卷发起语义提取。"); return; }
     content.innerHTML = knowledgeWorkspaceHtml(state, ui);
     return;
   }
   if (ui.nav === "protocol") {
-    $("#mid-title").textContent = "实验图";
+    $("#mid-title").textContent = currentProtocol() ? "实验图" : "实验方案";
     note.hidden = true;
+    if (!currentProtocol()) { midEmpty("protocol", "还没有实验方案", "在上方新建方案、上传原件解析，或从论文方法重构。"); return; }
     content.innerHTML = protocolMainHtml();
+    content.classList.add("rich");
     return;
   }
   if (ui.nav === "record") {
@@ -255,7 +910,7 @@ function renderMiddle() {
       return;
     }
     const e = currentExecution();
-    if (!e) { note.hidden = true; $("#mid-title").textContent = "执行记录"; content.textContent = "在左栏选择执行，或选择手写图片。"; return; }
+    if (!e) { note.hidden = true; $("#mid-title").textContent = "执行记录"; midEmpty("record", "还没有执行记录", "在左侧选择执行，或先创建一次执行；手写图片也可在这里查看。"); return; }
     const p = state.protocols.find((x) => x.id === e.protocolId);
     const snap = e.preparation?.snapshot ?? p?.revisions.find((r) => r.revision === (e.preparation?.baseRevision ?? e.protocolRevision));
     if ((e.phase ?? "recording") === "preparing") {
@@ -268,26 +923,29 @@ function renderMiddle() {
     $("#mid-title").textContent = "步骤记录表";
     note.hidden = true;
     content.innerHTML = `<div class="item">${stepsTableHtml(e, snap)}</div>` + impactHtml([e.id]);
+    content.classList.add("rich");
     return;
   }
   if (ui.nav === "analysis") {
     const t = currentTask(state, ui);
-    $("#mid-title").textContent = t ? `上下文地图 · ${t.title}` : "上下文地图";
-    if (!t) { note.hidden = true; content.textContent = "在左栏选择或创建分析任务。"; return; }
+    $("#mid-title").textContent = t ? `上下文地图 · ${t.title}` : "分析任务";
+    if (!t) { note.hidden = true; midEmpty("analysis", "还没有分析任务", "在左侧选择任务，或在上方基于数据表新建分析。"); return; }
     note.hidden = false;
     note.textContent = t.snapshot
       ? `快照已冻结（hash ${t.snapshot.hash.slice(0, 12)}…）；改候选不回改旧快照。`
       : "未冻结：推荐时按核心＋候选＋目的冻结发送内容。";
     content.innerHTML = contextMapHtml(state, ui, t);
+    content.classList.add("rich");
     return;
   }
   if (ui.nav === "chat") {
     const c = currentChat();
-    $("#mid-title").textContent = c ? "上下文对话" : "上下文对话";
-    if (!c) { note.hidden = true; content.textContent = "在左栏选择或创建对话会话。"; return; }
+    $("#mid-title").textContent = "上下文对话";
+    if (!c) { note.hidden = true; midEmpty("chat", "还没有对话", "在左侧选择会话，或围绕课题新建对话；范围与采纳入右栏。"); return; }
     note.hidden = false;
     note.textContent = `范围：${c.subquestionId ? "子问题 ＋ " : ""}${c.scope.length} 对象；发送即冻结快照。讨论不改对象；采纳需确认。`;
     content.innerHTML = chatHtml(c);
+    content.classList.add("rich");
     return;
   }
   note.hidden = true;
@@ -298,7 +956,7 @@ function renderRight() {
   if (ui.nav === "topic") { $("#right-title").textContent = "下一步与待办"; $("#right-content").innerHTML = nextStepHtml(state, ui) + topicTodosHtml(state, ui); return; }
   if (ui.nav === "papers") { $("#right-title").textContent = "条目与附件"; $("#right-content").innerHTML = paperHtml(); return; }
   if (ui.nav === "knowledge") {
-    $("#right-title").textContent = "AI 待审队列";
+    $("#right-title").textContent = "审阅队列";
     $("#right-content").innerHTML = knowledgeQueueHtml(state, ui);
     return;
   }
@@ -364,14 +1022,19 @@ function paperHtml() {
   return `
     <div class="item" data-id="${p.id}">
       <div class="meta">题录 · ${nCard} 张知识卡</div>
-      <div class="row"><label>题名</label><input data-field="pTitle" value="${esc(p.title)}" /></div>
-      <div class="row"><label>作者</label><input data-field="pAuthors" value="${esc(p.authors.join(" and "))}" /></div>
-      <div class="row"><label>年份</label><input data-field="pYear" value="${esc(p.year)}" /><label>DOI</label><input data-field="pDoi" value="${esc(p.doi)}" /></div>
-      <div class="row"><label>来源</label><input data-field="pSource" value="${esc(p.source)}" /></div>
-      <div class="row"><label>许可</label><input data-field="pLicense" value="${esc(p.license)}" placeholder="未提供留空" /></div>
-      <div class="row"><label>备注</label><input data-field="pNote" value="${esc(p.note)}" /></div>
-      <div class="row"><input data-field="pReason" placeholder="修改原因（修订留历史）" />
-        <button class="primary" id="paper-save">保存题录</button><button class="history-btn">历史(${p.history.length})</button></div>
+      <div class="ppform">
+        <label>题名<input data-field="pTitle" value="${esc(p.title)}" /></label>
+        <label>作者<input data-field="pAuthors" value="${esc(p.authors.join(" and "))}" /></label>
+        <div class="ppgrid2">
+          <label>年份<input data-field="pYear" value="${esc(p.year)}" /></label>
+          <label>DOI<input data-field="pDoi" value="${esc(p.doi)}" /></label>
+        </div>
+        <label>来源<input data-field="pSource" value="${esc(p.source)}" /></label>
+        <label>许可<input data-field="pLicense" value="${esc(p.license)}" placeholder="未提供留空" /></label>
+        <label>备注<input data-field="pNote" value="${esc(p.note)}" /></label>
+        <div class="ppsave"><input data-field="pReason" placeholder="修改原因（修订留历史）" />
+          <button class="primary" id="paper-save">保存题录</button><button class="history-btn">历史(${p.history.length})</button></div>
+      </div>
       <div class="pane-title">课题关联（可多课题引用）</div>
       ${state.topics.length ? state.topics.map((t) => `<label class="cmppick"><input type="checkbox" class="paper-topic" value="${t.id}" ${p.topicIds.includes(t.id) ? "checked" : ""}/> ${esc(t.name)}</label>`).join("") : `<p class="hint">暂无课题；先在「课题展示」创建。</p>`}
       <div class="row"><button class="primary goto" data-goto="knowledge" data-paper="${p.id}">去知识提取（选目的后发起）</button></div>
@@ -1146,14 +1809,21 @@ document.addEventListener("click", (ev) => {
   ui.nav = b.dataset.goto; ui.highlight = null; ui.cell = null; ui.groupSel.clear(); ui.batch = null; ui.ack = false;
   renderAll();
 });
+document.addEventListener("click", (ev) => {
+  const b = ev.target.closest(".empty-act"); if (!b) return;
+  const act = b.dataset.act ?? "";
+  if (act === "focus-create") {
+    const box = $("#create-area");
+    const target = box?.querySelector("input:not([type=file]), textarea, select, button");
+    box?.scrollIntoView({ behavior: prefersReducedMotion() ? "auto" : "smooth", block: "start" });
+    target?.focus({ preventScroll: true });
+    return;
+  }
+  if (act.startsWith("goto:")) activateNav(act.slice(5));
+});
 $("#nav").addEventListener("click", (ev) => {
-  if (ev.target.closest("#nav-toggle")) { ui.navCollapsed = !ui.navCollapsed; saveUi(); renderShell(); return; }
   const b = ev.target.closest(".navitem"); if (!b || b.disabled) return;
-  if (!guardLeave()) return;
-  clearAllErrors();
-  ui.nav = b.dataset.nav; ui.highlight = null; ui.cell = null; ui.tableId = null; ui.groupSel.clear(); ui.batch = null; ui.ack = false;
-  ui.stepSel = null; ui.viewRev = null; ui.editEventId = null; ui.pauseSuggest = null; ui.prepExtra = 0;
-  renderAll();
+  activateNav(b.dataset.nav);
 });
 // 页头「当前课题」（容器 #curtopic 常驻，用委托）
 $("#curtopic").addEventListener("change", (e) => {
@@ -1166,11 +1836,11 @@ $("#curtopic").addEventListener("change", (e) => {
 document.addEventListener("click", (ev) => {
   if (ev.target.id === "topic-create") { runBusy(ev.target, "创建课题", async () => {
     const r = await api.createTopic($("#topic-name").value, $("#topic-q").value);
-    ui.topicId = r.topicId; await refresh(); setStatus("课题已创建");
+    ui.topicId = r.topicId; setDirty(false); await refresh(); setStatus("课题已创建");
   }); return; }
   if (ev.target.id === "subq-create") { runBusy(ev.target, "创建子问题", async () => {
     if (!ui.topicId) { setError("mid", { panel: "mid", message: "请先创建或选择课题。", detail: "", retry: null }); return; }
-    await api.createSubquestion(ui.topicId, $("#subq-q").value, $("#subq-kind").value); $("#subq-q").value = ""; await refresh(); setStatus("子问题已添加");
+    await api.createSubquestion(ui.topicId, $("#subq-q").value, $("#subq-kind").value); $("#subq-q").value = ""; setDirty(false); await refresh(); setStatus("子问题已添加");
   }); return; }
 });
 // 分区报错条：关闭 / 详情 / 重试
@@ -1186,12 +1856,12 @@ document.addEventListener("click", (ev) => {
   const t = ev.target;
   const node = t.closest(".dnode");
   if (node) { if (ui.nav === "protocol") { ui.stepSel = node.dataset.step; renderMiddle(); } return; }
-  if (t.id === "step-cancel") { ui.stepSel = null; renderMiddle(); return; }
+  if (t.id === "step-cancel") { ui.stepSel = null; setDirty(false); renderMiddle(); return; }
   if (t.id === "step-add") {
     const op = ($("#newstep-op")?.value ?? "").trim();
     if (!op) { notify("mid", "新步骤操作名不能为空"); return; }
     const p = currentProtocol(); const latest = p.revisions[p.revisions.length - 1];
-    runBusy(t, "添加步骤", async () => { await api.editProtocol(p.id, { steps: [...latest.steps, { op, durationMin: null, branch: null, estimated: false }], reason: `添加步骤：${op}` }); ui.dirty = false; await refresh(); setStatus(`已添加步骤（${fmtVersion(p.revision + 1)}）`); }); return;
+    runBusy(t, "添加步骤", async () => { await api.editProtocol(p.id, { steps: [...latest.steps, { op, durationMin: null, branch: null, estimated: false }], reason: `添加步骤：${op}` }); setDirty(false); await refresh(); setStatus(`已添加步骤（${fmtVersion(p.revision + 1)}）`); }); return;
   }
   if (t.id === "step-save") {
     const p = currentProtocol(); const latest = p.revisions[p.revisions.length - 1];
@@ -1213,7 +1883,7 @@ document.addEventListener("click", (ev) => {
       branchFrom: $("#se-fork")?.value || null, mergeInto: $("#se-merge")?.value || null,
     };
     const steps = ui.stepSel === "new" ? [...latest.steps, edited] : latest.steps.map((s) => (s.id === ui.stepSel ? { ...s, ...edited, id: s.id } : s));
-    runBusy(t, "保存步骤", async () => { await api.editProtocol(p.id, { steps, reason: $("#se-reason").value }); ui.stepSel = null; ui.dirty = false; await refresh(); setStatus("步骤已保存（追加新快照，旧版本不动）"); }); return;
+    runBusy(t, "保存步骤", async () => { await api.editProtocol(p.id, { steps, reason: $("#se-reason").value }); ui.stepSel = null; setDirty(false); await refresh(); setStatus("步骤已保存（追加新快照，旧版本不动）"); }); return;
   }
 });
 // 时长来源切换：规定/估计 → 时长输入；由量·速率计算 → 用量/速率；未知 → 两者皆隐。
@@ -1261,35 +1931,135 @@ document.addEventListener("click", (ev) => {
     const targetOps = targetEls.map((el) => el.dataset.op).filter(Boolean);
     runBusy(stepBtn, "记录步骤", async () => {
       await api.appendEvent(ui.executionId, { kind: "step", stepId: sid, text: opText, actual: { ...(amount ? { amount } : {}), ...(durRaw !== "" ? { durationMin: Number(durRaw) } : {}) } });
-      if (incident && targetOps.length) await api.appendEvent(ui.executionId, { kind: "deviation", stepId: sid, text: `意外：影响到${targetOps.map((o) => `「${o}」`).join("")}` });
-      ui.dirty = false; await refresh(); setStatus("步骤已记录（实际值入本次执行，不改源方案）");
+if (incident && targetOps.length) await api.appendEvent(ui.executionId, { kind: "deviation", stepId: sid, text: `意外：影响到${targetOps.map((o) => `「${o}」`).join("")}` });
+      setDirty(false); await refresh(); setStatus("步骤已记录（实际值入本次执行，不改源方案）");
     }); return;
   }
   const smpRename = t.closest(".smp-rename");
   if (smpRename) {
     const row = smpRename.closest(".smprow"); const id = row.dataset.id; const name = row.querySelector(".smp-name").value.trim();
-    runBusy(smpRename, "改样品名", async () => { await api.renameSample(id, name); ui.dirty = false; await refresh(); setStatus("样品名已改（稳定编号不变）"); }); return;
+    runBusy(smpRename, "改样品名", async () => { await api.renameSample(id, name); setDirty(false); await refresh(); setStatus("样品名已改（稳定编号不变）"); }); return;
   }
 });
-// 窄导航条：悬停显文字（title）；点击图标弹出完整导航抽屉
-function openNavDrawer() {
-  $("#nd-list").innerHTML = NAV_ITEMS.map(([k, l]) => `<button class="nd-item ${k === ui.nav ? "active" : ""}" data-nav="${k}">${esc(l)}</button>`).join("");
-  $("#navdrawer").hidden = false;
+const dialogFocusReturns = new WeakMap();
+const dialogMotionIds = new WeakMap();
+const DIALOG_SELECTORS = ["#ai-drawer", "#drawer", "#navdrawer"];
+const isDialogOpen = (el) => Boolean(el && !el.hidden && !el.dataset.closing);
+function syncDialogScrim() {
+  const scrim = $("#dialog-scrim");
+  if (!scrim) return;
+  const visible = DIALOG_SELECTORS.some((selector) => { const el = $(selector); return el && !el.hidden; });
+  const interactive = DIALOG_SELECTORS.some((selector) => isDialogOpen($(selector)));
+  scrim.style.pointerEvents = interactive ? "auto" : "none";
+  scrim.getAnimations().forEach((a) => a.cancel());
+  if (visible) {
+    const wasHidden = scrim.hidden;
+    const opacity = wasHidden ? 0 : Number(getComputedStyle(scrim).opacity);
+    scrim.hidden = false;
+    if (!prefersReducedMotion()) scrim.animate([{ opacity }, { opacity: 1 }], { duration: 240, easing: "ease-out" });
+  } else if (!scrim.hidden) {
+    if (prefersReducedMotion()) scrim.hidden = true;
+    else {
+      const opacity = Number(getComputedStyle(scrim).opacity);
+      scrim.animate([{ opacity }, { opacity: 0 }], { duration: 180, easing: "ease-in" }).finished
+        .then(() => {
+          const anyVisible = DIALOG_SELECTORS.some((selector) => { const el = $(selector); return el && !el.hidden; });
+          if (!anyVisible) scrim.hidden = true;
+        })
+        .catch(() => {});
+    }
+  }
 }
+function openDialog(el, initialSelector) {
+  if (!el || isDialogOpen(el)) return;
+  const reopening = Boolean(el.dataset.closing);
+  const id = (dialogMotionIds.get(el) ?? 0) + 1;
+  dialogMotionIds.set(el, id);
+  dialogFocusReturns.set(el, document.activeElement);
+  const style = reopening ? getComputedStyle(el) : null;
+  el.hidden = false;
+  delete el.dataset.closing;
+  el.getAnimations().forEach((a) => a.cancel());
+  syncDialogScrim();
+  if (!prefersReducedMotion()) {
+    const from = reopening
+      ? { opacity: Number(style.opacity), transform: style.transform }
+      : { opacity: 0, transform: el.id === "navdrawer" ? "translateY(-6px)" : "translateX(28px)" };
+    el.animate([from, { opacity: 1, transform: "translate(0)" }], { duration: 240, easing: "cubic-bezier(.2,.8,.2,1)" });
+  }
+  const target = (initialSelector && el.querySelector(initialSelector)) || el.querySelector("button, input, select, textarea") || el;
+  target.focus({ preventScroll: true });
+}
+function closeDialog(el) {
+  if (!isDialogOpen(el)) return;
+  const id = (dialogMotionIds.get(el) ?? 0) + 1;
+  dialogMotionIds.set(el, id);
+  el.dataset.closing = "true";
+  el.getAnimations().forEach((a) => a.cancel());
+  syncDialogScrim();
+  const previous = dialogFocusReturns.get(el);
+  dialogFocusReturns.delete(el);
+  if (previous?.isConnected && typeof previous.focus === "function") previous.focus({ preventScroll: true });
+  const finish = () => {
+    if (dialogMotionIds.get(el) !== id) return;
+    el.hidden = true;
+    delete el.dataset.closing;
+    syncDialogScrim();
+  };
+  if (prefersReducedMotion()) { finish(); return; }
+  const style = getComputedStyle(el);
+  el.animate([
+    { opacity: Number(style.opacity), transform: style.transform },
+    { opacity: 0, transform: el.id === "navdrawer" ? "translateY(-6px)" : "translateX(28px)" },
+  ], { duration: 180, easing: "ease-in" }).finished.then(finish).catch(() => {});
+}
+$("#dialog-scrim").addEventListener("click", () => {
+  if (isDialogOpen($("#ai-drawer"))) closeAiDrawer();
+  else if (isDialogOpen($("#drawer"))) closeDialog($("#drawer"));
+  else if (isDialogOpen($("#navdrawer"))) closeNavDrawer();
+});
+const DIALOG_FOCUSABLE = 'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])';
+document.addEventListener("keydown", (ev) => {
+  if (ev.key !== "Tab") return;
+  const dialog = [...document.querySelectorAll("#ai-drawer:not([hidden]):not([data-closing]), #drawer:not([hidden]):not([data-closing]), #navdrawer:not([hidden]):not([data-closing])")].at(-1);
+  if (!dialog) return;
+  const items = [...dialog.querySelectorAll(DIALOG_FOCUSABLE)].filter((el) => el.getClientRects().length);
+  if (!items.length) { ev.preventDefault(); dialog.focus(); return; }
+  const first = items[0], last = items.at(-1), active = document.activeElement;
+  if (ev.shiftKey && (active === first || !dialog.contains(active))) { ev.preventDefault(); last.focus(); }
+  else if (!ev.shiftKey && (active === last || !dialog.contains(active))) { ev.preventDefault(); first.focus(); }
+});
+
+// 窄屏卷目抽屉：一字印列表；点击后关闭并切页。
+function openNavDrawer() {
+  $("#nd-list").innerHTML = NAV_ITEMS.map(([k, l]) => `<button class="nd-item ${k === ui.nav ? "active" : ""}" data-nav="${k}"${k === ui.nav ? ' aria-current="page"' : ""}><span class="nd-seal" aria-hidden="true">${navChar(k)}</span><span>${esc(l)}</span></button>`).join("");
+  openDialog($("#navdrawer"), ".nd-item.active");
+  $("#spine-menu").setAttribute("aria-expanded", "true");
+}
+function closeNavDrawer() {
+  closeDialog($("#navdrawer"));
+  $("#spine-menu").setAttribute("aria-expanded", "false");
+}
+$("#spine-menu").addEventListener("click", () => { if (!isDialogOpen($("#navdrawer"))) openNavDrawer(); else closeNavDrawer(); });
 $("#navrail").addEventListener("click", (ev) => { if (ev.target.closest(".navitem")) openNavDrawer(); });
 $("#navdrawer").addEventListener("click", (ev) => {
-  if (ev.target.id === "nd-close") { $("#navdrawer").hidden = true; return; }
+  if (ev.target.id === "nd-close" || ev.target.closest("[data-close-navdrawer]")) { closeNavDrawer(); return; }
+  if (ev.target.closest("[data-open-ai]")) { closeNavDrawer(); openAiDrawer(); return; }
   const b = ev.target.closest(".nd-item"); if (!b) return;
-  $("#navdrawer").hidden = true;
-  if (!guardLeave()) return;
-  clearAllErrors();
-  ui.nav = b.dataset.nav; ui.highlight = null; ui.cell = null; ui.tableId = null; ui.groupSel.clear(); ui.batch = null; ui.ack = false;
-  ui.stepSel = null; ui.viewRev = null; ui.editEventId = null; ui.pauseSuggest = null; ui.prepExtra = 0;
-  renderAll();
+  closeNavDrawer();
+  activateNav(b.dataset.nav);
 });
 
 $("#material-list").addEventListener("click", (ev) => {
   const el = ev.target.closest(".material"); if (!el) return;
+  if (el.dataset.topicpick) {
+    if (el.dataset.topicpick === ui.topicId) return;
+    if (!guardLeave()) return;
+    clearAllErrors();
+    ui.topicId = el.dataset.topicpick; ui.assetId = null; ui.highlight = null; ui.groupSel.clear(); ui.batch = null;
+    ui.protocolId = null; ui.executionId = null; ui.stepSel = null; ui.viewRev = null; ui.taskId = null; ui.chatId = null; ui.reportId = null;
+    renderAll(); return;
+  }
   if (el.dataset.paperid) {
     if (el.dataset.paperid === ui.paperId) return;
     if (!guardLeave()) return;
@@ -1328,6 +2098,7 @@ $("#mid-content").addEventListener("click", async (ev) => {
     await runJob(ev.target, "上下文讨论", async () => {
       const r = await api.sendChat(c.id, text);
       $("#chat-text").value = "";
+      setDirty(false);
       await refresh();
       await pollJob(r.jobId, "上下文讨论");
       await refreshAfterJob(); setStatus("讨论完成（建议采纳见右栏）");
@@ -1350,13 +2121,15 @@ $("#mid-content").addEventListener("click", async (ev) => {
     }); return;
   }
 });
-$("#right-content").addEventListener("change", (ev) => {
+$("#right-content").addEventListener("change", async (ev) => {
   if (ev.target.classList.contains("paper-topic")) {
-    const p = currentPaper();
-    runBusy(null, "课题关联", async () => {
-      await api.linkPaperTopic(p.id, ev.target.value, ev.target.checked);
-      await refresh(); setStatus(ev.target.checked ? "已关联课题（多课题可引用同一来源）" : "已解除课题关联");
-    }); return;
+    const p = currentPaper(); const checkbox = ev.target; const desired = checkbox.checked;
+    const ok = await runBusy(checkbox, "课题关联", async () => {
+      await api.linkPaperTopic(p.id, checkbox.value, desired);
+      await refresh(); setStatus(desired ? "已关联课题（多课题可引用同一来源）" : "已解除课题关联");
+    });
+    if (!ok) checkbox.checked = !desired;
+    return;
   }
   if (ev.target.id === "proto-rev") { ui.viewRev = Number(ev.target.value); ui.stepSel = null; renderMiddle(); renderRight(); }
   if (ev.target.id === "meas-sample") {
@@ -1370,7 +2143,15 @@ $("#right-content").addEventListener("change", (ev) => {
   }
   if (ev.target.id === "batch-ack") { ui.ack = ev.target.checked; renderRight(); }
 });
-$("#right-content").addEventListener("input", (ev) => { if (ev.target.closest(".item") || ev.target.closest(".resedit") || ev.target.closest(".reprow")) ui.dirty = true; });
+$("#right-content").addEventListener("input", (ev) => { if (ev.target.closest(".item") || ev.target.closest(".resedit") || ev.target.closest(".reprow")) setDirty(true); });
+function trackMidDirty(ev) {
+  const el = ev.target;
+  if (!el.closest?.("#mid-content")) return;
+  if (el.matches(".kz-note, .kz-imp, #kz-paper, #proto-rev")) return;
+  if (el.matches('input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="range"]), textarea, select')) setDirty(true);
+}
+document.addEventListener("input", trackMidDirty);
+document.addEventListener("change", trackMidDirty);
 $("#right-content").addEventListener("click", async (ev) => {
   const item = ev.target.closest(".item");
   const val = (f) => item?.querySelector(`[data-field="${f}"]`)?.value ?? "";
@@ -1391,7 +2172,7 @@ $("#right-content").addEventListener("click", async (ev) => {
       await runBusy(ev.target, "保存题录", async () => {
         try {
           await api.updatePaper(p.id, { title: val("pTitle"), authors: val("pAuthors"), year: val("pYear"), doi: val("pDoi"), source: val("pSource"), license: val("pLicense"), note: val("pNote"), reason: val("pReason") });
-          ui.dirty = false; await refresh(); setStatus("题录已保存（修订留历史）");
+          setDirty(false); await refresh(); setStatus("题录已保存（修订留历史）");
         } catch (e) {
           if (e.status === 409 && e.details?.existingPaperId) { showLocate(e.message, e.details.existingPaperId); return; }
           throw e;
@@ -1424,7 +2205,7 @@ $("#right-content").addEventListener("click", async (ev) => {
     if (ev.target.classList.contains("batch-confirm")) {
       await runBusy(ev.target, "整组确认", async () => {
         await api.batchConfirm([...ui.groupSel], ui.ack);
-        ui.groupSel.clear(); ui.batch = null; ui.ack = false; ui.dirty = false;
+        ui.groupSel.clear(); ui.batch = null; ui.ack = false; setDirty(false);
         await refresh(); setStatus("整组已确认（含修订历史）");
       }); return;
     }
@@ -1440,7 +2221,7 @@ $("#right-content").addEventListener("click", async (ev) => {
           fields, units: splitList($("#mc-units").value), conditions: splitList($("#mc-conditions").value),
           unknowns: splitList($("#mc-unknowns").value), secondaryCitation: $("#mc-secondary").checked, reason: $("#mc-reason").value,
         });
-        ui.dirty = false; await refresh(); setStatus("补卡成功（manual，待核对）");
+        setDirty(false); await refresh(); setStatus("补卡成功（manual，待核对）");
       }); return;
     }
     if (!item) return;
@@ -1456,20 +2237,20 @@ $("#right-content").addEventListener("click", async (ev) => {
       if (nk) fields[nk] = val("newval");
       await runBusy(ev.target, "保存字段", async () => {
         await api.reviewCard(item.dataset.id, { extracted: { fields, units: splitList(val("units")), conditions: splitList(val("conditions")) }, reason: val("reason") });
-        ui.dirty = false; await refresh(); setStatus("字段/单位/条件已保存（含修订历史）");
+        setDirty(false); await refresh(); setStatus("字段/单位/条件已保存（含修订历史）");
       }); return;
     }
     if (ev.target.classList.contains("sec-toggle")) {
       const c = state.cards.find((x) => x.id === item.dataset.id);
       await runBusy(ev.target, "转引标记", async () => {
         await api.reviewCard(item.dataset.id, { secondaryCitation: !c.secondaryCitation, reason: val("reason") });
-        ui.dirty = false; await refresh(); setStatus(c.secondaryCitation ? "已取消转引标记" : "已标记转引（二手，不计独立证据）");
+        setDirty(false); await refresh(); setStatus(c.secondaryCitation ? "已取消转引标记" : "已标记转引（二手，不计独立证据）");
       }); return;
     }
     if (ev.target.classList.contains("adopt-btn")) {
       await runBusy(ev.target, "记录采用", async () => {
         await api.adopt(item.dataset.id, val("adoptSubq"), val("adoptDecision"), val("adoptReason"));
-        ui.dirty = false; await refresh(); setStatus("任务采用/排除已记录（独立于核对）");
+        setDirty(false); await refresh(); setStatus("任务采用/排除已记录（独立于核对）");
       }); return;
     }
     if (ev.target.classList.contains("cell")) {
@@ -1482,13 +2263,13 @@ $("#right-content").addEventListener("click", async (ev) => {
       const tid = ui.cell.tableId;
       await runBusy(ev.target, "保存单元格", async () => {
         await api.reviewTable(tid, { cellUpdates: [{ row: ui.cell.row, col: ui.cell.col, value: val("cellValue") }], reason: val("cellReason") });
-        ui.cell = null; ui.dirty = false; await refresh(); setStatus("单元格已保存（含修订历史）"); openTableMax(tid);
+        ui.cell = null; setDirty(false); await refresh(); setStatus("单元格已保存（含修订历史）"); openTableMax(tid);
       }); return;
     }
     if (ev.target.classList.contains("save")) {
       await runBusy(ev.target, "保存核对", async () => {
         await api.reviewCard(item.dataset.id, { audit: val("audit"), importance: val("importance") || null, note: val("note"), reason: val("reason") });
-        ui.dirty = false; await refresh(); setStatus("已保存（含修订历史）");
+        setDirty(false); await refresh(); setStatus("已保存（含修订历史）");
       }); return;
     }
     if (ev.target.classList.contains("save-cols")) {
@@ -1496,7 +2277,7 @@ $("#right-content").addEventListener("click", async (ev) => {
       await runBusy(ev.target, "保存列设置", async () => {
         const columnUpdates = t.columns.map((_, i) => ({ index: i, unit: item.querySelector(`[data-col="${i}"][data-k="unit"]`).value, decision: item.querySelector(`[data-col="${i}"][data-k="decision"]`).value }));
         await api.reviewTable(t.id, { columnUpdates, note: val("note"), reason: val("reason") });
-        ui.dirty = false; await refresh(); setStatus("列设置已保存"); openTableMax(t.id);
+        setDirty(false); await refresh(); setStatus("列设置已保存"); openTableMax(t.id);
       }); return;
     }
     // ── 4C 操作 ──
@@ -1504,25 +2285,25 @@ $("#right-content").addEventListener("click", async (ev) => {
       const p = currentProtocol();
       await runBusy(ev.target, "保存方案元信息", async () => {
         await api.editProtocol(p.id, { purpose: val("purpose"), criteria: val("criteria"), conditions: splitList(val("conditions")), unknowns: splitList(val("unknowns")), reason: val("reason") });
-        ui.dirty = false; await refresh(); setStatus("方案元信息已保存（新快照）");
+        setDirty(false); await refresh(); setStatus("方案元信息已保存（新快照）");
       }); return;
     }
     if (ev.target.classList.contains("tmpl-confirm")) {
       const tid = ev.target.closest(".tmpl").dataset.id;
-      await runBusy(ev.target, "确认模板", async () => { await api.confirmTemplate(tid); ui.dirty = false; await refresh(); setStatus("模板已人工确认，可复用"); }); return;
+      await runBusy(ev.target, "确认模板", async () => { await api.confirmTemplate(tid); setDirty(false); await refresh(); setStatus("模板已人工确认，可复用"); }); return;
     }
     if (ev.target.classList.contains("tmpl-use")) {
       const tid = ev.target.closest(".tmpl").dataset.id;
       const t = state.templates.find((x) => x.id === tid);
       await runBusy(ev.target, "按模板开始执行", async () => {
         const r = await api.startExecution({ topicId: ui.topicId || currentProtocol().topicId, protocolId: t.protocolId, protocolRevision: t.protocolRevision, templateId: tid });
-        ui.executionId = r.executionId; ui.nav = "record"; ui.prepExtra = 0; ui.dirty = false; await refresh(); setStatus("执行已创建：进入准备稿（固定模板所指方案版本）");
+        ui.executionId = r.executionId; ui.nav = "record"; ui.prepExtra = 0; setDirty(false); await refresh(); setStatus("执行已创建：进入准备稿（固定模板所指方案版本）");
       }); return;
     }
     if (ev.target.id === "tmpl-create") {
       await runBusy(ev.target, "生成模板", async () => {
         await api.createTemplate({ protocolId: ui.protocolId, aiDraft: $("#tmpl-ai").checked });
-        ui.dirty = false; await refresh(); setStatus("模板已生成（固定当前方案版本；AI 草稿须人工确认）");
+        setDirty(false); await refresh(); setStatus("模板已生成（固定当前方案版本；AI 草稿须人工确认）");
       }); return;
     }
     if (ev.target.id === "prep-add") { ui.prepExtra += 1; renderRight(); return; }
@@ -1537,22 +2318,22 @@ $("#right-content").addEventListener("click", async (ev) => {
       });
       await runBusy(ev.target, confirm ? "确认快照" : "保存准备稿", async () => {
         await api.updatePreparation(ui.executionId, { adjustments: rows, notes: $("#prep-notes").value });
-        if (!confirm) { ui.prepExtra = 0; ui.dirty = false; await refresh(); setStatus("准备稿已保存（未确认，不算数）"); return; }
+        if (!confirm) { ui.prepExtra = 0; setDirty(false); await refresh(); setStatus("准备稿已保存（未确认，不算数）"); return; }
         const r = await api.confirmPreparation(ui.executionId);
-        ui.prepExtra = 0; ui.dirty = false; await refresh();
+        ui.prepExtra = 0; setDirty(false); await refresh();
         setStatus(r.impactId ? "快照已确认：进入记录状态；已登记影响分析（含确定性时间传播）" : "快照已确认（无差异）：进入记录状态；实际开始请另行记录");
       }); return;
     }
     if (ev.target.id === "exec-begin") {
       await runBusy(ev.target, "记录实际开始", async () => {
         await api.appendEvent(ui.executionId, { kind: "start" });
-        ui.dirty = false; await refresh(); setStatus("实际开始已记录（由人记录，非系统虚构）");
+        setDirty(false); await refresh(); setStatus("实际开始已记录（由人记录，非系统虚构）");
       }); return;
     }
     if (ev.target.id === "exec-saveas") {
       await runBusy(ev.target, "另存新方案", async () => {
         const r = await api.saveExecutionAsProtocol(ui.executionId, $("#saveas-name").value);
-        ui.protocolId = r.protocolId; ui.nav = "protocol"; ui.viewRev = null; ui.dirty = false; await refresh();
+        ui.protocolId = r.protocolId; ui.nav = "protocol"; ui.viewRev = null; setDirty(false); await refresh();
         setStatus("已另存为新方案 r1（源方案未改动）");
       }); return;
     }
@@ -1569,13 +2350,13 @@ $("#right-content").addEventListener("click", async (ev) => {
           risks: ui.pauseSuggest?.risks ?? [], resumeChecks: ui.pauseSuggest?.resumeChecks ?? [],
           aiSuggested: !!ui.pauseSuggest,
         });
-        ui.pauseSuggest = null; ui.dirty = false; await refresh(); setStatus("已暂停（状态与风险已记录）");
+        ui.pauseSuggest = null; setDirty(false); await refresh(); setStatus("已暂停（状态与风险已记录）");
       }); return;
     }
     if (ev.target.id === "exec-resume") {
       await runBusy(ev.target, "恢复执行", async () => {
         await api.resumeExecution(ui.executionId, $("#resume-decision").value);
-        ui.dirty = false; await refresh(); setStatus("已恢复（人的决定已记录）");
+        setDirty(false); await refresh(); setStatus("已恢复（人的决定已记录）");
       }); return;
     }
     if (ev.target.id === "exec-done") {
@@ -1592,7 +2373,7 @@ $("#right-content").addEventListener("click", async (ev) => {
           actual: { amount: val("evAmount"), ...(durRaw !== "" ? { durationMin: Number(durRaw) } : {}) },
           reason: val("evReason"),
         });
-        ui.editEventId = null; ui.dirty = false; await refresh(); setStatus("记录已原位修订（留历史，不改源方案）");
+        ui.editEventId = null; setDirty(false); await refresh(); setStatus("记录已原位修订（留历史，不改源方案）");
       }); return;
     }
     if (ev.target.id === "ev-add") {
@@ -1603,7 +2384,7 @@ $("#right-content").addEventListener("click", async (ev) => {
           actual: { amount: $("#ev-amount").value, ...(durRaw !== "" ? { durationMin: Number(durRaw) } : {}) },
           backfilled: $("#ev-backfill").checked,
         });
-        ui.dirty = false; await refresh(); setStatus("事件已追加");
+        setDirty(false); await refresh(); setStatus("事件已追加");
       }); return;
     }
     if (ev.target.id === "meas-add") {
@@ -1613,7 +2394,7 @@ $("#right-content").addEventListener("click", async (ev) => {
           sampleStateRevision: Number($("#meas-srev").value), value: $("#meas-value").value, unit: $("#meas-unit").value,
           method: $("#meas-method").value, instrument: $("#meas-instr").value, note: $("#meas-note").value,
         });
-        ui.dirty = false; await refresh(); setStatus("测量已记录（固定样品状态版本）");
+        setDirty(false); await refresh(); setStatus("测量已记录（固定样品状态版本）");
       }); return;
     }
     if (ev.target.classList.contains("meas-save")) {
@@ -1622,7 +2403,7 @@ $("#right-content").addEventListener("click", async (ev) => {
         await api.editMeasurement(item.dataset.id, { value: val("mValue"), unit: val("mUnit"), method: val("mMethod"), instrument: val("mInstr"), note: val("mNote"), reason: val("mReason") });
         const fields = [];
         if (before) { if (val("mValue") !== before.value) fields.push("value"); if (val("mUnit") !== before.unit) fields.push("unit"); if (val("mMethod") !== before.method) fields.push("method"); }
-        ui.dirty = false; await refresh(); setStatus("测量已修订（留历史）");
+        setDirty(false); await refresh(); setStatus("测量已修订（留历史）");
         await noteChangeHits("measurement", item.dataset.id, fields);
       }); return;
     }
@@ -1638,7 +2419,7 @@ $("#right-content").addEventListener("click", async (ev) => {
       for (const line of $("#ocr-fields").value.split(/\n/)) { const i = line.indexOf("="); if (i > 0) fields[line.slice(0, i).trim()] = line.slice(i + 1).trim(); }
       await runBusy(ev.target, "保存转录", async () => {
         await api.manualOcr(ui.assetId, { rawText: $("#ocr-raw").value, fields, unknowns: splitList($("#ocr-unknowns").value) });
-        ui.dirty = false; await refresh(); setStatus("人工转录草稿已保存（manual）");
+        setDirty(false); await refresh(); setStatus("人工转录草稿已保存（manual）");
       }); return;
     }
     if (ev.target.classList.contains("ocr-confirm")) {
@@ -1647,7 +2428,7 @@ $("#right-content").addEventListener("click", async (ev) => {
       const nk = val("oNewKey").trim(); if (nk) fields[nk] = val("oNewVal");
       await runBusy(ev.target, "确认 OCR", async () => {
         await api.confirmOcr(item.dataset.id, { rawText: val("oRaw"), fields, reason: val("oReason") });
-        ui.dirty = false; await refresh(); setStatus("OCR 记录已人工确认（修订留历史）");
+        setDirty(false); await refresh(); setStatus("OCR 记录已人工确认（修订留历史）");
       }); return;
     }
   } catch (e) { const h = humanError(e); setError("mid", { panel: "mid", message: h.message, detail: h.detail, retry: null }); }
@@ -1734,29 +2515,58 @@ function openHistory(obj) {
     : `<table class="grid"><thead><tr><th>版本</th><th>字段</th><th>前</th><th>后</th><th>原因</th><th>时间</th></tr></thead><tbody>${
         obj.history.slice().reverse().map((h) => `<tr><td>${h.revision}</td><td>${esc(h.field)}</td><td class="raw">${esc(h.before)}</td><td class="raw">${esc(h.after)}</td><td>${esc(h.reason)}</td><td>${esc(fmtTime(h.at))}</td></tr>`).join("")
       }</tbody></table>`;
-  $("#drawer").hidden = false;
+  openDialog($("#drawer"), "#drawer-close");
 }
-$("#drawer-close").addEventListener("click", () => { $("#drawer").hidden = true; });
+$("#drawer-close").addEventListener("click", () => closeDialog($("#drawer")));
+document.addEventListener("keydown", (e) => {
+  if (e.key !== "Escape" || e.defaultPrevented) return;
+  let closed = false;
+  if (isDialogOpen($("#drawer"))) { closeDialog($("#drawer")); closed = true; }
+  if (isDialogOpen($("#ai-drawer"))) { closeAiDrawer(); closed = true; }
+  if (isDialogOpen($("#navdrawer"))) { closeNavDrawer(); closed = true; }
+  const tm = $("#table-max"); if (tm) { tm.remove(); closed = true; }
+  if (closed) e.preventDefault();
+});
 window.addEventListener("beforeunload", (e) => { if (ui.dirty) { e.preventDefault(); e.returnValue = ""; } });
+
+let aiStatus = null;
+function openAiDrawer() {
+  openDialog($("#ai-drawer"), "#ai-base");
+  $("#ai-chip").setAttribute("aria-expanded", "true");
+  if (aiStatus && !$("#ai-msg").textContent) {
+    $("#ai-msg").textContent = aiStatus.configured
+      ? `当前已配置 · ${aiStatus.model}（修改后需重新保存）`
+      : "未配置：填写地址、模型与 Key 后保存；配置保存在本机数据目录，不入库。";
+  }
+}
+function closeAiDrawer() {
+  closeDialog($("#ai-drawer"));
+  $("#ai-chip").setAttribute("aria-expanded", "false");
+}
+$("#ai-chip").addEventListener("click", () => { if (!isDialogOpen($("#ai-drawer"))) openAiDrawer(); else closeAiDrawer(); });
+$("#ai-close").addEventListener("click", closeAiDrawer);
+document.addEventListener("click", (ev) => { if (ev.target.closest("[data-open-ai]")) openAiDrawer(); });
 
 async function refreshAiState() {
   const s = await api.aiStatus();
-  const label = s.configured ? `已配置 · ${s.model}` : "未配置";
-  $("#ai-state").textContent = label;
+  aiStatus = s;
+  const chip = $("#ai-chip"), txt = $("#ai-chip-text");
+  txt.textContent = s.configured ? `AI · ${s.model}` : "AI 未配置";
+  chip.dataset.state = s.configured ? "ready" : "off";
+  chip.title = s.configured ? `AI 已配置 · ${s.model}（点击管理）` : "AI 未配置（点击配置）";
+  $("#ai-state").textContent = s.configured ? `已配置 · ${s.model}` : "未配置";
   const st2 = $("#ai-state-2");
   if (st2) st2.textContent = s.configured ? `已配置 · ${s.model} @ ${s.baseUrl}` : "未配置：填写接口地址 / 模型 / Key 后保存。";
-  // 已保存的配置回填到表单（Key 不回显，留空即可不改）。
   if (s.configured) {
     if (!$("#ai-base").value) $("#ai-base").value = s.baseUrl;
     if (!$("#ai-model").value) $("#ai-model").value = s.model;
     if (!$("#ai-timeout").value && s.timeoutMs) $("#ai-timeout").value = Math.round(s.timeoutMs / 1000);
   }
 }
-$("#ai-open").addEventListener("click", () => { $("#aipanel").hidden = false; refreshAiState().catch(() => {}); });
-$("#ai-close").addEventListener("click", () => { $("#aipanel").hidden = true; });
+$("#ai-open").addEventListener("click", () => { openAiDrawer(); refreshAiState().catch(() => {}); });
 $("#ai-save").addEventListener("click", async (ev) => {
   const btn = ev.target, old = btn.textContent;
-  btn.disabled = true; btn.textContent = "处理中…"; $("#ai-msg").textContent = "";
+  btn.disabled = true; btn.setAttribute("aria-busy", "true"); btn.textContent = "处理中…"; $("#ai-msg").textContent = "";
   try {
     const secs = Number($("#ai-timeout").value);
     const timeoutMs = Number.isFinite(secs) && secs > 0 ? secs * 1000 : undefined;
@@ -1766,16 +2576,16 @@ $("#ai-save").addEventListener("click", async (ev) => {
     else { $("#ai-msg").textContent = "配置不完整：需要地址 / 模型 / Key 三项。"; }
     await refreshAiState();
   } catch (e) { const h = humanError(e); $("#ai-msg").textContent = `保存失败：${h.message}`; }
-  finally { btn.disabled = false; btn.textContent = old; }
+  finally { btn.disabled = false; btn.removeAttribute("aria-busy"); btn.textContent = old; }
 });
 $("#ai-clear").addEventListener("click", (ev) => runBusy(ev.target, "清除模型配置", async () => { await api.clearAiConfig(); $("#ai-models-list").hidden = true; await refreshAiState(); setStatus("模型配置已清除"); }));
 $("#ai-test").addEventListener("click", (ev) => {
   const btn = ev.target, old = btn.textContent;
-  btn.disabled = true; btn.textContent = "测试中…"; $("#ai-msg").textContent = "";
+  btn.disabled = true; btn.setAttribute("aria-busy", "true"); btn.textContent = "测试中…"; $("#ai-msg").textContent = "";
   api.aiTest()
     .then((r) => { $("#ai-msg").textContent = (r.ok ? "✓ " : "✗ ") + r.message; })
     .catch((e) => { $("#ai-msg").textContent = "测试失败：" + (e.status === 400 ? "未配置（先保存再测）" : String(e.message ?? e)); })
-    .finally(() => { btn.disabled = false; btn.textContent = old; });
+    .finally(() => { btn.disabled = false; btn.removeAttribute("aria-busy"); btn.textContent = old; });
 });
 $("#ai-models").addEventListener("click", (ev) => {
   const btn = ev.target, old = btn.textContent;
@@ -1803,12 +2613,25 @@ $("#ai-models-list").addEventListener("click", (ev) => {
 // 领域知识积累 / 数据处理与分析 两页的渲染与事件（拆分到 lib/pages/*，行为不变）。
 bindKnowledge({
   getState: () => state, ui, api, $, $$, refresh, refreshAfterJob, renderAll, renderShell, renderMiddle, renderRight,
-  setStatus, setError, humanError, runBusy, runJob, notify, pollJob, noteChangeHits, clearAllErrors,
+  setStatus, setError, setDirty, humanError, runBusy, runJob, notify, pollJob, noteChangeHits, clearAllErrors,
 });
 bindAnalysis({
   getState: () => state, ui, api, $, $$, refresh, refreshAfterJob, renderAll, renderShell, renderMiddle, renderRight,
-  setStatus, setError, humanError, runBusy, runJob, notify, pollJob, noteChangeHits, clearAllErrors,
+  setStatus, setError, setDirty, humanError, runBusy, runJob, notify, pollJob, noteChangeHits, clearAllErrors,
 });
 
-refreshAiState().catch(() => {});
-refresh().catch((e) => { const h = humanError(e); notify("mid", `加载失败：${h.message}`, h.detail); });
+$("#theme-seal").addEventListener("click", (ev) => quickSwitchTheme(ev.currentTarget));
+$("#replay-theme").addEventListener("click", (ev) => replayAndRecast(ev.currentTarget));
+$("#replay-splash").addEventListener("click", () => window.__locusSplash?.play());
+document.addEventListener("click", (ev) => {
+  if (ev.target.id !== "boot-retry") return;
+  ev.target.disabled = true;
+  bootstrap();
+});
+
+applyTheme(currentTheme(), { persist: false });
+refreshAiState().catch(() => {
+  $("#ai-chip-text").textContent = "AI 状态未知";
+  $("#ai-chip").dataset.state = "off";
+});
+bootstrap();
