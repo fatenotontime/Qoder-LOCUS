@@ -111,25 +111,33 @@ function download(path) {
   a.href = path; a.download = ""; document.body.append(a); a.click(); a.remove();
 }
 
-export function blockRowHtml(b, i, state) {
+export function blockRowHtml(b, i, state, persisted = true) {
+  const refLabels = (b.refs ?? []).map((r) => esc(r.label)).join("；");
   return `<div class="reprow" data-bid="${esc(b.id)}" data-draft="${b.draft ? "1" : ""}" data-refs="${esc(JSON.stringify(b.refs ?? []))}">
     <div class="repmove"><button class="rep-up" title="上移">↑</button><button class="rep-down" title="下移">↓</button><span class="hint">#${i + 1}</span></div>
     <select class="rep-nature">${REPORT_NATURES.map(([k, l]) => `<option value="${k}" ${k === b.nature ? "selected" : ""}>${l}</option>`).join("")}</select>
     <textarea class="rep-text" rows="2">${esc(b.text)}</textarea>
-    <input class="rep-refs" value="${esc((b.refs ?? []).map((r) => r.label).join("；"))}" placeholder="引用（分号分隔）"/>
+    <div class="rep-refs">${refLabels || `<span class="hint">（无引用）</span>`}</div>
     <div class="reprowactions">
       <span class="badge ${b.draft ? "warn" : "confirm"}">${b.draft ? "AI 草稿待确认" : "已确认"}</span>
-      ${b.draft ? `<button class="rep-confirm">确认</button>` : ""}
+      ${b.draft && persisted ? `<button class="rep-confirm">确认</button>` : ""}
       <button class="rep-del">删除</button>
     </div>
     ${(b.refs ?? []).filter((r) => r.kind !== "note").length ? `<div class="refchips">${b.refs.filter((r) => r.kind !== "note").map((r) => `<span class="refchip">${esc(refDisplay(r))}${state ? esc(reconTag(state, r.kind, r.id)) + esc(missingTag(state, r.kind, r.id)) : ""}${state && depMissingNote(state, r.kind, r.id) ? ` <span class="badge warn">${esc(depMissingNote(state, r.kind, r.id))}</span>` : ""} <button class="ref-back" data-kind="${esc(r.kind)}" data-id="${esc(r.id)}">回查</button></span>`).join("")}</div>` : ""}
     <div class="refnet-body"></div></div>`;
 }
 
+/** 块列表 HTML：已落库块（id 见于库内）才渲染确认按钮；未保存新增/草稿块一律不渲染。 */
+export function repBlocksHtml(blocks, state, rep) {
+  const persisted = new Set(rep.blocks.map((b) => b.id).filter(Boolean));
+  return blocks.map((b, i) => blockRowHtml(b, i, state, !!b.id && persisted.has(b.id))).join("") || `<p class="hint">尚无块。</p>`;
+}
+
 export function reportHtml(state, ui, r) {
+  const blocks = (ui.reportWorking && ui.reportWorking[r.id]) || r.blocks;
   return `<details class="mini rep" data-repid="${r.id}" ${r.id === ui.reportId ? "open" : ""}><summary>分析初稿 ${fmtVersion(r.revision)} · 钉住 ${r.pinned.resultIds.length} 结果${r.pinned.snapshotHash ? ` · 快照 ${r.pinned.snapshotHash.slice(0, 8)}…` : ""}</summary>
     <p class="hint">块＝性质＋固定引用；改动→预览→新版本。</p>
-    <div class="repblocks">${r.blocks.map((b, i) => blockRowHtml(b, i, state)).join("") || `<p class="hint">尚无块。</p>`}</div>
+    <div class="repblocks">${repBlocksHtml(blocks, state, r)}</div>
     <div class="repaddrow">
       <select class="rep-newnature">${REPORT_NATURES.map(([k, l]) => `<option value="${k}">${l}</option>`).join("")}</select>
       <button class="rep-add">＋ 添加块</button>
@@ -147,12 +155,10 @@ export function reportHtml(state, ui, r) {
 }
 
 export function collectReportBlocks(repEl) {
-  return [...repEl.querySelectorAll(".repblocks .reprow")].map((row) => {
+  return [...repEl.querySelectorAll(".repblocks > .reprow")].map((row) => {
     let refs = [];
     try { refs = JSON.parse(row.dataset.refs || "[]"); } catch {}
-    const labels = row.querySelector(".rep-refs").value.split(/[;；]/).map((s) => s.trim()).filter(Boolean);
-    const outRefs = labels.map((lab, j) => refs[j] ? { ...refs[j], label: lab } : { kind: "note", id: "", version: "", label: lab });
-    return { id: row.dataset.bid || undefined, nature: row.querySelector(".rep-nature").value, text: row.querySelector(".rep-text").value.trim(), refs: outRefs, draft: row.dataset.draft === "1" };
+    return { id: row.dataset.bid || undefined, nature: row.querySelector(".rep-nature").value, text: row.querySelector(".rep-text").value.trim(), refs, draft: row.dataset.draft === "1" };
   });
 }
 
@@ -244,6 +250,23 @@ function readTextFile(file) {
   return new Promise((res, rej) => { const rd = new FileReader(); rd.onload = () => res(rd.result); rd.onerror = rej; rd.readAsText(file); });
 }
 
+/** 报告编辑工作副本：未保存改动暂存于 ui.reportWorking[reportId]，refresh 后据此重渲染；接受后清空回落到库内状态。 */
+function reportOf(box) {
+  const id = box?.dataset?.repid;
+  return id ? ctx.getState().reports.find((r) => r.id === id) ?? null : null;
+}
+function workingOf(rep) {
+  const m = (ctx.ui.reportWorking ??= {});
+  return (m[rep.id] ??= rep.blocks.map((b) => ({ ...b })));
+}
+function rowIndex(box, row) {
+  return [...box.querySelectorAll(".repblocks > .reprow")].indexOf(row);
+}
+function renderRepBlocks(box, rep) {
+  const holder = box.querySelector(".repblocks");
+  if (holder) holder.innerHTML = repBlocksHtml(workingOf(rep), ctx.getState(), rep);
+}
+
 export function bindAnalysis(c) {
   ctx = c;
   const { api, ui, $, $$, refresh, refreshAfterJob, runBusy, runJob } = ctx;
@@ -308,19 +331,24 @@ export function bindAnalysis(c) {
         }); return;
       }
       if (ev.target.classList.contains("rep-add")) {
-        const box = ev.target.closest(".rep");
+        const box = ev.target.closest(".rep"); const rep = reportOf(box); if (!rep) return;
         const nature = box.querySelector(".rep-newnature").value;
-        const row = document.createElement("div");
-        row.className = "reprow"; row.dataset.bid = ""; row.dataset.refs = "[]";
-        row.innerHTML = blockRowHtml({ id: "", nature, text: "", refs: [], draft: false }, box.querySelectorAll(".repblocks .reprow").length, ctx.getState());
-        box.querySelector(".repblocks").append(row);
+        workingOf(rep).push({ id: "", nature, text: "", refs: [], draft: false });
+        renderRepBlocks(box, rep);
         ctx.setDirty(true); return;
       }
-      if (ev.target.classList.contains("rep-del")) { ev.target.closest(".reprow").remove(); ctx.setDirty(true); return; }
+      if (ev.target.classList.contains("rep-del")) {
+        const box = ev.target.closest(".rep"); const rep = reportOf(box); if (!rep) return;
+        const idx = rowIndex(box, ev.target.closest(".reprow"));
+        if (idx >= 0) workingOf(rep).splice(idx, 1);
+        renderRepBlocks(box, rep);
+        ctx.setDirty(true); return;
+      }
       if (ev.target.classList.contains("rep-up") || ev.target.classList.contains("rep-down")) {
-        const row = ev.target.closest(".reprow"); const parent = row.parentElement;
-        const sib = ev.target.classList.contains("rep-up") ? row.previousElementSibling : row.nextElementSibling;
-        if (sib) { ev.target.classList.contains("rep-up") ? parent.insertBefore(row, sib) : parent.insertBefore(sib, row); ctx.setDirty(true); }
+        const box = ev.target.closest(".rep"); const rep = reportOf(box); if (!rep) return;
+        const w = workingOf(rep); const idx = rowIndex(box, ev.target.closest(".reprow"));
+        const j = ev.target.classList.contains("rep-up") ? idx - 1 : idx + 1;
+        if (idx >= 0 && j >= 0 && j < w.length) { [w[idx], w[j]] = [w[j], w[idx]]; renderRepBlocks(box, rep); ctx.setDirty(true); }
         return;
       }
       if (ev.target.classList.contains("ref-back")) {
@@ -341,6 +369,7 @@ export function bindAnalysis(c) {
         const bid = ev.target.closest(".reprow").dataset.bid;
         await runBusy(ev.target, "确认草稿块", async () => {
           await api.confirmReportBlock(repId, bid, "已人工核对");
+          const w = ui.reportWorking?.[repId]; const b = w?.find((x) => x.id === bid); if (b) b.draft = false;
           await refresh(); ctx.setStatus("AI 草稿块已人工确认");
         }); return;
       }
@@ -348,16 +377,18 @@ export function bindAnalysis(c) {
         const box = ev.target.closest(".rep"); const repId = box.dataset.repid;
         await runBusy(ev.target, "生成草稿", async () => {
           const r = await api.draftReport(repId);
-          const holder = box.querySelector(".repblocks");
-          const base = holder.querySelectorAll(".reprow").length;
-          (r.blocks ?? []).forEach((b, i) => { const row = document.createElement("div"); row.className = "reprow"; row.dataset.bid = ""; row.dataset.refs = esc(JSON.stringify(b.refs ?? [])); row.innerHTML = blockRowHtml({ ...b, id: "" }, base + i, ctx.getState()); holder.append(row); });
+          const rep = reportOf(box); if (!rep) return;
+          const w = workingOf(rep);
+          for (const b of (r.blocks ?? [])) w.push({ ...b, id: "" });
+          renderRepBlocks(box, rep);
           ctx.setDirty(true); ctx.setStatus(`草稿块 ${r.blocks.length} 个已入编辑器（未保存，须预览→接受）`);
         }); return;
       }
       if (ev.target.classList.contains("rep-preview")) {
         const box = ev.target.closest(".rep"); const repId = box.dataset.repid;
         let blocks;
-        try { blocks = collectReportBlocks(box); } catch (e) { ctx.notify("right", String(e.message ?? e)); return; }
+        try { blocks = collectReportBlocks(box); }
+        catch (e) { const h = ctx.humanError(e); ctx.setError("right", { panel: "right", message: h.message, detail: h.detail, retry: null }); return; }
         if (!blocks.length) { ctx.notify("right", "至少需要一个块。"); return; }
         await runBusy(ev.target, "预览改动", async () => {
           const r = await api.previewReport(repId, blocks);
@@ -372,11 +403,24 @@ export function bindAnalysis(c) {
         const blocks = collectReportBlocks(box);
         await runBusy(ev.target, "接受改动", async () => {
           const r = await api.applyReport(repId, baseRevision, blocks, reason);
+          if (ui.reportWorking) delete ui.reportWorking[repId];
           ui.reportId = repId; ctx.setDirty(false); await refresh(); ctx.setStatus(`改动已接受：新版本 ${fmtVersion(r.revision)}（留历史）`);
         }); return;
       }
     } catch (e) { const h = ctx.humanError(e); ctx.setError("mid", { panel: "mid", message: h.message, detail: h.detail, retry: null }); }
   });
+
+  // 右栏：报告块内联编辑 —— 文本/性质实时写入工作副本，refresh 不丢已改内容（N5）。
+  const syncRepField = (ev) => {
+    const el = ev.target, cls = el?.classList;
+    if (!cls || !(cls.contains("rep-text") || cls.contains("rep-nature"))) return;
+    const box = el.closest(".rep"); const rep = reportOf(box); if (!rep) return;
+    const idx = rowIndex(box, el.closest(".reprow")); if (idx < 0) return;
+    const b = workingOf(rep)[idx]; if (!b) return;
+    if (cls.contains("rep-text")) b.text = el.value; else b.nature = el.value;
+  };
+  document.querySelector("#right-content").addEventListener("input", syncRepField);
+  document.querySelector("#right-content").addEventListener("change", syncRepField);
 
   // 文档级：上游复核（重算 / 保留旧快照）
   document.addEventListener("click", (ev) => {

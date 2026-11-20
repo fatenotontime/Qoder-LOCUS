@@ -21,6 +21,7 @@ const FORBIDDEN: [RegExp, string][] = [
 ];
 const strip = (h: string) => h
   .replace(/<script[\s\S]*?<\/script>/g, " ")
+  .replace(/<style[\s\S]*?<\/style>/g, " ")
   .replace(/<pre class="perr-detail-body"[\s\S]*?<\/pre>/g, " ")
   .replace(/<[^>]*>/g, " ")
   .replace(/&[a-z]+;/g, " ")
