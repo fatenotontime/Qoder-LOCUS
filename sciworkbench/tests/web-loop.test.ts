@@ -113,22 +113,25 @@ test("刷新恢复：JsonFileStore 往返一致（含历史）", async () => {
   rmSync(path, { force: true });
 });
 
-test("旧版本状态不迁移（返回空）", async () => {
+test("未知/过旧版本显式拒绝（不静默成空）；文件不存在才新建", async () => {
   const path = join(tmpdir(), `locus-old-${Date.now()}.json`);
   await new JsonFileStore(path).save({ version: 1, assets: [], cards: [], tables: [] } as never);
-  const back = await new JsonFileStore(path).load();
-  assert.deepEqual(back, emptyState());
+  await assert.rejects(() => new JsonFileStore(path).load(), /未知数据版本/);
   rmSync(path, { force: true });
+  // 文件不存在 → 可新建为空状态（可迁移到当前版本）
+  const missing = join(tmpdir(), `locus-missing-${Date.now()}.json`);
+  const fresh = await new JsonFileStore(missing).load();
+  assert.deepEqual(fresh, emptyState());
 });
 
-test("v2–v7 → v8 迁移：保留既有数据与原件 hash，补论文/附件与机械草稿标记", async () => {
+test("v2–v8 → v9 迁移：保留既有数据与原件 hash，补论文/附件与机械草稿标记", async () => {
   const path = join(tmpdir(), `locus-v2-${Date.now()}.json`);
   const r = importMeasurements(emptyState(), { name: "d.csv", csv: "t,v\n0,1" });
   const oldHash = "legacy-hash-keep";
   const legacyAssets = r.state.assets.map((a) => ({ ...a, hash: oldHash, fingerprint: undefined })); // 真旧记录无指纹字段
   await new JsonFileStore(path).save({ version: 2, assets: legacyAssets, cards: [], tables: r.state.tables } as never);
   const back = await new JsonFileStore(path).load();
-  assert.equal(back.version, 8);
+  assert.equal(back.version, 9);
   assert.equal(back.tables.length, 1);
   assert.equal(back.assets[0].hash, oldHash); // 历史原件 hash 不被加载重算覆盖（5C）
   assert.equal(back.assets[0].fingerprint, oldHash); // 旧记录指纹=既有口径
@@ -154,7 +157,7 @@ test("v2–v7 → v8 迁移：保留既有数据与原件 hash，补论文/附�
   const oldCard = { id: "card_old", assetId: "ast_x", rawText: "x", locator: { sectionQuote: "x" }, audit: "confirm", importance: null, note: "旧备注", reason: "", extraction: "draft", revision: 2, history: [], createdAt: "t", updatedAt: "t" };
   await new JsonFileStore(path3).save({ version: 3, assets: [], cards: [oldCard], tables: [] } as never);
   const back3 = await new JsonFileStore(path3).load();
-  assert.equal(back3.version, 8);
+  assert.equal(back3.version, 9);
   assert.deepEqual(back3.cards[0].extracted, { fields: {}, units: [], conditions: [] });
   assert.deepEqual(back3.cards[0].unknowns, []);
   assert.equal(back3.cards[0].secondaryCitation, false);
@@ -165,7 +168,8 @@ test("v2–v7 → v8 迁移：保留既有数据与原件 hash，补论文/附�
   const path5 = join(tmpdir(), `locus-v5-${Date.now()}.json`);
   const lit = importLiterature;
   const r5 = await lit(emptyState(), { name: "paper.md", text: "Some method text." });
-  await new JsonFileStore(path5).save(r5.state);
+  // 以 v5 形状落盘，验证 v5→v9 迁移（文献原件 → 论文条目+正文附件）
+  await new JsonFileStore(path5).save({ ...r5.state, version: 5 } as never);
   const back5 = await new JsonFileStore(path5).load();
   assert.equal(back5.papers.length, 1);
   assert.equal(back5.papers[0].title, "paper.md");

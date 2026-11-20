@@ -177,6 +177,16 @@
 | --- | --- | --- | --- | --- |
 | S05-T1 | main | 本轮无提交 | — | E0 基线与执行范围登记：基线/写入点/消费者/活体保护/授权缺口；等待 E1 授权；[会话记录](sessions/2026-11-21_session-05.md#s05-t1) |
 
+### 会话 S05（续）· 协作规程与 E1
+
+| # | 分支 `feat/s05-e1-knowledge-foundation` | 分支 `<其他>` | 关联轮次 | 说明 |
+| --- | --- | --- | --- | --- |
+| 83 | `（见 git log）` · 2026-11-21 | — | S05-T2 | **协作改多 PR**（AGENTS.md §5.1，直接提交 main `175bbe0`）＋ **E1 知识基座**：新 `domain/knowledge.ts`（§4 类型＋hash 规范）、store **v8→v9**（knowledge 命名空间、严格加载）、新 `services/knowledge-base.ts`（源历史/固定版本解析）、`export.ts` 覆盖 knowledge；新测试 T01–T03/T20–T21；更新 web-loop/export 既有测试；**265/265**；`commitState` 未做 → E1 仍 in_progress；[会话记录](sessions/2026-11-21_session-05.md#s05-t2) |
+
+| 轮次 | 分支 | 提交 | 提交时间 | 本轮产出 |
+| --- | --- | --- | --- | --- |
+| S05-T2 | feat/s05-e1-knowledge-foundation | 见 PR merge commit | 2026-11-21 | E1 基座（类型/迁移 v9/源历史/备份，T01–T03/T20–T21 通过）；commitState 待续；[会话记录](sessions/2026-11-21_session-05.md#s05-t2) |
+
 ## 独立提示词维护记录 S02-T1
 
 | # | 分支 `main` | 分支 `<其他>` | 关联轮次 | 说明 |
