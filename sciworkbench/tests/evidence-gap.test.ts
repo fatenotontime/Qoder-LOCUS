@@ -8,7 +8,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { emptyState, type LocusState } from "../store.ts";
 import { createTopic, createSubquestion, importMeasurements, importLiterature, reviewCard } from "../services/app.ts";
-import { createProtocol, startExecution, confirmPreparation, createSample, addMeasurement } from "../services/experiment.ts";
+import { createProtocol, startExecution, confirmPreparation, createSample, addMeasurement, createTemplate } from "../services/experiment.ts";
 import { createPaper, addPaperAttachment } from "../services/papers.ts";
 import {
   createAnalysisTask, buildSnapshot, applyRecommendation, submitResult, archiveResultFile,
@@ -16,7 +16,7 @@ import {
 } from "../services/analysis.ts";
 import { buildNetwork, traverseNetwork } from "../services/references.ts";
 import { buildContextMap } from "../services/context-map.ts";
-import { refLabel, missingTag } from "../public/lib/refs.js";
+import { refLabel, missingTag, depMissingNote } from "../public/lib/refs.js";
 
 const REC = { methods: [{ name: "米氏拟合", software: "Origin", rationale: "有数据", expectedArtifacts: ["曲线"], acceptanceItems: ["残差随机"] }], unknowns: [] };
 
@@ -157,4 +157,62 @@ test("缺口-9 只读：建网络/地图不改 state", async () => {
   buildContextMap(s, { topicId: w.topicId, taskId: w.taskId });
   traverseNetwork(s, `table:${w.tableId}`, { direction: "both" });
   assert.equal(JSON.stringify(s), before);
+});
+
+test("缺口-10 修复②：删除样品 → 测量挂样品缺失（缺件节点＋pending＋前端间接缺失提示）", async () => {
+  const w = await world();
+  const sampleId = w.s.samples[0].id;
+  const s = { ...w.s, samples: w.s.samples.filter((x) => x.id !== sampleId) } as LocusState;
+  const net = buildNetwork(s);
+  const gn = net.nodes.get(`sample:${sampleId}`)!;
+  assert.ok(gn.gap && gn.label.includes("缺失样品"));
+  assert.ok(net.nodes.get(`measurement:${w.measId}`)!.pending!.some((p) => p.includes("样品缺失") && p.includes(sampleId)));
+  assert.equal(depMissingNote(s, "measurement", w.measId), "样品缺失");
+  assert.equal(missingTag(s, "sample", sampleId), "（缺失）");
+});
+
+test("缺口-11 修复②：删除方案 → 执行/模板挂方案缺失（不静默跳过）", async () => {
+  const w = await world();
+  let s = createTemplate(w.s, { protocolId: w.protoId, fields: ["value"] }).state;
+  const tplId = s.templates[0].id;
+  s = { ...s, protocols: s.protocols.filter((p) => p.id !== w.protoId) } as LocusState;
+  const net = buildNetwork(s);
+  const gn = net.nodes.get(`protocol:${w.protoId}`)!;
+  assert.ok(gn.gap && gn.label.includes("缺失方案"));
+  assert.ok(net.nodes.get(`execution:${w.execId}`)!.pending!.some((p) => p.includes("方案缺失") && p.includes(w.protoId)));
+  assert.ok(net.nodes.get(`template:${tplId}`)!.pending!.some((p) => p.includes("方案缺失")));
+  assert.equal(depMissingNote(s, "execution", w.execId), "方案缺失");
+});
+
+test("缺口-12 修复②：删除执行 → 样品挂执行缺失", async () => {
+  const w = await world();
+  const sampleId = w.s.samples[0].id;
+  const s = { ...w.s, executions: w.s.executions.filter((e) => e.id !== w.execId) } as LocusState;
+  const net = buildNetwork(s);
+  assert.ok(net.nodes.get(`execution:${w.execId}`)!.gap);
+  assert.ok(net.nodes.get(`sample:${sampleId}`)!.pending!.some((p) => p.includes("执行缺失") && p.includes(w.execId)));
+  assert.equal(depMissingNote(s, "sample", sampleId), "执行缺失");
+});
+
+test("缺口-13 修复②：报告引用测量，其样品被删 → 报告芯片 surfaced 间接缺失", async () => {
+  const w = await world();
+  let s = applyReportEdit(w.s, w.reportId, { baseRevision: 2, blocks: [
+    { id: w.blockId, nature: "observation", text: "观察", refs: [{ kind: "measurement", id: w.measId, version: "rev 1", label: "测量" }] },
+  ], reason: "改引测量" }).state;
+  const sampleId = s.samples[0].id;
+  s = { ...s, samples: s.samples.filter((x) => x.id !== sampleId) } as LocusState;
+  assert.equal(missingTag(s, "measurement", w.measId), ""); // 测量本身仍在
+  assert.equal(depMissingNote(s, "measurement", w.measId), "样品缺失"); // 间接缺失提示非空
+  const net = buildNetwork(s);
+  assert.ok(net.nodes.get(`measurement:${w.measId}`)!.pending!.some((p) => p.includes("样品缺失")));
+});
+
+test("缺口-14 修复②：删除分析任务 → 结果/报告挂任务缺失", async () => {
+  const w = await world();
+  const s = { ...w.s, analysisTasks: w.s.analysisTasks.filter((t) => t.id !== w.taskId) } as LocusState;
+  const net = buildNetwork(s);
+  assert.ok(net.nodes.get(`task:${w.taskId}`)!.gap);
+  assert.ok(net.nodes.get(`result:${w.resultId}`)!.pending!.some((p) => p.includes("分析任务缺失")));
+  assert.ok(net.nodes.get(`report:${w.reportId}`)!.pending!.some((p) => p.includes("分析任务缺失")));
+  assert.equal(depMissingNote(s, "result", w.resultId), "分析任务缺失");
 });

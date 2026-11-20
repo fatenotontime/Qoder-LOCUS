@@ -48,6 +48,16 @@ export function missingTag(state, kind, id) {
   return coll.some((x) => x.id === id) ? "" : "（缺失）";
 }
 
+/** 引用对象本身仍在、但其关键上游已被删除 → 间接缺失提示（与后端缺口传播一致）。 */
+export function depMissingNote(state, kind, id) {
+  if (kind === "measurement") { const m = state.measurements.find((x) => x.id === id); if (m && !state.samples.some((s) => s.id === m.sampleId)) return "样品缺失"; }
+  if (kind === "execution") { const e = state.executions.find((x) => x.id === id); if (e && !state.protocols.some((p) => p.id === e.protocolId)) return "方案缺失"; }
+  if (kind === "sample") { const s = state.samples.find((x) => x.id === id); if (s?.executionId && !state.executions.some((e) => e.id === s.executionId)) return "执行缺失"; }
+  if (kind === "result") { const r = state.analysisResults.find((x) => x.id === id); if (r && !state.analysisTasks.some((t) => t.id === r.taskId)) return "分析任务缺失"; }
+  if (kind === "table") { const t = state.tables.find((x) => x.id === id); if (t && !state.assets.some((a) => a.id === t.assetId)) return "原件缺失"; }
+  return "";
+}
+
 /** 对象引用 → 人话标签。 */
 export function refLabel(state, ref) {
   let label;

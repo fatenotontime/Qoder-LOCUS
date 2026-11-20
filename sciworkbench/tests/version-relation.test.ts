@@ -126,3 +126,28 @@ test("版本-8 标题/备注类改动仍不误报（即便存在版本节点）"
   assert.equal(cos.category, "no_recompute");
   assert.equal(cos.hits.length, 0);
 });
+
+test("版本-9 修复③：固定不存在的第999版 → 缺失版本缺口节点＋执行 pending，不画看似正常的历史版本", async () => {
+  const w = await world(); // 方案仅 r1
+  // 模拟直接改数据：把执行固定的版本改成实际不存在的 999
+  const s = { ...w.s, executions: w.s.executions.map((e) => e.id === w.execId ? { ...e, protocolRevision: 999 } : e) } as LocusState;
+  const net = buildNetwork(s);
+  const vn = net.nodes.get(`protocol:${w.protoId}@r999`)!;
+  assert.ok(vn, "应建版本节点");
+  assert.ok(vn.gap, "不存在的版本必须是缺口节点");
+  assert.ok(vn.label.includes("缺失版本"));
+  assert.ok(!vn.label.includes("（固定）")); // 不画看似正常的固定历史版本
+  const en = net.nodes.get(`execution:${w.execId}`)!;
+  assert.ok(en.pending!.some((p) => p.includes("第999版不存在")));
+  const t = traverseNetwork(s, `execution:${w.execId}`, { direction: "both" });
+  assert.ok(t.pending.some((p) => p.includes("999")));
+});
+
+test("版本-10 修复③：真实存在的固定旧版仍为正常版本节点（不误报缺失）", async () => {
+  const w = await world({ bump: true }); // r1→r2，执行固定 r1（真实存在）
+  const net = buildNetwork(w.s);
+  const vn = net.nodes.get(`protocol:${w.protoId}@r1`)!;
+  assert.ok(!vn.gap);
+  assert.ok(vn.label.includes("第1版（固定）"));
+  assert.ok(!net.nodes.get(`execution:${w.execId}`)!.pending?.some((p) => p.includes("不存在")));
+});

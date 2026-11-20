@@ -54,7 +54,7 @@ const proto = createProtocol(s, { topicId, name: "海水浸泡萌发试验（干
   { id: "s3", op: "置于海水浸泡并计时", params: {}, note: "盐度/温度原文未写明", durationMin: null, estimated: false, branch: null, observeEnd: "" },
   { id: "s4", op: "取出后种植并观察萌发", params: {}, note: "", durationMin: null, estimated: false, branch: null, observeEnd: "记录是否萌发" },
 ] }); s = proto.state;
-const exec = startExecution(s, { topicId, protocolId: proto.protocol.id }); s = exec.state;
+const exec = startExecution(s, { topicId, protocolId: proto.protocol.id, origin: "reconstructed", sourceAssetId: assetId }); s = exec.state;
 s = updatePreparation(s, exec.execution.id, { adjustments: [{ stepId: "s3", field: "note", after: "海水（盐度/温度未写明）", reason: "原文未量化，明示缺项，不补造" }], notes: "浸泡条件缺量化；计时口径：新鲜 vs 干燥对照。" }).state;
 s = confirmPreparation(s, exec.execution.id).state;
 s = appendEvent(s, exec.execution.id, { kind: "note", text: "本执行为历史文献重构（达尔文 1859 第十一章）：非本地实际实验，事件与数值均为原文陈述的补记。", backfilled: true }).state;

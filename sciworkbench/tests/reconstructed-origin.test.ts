@@ -1,7 +1,9 @@
 /**
- * 阶段③（S02-T50，T49-4/D3 路径 A）契约测试：历史文献重构全链路来源标记。
- * 覆盖：方案 reconstructed → 执行/样品/测量/表继承；上下文摘录、引用网络、
- * Word/追溯包导出均明示"非本地实测"；达尔文验收夹具端到端全链路标记。
+ * 阶段③（S02-T50，T49-4/D3 路径 A）＋ S02-T51 修复①契约测试：历史文献重构全链路来源标记。
+ * 语义：方案 sourceKind=reconstructed 表示「方案源自文献」；执行 origin=reconstructed 表示
+ * 「执行本身是历史补记（非本地实测）」，须由执行显式声明。二者解耦：依据文献解析方案做的
+ * 本地实测执行 origin=user，不被误标历史重构。覆盖：显式重构执行→样品/测量/表继承；上下文
+ * 摘录、引用网络、Word/追溯包导出均明示"非本地实测"；达尔文验收夹具端到端全链路标记。
  */
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -26,7 +28,7 @@ function reconWorld() {
   const topicId = s.topics[0].id;
   const src = importMeasurements(s, { name: "src.csv", csv: "a,b\n1,2", topicId }); s = src.state;
   const pr = createProtocol(s, { topicId, name: "文献重构方案", sourceKind: "reconstructed", sourceAssetId: src.asset.id, purpose: "按原文重构", criteria: "原文陈述", steps: [STEP] }); s = pr.state;
-  const e = startExecution(s, { topicId, protocolId: pr.protocol.id }); s = e.state;
+  const e = startExecution(s, { topicId, protocolId: pr.protocol.id, origin: "reconstructed", sourceAssetId: src.asset.id }); s = e.state;
   s = confirmPreparation(s, e.execution.id).state;
   const smp = createSample(s, { topicId, executionId: e.execution.id, shortName: "R1", amount: { value: "1", unit: "份" } }); s = smp.state;
   const m = addMeasurement(s, { topicId, sampleId: smp.sample.id, sampleStateRevision: 1, value: "90", unit: "days" }); s = m.state;
@@ -44,7 +46,7 @@ function reconWorld() {
   return { s, topicId, protoId: pr.protocol.id, execId: e.execution.id, sampleId: smp.sample.id, measId: m.measurement.id, tableId, resultId: res.result.id, reportId: rep.report.id, srcAssetId: src.asset.id };
 }
 
-test("重构-1 来源继承链：方案→执行→样品→测量；表按导入声明", () => {
+test("重构-1 来源继承链：显式重构执行→样品→测量；表按导入声明", () => {
   const w = reconWorld();
   const e = w.s.executions.find((x) => x.id === w.execId)!;
   assert.equal(e.origin, "reconstructed");
@@ -56,6 +58,31 @@ test("重构-1 来源继承链：方案→执行→样品→测量；表按导�
   const pr2 = createProtocol(w.s, { topicId: w.topicId, name: "本地方案", purpose: "p", criteria: "c", steps: [STEP] });
   const e2 = startExecution(pr2.state, { topicId: w.topicId, protocolId: pr2.protocol.id });
   assert.equal(e2.execution.origin, "user");
+});
+
+test("重构-1b 修复①：文献解析方案＋本地实测执行 → 执行 origin=user，不被误标历史重构", () => {
+  let s = emptyState();
+  s = createTopic(s, { name: "自解析课题", researchQuestion: "Q" }).state;
+  const topicId = s.topics[0].id;
+  const src = importMeasurements(s, { name: "lit.csv", csv: "a,b\n1,2", topicId }); s = src.state;
+  // 方案源自文献（sourceKind=reconstructed），但用户据此做本地实测
+  const pr = createProtocol(s, { topicId, name: "文献解析方案", sourceKind: "reconstructed", sourceAssetId: src.asset.id, purpose: "p", criteria: "c", steps: [STEP] }); s = pr.state;
+  assert.equal(pr.protocol.sourceKind, "reconstructed"); // 方案来源仍如实标记
+  const e = startExecution(s, { topicId, protocolId: pr.protocol.id }); s = e.state; // 未显式声明重构
+  assert.equal(e.execution.origin, "user"); // 本地实测，非历史重构
+  assert.equal(e.execution.sourceAssetId, undefined);
+  s = confirmPreparation(s, e.execution.id).state;
+  const smp = createSample(s, { topicId, executionId: e.execution.id, shortName: "L1", amount: { value: "1", unit: "份" } }); s = smp.state;
+  const m = addMeasurement(s, { topicId, sampleId: smp.sample.id, sampleStateRevision: 1, value: "5", unit: "days" }); s = m.state;
+  assert.equal(smp.sample.origin, "user"); // 样品沿执行继承 user
+  assert.equal(m.measurement.origin, "user"); // 测量沿样品继承 user
+  // 引用网络：执行节点不带历史重构 pending
+  const net = buildNetwork(s);
+  const en = net.nodes.get(`execution:${e.execution.id}`)!;
+  assert.ok(!en.label.includes("文献重构"));
+  assert.ok(!(en.pending ?? []).some((p) => p.includes("历史文献重构")));
+  // 上下文摘录不标"非本地实测"
+  assert.ok(!resolveFragment(s, { kind: "execution", id: e.execution.id }).excerpt.includes("历史文献重构"));
 });
 
 test("重构-2 显式重构执行须有文献来源；来源不存在 → 404", () => {

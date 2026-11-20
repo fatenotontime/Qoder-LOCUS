@@ -4,7 +4,7 @@
 import { api } from "./lib/api.js";
 import { computeLanes, timeLabel, durationSourceOf } from "./lib/lanes.js";
 import { fmtTime, fmtEnum, fmtVersion, fmtNameOnce, fmtKind } from "./lib/format.js";
-import { refLabel, reconTag, topicObjects } from "./lib/refs.js";
+import { refLabel, reconTag, missingTag, topicObjects } from "./lib/refs.js";
 import {
   topbarTopicHtml, emptyTopicGuideHtml, navHtml, panelErrorHtml, sidebarListHtml,
   topicOverviewHtml, topicTodosHtml, subqBlockHtml, nextStepHtml, NAV_ITEMS,
@@ -515,6 +515,8 @@ function openTableMax(tid) {
 function currentProtocol() { return state.protocols.find((p) => p.id === ui.protocolId) ?? null; }
 function currentExecution() { return state.executions.find((e) => e.id === ui.executionId) ?? null; }
 function viewSnapshot(p) { return p.revisions.find((r) => r.revision === (ui.viewRev ?? p.revision)) ?? p.revisions[p.revisions.length - 1]; }
+/** 方案本体在、但所固定的那一版不存在 → 缺失版本（与后端缺口节点一致，不画看似正常的历史版本）。 */
+function verMissing(p, rev) { return !!p && !p.revisions.some((r) => r.revision === rev); }
 
 function fmtSnapshot(s) {
   const lines = [`目的：${s.purpose || "（未写）"}`, `输入：${s.inputs.join("、") || "（未写）"}`, "步骤："];
@@ -910,7 +912,7 @@ function preparationHtml(e, p, baseSnap) {
   </div>`;
   return `
     <div class="item" data-id="${e.id}">
-      <div class="meta">${esc(p?.name ?? e.protocolId)} · 准备稿 · 基础 ${fmtVersion(e.preparation?.baseRevision ?? e.protocolRevision)} · <span class="badge cand-pending">未确认</span></div>
+      <div class="meta">${esc(p?.name ?? e.protocolId)}${missingTag(state, "protocol", e.protocolId) ? ` <span class="badge warn">方案缺失</span>` : ""} · 准备稿 · 基础 ${fmtVersion(e.preparation?.baseRevision ?? e.protocolRevision)}${verMissing(p, e.preparation?.baseRevision ?? e.protocolRevision) ? ` <span class="badge warn">缺失版本</span>` : ""} · <span class="badge cand-pending">未确认</span></div>
       <p class="hint">准备≠已做实验：这里登记本次差异；确认快照后进入记录状态，实际开始另行记录。源方案不被改动。</p>
       ${baseSnap ? diagramHtml(p, baseSnap) : `<p class="hint warn">基础方案快照缺失。</p>`}
       <div class="pane-title">本次差异（${adj.length}）</div>
@@ -942,7 +944,7 @@ function recordHtml() {
   const hasStart = e.events.some((ev) => ev.kind === "start");
   return `
     <div class="item" data-id="${e.id}">
-      <div class="meta">${esc(p?.name ?? e.protocolId)} · 固定 ${fmtVersion(e.protocolRevision)}${nAdj ? ` ＋ 本次差异 ${nAdj} 条` : ""} · <span class="badge ${e.status === "paused" ? "warn" : e.status === "active" ? "confirm" : ""}">${fmtEnum(e.status)}</span>${e.templateId ? " · 模板" : ""}</div>
+      <div class="meta">${esc(p?.name ?? e.protocolId)}${missingTag(state, "protocol", e.protocolId) ? ` <span class="badge warn">方案缺失</span>（来源不可溯）` : ""} · 固定 ${fmtVersion(e.protocolRevision)}${verMissing(p, e.protocolRevision) ? ` <span class="badge warn">缺失版本</span>（方案无此版）` : ""}${nAdj ? ` ＋ 本次差异 ${nAdj} 条` : ""} · <span class="badge ${e.status === "paused" ? "warn" : e.status === "active" ? "confirm" : ""}">${fmtEnum(e.status)}</span>${e.templateId ? " · 模板" : ""}</div>
       ${e.origin === "reconstructed" ? `<div class="hint"><span class="badge warn">文献重构</span> 本执行为历史文献重构（非本地实际实验）：事件与数值均为原文陈述的补记，来源原件 ${esc(state.assets.find((a) => a.id === e.sourceAssetId)?.name ?? e.sourceAssetId ?? "未标")}。</div>` : ""}
       ${e.preparation?.confirmedAt ? `<div class="hint">本次快照确认于 ${esc(fmtTime(e.preparation.confirmedAt))}（基础 ${fmtVersion(e.preparation.baseRevision)}${nAdj ? ` ＋ ${nAdj} 条差异` : "，无差异"}）；源方案后续不影响本次。</div>` : ""}
       <div class="hint">数据完整度：步骤记录 ${(snap?.steps.length ?? 0) - missing.length}/${snap?.steps.length ?? 0}${missing.length ? ` · 未记录：${missing.map((s) => esc(s.op)).join("、")}` : ""}${unknownDur ? ` · ${unknownDur} 步时长未知（不按 0 计）` : ""}</div>
@@ -1003,7 +1005,7 @@ function recordHtml() {
         <div class="row"><input id="meas-note" placeholder="备注" /><button class="primary" id="meas-add">记录测量</button></div>` : `<p class="hint">先建样品。</p>`}
       </details>
       ${meas.map((m) => `<div class="item meas" data-id="${m.id}">
-        <div class="meta">${esc(state.samples.find((s) => s.id === m.sampleId)?.shortName ?? m.sampleId)} · 样品状态 ${fmtVersion(m.sampleStateRevision)}${m.cellRef ? ` · 回链表 行${m.cellRef.row}列${m.cellRef.col}` : ""}${reconTag(state, "measurement", m.id) ? ` · <span class="badge warn">文献重构</span>（数值为原文陈述，非本地测量）` : ""}</div>
+        <div class="meta">${esc(state.samples.find((s) => s.id === m.sampleId)?.shortName ?? m.sampleId)}${missingTag(state, "sample", m.sampleId) ? ` <span class="badge warn">样品缺失</span>（来源不可溯）` : ""} · 样品状态 ${fmtVersion(m.sampleStateRevision)}${m.cellRef ? ` · 回链表 行${m.cellRef.row}列${m.cellRef.col}` : ""}${reconTag(state, "measurement", m.id) ? ` · <span class="badge warn">文献重构</span>（数值为原文陈述，非本地测量）` : ""}</div>
         <div class="row"><input data-field="mValue" value="${esc(m.value)}" /><input data-field="mUnit" value="${esc(m.unit)}" />
           <input data-field="mMethod" value="${esc(m.method)}" /><input data-field="mInstr" value="${esc(m.instrument)}" /></div>
         <div class="row"><input data-field="mNote" value="${esc(m.note)}" /><input data-field="mReason" placeholder="修改原因（必填）" />

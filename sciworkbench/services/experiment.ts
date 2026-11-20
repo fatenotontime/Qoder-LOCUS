@@ -299,8 +299,9 @@ export function startExecution(
   const proto = state.protocols.find((p) => p.id === input.protocolId);
   if (!proto) throw new AppError(404, `方案不存在：${input.protocolId}`);
   if (proto.topicId !== input.topicId) throw new AppError(422, "方案不属于该课题。");
-  // 重构方案的执行自动继承重构性质；重构执行必须能指到文献来源原件。
-  const origin = input.origin === "reconstructed" || proto.sourceKind === "reconstructed" ? "reconstructed" : "user";
+  // 执行性质只由执行自身声明决定：方案源自文献（sourceKind=reconstructed）不等于执行是历史重构。
+  // 用户依据文献解析出的方案做本地实测 → origin=user；只有显式声明的历史补记才是 reconstructed。
+  const origin = input.origin === "reconstructed" ? "reconstructed" : "user";
   const sourceAssetId = input.sourceAssetId || proto.sourceAssetId || undefined;
   if (origin === "reconstructed" && !sourceAssetId) throw new AppError(422, "重构执行须标明文献来源（sourceAssetId）。");
   if (sourceAssetId && !state.assets.some((a) => a.id === sourceAssetId)) throw new AppError(404, `来源原件不存在：${sourceAssetId}`);

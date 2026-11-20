@@ -136,9 +136,8 @@ export function buildNetwork(state: LocusState): Network {
   }
   for (const tpl of state.templates) {
     const tn: NetNode = { key: key("template", tpl.id), kind: "template", id: tpl.id, label: `模板 · ${ver(tpl.protocolRevision)}`, version: tpl.humanConfirmed ? "已确认" : "未确认" };
-    const pn = nodes.get(key("protocol", tpl.protocolId));
-    if (pn) link(pn, tn, "lineage", tpl.humanConfirmed ? "human" : "run");
-    else add(tn);
+    const pn = nodes.get(key("protocol", tpl.protocolId)) ?? gapNode("protocol", tpl.protocolId);
+    link(pn, tn, "lineage", tpl.humanConfirmed ? "human" : "run");
   }
 
   // 执行 → 方案（lineage）；执行 → 样品（provenance）
@@ -150,23 +149,32 @@ export function buildNetwork(state: LocusState): Network {
     const proto = state.protocols.find((p) => p.id === e.protocolId);
     if (pn && proto) {
       const pinned = e.protocolRevision;
-      if (pinned !== proto.revision) {
+      const pinnedExists = proto.revisions.some((r) => r.revision === pinned);
+      const vkey = `${pn.key}@r${pinned}`;
+      if (!pinnedExists) {
+        // 引用的那一版不存在（如 execution.protocolRevision 被改成 999）→ 缺失版本节点，
+        // 不画看似正常的历史版本；缺口沿边传播到执行。
+        if (!nodes.has(vkey)) link(pn, { key: vkey, kind: "protocol", id: proto.id, label: `${proto.name} · 第${pinned}版（缺失版本）`, version: `第${pinned}版（缺失版本）`, gap: `方案不存在第${pinned}版（id：${proto.id}）` }, "lineage", "human", `引用版本 r${pinned} 不存在`);
+        link(nodes.get(vkey)!, en, "lineage", "human", `固定方案 r${pinned}（版本缺失）`);
+      } else if (pinned !== proto.revision) {
         // 固定旧版：独立版本节点（与当前版区分）。当前方案 → 版本节点 → 执行，
         // 保证方案更新后 changeHits 仍沿版本节点传播命中旧版执行（传播路径不被切断）。
-        const vkey = `${pn.key}@r${pinned}`;
         if (!nodes.has(vkey)) link(pn, { key: vkey, kind: "protocol", id: proto.id, label: `${proto.name} · 第${pinned}版（固定）`, version: `第${pinned}版（固定）` }, "lineage", "human", `历史版本 r${pinned}`);
         link(nodes.get(vkey)!, en, "lineage", "human", `固定方案 r${pinned}`);
       } else {
         link(pn, en, "lineage", "human", `固定方案 r${pinned}（当前版）`);
       }
     } else {
-      for (const tid of [e.topicId]) { const tp = nodes.get(key("topic", tid)); if (tp) link(tp, en, "affiliation", "human"); }
+      // 方案已删除：挂缺失方案节点 → 执行明示登记依赖缺失（不静默跳过、不画看似正常的关系）。
+      link(gapNode("protocol", e.protocolId), en, "lineage", "human", `固定方案 r${e.protocolRevision}（方案已缺失）`);
+      const tp = nodes.get(key("topic", e.topicId)); if (tp) link(tp, en, "affiliation", "human");
     }
     const tp2 = nodes.get(key("topic", e.topicId)); if (tp2 && pn) link(tp2, en, "affiliation", "human");
     if (recon && e.sourceAssetId) link(asset(e.sourceAssetId), en, "provenance", "human", "重构执行的文献来源");
     // 确认快照：执行记其基础方案版本；缺项如实登记
     const pending: string[] = [];
     if (recon) pending.push("历史文献重构（非本地实际实验；数值为原文陈述）");
+    if (proto && !proto.revisions.some((r) => r.revision === e.protocolRevision)) pending.push(`固定的方案第${e.protocolRevision}版不存在（方案实际版本：${proto.revisions.map((r) => r.revision).join("、")}）`);
     if ((e.phase ?? "recording") === "preparing") pending.push("执行准备稿未确认（无冻结快照）");
     if (!e.events.length) pending.push("尚无实际步骤事件");
     if (pending.length) { const cur = nodes.get(en.key)!; nodes.set(en.key, { ...cur, pending: [...(cur.pending ?? []), ...pending] }); }
@@ -174,7 +182,7 @@ export function buildNetwork(state: LocusState): Network {
   for (const s of state.samples) {
     const sn: NetNode = { key: key("sample", s.id), kind: "sample", id: s.id, label: `${s.shortName}（${s.displayName}）${s.origin === "reconstructed" ? "（文献重构）" : ""}`, version: `状态 ${s.states.length} 条` };
     add(sn);
-    if (s.executionId) { const en = nodes.get(key("execution", s.executionId)); if (en) link(en, sn, "provenance", "human"); }
+    if (s.executionId) { const en = nodes.get(key("execution", s.executionId)) ?? gapNode("execution", s.executionId); link(en, sn, "provenance", "human"); }
     const tp = nodes.get(key("topic", s.topicId)); if (tp) link(tp, sn, "affiliation", "human");
   }
 
@@ -182,9 +190,8 @@ export function buildNetwork(state: LocusState): Network {
   for (const m of state.measurements) {
     const recon = (m.origin ?? state.samples.find((s) => s.id === m.sampleId)?.origin) === "reconstructed";
     const mn: NetNode = { key: key("measurement", m.id), kind: "measurement", id: m.id, label: `${m.value}${m.unit ? ` ${m.unit}` : ""}${recon ? "（文献重构）" : ""}`, version: `样品状态 ${ver(m.sampleStateRevision)} · ${ver(m.revision)}` };
-    const sn = nodes.get(key("sample", m.sampleId));
-    if (sn) link(sn, mn, "lineage", "human");
-    else add(mn);
+    const sn = nodes.get(key("sample", m.sampleId)) ?? gapNode("sample", m.sampleId);
+    link(sn, mn, "lineage", "human");
     if (m.cellRef) {
       const tbl = state.tables.find((t) => t.id === m.cellRef!.tableId);
       const tn = tbl
@@ -217,9 +224,8 @@ export function buildNetwork(state: LocusState): Network {
       version: r.reproducible ? "可复现" : `不可复现：${r.missing.join("；")}`,
       external: true, pending: ["无内部 Run（外部工具/人工处理，本站不重建专业软件）"],
     };
-    const kn = nodes.get(key("task", r.taskId));
-    if (kn) link(kn, rn, "lineage", "human");
-    else add(rn);
+    const kn = nodes.get(key("task", r.taskId)) ?? gapNode("task", r.taskId);
+    link(kn, rn, "lineage", "human");
     for (const aid of r.assetIds) link(asset(aid), rn, "provenance", "human", "结果附件");
   }
 
@@ -228,8 +234,8 @@ export function buildNetwork(state: LocusState): Network {
     const rpn: NetNode = { key: key("report", rep.id), kind: "report", id: rep.id, label: `分析初稿 ${ver(rep.revision)}`, version: `钉住 ${rep.pinned.resultIds.length} 结果` };
     add(rpn);
     const tp = nodes.get(key("topic", rep.topicId)); if (tp) link(tp, rpn, "affiliation", "human");
-    if (rep.pinned.taskId) { const kn = nodes.get(key("task", rep.pinned.taskId)); if (kn) link(kn, rpn, "lineage", "human"); }
-    for (const rid of rep.pinned.resultIds) { const rn = nodes.get(key("result", rid)); if (rn) link(rn, rpn, "support", "human", "钉住结果"); }
+    if (rep.pinned.taskId) { const kn = nodes.get(key("task", rep.pinned.taskId)) ?? gapNode("task", rep.pinned.taskId); link(kn, rpn, "lineage", "human"); }
+    for (const rid of rep.pinned.resultIds) { const rn = nodes.get(key("result", rid)) ?? gapNode("result", rid); link(rn, rpn, "support", "human", "钉住结果"); }
     for (const b of rep.blocks) {
       const bn: NetNode = { key: key("block", b.id), kind: "block", id: b.id, label: b.text.slice(0, 30) || `块#${b.order + 1}`, version: `${NATURE_CN[b.nature] ?? b.nature}${b.draft ? " · AI草稿" : ""}` };
       link(rpn, bn, "affiliation", "human");
