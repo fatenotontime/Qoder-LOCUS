@@ -181,11 +181,21 @@
 
 | # | 分支 `feat/s05-e1-knowledge-foundation` | 分支 `<其他>` | 关联轮次 | 说明 |
 | --- | --- | --- | --- | --- |
-| 83 | `（见 git log）` · 2026-11-21 | — | S05-T2 | **协作改多 PR**（AGENTS.md §5.1，直接提交 main `175bbe0`）＋ **E1 知识基座**：新 `domain/knowledge.ts`（§4 类型＋hash 规范）、store **v8→v9**（knowledge 命名空间、严格加载）、新 `services/knowledge-base.ts`（源历史/固定版本解析）、`export.ts` 覆盖 knowledge；新测试 T01–T03/T20–T21；更新 web-loop/export 既有测试；**265/265**；`commitState` 未做 → E1 仍 in_progress；[会话记录](sessions/2026-11-21_session-05.md#s05-t2) |
+| 83 | `78eb9e3` · 2026-11-21 00:44（PR #5 merge `5039167` · 00:45） | — | S05-T2 | **协作改多 PR**（AGENTS.md §5.1，直接提交 main `175bbe0` · 00:21）＋ **E1 知识基座**：新 `domain/knowledge.ts`（§4 类型＋hash 规范）、store **v8→v9**（knowledge 命名空间、严格加载）、新 `services/knowledge-base.ts`（源历史/固定版本解析）、`export.ts` 覆盖 knowledge；新测试 T01–T03/T20–T21；更新 web-loop/export 既有测试；**265/265**；`commitState` 未做 → E1 仍 in_progress；[会话记录](sessions/2026-11-21_session-05.md#s05-t2) |
 
 | 轮次 | 分支 | 提交 | 提交时间 | 本轮产出 |
 | --- | --- | --- | --- | --- |
-| S05-T2 | feat/s05-e1-knowledge-foundation | 见 PR merge commit | 2026-11-21 | E1 基座（类型/迁移 v9/源历史/备份，T01–T03/T20–T21 通过）；commitState 待续；[会话记录](sessions/2026-11-21_session-05.md#s05-t2) |
+| S05-T2 | feat/s05-e1-knowledge-foundation | `78eb9e3`（merge `5039167`） | 2026-11-21 00:44 | E1 基座（类型/迁移 v9/源历史/备份，T01–T03/T20–T21 通过）；commitState 待续；[会话记录](sessions/2026-11-21_session-05.md#s05-t2) |
+
+### 会话 S05（续）· E1 commitState 收尾
+
+| # | 分支 `feat/s05-e1-commit-state` | 分支 `<其他>` | 关联轮次 | 说明 |
+| --- | --- | --- | --- | --- |
+| 84 | `e7245c9` · 2026-11-21 01:32 | — | S05-T3 | **E1-3 单一写入边界**：`createApp` 内 `commitState` 串行队列（changeFn 读最新 state、**保存成功才发布**、单笔失败不挂队列）；写请求整体入队、GET/HEAD 只读已提交态；49 处主模式＋reviewCard/batchConfirm/reviewTable+registerImpact/cancelChat/retryChat/atResult 多实体局部累积全部改先存后发布；后台 job（对话/知识分块/文献 AI/方案解析/影响评估/OCR/方法推荐）模型调用留在队列外、写回 `commitState` 内对最新合并（影响评估只合并本条记录＋stale 不复活；对话取消检查入队）；新 `tests/knowledge-pipeline.test.ts` **T04/T05/T22/T23**（GatedStore 延迟/失败驱动真实 HTTP）；**269/269** → **E1 判据 T01–T05/T20–T23 全过**；[会话记录](sessions/2026-11-21_session-05.md#s05-t3) |
+
+| 轮次 | 分支 | 提交 | 提交时间 | 本轮产出 |
+| --- | --- | --- | --- | --- |
+| S05-T3 | feat/s05-e1-commit-state | `e7245c9` | 2026-11-21 01:32 | commitState 单写入边界＋T04/T05/T22/T23；269/269；E1 判据齐备待 PR 合入；[会话记录](sessions/2026-11-21_session-05.md#s05-t3) |
 
 ## 独立提示词维护记录 S02-T1
 

@@ -129,7 +129,17 @@ export async function createApp(store: Store, opts: { aiConfigPath?: string } = 
   // 启动恢复：服务重启后仍为 running 的模型消息成孤儿 → 标失败可重试（job 仅在内存）。
   {
     const rec = recoverInterruptedChats(state);
-    if (rec.recovered > 0) { state = rec.state; await store.save(state); }
+    if (rec.recovered > 0) { await store.save(rec.state); state = rec.state; }
+  }
+  /**
+   * 单写入边界（合同 §5.1）：所有持久化写操作串行进入队列；changeFn 在队列执行时读取最新 state。
+   * 保存成功后才发布内存 state；单笔失败不挂死队列，后续提交继续。
+   */
+  let commitQueue: Promise<void> = Promise.resolve();
+  function commitState<T>(changeFn: (latest: LocusState) => Promise<T> | T): Promise<T> {
+    const run = commitQueue.then(() => changeFn(state));
+    commitQueue = run.then(() => {}, () => {});
+    return run;
   }
   const jobs = new Map<string, Job>();
   // 任务身份/重复提交守卫：同一原件的方案解析同时只允许一个在跑 job。
@@ -151,18 +161,25 @@ export async function createApp(store: Store, opts: { aiConfigPath?: string } = 
     void (async () => {
       try {
         const { value, raw } = await runTask(cfg, "context_chat", input);
-        const cur = state.chats.find((c) => c.id === chatId)?.messages.find((m) => m.id === messageId);
-        if (!cur || cur.status === "cancelled") {
+        // 模型调用在队列外；写回在队列内对最新 state 合并，取消检查也在队列内做。
+        let discarded = false;
+        await commitState(async (latest) => {
+          const cur = latest.chats.find((c) => c.id === chatId)?.messages.find((m) => m.id === messageId);
+          if (!cur || cur.status === "cancelled") { discarded = true; return; }
+          const next = applyChatResponse(latest, chatId, messageId, value, snapshot);
+          await store.save(next); state = next;
+        });
+        if (discarded) {
           job.status = "done"; job.result = { messageId, discarded: true }; job.message = "已取消：结果丢弃，未写回"; return;
         }
-        state = applyChatResponse(state, chatId, messageId, value, snapshot);
-        await store.save(state);
         writeAudit(chatId, { raws: [{ index: 0, content: raw }], model: cfg.model }, "context_chat");
         job.status = "done"; job.result = { messageId, snapshotHash: snapshot.hash }; job.message = "完成";
       } catch (e) {
         const msg = (e as Error).message ?? "失败";
-        const cur = state.chats.find((c) => c.id === chatId)?.messages.find((m) => m.id === messageId);
-        if (cur && cur.status === "running") { state = failChat(state, chatId, messageId, msg); await store.save(state); }
+        await commitState(async (latest) => {
+          const cur = latest.chats.find((c) => c.id === chatId)?.messages.find((m) => m.id === messageId);
+          if (cur && cur.status === "running") { const next = failChat(latest, chatId, messageId, msg); await store.save(next); state = next; }
+        }).catch(() => {});
         job.status = "error"; job.error = msg;
       }
     })();
@@ -203,7 +220,7 @@ export async function createApp(store: Store, opts: { aiConfigPath?: string } = 
     send(res, 200, readFileSync(target), MIME[extname(target)] ?? "application/octet-stream");
   };
 
-  return createServer(async (req, res) => {
+  const handle = async (req: IncomingMessage, res: ServerResponse) => {
     try {
       const url = new URL(req.url ?? "/", `http://${req.headers.host}`);
       const path = url.pathname;
@@ -290,14 +307,14 @@ export async function createApp(store: Store, opts: { aiConfigPath?: string } = 
         }
         if (path === "/api/topics") {
           const r = createTopic(state, { name: String(body.name ?? ""), researchQuestion: String(body.researchQuestion ?? "") });
-          state = r.state; await store.save(state);
+          await store.save(r.state); state = r.state;
           send(res, 200, { ok: true, topicId: r.topic.id });
           return;
         }
         const subMatch = path.match(/^\/api\/topics\/([^/]+)\/subquestions$/);
         if (subMatch) {
           const r = createSubquestion(state, { topicId: decodeURIComponent(subMatch[1]), question: String(body.question ?? ""), kind: body.kind as "declared" | "exploratory" | undefined });
-          state = r.state; await store.save(state);
+          await store.save(r.state); state = r.state;
           send(res, 200, { ok: true, subquestionId: r.subquestion.id });
           return;
         }
@@ -309,21 +326,21 @@ export async function createApp(store: Store, opts: { aiConfigPath?: string } = 
             source: body.source as string | undefined, license: body.license as string | undefined,
             topicIds: body.topicIds as string[] | undefined, note: body.note as string | undefined,
           });
-          state = r.state; await store.save(state);
+          await store.save(r.state); state = r.state;
           send(res, 200, { ok: true, paperId: r.paper.id });
           return;
         }
         if (path === "/api/papers/import-bibliography") {
           const fmt = body.format === "csl-json" ? "csl-json" : "bibtex";
           const r = importBibliography(state, { format: fmt, text: String(body.text ?? "") });
-          state = r.state; await store.save(state);
+          await store.save(r.state); state = r.state;
           send(res, 200, { ok: true, created: r.created.map((p) => p.id), skipped: r.skipped });
           return;
         }
         const paperUpd = path.match(/^\/api\/papers\/([^/]+)\/update$/);
         if (paperUpd) {
           const r = updatePaper(state, decodeURIComponent(paperUpd[1]), body as Parameters<typeof updatePaper>[2]);
-          state = r.state; await store.save(state);
+          await store.save(r.state); state = r.state;
           send(res, 200, { ok: true, paperId: r.paper.id, revision: r.paper.revision });
           return;
         }
@@ -333,14 +350,14 @@ export async function createApp(store: Store, opts: { aiConfigPath?: string } = 
             paperId: decodeURIComponent(paperAtt[1]), name: String(body.name ?? ""), text: String(body.text ?? ""),
             role: body.role as "fulltext" | "supplement" | "other" | undefined, version: body.version as string | undefined,
           });
-          state = r.state; await store.save(state);
+          await store.save(r.state); state = r.state;
           send(res, 200, { ok: true, attachmentId: r.attachment.id, assetId: r.assetId });
           return;
         }
         const paperTopic = path.match(/^\/api\/papers\/([^/]+)\/topics$/);
         if (paperTopic) {
           const r = linkPaperTopic(state, decodeURIComponent(paperTopic[1]), String(body.topicId ?? ""), body.link !== false);
-          state = r.state; await store.save(state);
+          await store.save(r.state); state = r.state;
           send(res, 200, { ok: true, topicIds: r.paper.topicIds });
           return;
         }
@@ -361,11 +378,12 @@ export async function createApp(store: Store, opts: { aiConfigPath?: string } = 
           const raws: { index: number; content: string }[] = [];
           const doneSet = new Set<number>();
           let cancelled = false, paused = false, running = false;
-          // 串行落库：每块完成即 map→apply→save（重跑/重试/续跑按概述去重，不重复入库）
+          // 串行落库：每块完成即 map→apply→save（重跑/重试/续跑按概述去重，不重复入库）。
+          // 本身不入队：后台回调用 commitState 包裹；retry-chunk 路由已在提交队列内执行。
           const persistChunk = async (index: number, raw: string, cards: unknown[]) => {
             const mapped = mapKnowledgeCards(paper, assets, cards);
             const r = applyKnowledge(state, paper.id, mapped);
-            state = r.state; await store.save(state);
+            await store.save(r.state); state = r.state;
             doneSet.add(index);
             job.result!.created = (job.result!.created ?? 0) + r.created;
             job.result!.skipped = (job.result!.skipped ?? 0) + r.skipped;
@@ -382,7 +400,7 @@ export async function createApp(store: Store, opts: { aiConfigPath?: string } = 
                 onChunkStart: (i, total) => { job.total = total; job.message = `第 ${i + 1}/${total} 段，已出 ${job.result!.created} 张`; },
                 onChunkCards: async (i, total, cards, raw) => {
                   raws.push({ index: i, content: raw });
-                  await persistChunk(i, raw, cards);
+                  await commitState(() => persistChunk(i, raw, cards));
                   job.done = doneSet.size; job.message = `第 ${i + 1}/${total} 段，已出 ${job.result!.created} 张`;
                 },
                 onChunkError: (i, total, err, recoverable) => {
@@ -390,7 +408,7 @@ export async function createApp(store: Store, opts: { aiConfigPath?: string } = 
                   job.message = `第 ${i + 1}/${total} 段失败`;
                 },
               });
-              await store.save(state);
+              await commitState((latest) => store.save(latest));
               writeAudit(paper.id, { raws, model: cfg.model }, "knowledge_extract");
               if (cancelled) { job.result!.cancelled = true; job.status = "done"; job.message = `已取消：保留已出 ${job.result!.created} 张`; }
               else if (paused) { job.result!.paused = true; job.status = "paused"; job.message = `已暂停：已出 ${job.result!.created} 张（可继续）`; }
@@ -464,10 +482,12 @@ export async function createApp(store: Store, opts: { aiConfigPath?: string } = 
                 const cards = mapAiLiteratureCards(asset, result.cards);
                 const audit = { raws: result.raws, model: cfg.model };
                 try {
-                  const r = applyLiterature(state, asset, cards, input.topicId, audit);
-                  state = r.state; await store.save(state);
-                  writeAudit(asset.id, audit);
-                  job.status = "done"; job.result = { assetId: asset.id, created: r.created, reminder: r.reminder }; job.message = "完成";
+                  await commitState(async (latest) => {
+                    const r = applyLiterature(latest, asset, cards, input.topicId, audit);
+                    await store.save(r.state); state = r.state;
+                    writeAudit(asset.id, audit);
+                    job.status = "done"; job.result = { assetId: asset.id, created: r.created, reminder: r.reminder }; job.message = "完成";
+                  });
                 } catch (e) {
                   if (e instanceof AppError && e.status === 409) {
                     // 等待期间同内容已从别路入库：丢弃本次结果，不产生重复原件
@@ -480,7 +500,7 @@ export async function createApp(store: Store, opts: { aiConfigPath?: string } = 
             return;
           }
           const r = await importLiterature(state, input, getAiConfig());
-          state = r.state; await store.save(state);
+          await store.save(r.state); state = r.state;
           send(res, 200, { ok: true, created: r.created, assetId: r.asset.id, mode: "draft", reminder: r.reminder });
           return;
         }
@@ -488,13 +508,13 @@ export async function createApp(store: Store, opts: { aiConfigPath?: string } = 
           const hr = body.headerRows;
           const pf = body.profile;
           const r = importMeasurements(state, { name: String(body.name ?? ""), csv: String(body.csv ?? ""), topicId: body.topicId as string | undefined, headerRows: hr === 1 || hr === 2 ? hr : "auto", profile: pf === "plain-table" || pf === "enzymeML-blocks" ? pf : "auto" });
-          state = r.state; await store.save(state);
+          await store.save(r.state); state = r.state;
           send(res, 200, { ok: true, created: r.created, tableCount: state.tables.filter((t) => t.assetId === r.asset.id).length, assetId: r.asset.id });
           return;
         }
         const cardMatch = path.match(/^\/api\/cards\/([^/]+)\/review$/);
         if (cardMatch) {
-          state = reviewCard(state, decodeURIComponent(cardMatch[1]), {
+          const next = reviewCard(state, decodeURIComponent(cardMatch[1]), {
             audit: body.audit as never,
             importance: (body.importance ?? undefined) as never,
             note: body.note as string | undefined,
@@ -503,7 +523,7 @@ export async function createApp(store: Store, opts: { aiConfigPath?: string } = 
             secondaryCitation: body.secondaryCitation as boolean | undefined,
             extracted: body.extracted as never,
           });
-          await store.save(state); send(res, 200, { ok: true }); return;
+          await store.save(next); state = next; send(res, 200, { ok: true }); return;
         }
         if (path === "/api/cards") {
           const r = addManualCard(state, {
@@ -517,15 +537,15 @@ export async function createApp(store: Store, opts: { aiConfigPath?: string } = 
             secondaryCitation: body.secondaryCitation === true,
             reason: body.reason as string | undefined,
           });
-          state = r.state; await store.save(state);
+          await store.save(r.state); state = r.state;
           send(res, 200, { ok: true, cardId: r.card.id }); return;
         }
         if (path === "/api/cards/batch-preview") {
           send(res, 200, batchPreview(state, (body.ids as string[]) ?? [])); return;
         }
         if (path === "/api/cards/batch-confirm") {
-          state = batchConfirm(state, (body.ids as string[]) ?? [], body.ack === true);
-          await store.save(state); send(res, 200, { ok: true }); return;
+          const next = batchConfirm(state, (body.ids as string[]) ?? [], body.ack === true);
+          await store.save(next); state = next; send(res, 200, { ok: true }); return;
         }
         if (path === "/api/adoptions") {
           const r = upsertAdoption(state, {
@@ -534,7 +554,7 @@ export async function createApp(store: Store, opts: { aiConfigPath?: string } = 
             decision: body.decision as "adopt" | "exclude",
             reason: body.reason as string | undefined,
           });
-          state = r.state; await store.save(state);
+          await store.save(r.state); state = r.state;
           send(res, 200, { ok: true, adoptionId: r.adoption.id }); return;
         }
         if (path === "/api/mappings") {
@@ -544,7 +564,7 @@ export async function createApp(store: Store, opts: { aiConfigPath?: string } = 
             basis: String(body.basis ?? ""),
             topicId: body.topicId as string | undefined,
           });
-          state = r.state; await store.save(state);
+          await store.save(r.state); state = r.state;
           send(res, 200, { ok: true, mappingId: r.mapping.id }); return;
         }
         if (path === "/api/comparisons") {
@@ -557,30 +577,30 @@ export async function createApp(store: Store, opts: { aiConfigPath?: string } = 
             exclusions: body.exclusions as string[] | undefined,
             note: body.note as string | undefined,
           });
-          state = r.state; await store.save(state);
+          await store.save(r.state); state = r.state;
           send(res, 200, { ok: true, comparisonId: r.comparison.id }); return;
         }
         const tblMatch = path.match(/^\/api\/tables\/([^/]+)\/review$/);
         if (tblMatch) {
           const tableId = decodeURIComponent(tblMatch[1]);
           const before = state.tables.find((t) => t.id === tableId);
-          state = reviewTable(state, tableId, {
+          let next = reviewTable(state, tableId, {
             columnUpdates: body.columnUpdates as never,
             cellUpdates: body.cellUpdates as never,
             note: body.note as string | undefined,
             reason: body.reason as string | undefined,
           });
-          const after = state.tables.find((t) => t.id === tableId);
+          const after = next.tables.find((t) => t.id === tableId);
           // 表格数值修订 → 登记影响分析（确定性部分无；AI 语义评估待跑）。课题经原件取。
-          const tableTopic = after ? state.assets.find((a) => a.id === after.assetId)?.topicId : undefined;
+          const tableTopic = after ? next.assets.find((a) => a.id === after.assetId)?.topicId : undefined;
           if (before && after && after.revision > before.revision && tableTopic) {
-            state = registerImpact(state, {
+            next = registerImpact(next, {
               topicId: tableTopic,
               change: { entityKind: "table", entityId: tableId, revision: after.revision, summary: `表格修订 r${after.revision}` },
               aiConfigured: getAiConfig() !== null,
             }).state;
           }
-          await store.save(state); send(res, 200, { ok: true }); return;
+          await store.save(next); state = next; send(res, 200, { ok: true }); return;
         }
 
         // ── 4C：方案 / 模板 / 执行 / 样品 / 测量 / 影响 / OCR ──
@@ -598,13 +618,13 @@ export async function createApp(store: Store, opts: { aiConfigPath?: string } = 
             unknowns: body.unknowns as string[] | undefined,
             sourceFragments: body.sourceFragments as string[] | undefined,
           });
-          state = r.state; await store.save(state);
+          await store.save(r.state); state = r.state;
           send(res, 200, { ok: true, protocolId: r.protocol.id }); return;
         }
         // 5D：上传方案原件直接归档为 protocol 类（不进文献候选库），随后走方案解析。
         if (path === "/api/protocols/upload") {
           const r = uploadProtocolSource(state, { name: String(body.name ?? ""), text: String(body.text ?? ""), topicId: body.topicId as string | undefined });
-          state = r.state; await store.save(state);
+          await store.save(r.state); state = r.state;
           send(res, 200, { ok: true, assetId: r.asset.id }); return;
         }
         if (path === "/api/protocols/parse") {
@@ -627,10 +647,12 @@ export async function createApp(store: Store, opts: { aiConfigPath?: string } = 
             try {
               const { value, raw } = await runTask(cfg, "protocol_parse", asset.text.slice(0, 12000));
               const draft = protocolDraftFromAi(value, assetId);
-              const r = createProtocol(state, { topicId, name, sourceKind, sourceAssetId: assetId, ...draft });
-              state = r.state; await store.save(state);
-              writeAudit(assetId, { raws: [{ index: 0, content: raw }], model: cfg.model }, "protocol_parse");
-              job.status = "done"; job.result = { protocolId: r.protocol.id, assetId }; job.message = "完成";
+              await commitState(async (latest) => {
+                const r = createProtocol(latest, { topicId, name, sourceKind, sourceAssetId: assetId, ...draft });
+                await store.save(r.state); state = r.state;
+                writeAudit(assetId, { raws: [{ index: 0, content: raw }], model: cfg.model }, "protocol_parse");
+                job.status = "done"; job.result = { protocolId: r.protocol.id, assetId }; job.message = "完成";
+              });
             } catch (e) { job.status = "error"; job.error = (e as Error).message ?? "失败"; }
             finally { parsingAssets.delete(assetId); }
           })();
@@ -649,7 +671,7 @@ export async function createApp(store: Store, opts: { aiConfigPath?: string } = 
             sourceFragments: body.sourceFragments as string[] | undefined,
             reason: String(body.reason ?? ""),
           });
-          state = r.state; await store.save(state);
+          await store.save(r.state); state = r.state;
           send(res, 200, { ok: true, revision: r.protocol.revision }); return;
         }
         if (path === "/api/templates") {
@@ -659,13 +681,13 @@ export async function createApp(store: Store, opts: { aiConfigPath?: string } = 
             fields: body.fields as string[] | undefined,
             aiDraft: body.aiDraft === true,
           });
-          state = r.state; await store.save(state);
+          await store.save(r.state); state = r.state;
           send(res, 200, { ok: true, templateId: r.template.id }); return;
         }
         const tmplConfirm = path.match(/^\/api\/templates\/([^/]+)\/confirm$/);
         if (tmplConfirm) {
           const r = confirmTemplate(state, decodeURIComponent(tmplConfirm[1]), body.fields as string[] | undefined);
-          state = r.state; await store.save(state);
+          await store.save(r.state); state = r.state;
           send(res, 200, { ok: true }); return;
         }
         if (path === "/api/executions") {
@@ -675,7 +697,7 @@ export async function createApp(store: Store, opts: { aiConfigPath?: string } = 
             protocolRevision: typeof body.protocolRevision === "number" ? body.protocolRevision : undefined,
             templateId: body.templateId as string | undefined,
           });
-          state = r.state; await store.save(state);
+          await store.save(r.state); state = r.state;
           send(res, 200, { ok: true, executionId: r.execution.id }); return;
         }
         // ── 5D：执行准备稿 → 确认快照 → 另存新方案 ──
@@ -685,19 +707,19 @@ export async function createApp(store: Store, opts: { aiConfigPath?: string } = 
             adjustments: body.adjustments as never,
             notes: body.notes as string | undefined,
           });
-          state = r.state; await store.save(state);
+          await store.save(r.state); state = r.state;
           send(res, 200, { ok: true, adjustments: r.execution.preparation?.adjustments.length ?? 0 }); return;
         }
         const execConfirm = path.match(/^\/api\/executions\/([^/]+)\/confirm-preparation$/);
         if (execConfirm) {
           const r = confirmPreparation(state, decodeURIComponent(execConfirm[1]));
-          state = r.state; await store.save(state);
+          await store.save(r.state); state = r.state;
           send(res, 200, { ok: true, impactId: r.impactId, confirmedAt: r.execution.preparation?.confirmedAt }); return;
         }
         const execSaveAs = path.match(/^\/api\/executions\/([^/]+)\/save-as-protocol$/);
         if (execSaveAs) {
           const r = saveExecutionAsProtocol(state, decodeURIComponent(execSaveAs[1]), { name: String(body.name ?? "") });
-          state = r.state; await store.save(state);
+          await store.save(r.state); state = r.state;
           send(res, 200, { ok: true, protocolId: r.protocol.id }); return;
         }
         const execEvents = path.match(/^\/api\/executions\/([^/]+)\/events$/);
@@ -710,7 +732,7 @@ export async function createApp(store: Store, opts: { aiConfigPath?: string } = 
             at: body.at as string | undefined,
             backfilled: body.backfilled === true,
           });
-          state = r.state; await store.save(state);
+          await store.save(r.state); state = r.state;
           send(res, 200, { ok: true, eventId: r.execution.events[r.execution.events.length - 1].id }); return;
         }
         const evEdit = path.match(/^\/api\/executions\/([^/]+)\/events\/([^/]+)\/edit$/);
@@ -720,7 +742,7 @@ export async function createApp(store: Store, opts: { aiConfigPath?: string } = 
             actual: body.actual as never,
             reason: body.reason as string | undefined,
           });
-          state = r.state; await store.save(state);
+          await store.save(r.state); state = r.state;
           send(res, 200, { ok: true }); return;
         }
         const execPauseAssist = path.match(/^\/api\/executions\/([^/]+)\/pause-assist$/);
@@ -738,19 +760,19 @@ export async function createApp(store: Store, opts: { aiConfigPath?: string } = 
             resumeChecks: body.resumeChecks as string[] | undefined,
             aiSuggested: body.aiSuggested === true,
           });
-          state = r.state; await store.save(state);
+          await store.save(r.state); state = r.state;
           send(res, 200, { ok: true }); return;
         }
         const execResume = path.match(/^\/api\/executions\/([^/]+)\/resume$/);
         if (execResume) {
           const r = resumeExecution(state, decodeURIComponent(execResume[1]), String(body.humanDecision ?? ""));
-          state = r.state; await store.save(state);
+          await store.save(r.state); state = r.state;
           send(res, 200, { ok: true }); return;
         }
         const execDone = path.match(/^\/api\/executions\/([^/]+)\/done$/);
         if (execDone) {
           const r = completeExecution(state, decodeURIComponent(execDone[1]));
-          state = r.state; await store.save(state);
+          await store.save(r.state); state = r.state;
           send(res, 200, { ok: true }); return;
         }
         if (path === "/api/samples") {
@@ -765,7 +787,7 @@ export async function createApp(store: Store, opts: { aiConfigPath?: string } = 
             use: body.use as string | undefined,
             note: body.note as string | undefined,
           });
-          state = r.state; await store.save(state);
+          await store.save(r.state); state = r.state;
           send(res, 200, { ok: true, sampleId: r.sample.id }); return;
         }
         const smpStates = path.match(/^\/api\/samples\/([^/]+)\/states$/);
@@ -776,13 +798,13 @@ export async function createApp(store: Store, opts: { aiConfigPath?: string } = 
             use: body.use as string | undefined,
             note: body.note as string | undefined,
           });
-          state = r.state; await store.save(state);
+          await store.save(r.state); state = r.state;
           send(res, 200, { ok: true, revision: r.sample.states.length }); return;
         }
         const smpRename = path.match(/^\/api\/samples\/([^/]+)\/rename$/);
         if (smpRename) {
           const r = renameSample(state, decodeURIComponent(smpRename[1]), String(body.displayName ?? ""));
-          state = r.state; await store.save(state);
+          await store.save(r.state); state = r.state;
           send(res, 200, { ok: true }); return;
         }
         if (path === "/api/measurements") {
@@ -798,7 +820,7 @@ export async function createApp(store: Store, opts: { aiConfigPath?: string } = 
             cellRef: body.cellRef as never,
             note: body.note as string | undefined,
           });
-          state = r.state; await store.save(state);
+          await store.save(r.state); state = r.state;
           send(res, 200, { ok: true, measurementId: r.measurement.id }); return;
         }
         const measEdit = path.match(/^\/api\/measurements\/([^/]+)\/edit$/);
@@ -811,7 +833,7 @@ export async function createApp(store: Store, opts: { aiConfigPath?: string } = 
             note: body.note as string | undefined,
             reason: body.reason as string | undefined,
           });
-          state = r.state; await store.save(state);
+          await store.save(r.state); state = r.state;
           send(res, 200, { ok: true }); return;
         }
         const impRun = path.match(/^\/api\/impacts\/([^/]+)\/run$/);
@@ -825,7 +847,17 @@ export async function createApp(store: Store, opts: { aiConfigPath?: string } = 
           jobs.set(id, job); trimJobs();
           void (async () => {
             try {
-              const r = await runImpactAssessment(async () => state, async (s) => { state = s; await store.save(s); }, impactId, cfg);
+              // 写回只合并本条影响记录，其余实体保持最新已提交值；已被标 stale 的不被旧评估复活。
+              const r = await runImpactAssessment(async () => state, async (s) => {
+                await commitState(async (latest) => {
+                  const incoming = s.impacts.find((i) => i.id === impactId);
+                  const curNow = latest.impacts.find((i) => i.id === impactId);
+                  if (!incoming || !curNow) return;
+                  if (curNow.status === "stale" && incoming.status !== "stale") return;
+                  const next = { ...latest, impacts: latest.impacts.map((i) => (i.id === impactId ? incoming : i)) };
+                  await store.save(next); state = next;
+                });
+              }, impactId, cfg);
               job.status = "done";
               job.result = { impactId, discarded: r.discarded };
               job.message = r.ok ? "完成" : r.discarded ? "已有更新改动，旧评估结果已丢弃（stale 守卫）" : `失败：${r.error}`;
@@ -836,7 +868,7 @@ export async function createApp(store: Store, opts: { aiConfigPath?: string } = 
         }
         if (path === "/api/import/image") {
           const r = importImage(state, { name: String(body.name ?? ""), dataUrl: String(body.dataUrl ?? ""), topicId: body.topicId as string | undefined });
-          state = r.state; await store.save(state);
+          await store.save(r.state); state = r.state;
           send(res, 200, { ok: true, assetId: r.asset.id }); return;
         }
         if (path === "/api/ocr") {
@@ -851,8 +883,10 @@ export async function createApp(store: Store, opts: { aiConfigPath?: string } = 
           void (async () => {
             try {
               const r = await runOcr(cfg, asset);
-              state = { ...state, ocrs: [...state.ocrs, ...r.ocrs] };
-              await store.save(state);
+              await commitState(async (latest) => {
+                const next = { ...latest, ocrs: [...latest.ocrs, ...r.ocrs] };
+                await store.save(next); state = next;
+              });
               writeAudit(assetId, { raws: [{ index: 0, content: r.raw }], model: r.model }, "handwriting_ocr");
               job.status = "done"; job.result = { assetId, created: r.ocrs.length, ocrIds: r.ocrs.map((o) => o.id) }; job.message = "完成";
             } catch (e) { job.status = "error"; job.error = (e as Error).message ?? "失败"; }
@@ -865,7 +899,7 @@ export async function createApp(store: Store, opts: { aiConfigPath?: string } = 
             fields: body.fields as Record<string, string> | undefined,
             unknowns: body.unknowns as string[] | undefined,
           });
-          state = r.state; await store.save(state);
+          await store.save(r.state); state = r.state;
           send(res, 200, { ok: true, ocrId: r.ocr.id }); return;
         }
         const ocrConfirm = path.match(/^\/api\/ocr\/([^/]+)\/confirm$/);
@@ -876,7 +910,7 @@ export async function createApp(store: Store, opts: { aiConfigPath?: string } = 
             unknowns: body.unknowns as string[] | undefined,
             reason: body.reason as string | undefined,
           });
-          state = r.state; await store.save(state);
+          await store.save(r.state); state = r.state;
           send(res, 200, { ok: true }); return;
         }
         // ── 5E：分析任务 / 方法推荐 / 结果提交 / 初步报告 / 上下文对话 ──
@@ -916,13 +950,13 @@ export async function createApp(store: Store, opts: { aiConfigPath?: string } = 
             topicId: String(body.topicId ?? ""), subquestionId: body.subquestionId as string | undefined,
             title: String(body.title ?? ""), core: body.core as unknown[], optional: body.optional as unknown[] | undefined,
           });
-          state = r.state; await store.save(state);
+          await store.save(r.state); state = r.state;
           send(res, 200, { ok: true, taskId: r.task.id }); return;
         }
         const atCandidates = path.match(/^\/api\/analysis\/tasks\/([^/]+)\/candidates$/);
         if (atCandidates) {
           const r = setTaskCandidates(state, decodeURIComponent(atCandidates[1]), body.optional as { ref: unknown; included: boolean }[]);
-          state = r.state; await store.save(state);
+          await store.save(r.state); state = r.state;
           send(res, 200, { ok: true }); return;
         }
         const atRecommend = path.match(/^\/api\/analysis\/tasks\/([^/]+)\/recommend$/);
@@ -943,12 +977,14 @@ export async function createApp(store: Store, opts: { aiConfigPath?: string } = 
           void (async () => {
             try {
               const { value, raw } = await runTask(cfg, "analysis_recommend", snapshotInput(snapshot));
-              const r = applyRecommendation(state, taskId, value, raw, snapshot);
-              state = r.state; await store.save(state);
-              writeAudit(taskId, { raws: [{ index: 0, content: raw }], model: cfg.model }, "analysis_recommend");
-              job.status = "done";
-              job.result = { taskId, methods: r.task.recommendation!.methods.length, snapshotHash: snapshot.hash };
-              job.message = "完成";
+              await commitState(async (latest) => {
+                const r = applyRecommendation(latest, taskId, value, raw, snapshot);
+                await store.save(r.state); state = r.state;
+                writeAudit(taskId, { raws: [{ index: 0, content: raw }], model: cfg.model }, "analysis_recommend");
+                job.status = "done";
+                job.result = { taskId, methods: r.task.recommendation!.methods.length, snapshotHash: snapshot.hash };
+                job.message = "完成";
+              });
             } catch (e) { job.status = "error"; job.error = (e as Error).message ?? "失败"; }
             finally { recommendingTasks.delete(taskId); }
           })();
@@ -961,16 +997,18 @@ export async function createApp(store: Store, opts: { aiConfigPath?: string } = 
           if (!task) { send(res, 404, { error: `分析任务不存在：${taskId}` }); return; }
           const attachments = (body.attachments ?? []) as { name?: unknown; content?: unknown }[];
           const assetIds: string[] = [];
+          // 多实体一笔提交：先在局部累积，保存成功后才整体发布（失败不发布任何一半）。
+          let next = state;
           for (const att of attachments) {
-            const r = archiveResultFile(state, { name: String(att.name ?? ""), content: String(att.content ?? ""), topicId: task.topicId });
-            state = r.state; assetIds.push(r.asset.id);
+            const r = archiveResultFile(next, { name: String(att.name ?? ""), content: String(att.content ?? ""), topicId: task.topicId });
+            next = r.state; assetIds.push(r.asset.id);
           }
-          const r = submitResult(state, taskId, {
+          const r = submitResult(next, taskId, {
             method: String(body.method ?? ""), params: body.params as string | undefined,
             reason: body.reason as string | undefined, note: body.note as string | undefined,
             assetIds, adoptedRecommendation: body.adoptedRecommendation as string | undefined,
           });
-          state = r.state; await store.save(state);
+          await store.save(r.state); state = r.state;
           send(res, 200, { ok: true, resultId: r.result.id, reproducible: r.result.reproducible, missing: r.result.missing, assetIds }); return;
         }
         const resEdit = path.match(/^\/api\/analysis\/results\/([^/]+)\/edit$/);
@@ -979,12 +1017,12 @@ export async function createApp(store: Store, opts: { aiConfigPath?: string } = 
             method: body.method as string | undefined, params: body.params as string | undefined,
             note: body.note as string | undefined, reason: String(body.reason ?? ""),
           });
-          state = r.state; await store.save(state);
+          await store.save(r.state); state = r.state;
           send(res, 200, { ok: true, revision: r.result.revision, reproducible: r.result.reproducible }); return;
         }
         if (path === "/api/reports") {
           const r = createReport(state, { topicId: String(body.topicId ?? ""), taskId: body.taskId as string | undefined });
-          state = r.state; await store.save(state);
+          await store.save(r.state); state = r.state;
           send(res, 200, { ok: true, reportId: r.report.id }); return;
         }
         const repPreview = path.match(/^\/api\/reports\/([^/]+)\/preview$/);
@@ -997,13 +1035,13 @@ export async function createApp(store: Store, opts: { aiConfigPath?: string } = 
           const r = applyReportEdit(state, decodeURIComponent(repApply[1]), {
             baseRevision: Number(body.baseRevision), blocks: body.blocks, reason: String(body.reason ?? ""),
           });
-          state = r.state; await store.save(state);
+          await store.save(r.state); state = r.state;
           send(res, 200, { ok: true, revision: r.report.revision, diff: r.diff }); return;
         }
         const repConfirm = path.match(/^\/api\/reports\/([^/]+)\/blocks\/([^/]+)\/confirm$/);
         if (repConfirm) {
           const r = confirmReportBlock(state, decodeURIComponent(repConfirm[1]), decodeURIComponent(repConfirm[2]), String(body.reason ?? ""));
-          state = r.state; await store.save(state);
+          await store.save(r.state); state = r.state;
           send(res, 200, { ok: true, revision: r.report.revision }); return;
         }
         const repDraft = path.match(/^\/api\/reports\/([^/]+)\/draft$/);
@@ -1013,7 +1051,7 @@ export async function createApp(store: Store, opts: { aiConfigPath?: string } = 
         }
         if (path === "/api/chats") {
           const r = createChat(state, { topicId: String(body.topicId ?? ""), subquestionId: body.subquestionId as string | undefined, scope: body.scope as unknown[] | undefined });
-          state = r.state; await store.save(state);
+          await store.save(r.state); state = r.state;
           send(res, 200, { ok: true, chatId: r.chat.id }); return;
         }
         const chatSend = path.match(/^\/api\/chats\/([^/]+)\/send$/);
@@ -1022,14 +1060,14 @@ export async function createApp(store: Store, opts: { aiConfigPath?: string } = 
           if (!cfg) { send(res, 422, { error: "AI 未配置：无法讨论。范围与对象仍可查看。" }); return; }
           const chatId = decodeURIComponent(chatSend[1]);
           const r = appendChatTurn(state, chatId, String(body.text ?? ""));
-          state = r.state; await store.save(state);
+          await store.save(r.state); state = r.state;
           const jobId = startChatJob(chatId, r.messageId, String(body.text ?? ""));
           send(res, 202, { ok: true, jobId, messageId: r.messageId }); return;
         }
         const chatCancel = path.match(/^\/api\/chats\/([^/]+)\/messages\/([^/]+)\/cancel$/);
         if (chatCancel) {
-          state = cancelChat(state, decodeURIComponent(chatCancel[1]), decodeURIComponent(chatCancel[2]));
-          await store.save(state);
+          const next = cancelChat(state, decodeURIComponent(chatCancel[1]), decodeURIComponent(chatCancel[2]));
+          await store.save(next); state = next;
           send(res, 200, { ok: true }); return;
         }
         const chatRetry = path.match(/^\/api\/chats\/([^/]+)\/messages\/([^/]+)\/retry$/);
@@ -1038,8 +1076,8 @@ export async function createApp(store: Store, opts: { aiConfigPath?: string } = 
           if (!cfg) { send(res, 422, { error: "AI 未配置：无法重试。" }); return; }
           const chatId = decodeURIComponent(chatRetry[1]);
           const messageId = decodeURIComponent(chatRetry[2]);
-          state = retryChat(state, chatId, messageId);
-          await store.save(state);
+          const next = retryChat(state, chatId, messageId);
+          await store.save(next); state = next;
           const chat = state.chats.find((c) => c.id === chatId)!;
           const idx = chat.messages.findIndex((m) => m.id === messageId);
           const userText = idx > 0 ? chat.messages[idx - 1].content : "";
@@ -1049,7 +1087,7 @@ export async function createApp(store: Store, opts: { aiConfigPath?: string } = 
         const chatAdopt = path.match(/^\/api\/chats\/([^/]+)\/messages\/([^/]+)\/adopt$/);
         if (chatAdopt) {
           const r = adoptProposal(state, decodeURIComponent(chatAdopt[1]), decodeURIComponent(chatAdopt[2]), Number(body.index), body.confirmed === true);
-          state = r.state; await store.save(state);
+          await store.save(r.state); state = r.state;
           send(res, 200, { ok: true, applied: r.applied }); return;
         }
       }
@@ -1061,6 +1099,12 @@ export async function createApp(store: Store, opts: { aiConfigPath?: string } = 
       else if (err instanceof SyntaxError) send(res, 400, { error: "JSON 解析失败" });
       else send(res, 500, { error: (err as Error).message ?? "内部错误" });
     }
+  };
+  return createServer((req: IncomingMessage, res: ServerResponse) => {
+    const m = req.method ?? "GET";
+    // 只读请求直接读已提交 state（GET 不落库、不排队）；写请求串行进入单提交边界。
+    if (m === "GET" || m === "HEAD" || m === "OPTIONS") { void handle(req, res); return; }
+    void commitState(() => handle(req, res));
   });
 }
 
