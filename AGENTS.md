@@ -63,6 +63,17 @@ Agent: <agent 标识>          # 例：qoder-main / agent-2
 
 ---
 
+## 5.1 分支与 PR 规程（多人协作，2026-11-21 起生效）
+
+1. **禁止直接在 `main` 上提交。** 每轮/每阶段改动在**短命分支**上提交，经 **PR** 合并回 `main`。
+2. 分支命名：`<type>/<会话号>-<轮次或主题>`，例：`docs/s05-e0-records`、`feat/s05-e1-knowledge-store`。
+3. 每个 PR 合并前必须通过**审计**（结论写入当轮记录）：`npm --prefix sciworkbench test` 全绿、变更范围与标题一致、**无敏感文件**（`ai-config.json`/Key/私人材料/内部测试包 `test-packages/`）。
+4. PR 用 **merge commit**（不 squash），保全台账 hash 可溯源；`main` 受保护，**合并由用户或经授权执行**。一次「连续执行」授权不等于自动合并每一个 PR，除非用户明确说明。
+5. 提交 message 仍带 `Turn:` / `Agent:` trailer（§5）；分支名与 PR 标题体现会话/阶段号。
+6. 推送若经代理失败，按 HANDOFF：`git -c http.proxy= -c https.proxy= push` 直连。
+
+---
+
 ## 6. 编号与命名规则
 
 - **会话号**：`S<两位>`，如 `S01`、`S02`，与 `record/sessions/` 内的日志一一对应。
@@ -109,6 +120,8 @@ Agent: <agent 标识>          # 例：qoder-main / agent-2
 - [ ] 已更新对话轮次索引。
 - [ ] 已更新/新增 `record/sessions/` 叙述记录。
 - [ ] 提交 message 带 `Turn:` / `Agent:` trailer。
+- [ ] 改动在**短命分支**上提交（不在 `main` 直提），经 **PR** 合并（§5.1）。
+- [ ] PR 审计通过：测试全绿、范围与标题一致、无敏感文件。
 - [ ] 引用的截图路径真实存在（若用户已提供）。
 
 ---
@@ -118,3 +131,4 @@ Agent: <agent 标识>          # 例：qoder-main / agent-2
 - 不得改动他人分支的既有记录条目；如需修正，新增「修订」条目说明，保留原记录。
 - 不得为了「好看」重写历史（`rebase` / `amend` 已推送提交）。
 - 记录中的一切 hash / 分支 / 时间必须与仓库实际状态一致。
+- **不得直接在 `main` 上提交或推送**；一律走短命分支 + PR（§5.1）。
