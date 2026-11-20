@@ -32,7 +32,7 @@
 
 > 本节只给**取数入口**，不写死提交号/测试数/阶段进度——这些随每轮变化，写死即过期（H2）。
 
-- **进度与提交**：以 `git log` 与 `record/COMMIT_LEDGER.md` 双线表/轮次索引为准（最新行即当前推进步）；叙述见 `record/sessions/` 对应会话日志。分支 `main`，已推 GitHub。
+- **进度与提交**：以 `git log` 与 `record/COMMIT_LEDGER.md` 双线表/轮次索引为准（最新行即当前推进步）；叙述见 `record/sessions/` 对应会话日志。分支 `main`；**推送状态以 `git status -sb` 为准**（当前本地领先远端、PR #1 待评审未合并，见台账 S02-T53/T54；勿据本文旧句「已推」判断）。
 - **测试数**：实时跑 `cd sciworkbench && npm test` 取真实通过数（勿引用本文旧数）。逐页文案检查 `node scripts/frontend-text-check.ts [BASE]`：其 FORBIDDEN 词表已含 ISO 时间/英文枚举/裸版本（`rev N`、`rN`）/附件角色/影响类别/回查英文类型名/原始报错/docs 路径/「（全部课题）」；含「真渲染」判定（缺 navitem 或状态仍「连接中」即失败）。**注意**：该脚本依赖本机 Edge headless `--dump-dom`，部分环境（如本工作区）headless 返回空 DOM 会误判「未渲染」；此时改用离屏浏览器逐页扫可见文本核对（词表同上），勿据此认定产品有禁用文本。
 - **运行实例**：常见有验收实例与达尔文演示实例（数据文件在 `sciworkbench/data/`，端口由启动命令指定）。**实例描述/端口/AI 配置状态以实际启动为准**；重启/重置任何现有实例须先备份并经用户确认（不得为统一演示地址覆盖现有实例）。验收隔离数据另起 temp 文件，勿动现有实例。
 - 推送若经代理 7897 失败：`git -c http.proxy= -c https.proxy= push` 直连。
@@ -40,14 +40,35 @@
 ## 四、用户验收规程（用户说"验收"时照此执行）
 
 1. `cd sciworkbench && node scripts/acceptance-darwin.ts` 一步生成 `data/acceptance-darwin.json`（达尔文闭环预导入；缺 test-packages 会报错）。
-2. `PORT=5184 LOCUS_DATA=data/acceptance-darwin.json node server.ts`，用 Edge 打开 `http://127.0.0.1:5184`。
+2. 起**隔离**实例：`PORT=<自选端口> LOCUS_DATA=<隔离数据文件> node server.ts`，用 Edge 打开对应端口。达尔文统一验收入口现状见台账 S02-T51（当前 5187）；**5184 为用户 SLAC 验收实例，不得覆盖/重置**；重启/重置任何现有实例须先备份并经用户确认。
 3. 每轮验收先重置隔离数据防 409；材料交付态＝已提交未处理；直进主页面，不用页内验收材料 panel。
 4. 每轮自验收必开**简洁性专项**（跑 frontend-text-check）。
+5. **报告块编辑链专项**（下一轮修复者必跑）：添加块→收集→预览→接受→删除→调序→refresh 全链 DOM 走查，核对块数/draft 旗标/refs 保真/无裸报错/未保存行不丢（问题集见 §五.0）。
 
 ## 五、遗留与待拍板（均已如实登记，动之前先问用户）
 
+### 五.0 下一轮修复者诊断问题集：报告块编辑链（P0，未实施；T55 五表现＋T56 新发现）
+
+> 下一轮修复者**先诊断再修**；本集为问题清单与证据位置，修复方向仅候选、须用户拍板。代码位置以当前 `public/lib/pages/analysis.js` 行号为准（复核时再核）。
+
+**根因（T55 实测取证）**：`rep-add`(L310-317) 与 `rep-draft`(L347-355) 先建 `div.reprow` 包装再 `innerHTML=blockRowHtml(...)`，而 `blockRowHtml`(L114-127) 自身返回完整 `<div class="reprow" data-bid data-draft data-refs>` → **双层嵌套**；`collectReportBlocks`(L149-157) 用后代选择器 `.repblocks .reprow` 两层都收。已保存报告经 `reportHtml`(L132) 平铺渲染不触发；bug 仅在「未保存新增/草稿行」窗口存在；基线 `1b85bc7` 逐字相同 → **既有缺陷，非 T54 合并回归**。
+
+**T55 五表现（实测）**：① 添加一次收 6 块（4 旧＋2 份新空块）；② 新块重复落库（第4版 6 块）；③ 外层副本 `draft:false` 绕过 T50「新 AI 内容仍待确认」守卫；④ `rep-del`(L319) `closest('.reprow')` 只删内层留外壳 → collect 抛 `TypeError … null (reading 'value')`，preview 裸显英文报错、预览/接受阻塞；⑤ `rep-draft` 外层 `dataset.refs=esc(JSON.stringify(...))` 存 `&quot;` 字面量 → JSON.parse 失败回退 [] → 引用降级 note（证据链断裂）。
+
+**T56 新发现（代码取证，待 DOM 复现；不随嵌套修复自动消失者已标 ★）**：
+- **N1 调序静默失效**：`rep-up/rep-down`(L320-324) `closest('.reprow')` 得内层、`parent`=外层包装、内层无兄弟 → `if(sib)` 不成立 → 未保存块上移/下移 no-op；用户以为调序实际未调，`diff.reordered` 不反映。
+- **★N2 引用按位置 zip 错配**：`collectReportBlocks`(L153-154) 以 `.rep-refs` 输入 split 出的 labels 与 `dataset.refs` **按索引 zip** 重建；编辑该输入（删/插/改一个 label，或 label 含 `;／；`）使后续 refs 的 id/version 挂到错误 label → 证据链静默错挂。**平铺已保存行也受害，与嵌套无关**。
+- **★N3 未保存草稿行过早「确认」**：`blockRowHtml`(L122) 对 draft 行渲染确认按钮，但 `rep-draft`(L353) 强制 `id:""` → `rep-confirm`(L341) 读 `dataset.bid=""` → 确认必失败/误指；确认应仅对**已落库**草稿块开放。
+- **N4 序号过计**：`rep-add`(L315)/`rep-draft`(L352) 用 `.reprow` 后代计数作 `#i` → 嵌套时新块/草稿块序号错。
+- **★N5 未保存行随 refresh 丢失**：`reportHtml`(L132) 从 state 渲染，新增/草稿行仅存 DOM；`rep-confirm`(L344)/`res-submit`(L288)/recommend 等任何 refresh 重渲染即**静默丢弃已编辑文本**（数据丢失，独立于嵌套）。
+- **N6 错误面不一致**：preview 的 collect 异常走 `ctx.notify` 裸消息(L360)，accept 的 collect 异常(L372)走 outer catch `humanError`(L378) → 同一 TypeError 两条路径；preview 违反原始报错折叠约定（L6/L7/L8）。
+
+**修复方向（T55 提出，候选待拍板）**：两处理器改 `holder.insertAdjacentHTML("beforeend", blockRowHtml(...))`（平铺单层，自带 data 属性）；删 `rep-draft` 的 `esc()` 误用；collect 选择器收紧 `.repblocks > .reprow` 作防御；补 添加→收集→预览→接受→删除→调序→refresh 全链前端回归（含 draft 旗标/refs 保真/未保存不丢）。**★N2/N3/N5 须独立修**。
+
+### 五.1 其余遗留
+
 见 `docs/stage6/04_FRONTEND_REVIEW.md`「未做」节与「六、修订（S02-T42 / S02-T44）」：
-- §三.8 界面「详情」原始响应完整覆盖（目前仅 recommend 有「AI 原始返回」折叠，其余留痕于 audit；仍**未内联**）。
+- §三.8 界面「详情」原始响应完整覆盖（目前仅 recommend **成功**时有「AI 原始返回」折叠；**失败路径 raw 不落库**——`server.ts` recommend catch 只存 job.error、writeAudit 仅成功时写，故失败时用户/agent 都看不到模型原始返回，诊断盲区，T56 取证；其余留痕于 audit；仍**未内联**）。
 - 意外影响环节已**改多选**（S02-T44，ADR-0026）；一次意外可勾多个受影响步骤。
 - experiment-archify 合同**剩余唯一缺口**：逐节点「原方案来源/现场补充/未决项」标记（条款8）。A/C/E（由量·速率计算／等待余量吸收延迟／导出 HTML·PNG）已于 S02-T44 补做（ADR-0025）。
 - 密立根 Table XX 待用户转录；真实手写 OCR 未经真实模型验证。
