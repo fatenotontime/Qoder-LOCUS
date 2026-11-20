@@ -37,6 +37,29 @@ function cleanRef(v: unknown): ObjectRef {
   return { kind: kind as ObjectRef["kind"], id };
 }
 
+/** 候选项统一契约（创建与保存候选共用）：{ref:{kind,id}, included}；included:false 保留为未选候选。 */
+function cleanOptionalItem(state: LocusState, v: unknown): { ref: ObjectRef; included: boolean } {
+  const o = (v ?? {}) as Record<string, unknown>;
+  if (!o.ref || typeof o.ref !== "object") throw new AppError(422, "候选项须为 {ref:{kind,id},included} 结构。");
+  const ref = cleanRef(o.ref);
+  resolveFragment(state, ref);
+  return { ref, included: o.included === true };
+}
+
+/** 锁5（选择边界）：知识卡须人工确认才可被选用；核心与候选同查。取消选择（included:false）不经过此守卫。 */
+function assertSelectable(state: LocusState, ref: ObjectRef): void {
+  if (ref.kind !== "card") return;
+  const c = state.cards.find((x) => x.id === ref.id);
+  if (c && c.audit !== "confirm") throw new AppError(422, `知识卡未入候选（须人工确认）：${c.rawText.slice(0, 30)}…`);
+}
+
+/** 锁5（冻结前统一复检）：送 AI 的上下文中不得含未确认知识卡——兜底旧任务遗留的未审候选。 */
+function assertCardsConfirmed(state: LocusState, refs: ObjectRef[]): void {
+  const bad = refs.filter((r) => r.kind === "card").map((r) => state.cards.find((c) => c.id === r.id))
+    .filter((c): c is NonNullable<typeof c> => !!c && c.audit !== "confirm");
+  if (bad.length) throw new AppError(422, `上下文含未确认知识卡（${bad.length} 张），请先人工确认或取消选择：${bad.map((c) => c.rawText.slice(0, 20)).join("；")}`);
+}
+
 /** 解析引用为快照碎片：标签＋固定版本＋实际发送摘录。不存在即拒绝，不补造。 */
 export function resolveFragment(state: LocusState, ref: ObjectRef): ContextFragment {
   const base = { ref };
@@ -52,33 +75,38 @@ export function resolveFragment(state: LocusState, ref: ObjectRef): ContextFragm
       const p = state.protocols.find((x) => x.id === e.protocolId);
       const snap = effectiveSnapshot(state, e);
       const prep = (e.phase ?? "recording") === "preparing";
+      const recon = e.origin === "reconstructed";
       const lines = [
+        ...(recon ? ["性质：历史文献重构（非本地实际实验；数值为原文陈述，未实测）"] : []),
         `方案：${p?.name ?? e.protocolId}（基础 r${e.protocolRevision}${prep ? "，准备稿未确认" : ""}）`,
         `目的：${snap?.purpose ?? "（未写）"}`,
         `步骤：${(snap?.steps ?? []).map((s) => `${s.op}${s.durationMin === null ? "(时长未知)" : `(${s.durationMin}min${s.estimated ? "估" : ""})`}`).join(" → ")}`,
         `事件（${e.events.length}）：${e.events.map((ev) => `[${ev.kind}] ${ev.text}${ev.actual.durationMin !== undefined ? ` 实际${ev.actual.durationMin}min` : ""}`).join("；") || "无"}`,
         `状态：${e.status}`,
       ];
-      return { ...base, label: `执行 · ${p?.name ?? e.protocolId}`, version: `r${e.protocolRevision}${e.preparation?.snapshot ? `＋${e.preparation.adjustments.length}差异` : ""}`, excerpt: cap(lines.join("\n")) };
+      return { ...base, label: `执行 · ${p?.name ?? e.protocolId}${recon ? "（文献重构）" : ""}`, version: `r${e.protocolRevision}${e.preparation?.snapshot ? `＋${e.preparation.adjustments.length}差异` : ""}`, excerpt: cap(lines.join("\n")) };
     }
     case "protocol": {
       const p = state.protocols.find((x) => x.id === ref.id);
       if (!p) throw new AppError(404, `方案不存在：${ref.id}`);
       const snap = p.revisions[p.revisions.length - 1];
-      return { ...base, label: `方案 · ${p.name}`, version: `r${p.revision}`, excerpt: cap(`目的：${snap.purpose}\n步骤：${snap.steps.map((s) => `${s.op}${s.durationMin === null ? "(时长未知)" : `(${s.durationMin}min)`}`).join(" → ")}\n判据：${snap.criteria}`) };
+      const recon = p.sourceKind === "reconstructed";
+      return { ...base, label: `方案 · ${p.name}${recon ? "（文献重构）" : ""}`, version: `r${p.revision}`, excerpt: cap(`${recon ? "性质：方法按历史文献重构（非本地实测方案）\n" : ""}目的：${snap.purpose}\n步骤：${snap.steps.map((s) => `${s.op}${s.durationMin === null ? "(时长未知)" : `(${s.durationMin}min)`}`).join(" → ")}\n判据：${snap.criteria}`) };
     }
     case "measurement": {
       const m = state.measurements.find((x) => x.id === ref.id);
       if (!m) throw new AppError(404, `测量不存在：${ref.id}`);
       const smp = state.samples.find((x) => x.id === m.sampleId);
-      return { ...base, label: `测量 · ${smp?.shortName ?? m.sampleId}`, version: `样品状态 r${m.sampleStateRevision} · rev ${m.revision}`, excerpt: `值 ${m.value} ${m.unit} · 方法 ${m.method || "（未写）"} · 仪器 ${m.instrument || "（未写）"} · 时间 ${m.time}${m.note ? ` · 注：${m.note}` : ""}` };
+      const recon = (m.origin ?? smp?.origin) === "reconstructed";
+      return { ...base, label: `测量 · ${smp?.shortName ?? m.sampleId}${recon ? "（文献重构）" : ""}`, version: `样品状态 r${m.sampleStateRevision} · rev ${m.revision}`, excerpt: `${recon ? "（历史文献重构数值，非本地测量）" : ""}值 ${m.value} ${m.unit} · 方法 ${m.method || "（未写）"} · 仪器 ${m.instrument || "（未写）"} · 时间 ${m.time}${m.note ? ` · 注：${m.note}` : ""}` };
     }
     case "table": {
       const t = state.tables.find((x) => x.id === ref.id);
       if (!t) throw new AppError(404, `数据表不存在：${ref.id}`);
       const head = t.columns.join(" | ");
       const rows = t.rows.slice(0, 30).map((r) => r.join(" | ")).join("\n");
-      return { ...base, label: `数据表 · ${t.name}`, version: `rev ${t.revision}`, excerpt: cap(`${head}\n${rows}${t.rows.length > 30 ? `\n…（共 ${t.rows.length} 行，摘录前 30 行）` : ""}${t.markerRows?.length ? `\n（含 ${t.markerRows.length} 个块标记行，非测量行）` : ""}`) };
+      const recon = t.origin === "reconstructed";
+      return { ...base, label: `数据表 · ${t.name}${recon ? "（文献重构）" : ""}`, version: `rev ${t.revision}`, excerpt: cap(`${recon ? "（历史文献重构数据，非本地实测）\n" : ""}${head}\n${rows}${t.rows.length > 30 ? `\n…（共 ${t.rows.length} 行，摘录前 30 行）` : ""}${t.markerRows?.length ? `\n（含 ${t.markerRows.length} 个标记行：疑似标题/备注/占位，保留原样待人工核对）` : ""}`) };
     }
     case "card": {
       const c = state.cards.find((x) => x.id === ref.id);
@@ -113,12 +141,12 @@ export function createAnalysisTask(
   if (!core.some((r) => ["execution", "measurement", "table"].includes(r.kind))) {
     throw new AppError(422, "分析任务的核心须来自执行或测量数据（方案/知识卡可作补充核心）。");
   }
-  for (const r of core) resolveFragment(state, r);
+  for (const r of core) { resolveFragment(state, r); assertSelectable(state, r); }
   const coreKeys = new Set(core.map((r) => `${r.kind}:${r.id}`));
-  const optional = (input.optional ?? []).map(cleanRef)
-    .filter((r) => !coreKeys.has(`${r.kind}:${r.id}`))
-    .map((ref) => ({ ref, included: true }));
-  for (const o of optional) resolveFragment(state, o.ref);
+  // 与核心重复的候选静默去重（前端必选自动推导可能与「其他可选」勾选重叠）。
+  const optional = (input.optional ?? []).map((v) => cleanOptionalItem(state, v))
+    .filter((o) => !coreKeys.has(`${o.ref.kind}:${o.ref.id}`));
+  for (const o of optional) if (o.included) assertSelectable(state, o.ref);
   const task: AnalysisTaskRecord = {
     id: `atask_${randomUUID()}`, topicId: input.topicId, subquestionId, title,
     core, optional, resultIds: [], createdAt: now(), updatedAt: now(),
@@ -135,10 +163,10 @@ export function setTaskCandidates(
   if (!cur) throw new AppError(404, `分析任务不存在：${taskId}`);
   const coreKeys = new Set(cur.core.map((r) => `${r.kind}:${r.id}`));
   const list = optional.map((o) => {
-    const ref = cleanRef(o.ref);
-    if (coreKeys.has(`${ref.kind}:${ref.id}`)) throw new AppError(422, "核心对象不能放入可取消候选。");
-    resolveFragment(state, ref);
-    return { ref, included: o.included === true };
+    const item = cleanOptionalItem(state, o);
+    if (coreKeys.has(`${item.ref.kind}:${item.ref.id}`)) throw new AppError(422, "核心对象不能放入可取消候选。");
+    if (item.included) assertSelectable(state, item.ref);
+    return item;
   });
   const task: AnalysisTaskRecord = { ...cur, optional: list, updatedAt: now() };
   return { state: { ...state, analysisTasks: state.analysisTasks.map((t) => (t.id === taskId ? task : t)) }, task };
@@ -149,6 +177,7 @@ export function buildSnapshot(state: LocusState, task: AnalysisTaskRecord, purpo
   const refs: ObjectRef[] = [];
   if (task.subquestionId) refs.push({ kind: "subquestion", id: task.subquestionId });
   refs.push(...task.core, ...task.optional.filter((o) => o.included).map((o) => o.ref));
+  assertCardsConfirmed(state, refs);
   const fragments = refs.map((r) => resolveFragment(state, r));
   const topic = state.topics.find((t) => t.id === task.topicId);
   const summary = `课题「${topic?.name ?? task.topicId}」· ${fragments.length} 个碎片（核心 ${task.core.length} ＋ 候选 ${task.optional.filter((o) => o.included).length}${task.subquestionId ? " ＋ 子问题" : ""}）`;
@@ -290,23 +319,31 @@ function cleanRefs(v: unknown): ReportBlockRef[] {
   });
 }
 
-function cleanBlocks(v: unknown): ReportBlock[] {
+/**
+ * 清洗报告块。生命周期字段不随内容编辑走：
+ * 已有块的 draft/history 一律继承库内值（客户端值忽略；draft→false 仅 confirmReportBlock，历史由系统追加）；
+ * 新块 draft 只接受 true（fail-closed：宁可多标待确认，不把新 AI 草稿当人工内容）。
+ */
+function cleanBlocks(v: unknown, current: ReportBlock[]): ReportBlock[] {
   const arr = Array.isArray(v) ? v : [];
   if (!arr.length) throw new AppError(422, "报告至少需要一个块（每块含内容与性质）。");
+  const byId = new Map(current.map((b) => [b.id, b]));
   return arr.map((it, i) => {
     const x = (it ?? {}) as Record<string, unknown>;
     const text = str(x.text);
     if (!text) throw new AppError(422, "报告块内容不能为空。");
     const nature = str(x.nature);
     if (!NATURES.includes(nature as ReportBlockNature)) throw new AppError(422, `报告块性质不合法：${nature}`);
+    const id = str(x.id);
+    const prev = id ? byId.get(id) : undefined;
     return {
-      id: str(x.id) || `rblk_${randomUUID()}`,
+      id: id || `rblk_${randomUUID()}`,
       order: i,
       nature: nature as ReportBlockNature,
       text,
       refs: cleanRefs(x.refs),
-      draft: x.draft === true,
-      history: Array.isArray(x.history) ? (x.history as ReportBlock["history"]) : [],
+      draft: prev ? prev.draft : x.draft === true,
+      history: prev ? prev.history : [],
     };
   });
 }
@@ -366,7 +403,7 @@ export function createReport(state: LocusState, input: { topicId: string; taskId
 /** 预览块级 diff（不改状态）。baseRevision 供接受时做乐观并发校验。 */
 export function previewReportEdit(state: LocusState, reportId: string, input: { blocks: unknown }): { baseRevision: number; diff: BlockDiff } {
   const cur = requireReport(state, reportId);
-  const proposed = cleanBlocks(input.blocks);
+  const proposed = cleanBlocks(input.blocks, cur.blocks);
   return { baseRevision: cur.revision, diff: diffReportBlocks(cur.blocks, proposed, cur.revision) };
 }
 
@@ -382,7 +419,7 @@ export function applyReportEdit(
   }
   const reason = str(input.reason);
   if (!reason) throw new AppError(422, "报告修订必须填写原因（留历史）。");
-  let proposed = cleanBlocks(input.blocks);
+  let proposed = cleanBlocks(input.blocks, cur.blocks);
   const before = new Map(cur.blocks.map((b) => [b.id, b]));
   const at = now();
   // 已存在且内容变更的块：追加块内历史；新块/未变块保持原历史。
@@ -449,7 +486,7 @@ export function createChat(
     if (q.topicId !== input.topicId) throw new AppError(422, "子问题不属于该课题。");
   }
   const scope = (input.scope ?? []).map(cleanRef);
-  for (const r of scope) resolveFragment(state, r);
+  for (const r of scope) { resolveFragment(state, r); assertSelectable(state, r); }
   const chat: ChatSessionRecord = {
     id: `chat_${randomUUID()}`, topicId: input.topicId, subquestionId, scope,
     messages: [], createdAt: now(), updatedAt: now(),
@@ -461,6 +498,7 @@ export function chatScopeSnapshot(state: LocusState, chat: ChatSessionRecord, pu
   const refs: ObjectRef[] = [];
   if (chat.subquestionId) refs.push({ kind: "subquestion", id: chat.subquestionId });
   refs.push(...chat.scope);
+  assertCardsConfirmed(state, refs);
   const fragments = refs.map((r) => resolveFragment(state, r));
   const topic = state.topics.find((t) => t.id === chat.topicId);
   return {

@@ -4,8 +4,8 @@
  * 行为与拆分前一致：DOM、文案、接口、请求时序均不变。
  */
 import { esc } from "../views.js";
-import { fmtVersion, fmtTime } from "../format.js";
-import { humanVer, deIso, refLabel, topicObjects } from "../refs.js";
+import { fmtVersion, fmtTime, fmtKind } from "../format.js";
+import { humanVer, deIso, refLabel, reconTag, missingTag, depMissingNote, topicObjects } from "../refs.js";
 
 let ctx = null;
 
@@ -23,8 +23,8 @@ export function renderAnalysisForm(box) {
   const subqs = state.subquestions.filter((s) => s.topicId === ui.topicId);
   const conf = cards.filter((c) => c.audit === "confirm");
   const dataSources = [
-    ...tables.map((t) => ({ kind: "table", id: t.id, label: `数据表 · ${t.name}` })),
-    ...meas.map((m) => ({ kind: "measurement", id: m.id, label: `测量 · ${state.samples.find((s) => s.id === m.sampleId)?.shortName ?? ""} ${m.value}${m.unit}` })),
+    ...tables.map((t) => ({ kind: "table", id: t.id, label: refLabel(state, { kind: "table", id: t.id }) })),
+    ...meas.map((m) => ({ kind: "measurement", id: m.id, label: refLabel(state, { kind: "measurement", id: m.id }) })),
   ];
   box.innerHTML = `
     <details class="mini" open>
@@ -36,8 +36,8 @@ export function renderAnalysisForm(box) {
       <p class="hint">默认已选（关联度高的已入候选知识卡，可取消）：</p>
       ${conf.length ? conf.map((c) => `<label class="ctxpick"><input type="checkbox" class="an-def" data-id="${c.id}" checked/> ${esc(c.scope || c.rawText.slice(0, 24))}</label>`).join("") : `<p class="hint">暂无已入候选卡。</p>`}
       <details class="mini"><summary>其他可选（折叠：方案/执行）</summary>
-        ${protos.map((p) => `<label class="ctxpick"><input type="checkbox" class="an-opt2" data-kind="protocol" data-id="${p.id}"/> 方案 · ${esc(p.name)}</label>`).join("")}
-        ${execs.map((e) => `<label class="ctxpick"><input type="checkbox" class="an-opt2" data-kind="execution" data-id="${e.id}"/> 执行 · ${esc(state.protocols.find((p) => p.id === e.protocolId)?.name ?? e.id)}</label>`).join("")}
+        ${protos.map((p) => `<label class="ctxpick"><input type="checkbox" class="an-opt2" data-kind="protocol" data-id="${p.id}"/> ${esc(refLabel(state, { kind: "protocol", id: p.id }))}</label>`).join("")}
+        ${execs.map((e) => `<label class="ctxpick"><input type="checkbox" class="an-opt2" data-kind="execution" data-id="${e.id}"/> ${esc(refLabel(state, { kind: "execution", id: e.id }))}</label>`).join("")}
       </details>
       <button class="primary" id="an-create">创建任务（必选项自动锁定）</button>
     </details>`;
@@ -70,7 +70,7 @@ export function renderAnalysisForm(box) {
 export function snapshotHtml(snap) {
   return `<details class="mini" open><summary>冻结上下文快照 · ${esc(snap.summary)}</summary>
     <p class="hint">目的：${esc(snap.purpose)}<br/>模型：${esc(snap.model)} · ${esc(fmtTime(snap.at))}<br/>hash：${esc(snap.hash)}</p>
-    ${snap.fragments.map((f, i) => `<details class="mini"><summary>碎片 ${i + 1} · ${esc(f.label)} · ${esc(humanVer(f.version))} · ${f.ref.kind}:${f.ref.id}</summary><pre>${esc(deIso(humanVer(f.excerpt)))}</pre></details>`).join("")}
+    ${snap.fragments.map((f, i) => `<details class="mini"><summary>碎片 ${i + 1} · ${esc(f.label)} · ${esc(humanVer(f.version))} · ${esc(fmtKind(f.ref.kind))}:${f.ref.id}</summary><pre>${esc(deIso(humanVer(f.excerpt)))}</pre></details>`).join("")}
   </details>`;
 }
 
@@ -111,25 +111,33 @@ function download(path) {
   a.href = path; a.download = ""; document.body.append(a); a.click(); a.remove();
 }
 
-export function blockRowHtml(b, i) {
-  return `<div class="reprow" data-bid="${esc(b.id)}" data-refs="${esc(JSON.stringify(b.refs ?? []))}">
+export function blockRowHtml(b, i, state, persisted = true) {
+  const refLabels = (b.refs ?? []).map((r) => esc(r.label)).join("；");
+  return `<div class="reprow" data-bid="${esc(b.id)}" data-draft="${b.draft ? "1" : ""}" data-refs="${esc(JSON.stringify(b.refs ?? []))}">
     <div class="repmove"><button class="rep-up" title="上移">↑</button><button class="rep-down" title="下移">↓</button><span class="hint">#${i + 1}</span></div>
     <select class="rep-nature">${REPORT_NATURES.map(([k, l]) => `<option value="${k}" ${k === b.nature ? "selected" : ""}>${l}</option>`).join("")}</select>
     <textarea class="rep-text" rows="2">${esc(b.text)}</textarea>
-    <input class="rep-refs" value="${esc((b.refs ?? []).map((r) => r.label).join("；"))}" placeholder="引用（分号分隔）"/>
+    <div class="rep-refs">${refLabels || `<span class="hint">（无引用）</span>`}</div>
     <div class="reprowactions">
       <span class="badge ${b.draft ? "warn" : "confirm"}">${b.draft ? "AI 草稿待确认" : "已确认"}</span>
-      ${b.draft ? `<button class="rep-confirm">确认</button>` : ""}
+      ${b.draft && persisted ? `<button class="rep-confirm">确认</button>` : ""}
       <button class="rep-del">删除</button>
     </div>
-    ${(b.refs ?? []).filter((r) => r.kind !== "note").length ? `<div class="refchips">${b.refs.filter((r) => r.kind !== "note").map((r) => `<span class="refchip">${esc(refDisplay(r))} <button class="ref-back" data-kind="${esc(r.kind)}" data-id="${esc(r.id)}">回查</button></span>`).join("")}</div>` : ""}
+    ${(b.refs ?? []).filter((r) => r.kind !== "note").length ? `<div class="refchips">${b.refs.filter((r) => r.kind !== "note").map((r) => `<span class="refchip">${esc(refDisplay(r))}${state ? esc(reconTag(state, r.kind, r.id)) + esc(missingTag(state, r.kind, r.id)) : ""}${state && depMissingNote(state, r.kind, r.id) ? ` <span class="badge warn">${esc(depMissingNote(state, r.kind, r.id))}</span>` : ""} <button class="ref-back" data-kind="${esc(r.kind)}" data-id="${esc(r.id)}">回查</button></span>`).join("")}</div>` : ""}
     <div class="refnet-body"></div></div>`;
 }
 
+/** 块列表 HTML：已落库块（id 见于库内）才渲染确认按钮；未保存新增/草稿块一律不渲染。 */
+export function repBlocksHtml(blocks, state, rep) {
+  const persisted = new Set(rep.blocks.map((b) => b.id).filter(Boolean));
+  return blocks.map((b, i) => blockRowHtml(b, i, state, !!b.id && persisted.has(b.id))).join("") || `<p class="hint">尚无块。</p>`;
+}
+
 export function reportHtml(state, ui, r) {
-  return `<details class="mini rep" data-repid="${r.id}" ${r.id === ui.reportId ? "open" : ""}><summary>分析初稿 r${r.revision} · 钉住 ${r.pinned.resultIds.length} 结果${r.pinned.snapshotHash ? ` · 快照 ${r.pinned.snapshotHash.slice(0, 8)}…` : ""}</summary>
+  const blocks = (ui.reportWorking && ui.reportWorking[r.id]) || r.blocks;
+  return `<details class="mini rep" data-repid="${r.id}" ${r.id === ui.reportId ? "open" : ""}><summary>分析初稿 ${fmtVersion(r.revision)} · 钉住 ${r.pinned.resultIds.length} 结果${r.pinned.snapshotHash ? ` · 快照 ${r.pinned.snapshotHash.slice(0, 8)}…` : ""}</summary>
     <p class="hint">块＝性质＋固定引用；改动→预览→新版本。</p>
-    <div class="repblocks">${r.blocks.map(blockRowHtml).join("") || `<p class="hint">尚无块。</p>`}</div>
+    <div class="repblocks">${repBlocksHtml(blocks, state, r)}</div>
     <div class="repaddrow">
       <select class="rep-newnature">${REPORT_NATURES.map(([k, l]) => `<option value="${k}">${l}</option>`).join("")}</select>
       <button class="rep-add">＋ 添加块</button>
@@ -147,12 +155,10 @@ export function reportHtml(state, ui, r) {
 }
 
 export function collectReportBlocks(repEl) {
-  return [...repEl.querySelectorAll(".repblocks .reprow")].map((row) => {
+  return [...repEl.querySelectorAll(".repblocks > .reprow")].map((row) => {
     let refs = [];
     try { refs = JSON.parse(row.dataset.refs || "[]"); } catch {}
-    const labels = row.querySelector(".rep-refs").value.split(/[;；]/).map((s) => s.trim()).filter(Boolean);
-    const outRefs = labels.map((lab, j) => refs[j] ? { ...refs[j], label: lab } : { kind: "note", id: "", version: "", label: lab });
-    return { id: row.dataset.bid || undefined, nature: row.querySelector(".rep-nature").value, text: row.querySelector(".rep-text").value.trim(), refs: outRefs };
+    return { id: row.dataset.bid || undefined, nature: row.querySelector(".rep-nature").value, text: row.querySelector(".rep-text").value.trim(), refs, draft: row.dataset.draft === "1" };
   });
 }
 
@@ -169,7 +175,7 @@ export function renderBlockDiff(el, diff, reportId) {
 
 export function resultHtml(state, r) {
   const atts = r.assetIds.map((id) => state.assets.find((a) => a.id === id)).filter(Boolean);
-  return `<details class="mini"><summary>结果 · ${esc(r.method)} ${r.reproducible ? `<span class="badge confirm">可复现</span>` : `<span class="badge warn">不可复现</span>`} · r${r.revision}</summary>
+  return `<details class="mini"><summary>结果 · ${esc(r.method)} ${r.reproducible ? `<span class="badge confirm">可复现</span>` : `<span class="badge warn">不可复现</span>`} · ${fmtVersion(r.revision)}</summary>
     <p>参数：${esc(r.params) || "（未填）"}</p>
     ${r.adoptedRecommendation ? `<p class="hint">采纳推荐：${esc(r.adoptedRecommendation)}</p>` : r.reason ? `<p class="hint">不采纳理由：${esc(r.reason)}</p>` : ""}
     ${r.note ? `<p class="hint">备注：${esc(r.note)}</p>` : ""}
@@ -244,6 +250,23 @@ function readTextFile(file) {
   return new Promise((res, rej) => { const rd = new FileReader(); rd.onload = () => res(rd.result); rd.onerror = rej; rd.readAsText(file); });
 }
 
+/** 报告编辑工作副本：未保存改动暂存于 ui.reportWorking[reportId]，refresh 后据此重渲染；接受后清空回落到库内状态。 */
+function reportOf(box) {
+  const id = box?.dataset?.repid;
+  return id ? ctx.getState().reports.find((r) => r.id === id) ?? null : null;
+}
+function workingOf(rep) {
+  const m = (ctx.ui.reportWorking ??= {});
+  return (m[rep.id] ??= rep.blocks.map((b) => ({ ...b })));
+}
+function rowIndex(box, row) {
+  return [...box.querySelectorAll(".repblocks > .reprow")].indexOf(row);
+}
+function renderRepBlocks(box, rep) {
+  const holder = box.querySelector(".repblocks");
+  if (holder) holder.innerHTML = repBlocksHtml(workingOf(rep), ctx.getState(), rep);
+}
+
 export function bindAnalysis(c) {
   ctx = c;
   const { api, ui, $, $$, refresh, refreshAfterJob, runBusy, runJob } = ctx;
@@ -308,19 +331,24 @@ export function bindAnalysis(c) {
         }); return;
       }
       if (ev.target.classList.contains("rep-add")) {
-        const box = ev.target.closest(".rep");
+        const box = ev.target.closest(".rep"); const rep = reportOf(box); if (!rep) return;
         const nature = box.querySelector(".rep-newnature").value;
-        const row = document.createElement("div");
-        row.className = "reprow"; row.dataset.bid = ""; row.dataset.refs = "[]";
-        row.innerHTML = blockRowHtml({ id: "", nature, text: "", refs: [], draft: false }, box.querySelectorAll(".repblocks .reprow").length);
-        box.querySelector(".repblocks").append(row);
+        workingOf(rep).push({ id: "", nature, text: "", refs: [], draft: false });
+        renderRepBlocks(box, rep);
         ctx.setDirty(true); return;
       }
-      if (ev.target.classList.contains("rep-del")) { ev.target.closest(".reprow").remove(); ctx.setDirty(true); return; }
+      if (ev.target.classList.contains("rep-del")) {
+        const box = ev.target.closest(".rep"); const rep = reportOf(box); if (!rep) return;
+        const idx = rowIndex(box, ev.target.closest(".reprow"));
+        if (idx >= 0) workingOf(rep).splice(idx, 1);
+        renderRepBlocks(box, rep);
+        ctx.setDirty(true); return;
+      }
       if (ev.target.classList.contains("rep-up") || ev.target.classList.contains("rep-down")) {
-        const row = ev.target.closest(".reprow"); const parent = row.parentElement;
-        const sib = ev.target.classList.contains("rep-up") ? row.previousElementSibling : row.nextElementSibling;
-        if (sib) { ev.target.classList.contains("rep-up") ? parent.insertBefore(row, sib) : parent.insertBefore(sib, row); ctx.setDirty(true); }
+        const box = ev.target.closest(".rep"); const rep = reportOf(box); if (!rep) return;
+        const w = workingOf(rep); const idx = rowIndex(box, ev.target.closest(".reprow"));
+        const j = ev.target.classList.contains("rep-up") ? idx - 1 : idx + 1;
+        if (idx >= 0 && j >= 0 && j < w.length) { [w[idx], w[j]] = [w[j], w[idx]]; renderRepBlocks(box, rep); ctx.setDirty(true); }
         return;
       }
       if (ev.target.classList.contains("ref-back")) {
@@ -330,7 +358,7 @@ export function bindAnalysis(c) {
           const r = await api.backtrace(kind, id, "both");
           const byKind = {};
           for (const n of r.nodes) (byKind[n.kind] ??= []).push(n.label);
-          body.innerHTML = `<div class="diffbox">${Object.entries(byKind).map(([k, arr]) => `<p class="hint"><b>${esc(k)}</b> ${arr.map(esc).join("、")}</p>`).join("")}${r.pending.length ? `<p class="hint">缺项：${r.pending.map(esc).join("；")}</p>` : ""}</div>`;
+          body.innerHTML = `<div class="diffbox">${Object.entries(byKind).map(([k, arr]) => `<p class="hint"><b>${esc(fmtKind(k))}</b> ${arr.map(esc).join("、")}</p>`).join("")}${r.pending.length ? `<p class="hint">缺项：${r.pending.map(esc).join("；")}</p>` : ""}</div>`;
           ctx.setStatus(`回查 ${r.nodes.length} 个节点`);
         }); return;
       }
@@ -341,6 +369,7 @@ export function bindAnalysis(c) {
         const bid = ev.target.closest(".reprow").dataset.bid;
         await runBusy(ev.target, "确认草稿块", async () => {
           await api.confirmReportBlock(repId, bid, "已人工核对");
+          const w = ui.reportWorking?.[repId]; const b = w?.find((x) => x.id === bid); if (b) b.draft = false;
           await refresh(); ctx.setStatus("AI 草稿块已人工确认");
         }); return;
       }
@@ -348,16 +377,18 @@ export function bindAnalysis(c) {
         const box = ev.target.closest(".rep"); const repId = box.dataset.repid;
         await runBusy(ev.target, "生成草稿", async () => {
           const r = await api.draftReport(repId);
-          const holder = box.querySelector(".repblocks");
-          const base = holder.querySelectorAll(".reprow").length;
-          (r.blocks ?? []).forEach((b, i) => { const row = document.createElement("div"); row.className = "reprow"; row.dataset.bid = ""; row.dataset.refs = esc(JSON.stringify(b.refs ?? [])); row.innerHTML = blockRowHtml({ ...b, id: "" }, base + i); holder.append(row); });
+          const rep = reportOf(box); if (!rep) return;
+          const w = workingOf(rep);
+          for (const b of (r.blocks ?? [])) w.push({ ...b, id: "" });
+          renderRepBlocks(box, rep);
           ctx.setDirty(true); ctx.setStatus(`草稿块 ${r.blocks.length} 个已入编辑器（未保存，须预览→接受）`);
         }); return;
       }
       if (ev.target.classList.contains("rep-preview")) {
         const box = ev.target.closest(".rep"); const repId = box.dataset.repid;
         let blocks;
-        try { blocks = collectReportBlocks(box); } catch (e) { ctx.notify("right", String(e.message ?? e)); return; }
+        try { blocks = collectReportBlocks(box); }
+        catch (e) { const h = ctx.humanError(e); ctx.setError("right", { panel: "right", message: h.message, detail: h.detail, retry: null }); return; }
         if (!blocks.length) { ctx.notify("right", "至少需要一个块。"); return; }
         await runBusy(ev.target, "预览改动", async () => {
           const r = await api.previewReport(repId, blocks);
@@ -372,11 +403,24 @@ export function bindAnalysis(c) {
         const blocks = collectReportBlocks(box);
         await runBusy(ev.target, "接受改动", async () => {
           const r = await api.applyReport(repId, baseRevision, blocks, reason);
-          ui.reportId = repId; ctx.setDirty(false); await refresh(); ctx.setStatus(`改动已接受：新版本 r${r.revision}（留历史）`);
+          if (ui.reportWorking) delete ui.reportWorking[repId];
+          ui.reportId = repId; ctx.setDirty(false); await refresh(); ctx.setStatus(`改动已接受：新版本 ${fmtVersion(r.revision)}（留历史）`);
         }); return;
       }
     } catch (e) { const h = ctx.humanError(e); ctx.setError("mid", { panel: "mid", message: h.message, detail: h.detail, retry: null }); }
   });
+
+  // 右栏：报告块内联编辑 —— 文本/性质实时写入工作副本，refresh 不丢已改内容（N5）。
+  const syncRepField = (ev) => {
+    const el = ev.target, cls = el?.classList;
+    if (!cls || !(cls.contains("rep-text") || cls.contains("rep-nature"))) return;
+    const box = el.closest(".rep"); const rep = reportOf(box); if (!rep) return;
+    const idx = rowIndex(box, el.closest(".reprow")); if (idx < 0) return;
+    const b = workingOf(rep)[idx]; if (!b) return;
+    if (cls.contains("rep-text")) b.text = el.value; else b.nature = el.value;
+  };
+  document.querySelector("#right-content").addEventListener("input", syncRepField);
+  document.querySelector("#right-content").addEventListener("change", syncRepField);
 
   // 文档级：上游复核（重算 / 保留旧快照）
   document.addEventListener("click", (ev) => {

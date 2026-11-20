@@ -15,10 +15,13 @@ if (!EDGE) { console.error("未找到 Edge。"); process.exit(2); }
 const FORBIDDEN: [RegExp, string][] = [
   [/\d{4}-\d{2}-\d{2}T/, "ISO 时间"],
   [/unreviewed|declared|exploratory|ai-draft|reconstructed|rev \d|fetch failed|docs\/stage/, "英文枚举/裸版本/原始报错/文档路径"],
+  [/fulltext|supplement|comparability|timing|execution_step|interpretation|\br\d+\b/, "附件角色/影响类别/裸版本（锁7）"],
+  [/\b(card|asset|task|block|attachment)\b/, "回查分组英文类型名（锁7）"],
   [/（全部课题）/, "旧「全部课题」下拉"],
 ];
 const strip = (h: string) => h
   .replace(/<script[\s\S]*?<\/script>/g, " ")
+  .replace(/<style[\s\S]*?<\/style>/g, " ")
   .replace(/<pre class="perr-detail-body"[\s\S]*?<\/pre>/g, " ")
   .replace(/<[^>]*>/g, " ")
   .replace(/&[a-z]+;/g, " ")
@@ -50,7 +53,7 @@ const runEdge = (url: string, profile: string) => spawnSync(EDGE, ["--headless=n
       if (hits.length) { failed++; console.log(`✗ ${nav}: ${hits.join("；")}`); } else { console.log(`✓ ${nav}`); }
     } finally {
       rmSync(harness, { force: true });
-      rmSync(profile, { recursive: true, force: true });
+      try { rmSync(profile, { recursive: true, force: true, maxRetries: 3, retryDelay: 200 }); } catch {}
     }
   }
   console.log(failed ? `\n${failed} 个入口存在禁用文本。` : "\n全部入口通过。");

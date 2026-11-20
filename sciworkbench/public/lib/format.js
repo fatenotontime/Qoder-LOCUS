@@ -32,8 +32,23 @@ export const ENUM = {
   high: "高", medium: "中", low: "低",
   // 结果采信
   author: "作者", reproduced: "复现", external: "外部",
+  // 影响类别（experiment.ts CATEGORIES）
+  timing: "时序", execution: "执行", comparability: "可比性", analysis: "分析", interpretation: "解释",
+  // 评估结论
+  impact: "有影响", no_supported_impact_found: "未发现支持的影响", needs_review: "需人工复核",
+  // 影响建议落点
+  "execution-note": "执行备注", "report-toVerify": "报告待验证",
 };
 export function fmtEnum(k) { return ENUM[k] ?? k ?? ""; }
+
+/** 对象类型 → 中文（回查分组标题、快照碎片、影响落点；与后端 KIND_CN 同构）。 */
+export const KIND_LABEL = {
+  topic: "课题", subquestion: "子问题", paper: "论文", attachment: "附件", asset: "原件", card: "知识卡",
+  protocol: "方案", template: "记录模板", execution: "执行", sample: "样品", measurement: "测量", table: "数据表",
+  task: "分析任务", result: "分析结果", report: "分析初稿", block: "报告块", chat: "对话",
+  execution_step: "执行步骤", "execution-note": "执行备注", "report-toVerify": "报告待验证",
+};
+export function fmtKind(k) { return KIND_LABEL[k] ?? ENUM[k] ?? k ?? ""; }
 
 /** 版本号：一律「第N版」。 */
 export function fmtVersion(n) { return `第${n}版`; }

@@ -34,7 +34,10 @@ export interface ContextMap {
 }
 
 const GAP_SOURCE_MISSING: MapGap = { code: "source_missing", label: "来源缺失" };
-const pendingGaps = (n: NetNode): MapGap[] => (n.pending ?? []).map((p) => ({ code: "pending", label: p }));
+const pendingGaps = (n: NetNode): MapGap[] => [
+  ...(n.pending ?? []).map((p) => ({ code: "pending", label: p })),
+  ...(n.gap ? [{ code: "missing", label: n.gap }] : []),
+];
 
 /** 对象是否属本课题（表经原件归属；卡经论文归属）；对象不存在返回 null。 */
 function inTopic(state: LocusState, topicId: string, kind: string, id: string): boolean | null {

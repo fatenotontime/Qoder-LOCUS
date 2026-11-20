@@ -293,12 +293,18 @@ export function uploadProtocolSource(state: LocusState, input: { name: string; t
 /** 创建执行 = 进入准备稿（5D）：固定引用方案版本；不虚构开始事件，实际开始另行动作。 */
 export function startExecution(
   state: LocusState,
-  input: { topicId: string; protocolId: string; protocolRevision?: number; templateId?: string },
+  input: { topicId: string; protocolId: string; protocolRevision?: number; templateId?: string; origin?: "user" | "reconstructed"; sourceAssetId?: string },
 ): { state: LocusState; execution: ExecutionRecord } {
   requireTopic(state, input.topicId);
   const proto = state.protocols.find((p) => p.id === input.protocolId);
   if (!proto) throw new AppError(404, `方案不存在：${input.protocolId}`);
   if (proto.topicId !== input.topicId) throw new AppError(422, "方案不属于该课题。");
+  // 执行性质只由执行自身声明决定：方案源自文献（sourceKind=reconstructed）不等于执行是历史重构。
+  // 用户依据文献解析出的方案做本地实测 → origin=user；只有显式声明的历史补记才是 reconstructed。
+  const origin = input.origin === "reconstructed" ? "reconstructed" : "user";
+  const sourceAssetId = input.sourceAssetId || proto.sourceAssetId || undefined;
+  if (origin === "reconstructed" && !sourceAssetId) throw new AppError(422, "重构执行须标明文献来源（sourceAssetId）。");
+  if (sourceAssetId && !state.assets.some((a) => a.id === sourceAssetId)) throw new AppError(404, `来源原件不存在：${sourceAssetId}`);
   const rev = input.protocolRevision ?? proto.revision;
   if (!proto.revisions.some((r) => r.revision === rev)) throw new AppError(422, `方案 revision 不存在：r${rev}`);
   if (input.templateId) {
@@ -316,6 +322,8 @@ export function startExecution(
     phase: "preparing",
     preparation: { baseRevision: rev, adjustments: [], notes: "" },
     status: "active",
+    origin,
+    sourceAssetId: origin === "reconstructed" ? sourceAssetId : undefined,
     events: [],
     createdAt: now(),
     updatedAt: now(),
@@ -607,7 +615,7 @@ export async function pauseAssist(cfg: AiConfig, state: LocusState, execId: stri
 
 export function createSample(
   state: LocusState,
-  input: { topicId: string; executionId?: string; shortName: string; displayName?: string; origin?: "user" | "public"; amount: { value: string; unit: string; estimated?: boolean }; handling?: string; use?: string; note?: string },
+  input: { topicId: string; executionId?: string; shortName: string; displayName?: string; origin?: "user" | "public" | "reconstructed"; amount: { value: string; unit: string; estimated?: boolean }; handling?: string; use?: string; note?: string },
 ): { state: LocusState; sample: SampleRecord } {
   requireTopic(state, input.topicId);
   const shortName = str(input.shortName);
@@ -618,13 +626,16 @@ export function createSample(
   if (input.executionId && !state.executions.some((e) => e.id === input.executionId)) throw new AppError(404, `执行不存在：${input.executionId}`);
   const value = str(input.amount?.value);
   if (!value) throw new AppError(422, "样品用量不能为空（可标估计）。");
+  // 重构执行下的样品不能标成本地样品：来源性质随执行继承。
+  const exec = input.executionId ? state.executions.find((e) => e.id === input.executionId) : undefined;
+  const origin = input.origin === "public" ? "public" : input.origin === "reconstructed" || exec?.origin === "reconstructed" ? "reconstructed" : "user";
   const sample: SampleRecord = {
     id: `smp_${randomUUID()}`,
     topicId: input.topicId,
     executionId: input.executionId || undefined,
     shortName,
     displayName: str(input.displayName) || shortName,
-    origin: input.origin === "public" ? "public" : "user",
+    origin,
     states: [{
       revision: 1, at: now(),
       amount: { value, unit: str(input.amount?.unit), estimated: input.amount?.estimated === true },
@@ -693,6 +704,7 @@ export function addMeasurement(
     value,
     unit: str(input.unit),
     cellRef: input.cellRef,
+    origin: sample.origin,
     note: str(input.note),
     revision: 1,
     history: [],

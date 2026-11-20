@@ -254,7 +254,7 @@ test("AI 输出结构不符 → 报错（不静默补造）", async () => {
 });
 
 // ── 第二轮修复回归 ──────────────────────────────────────────
-test("analyseTable：跳过章节标记行、识别真表头、丢弃键列独占空行", () => {
+test("analyseTable：识别真表头；单格/占位行保留并标注（零猜测保行，T49-3）", () => {
   const rows = [
     ["   Reactions", "", "", ""],
     ["ID", "Name", "pH value", "Reversible"],
@@ -262,19 +262,21 @@ test("analyseTable：跳过章节标记行、识别真表头、丢弃键列独�
     ["r1", "", "", ""],
     ["r2", "", "", ""],
   ];
-  const { columns, body } = analyseTable(rows);
+  const { columns, body, markerRows } = analyseTable(rows);
   assert.deepEqual(columns, ["ID", "Name", "pH value", "Reversible"]);
-  assert.equal(body.length, 1);
-  assert.deepEqual(body[0], ["r0", "ABTS oxidation", "3", "irreversible"]);
+  assert.equal(body.length, 4); // 标题行与键列独占行都不删
+  assert.deepEqual(body[1], ["r0", "ABTS oxidation", "3", "irreversible"]);
+  assert.deepEqual(markerRows, [0, 2, 3]); // 仅标注，供人工核对
 });
 
-test("真实 EnzymeML CSV：表头正确、空占位行被丢弃", () => {
+test("真实 EnzymeML CSV：表头正确；占位行保留并标注（不删行）", () => {
   const csv = "\uFEFF,,,,\n   Reactions,,,\nID,Name,Temperature value,pH value\nr0,ABTS oxidation,25,3\nr1,,,\nr2,,,\n";
   const r = importMeasurements(emptyState(), { name: "EnzymeML_SLAC_pH5_5__Reactions.csv", csv });
   const t = r.state.tables[0];
   assert.deepEqual(t.columns, ["ID", "Name", "Temperature value", "pH value"]);
-  assert.equal(t.rows.length, 1);
-  assert.equal(r.created, 1);
+  assert.equal(t.rows.length, 3);
+  assert.deepEqual(t.markerRows, [1, 2]);
+  assert.equal(r.created, 3);
 });
 
 test("extractJson 容错：围栏/未加引号键/尾逗号", () => {
@@ -343,10 +345,11 @@ test("两级表头合并：合并单元格组名前向填充（EnzymeML 风格�
     ["", "", "", "Name", "Initial concentration", "Unit"],
     ["exp-1", "kinetic", "r1", "SLAC", "5", "mM"],
   ];
-  const { columns, body } = analyseTable(rows);
+  const { columns, body, markerRows } = analyseTable(rows);
   assert.deepEqual(columns, ["Experiment ID", "Type", "Reaction", "Protein/Name", "Protein/Initial concentration", "Protein/Unit"]);
-  assert.equal(body.length, 1);
-  assert.deepEqual(body[0], ["exp-1", "kinetic", "r1", "SLAC", "5", "mM"]);
+  assert.equal(body.length, 2); // 前置单格标题行保留并标注
+  assert.deepEqual(body[1], ["exp-1", "kinetic", "r1", "SLAC", "5", "mM"]);
+  assert.deepEqual(markerRows, [0]);
 });
 
 test("块标记行：时间块标题保留原行但标出，不混同测量行", () => {
@@ -370,10 +373,11 @@ test("单级表头+列表数据（Documentation 风格）：不误把首行数�
     ["", "", "umole / l", "", "Conversion [%]"],
   ];
   const { columns, body, markerRows } = analyseTable(rows);
-  assert.deepEqual(columns, ["Units", "Constants", "Types"]);
-  assert.equal(body.length, 2);
-  assert.deepEqual(body[0], ["mole / l", "Constant", "Concentration"]);
-  assert.deepEqual(markerRows, []);
+  // 前置标题行保留 → 列窗含其所在首列（占位列明示，不丢内容）
+  assert.deepEqual(columns, ["col1", "col2", "Units", "Constants", "Types"]);
+  assert.equal(body.length, 3); // 前置 Documentation 单格行保留并标注
+  assert.deepEqual(body[1], ["", "", "mole / l", "Constant", "Concentration"]);
+  assert.deepEqual(markerRows, [0]);
 });
 
 test("多表叠放：仅表头的块跳过，数据块首尾空列裁剪（Kinetic Models 风格）", () => {
@@ -410,9 +414,10 @@ test("下一行像数据行(r0) → 不误合并表头（Vessels 风格）", () 
     ["ID", "Name", "Volume value", "Volume unit"],
     ["r0", "cup", "1", "mL"],
   ];
-  const { columns, body } = analyseTable(rows);
+  const { columns, body, markerRows } = analyseTable(rows);
   assert.deepEqual(columns, ["ID", "Name", "Volume value", "Volume unit"]);
-  assert.equal(body.length, 1);
+  assert.equal(body.length, 2); // Vessels 单格标题行保留并标注
+  assert.deepEqual(markerRows, [0]);
 });
 
 test("headerRows 显式指定（1/2）", () => {
