@@ -47,23 +47,12 @@
 
 ## 五、遗留与待拍板（均已如实登记，动之前先问用户）
 
-### 五.0 下一轮修复者诊断问题集：报告块编辑链（P0，未实施；T55 五表现＋T56 新发现）
+### 五.0 报告块编辑链（P0，**已修** · S02-T57；代码 `5d7b3ef`）
 
-> 下一轮修复者**先诊断再修**；本集为问题清单与证据位置，修复方向仅候选、须用户拍板。代码位置以当前 `public/lib/pages/analysis.js` 行号为准（复核时再核）。
+T55 五表现＋N1–N6（嵌套双层包装／调序静默失效／引用按位置 zip 错配／未保存草稿过早确认／序号过计／未保存行随 refresh 丢失／错误面不一致）已于 **S02-T57** 全部修复：A 去嵌套改工作副本平铺重渲染；N2 引用改只读展示、collect 直读 `dataset.refs`；N3 确认仅限已落库草稿；N6 预览错误面统一 `humanError`；N5 新增 `ui.reportWorking` 暂存＋input 同步，refresh 不丢。**根因／拍板（N2 只读、N5 暂存）／改法／测试见 `record/sessions/2026-11-17_session-02.md` 的 S02-T57 与台账 #67**；回归 `tests/report-blocks.test.ts`（8）。
 
-**根因（T55 实测取证）**：`rep-add`(L310-317) 与 `rep-draft`(L347-355) 先建 `div.reprow` 包装再 `innerHTML=blockRowHtml(...)`，而 `blockRowHtml`(L114-127) 自身返回完整 `<div class="reprow" data-bid data-draft data-refs>` → **双层嵌套**；`collectReportBlocks`(L149-157) 用后代选择器 `.repblocks .reprow` 两层都收。已保存报告经 `reportHtml`(L132) 平铺渲染不触发；bug 仅在「未保存新增/草稿行」窗口存在；基线 `1b85bc7` 逐字相同 → **既有缺陷，非 T54 合并回归**。
-
-**T55 五表现（实测）**：① 添加一次收 6 块（4 旧＋2 份新空块）；② 新块重复落库（第4版 6 块）；③ 外层副本 `draft:false` 绕过 T50「新 AI 内容仍待确认」守卫；④ `rep-del`(L319) `closest('.reprow')` 只删内层留外壳 → collect 抛 `TypeError … null (reading 'value')`，preview 裸显英文报错、预览/接受阻塞；⑤ `rep-draft` 外层 `dataset.refs=esc(JSON.stringify(...))` 存 `&quot;` 字面量 → JSON.parse 失败回退 [] → 引用降级 note（证据链断裂）。
-
-**T56 新发现（代码取证，待 DOM 复现；不随嵌套修复自动消失者已标 ★）**：
-- **N1 调序静默失效**：`rep-up/rep-down`(L320-324) `closest('.reprow')` 得内层、`parent`=外层包装、内层无兄弟 → `if(sib)` 不成立 → 未保存块上移/下移 no-op；用户以为调序实际未调，`diff.reordered` 不反映。
-- **★N2 引用按位置 zip 错配**：`collectReportBlocks`(L153-154) 以 `.rep-refs` 输入 split 出的 labels 与 `dataset.refs` **按索引 zip** 重建；编辑该输入（删/插/改一个 label，或 label 含 `;／；`）使后续 refs 的 id/version 挂到错误 label → 证据链静默错挂。**平铺已保存行也受害，与嵌套无关**。
-- **★N3 未保存草稿行过早「确认」**：`blockRowHtml`(L122) 对 draft 行渲染确认按钮，但 `rep-draft`(L353) 强制 `id:""` → `rep-confirm`(L341) 读 `dataset.bid=""` → 确认必失败/误指；确认应仅对**已落库**草稿块开放。
-- **N4 序号过计**：`rep-add`(L315)/`rep-draft`(L352) 用 `.reprow` 后代计数作 `#i` → 嵌套时新块/草稿块序号错。
-- **★N5 未保存行随 refresh 丢失**：`reportHtml`(L132) 从 state 渲染，新增/草稿行仅存 DOM；`rep-confirm`(L344)/`res-submit`(L288)/recommend 等任何 refresh 重渲染即**静默丢弃已编辑文本**（数据丢失，独立于嵌套）。
-- **N6 错误面不一致**：preview 的 collect 异常走 `ctx.notify` 裸消息(L360)，accept 的 collect 异常(L372)走 outer catch `humanError`(L378) → 同一 TypeError 两条路径；preview 违反原始报错折叠约定（L6/L7/L8）。
-
-**修复方向（T55 提出，候选待拍板）**：两处理器改 `holder.insertAdjacentHTML("beforeend", blockRowHtml(...))`（平铺单层，自带 data 属性）；删 `rep-draft` 的 `esc()` 误用；collect 选择器收紧 `.repblocks > .reprow` 作防御；补 添加→收集→预览→接受→删除→调序→refresh 全链前端回归（含 draft 旗标/refs 保真/未保存不丢）。**★N2/N3/N5 须独立修**。
+- **唯一未做**：点击级全链 DOM 走查（添加→收集→预览→接受→删除→调序→refresh）——本项目零依赖、`node:test` 无 jsdom，无法自动化；纯逻辑/结构守卫已覆盖，点击级留待下一**验收轮**按 §四.5 离屏核验。
+- 一并修复 `frontend-text-check.ts` 的 `strip()` 未去 `<style>`（`#boot-warn .card` CSS 选择器致 `\bcard\b` 全页误报，HEAD 即有的**工具**缺陷，非产品）。
 
 ### 五.1 其余遗留
 
