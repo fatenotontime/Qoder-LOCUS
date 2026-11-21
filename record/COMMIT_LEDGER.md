@@ -201,11 +201,21 @@
 
 | # | 分支 `feat/s05-e2-extraction` | 分支 `<其他>` | 关联轮次 | 说明 |
 | --- | --- | --- | --- | --- |
-| 85 | `7ca563e` · 2026-11-21 13:01 | — | S05-T4 | **E2 提取契约**（合同 §5.3/§5.4/§6）：`prepareKnowledgeRun` 冻结 run 输入（附件**显式选择**＋幂等键，`paperRevision`/原件 hash/分块偏移入 `inputHash`）；`chunkInputTexts` 只读冻结块（内容漂移 409 `content_mismatch`）＋有界补读；`validateKnowledgeBatch` 整批校验——一处非法即**整块拒收**（不半写、消息含「整块拒收」）；`locateQuote` 服务端逐字定位 matched/ambiguous/unmatched（多处命中不挑第一个、未命中不给假偏移）；`commitKnowledgeChunk` 回执优先→取消判定→**壳＋实体同笔**；路由：同键同输入 `replayed` 200、同键异输入 409 `idempotency_conflict`、单块失败隔离（`chunkErrors`）＋失败块单独重试、取消保留已产出/暂停停块边界/重启 `running→interrupted` 且凭回执续跑、`GET /api/knowledge/runs/:id`；新壳 fail-closed 守卫（比较/采用 adopt/分析 core/地图 pick → 422 `structured_knowledge_required`，整卡确认与整卡改原文 → 409，备注/重要度放行）；前端表单带 `attachmentIds`＋输入派生幂等键、动作改按 `runId`。**修 5 处真实缺陷**：回执重放按 `prepared.index` 找块、循环收尾不置 `job.status`、relation 被要求带 `localId`、relation 端点建期崩溃（改校验期可寻址集合＋单项卡别名）、重试后 run 状态不回推。测试新增 **T06–T12、T24＋守卫**；`ai-stream` 五例改写结构化契约并加**落盘重启续跑**；`papers-knowledge` 单元段改用新 API；`web-loop` 任务表加 `knowledge_struct`（9 个）；**279/279** → E2 判据齐备；另出 [简要交接](HANDOFF_E2.md)；[会话记录](sessions/2026-11-21_session-05.md#s05-t4) |
+| 85 | `7ca563e` · 2026-11-21 13:01（PR #7 merge `0f361aa` · 13:09） | — | S05-T4 | **E2 提取契约**（合同 §5.3/§5.4/§6）：`prepareKnowledgeRun` 冻结 run 输入（附件**显式选择**＋幂等键，`paperRevision`/原件 hash/分块偏移入 `inputHash`）；`chunkInputTexts` 只读冻结块（内容漂移 409 `content_mismatch`）＋有界补读；`validateKnowledgeBatch` 整批校验——一处非法即**整块拒收**（不半写、消息含「整块拒收」）；`locateQuote` 服务端逐字定位 matched/ambiguous/unmatched（多处命中不挑第一个、未命中不给假偏移）；`commitKnowledgeChunk` 回执优先→取消判定→**壳＋实体同笔**；路由：同键同输入 `replayed` 200、同键异输入 409 `idempotency_conflict`、单块失败隔离（`chunkErrors`）＋失败块单独重试、取消保留已产出/暂停停块边界/重启 `running→interrupted` 且凭回执续跑、`GET /api/knowledge/runs/:id`；新壳 fail-closed 守卫（比较/采用 adopt/分析 core/地图 pick → 422 `structured_knowledge_required`，整卡确认与整卡改原文 → 409，备注/重要度放行）；前端表单带 `attachmentIds`＋输入派生幂等键、动作改按 `runId`。**修 5 处真实缺陷**：回执重放按 `prepared.index` 找块、循环收尾不置 `job.status`、relation 被要求带 `localId`、relation 端点建期崩溃（改校验期可寻址集合＋单项卡别名）、重试后 run 状态不回推。测试新增 **T06–T12、T24＋守卫**；`ai-stream` 五例改写结构化契约并加**落盘重启续跑**；`papers-knowledge` 单元段改用新 API；`web-loop` 任务表加 `knowledge_struct`（9 个）；**279/279** → E2 判据齐备；另出 [简要交接](HANDOFF_E2.md)；[会话记录](sessions/2026-11-21_session-05.md#s05-t4) |
 
 | 轮次 | 分支 | 提交 | 提交时间 | 本轮产出 |
 | --- | --- | --- | --- | --- |
-| S05-T4 | feat/s05-e2-extraction | `7ca563e` | 2026-11-21 13:01 | E2 提取契约后端＋守卫＋前端接线＋测试改写（T06–T12/T24/守卫，279/279）；简要交接文档；PR 审计后合入（merge hash 待下轮回填）；[会话记录](sessions/2026-11-21_session-05.md#s05-t4) |
+| S05-T4 | feat/s05-e2-extraction | `7ca563e` | 2026-11-21 13:01 | E2 提取契约后端＋守卫＋前端接线＋测试改写（T06–T12/T24/守卫，279/279）；简要交接文档；PR 审计后合入（PR #7 merge `0f361aa` · 13:09，本轮回填）；[会话记录](sessions/2026-11-21_session-05.md#s05-t4) |
+
+### 会话 S05（续）· E3 分项人审
+
+| # | 分支 `feat/s05-e3-item-review` | 分支 `<其他>` | 关联轮次 | 说明 |
+| --- | --- | --- | --- | --- |
+| 86 | `26f7d65` · 2026-11-21 15:17 | — | S05-T5 | **E3 分项人审、主题与消费者开放**（判据 T13–T16d＋T25＋§12.3 浏览器项）：服务层 `updateKnowledgeItem/Context`＋`reviewKnowledgeItem/Context`＋`resolveKnowledgeEvidence`（§4.2 固定 revision、逐条件审核与 pending 重置、§4.6.5 壳审计由分项派生、§4.7 门槛与「条件变化→依赖项回 pending」级联；引文未逐字定位不放行，服务端逐字核对偏移，不符即 422 `quote_mismatch`）；`structureLegacyCard` 引文可只给 `{kind,id}` 由服务端锚定原件版本与 hash（不可读 422 `source_missing`、畸形 422 `source_ref_invalid`），条件支持同批 `localId` 引用引文；**卡片归属缺陷修复**：建卡/导入按附件写 `paperId`＋渲染端按附件回查兼容旧数据（旧数据不再显示 0 卡 0 待审）；前端分项审阅区：逐项原文高亮、多处命中列出**全部**出现位置（含「第1处（当前）」可采用）、条件整组编辑（改动即回待审）、**引文改绑当前版**（定位后不自动升级，须人工改绑，§4.6.9）、旧卡按需结构化（引文来源 本卡记录／原件正文）、主题成员与「当前认识」（未确认项 422 拒绝）、dirty 保护与刷新恢复；测试 **T13–T16d、T25、A7 渲染＋条件拆分**，**294/294**；浏览器验收＝隔离实例 5217（`data/scratch-e3/` 全合成、AI 环境变量全清、Edge）逐项通过，控制台零报错；**偏差/环境限制**：`scripts/frontend-text-check.ts` 本机 headless Edge 返回空 DOM 无法跑（改用同规则在已连线 Edge 内扫可见文本，七规则零命中）；§12.3 步骤3「总览创建主题与有限认识」落在**知识页主题面板**实现；观察项：级联回退后主题「当前认识」可指向已回 pending 的项，读取侧复检属 E4/E5 消费者范围；E3 浏览器项无需截图即可完成，关键节点截图由用户留存；[会话记录](sessions/2026-11-21_session-05.md#s05-t5) |
+
+| 轮次 | 分支 | 提交 | 提交时间 | 本轮产出 |
+| --- | --- | --- | --- | --- |
+| S05-T5 | feat/s05-e3-item-review | `26f7d65` | 2026-11-21 15:17 | E3 分项审阅服务＋门槛＋级联、引文锚定原件与改绑、卡片归属修复、审阅 UI、294/294、§12.3 浏览器验收通过（隔离 5217）；本条 record 提交 hash 下轮回填；[会话记录](sessions/2026-11-21_session-05.md#s05-t5) |
 
 ## 独立提示词维护记录 S02-T1
 
