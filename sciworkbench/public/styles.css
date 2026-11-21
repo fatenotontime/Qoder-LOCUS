@@ -2070,3 +2070,19 @@ button.curtopic.none { color: var(--muted); }
   background: var(--bg); border-top: 1px solid var(--line);
 }
 .chat-inputbar textarea { flex: 1; }
+
+/* ── F2 知识：骨架总览（占位） ── */
+.kz-overview { max-width: 900px; }
+.kz-overview .kz-head {
+  display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-3); flex-wrap: wrap;
+  padding-bottom: var(--space-3); margin-bottom: var(--space-4); border-bottom: 1px dashed var(--line);
+}
+.kz-container-placeholder {
+  display: grid; place-items: center; text-align: center; gap: var(--space-2);
+  min-height: 260px; padding: var(--space-6); border: 1px dashed var(--line); border-radius: var(--radius);
+  background: var(--surface-2);
+}
+.kz-container-placeholder .es-seal { width: 48px; height: 48px; display: grid; place-items: center; font-family: var(--font-serif); font-size: 26px; color: var(--seal); border: 1px solid var(--seal-line); border-radius: 8px; }
+.kz-container-placeholder h3 { margin: 0; }
+.kz-container-placeholder p { margin: 0; max-width: 520px; color: var(--muted); }
+.kz-overview .detail-actions button:disabled { opacity: .5; cursor: not-allowed; }
