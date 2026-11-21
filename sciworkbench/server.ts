@@ -80,6 +80,11 @@ import {
 } from "./services/knowledge.ts";
 import { extractKnowledgeStructChunk, knowledgeStructInput } from "./services/ai.ts";
 import { ensureArchived } from "./services/knowledge-base.ts";
+import {
+  createKnowledgeStatement, createKnowledgeTheme, readKnowledgeVersion, resolveKnowledgeEvidence,
+  reviewKnowledgeContext, reviewKnowledgeItem, structureLegacyCard, updateKnowledgeContext,
+  updateKnowledgeItem, updateKnowledgeTheme,
+} from "./services/knowledge-base.ts";
 import type { ExtractionRunRecord, ExtractionRunStatus, SourceKind } from "./domain/knowledge.ts";
 
 const HERE = fileURLToPath(new URL(".", import.meta.url));
@@ -548,6 +553,28 @@ export async function createApp(store: Store, opts: { aiConfigPath?: string } = 
         });
         return;
       }
+      // §8.1 指定版本读取：revision 必填，读不到即拒绝，绝不用最新版冒充旧版（§4.2）。
+      const kItemGet = path.match(/^\/api\/knowledge\/items\/([^/]+)$/);
+      if (method === "GET" && kItemGet) {
+        const id = decodeURIComponent(kItemGet[1]);
+        const raw = url.searchParams.get("revision");
+        const env = state.knowledge.items.find((x) => x.id === id);
+        if (!env) { send(res, 404, { error: `知识项不存在：${id}` }); return; }
+        if (url.searchParams.get("snapshotId")) {
+          send(res, 422, { error: "快照版本读取随 E5（快照与知识包）开放；当前只支持按 revision 读取最新库。", code: "snapshot_read_unavailable" });
+          return;
+        }
+        if (raw === null || raw === "") { send(res, 422, { error: "读取知识项必须指定 revision（版本）。", code: "revision_required" }); return; }
+        const revision = Number(raw);
+        if (!Number.isInteger(revision) || revision < 1) { send(res, 422, { error: `revision 不合法：${raw}`, code: "revision_required" }); return; }
+        const payload = readKnowledgeVersion(state.knowledge, { kind: "item", id, revision });
+        if (payload === null) { send(res, 404, { error: `知识项 ${id} 的第 ${revision} 版不可读（仅追加历史里没有该版本）。`, code: "revision_unavailable" }); return; }
+        const topicId = url.searchParams.get("topicId");
+        const p = payload as { topicIds?: string[] };
+        if (topicId && !(p.topicIds ?? []).includes(topicId)) { send(res, 422, { error: `该版本不属于课题 ${topicId}。`, code: "topic_mismatch" }); return; }
+        send(res, 200, { ok: true, id, revision, payload, availableRevisions: [env.revision, ...env.history.map((h) => h.revision)].sort((a, b) => a - b) });
+        return;
+      }
       if (method === "DELETE" && path === "/api/ai/config") {
         clearAiConfig();
         if (aiConfigPath) removeAiConfigFile(aiConfigPath);
@@ -726,6 +753,69 @@ export async function createApp(store: Store, opts: { aiConfigPath?: string } = 
           if (!runId) { send(res, 404, { error: "该抽取任务没有对应的持久记录，无法重试该块。" }); return; }
           const out = await retryKnowledgeChunk(cfg, runId, Number(body.index));
           send(res, 200, { ok: true, runId, ...out });
+          return;
+        }
+        // ── E3 分项人审（§8.1）：内容修订与审核分开；过期编辑 409，夹带生命周期字段 422 ──
+        const kiUpdate = path.match(/^\/api\/knowledge\/items\/([^/]+)\/update$/);
+        if (kiUpdate) {
+          const r = updateKnowledgeItem(state, decodeURIComponent(kiUpdate[1]), body);
+          await store.save(r.state); state = r.state;
+          send(res, 200, { ok: true, id: r.item.id, revision: r.item.revision, review: r.item.payload.review.status, scientific: r.scientific });
+          return;
+        }
+        const kiReview = path.match(/^\/api\/knowledge\/items\/([^/]+)\/review$/);
+        if (kiReview) {
+          const r = reviewKnowledgeItem(state, decodeURIComponent(kiReview[1]), body);
+          await store.save(r.state); state = r.state;
+          const card = r.state.cards.find((c) => c.id === r.item.payload.cardId);
+          send(res, 200, { ok: true, id: r.item.id, revision: r.item.revision, review: r.item.payload.review.status, cardAudit: card?.audit ?? null });
+          return;
+        }
+        const kcUpdate = path.match(/^\/api\/knowledge\/contexts\/([^/]+)\/update$/);
+        if (kcUpdate) {
+          const r = updateKnowledgeContext(state, decodeURIComponent(kcUpdate[1]), body);
+          await store.save(r.state); state = r.state;
+          send(res, 200, { ok: true, id: r.context.id, revision: r.context.revision, review: r.context.payload.review.status, scientific: r.scientific, affectedItems: r.affectedItems });
+          return;
+        }
+        const kcReview = path.match(/^\/api\/knowledge\/contexts\/([^/]+)\/review$/);
+        if (kcReview) {
+          const r = reviewKnowledgeContext(state, decodeURIComponent(kcReview[1]), body);
+          await store.save(r.state); state = r.state;
+          send(res, 200, { ok: true, id: r.context.id, revision: r.context.revision, review: r.context.payload.review.status, pendingConditions: r.pendingConditions, affectedItems: r.affectedItems });
+          return;
+        }
+        const keResolve = path.match(/^\/api\/knowledge\/evidence\/([^/]+)\/resolve$/);
+        if (keResolve) {
+          const r = resolveKnowledgeEvidence(state, decodeURIComponent(keResolve[1]), body);
+          await store.save(r.state); state = r.state;
+          send(res, 200, { ok: true, id: r.evidence.id, revision: r.evidence.revision, locationStatus: r.locationStatus, candidateOffsets: r.candidateOffsets });
+          return;
+        }
+        const kStructure = path.match(/^\/api\/knowledge\/cards\/([^/]+)\/structure$/);
+        if (kStructure) {
+          const r = structureLegacyCard(state, decodeURIComponent(kStructure[1]), body);
+          await store.save(r.state); state = r.state;
+          send(res, 200, { ok: true, cardId: r.card.id, cardRevision: r.card.revision, audit: r.card.audit, itemIds: r.itemIds, contextIds: r.contextIds, evidenceIds: r.evidenceIds });
+          return;
+        }
+        if (path === "/api/knowledge/themes") {
+          const r = createKnowledgeTheme(state, body);
+          await store.save(r.state); state = r.state;
+          send(res, 200, { ok: true, id: r.theme.id, revision: r.theme.revision, members: r.theme.payload.members.length });
+          return;
+        }
+        const kThemeUpdate = path.match(/^\/api\/knowledge\/themes\/([^/]+)\/update$/);
+        if (kThemeUpdate) {
+          const r = updateKnowledgeTheme(state, decodeURIComponent(kThemeUpdate[1]), body);
+          await store.save(r.state); state = r.state;
+          send(res, 200, { ok: true, id: r.theme.id, revision: r.theme.revision, members: r.theme.payload.members.length, currentJudgmentRefs: r.theme.payload.currentJudgmentRefs.length });
+          return;
+        }
+        if (path === "/api/knowledge/statements") {
+          const r = createKnowledgeStatement(state, body);
+          await store.save(r.state); state = r.state;
+          send(res, 200, { ok: true, id: r.item.id, revision: r.item.revision, review: r.item.payload.review.status, nature: r.item.payload.nature });
           return;
         }
         if (path === "/api/import/literature") {

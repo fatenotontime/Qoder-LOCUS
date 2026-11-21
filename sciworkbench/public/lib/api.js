@@ -79,6 +79,21 @@ export const api = {
   async cancelChatMessage(chatId, messageId) { return json(`/api/chats/${encodeURIComponent(chatId)}/messages/${encodeURIComponent(messageId)}/cancel`, {}); },
   async retryChatMessage(chatId, messageId) { return json(`/api/chats/${encodeURIComponent(chatId)}/messages/${encodeURIComponent(messageId)}/retry`, {}); },
   async adoptChatProposal(chatId, messageId, index) { return json(`/api/chats/${encodeURIComponent(chatId)}/messages/${encodeURIComponent(messageId)}/adopt`, { index, confirmed: true }); },
+  // ── E3：知识分项审阅（§8.1）：内容修订与审核分开；旧卡显式结构化；主题/新增认识 ──
+  async knowledgeItem(id, revision, topicId) {
+    const q = [`revision=${encodeURIComponent(revision)}`];
+    if (topicId) q.push(`topicId=${encodeURIComponent(topicId)}`);
+    return json(`/api/knowledge/items/${encodeURIComponent(id)}?${q.join("&")}`);
+  },
+  async updateKnowledgeItem(id, input) { return json(`/api/knowledge/items/${encodeURIComponent(id)}/update`, input); },
+  async reviewKnowledgeItem(id, input) { return json(`/api/knowledge/items/${encodeURIComponent(id)}/review`, input); },
+  async updateKnowledgeContext(id, input) { return json(`/api/knowledge/contexts/${encodeURIComponent(id)}/update`, input); },
+  async reviewKnowledgeContext(id, input) { return json(`/api/knowledge/contexts/${encodeURIComponent(id)}/review`, input); },
+  async resolveKnowledgeEvidence(id, input) { return json(`/api/knowledge/evidence/${encodeURIComponent(id)}/resolve`, input); },
+  async structureCard(id, input) { return json(`/api/knowledge/cards/${encodeURIComponent(id)}/structure`, input); },
+  async createTheme(input) { return json("/api/knowledge/themes", input); },
+  async updateTheme(id, input) { return json(`/api/knowledge/themes/${encodeURIComponent(id)}/update`, input); },
+  async createStatement(input) { return json("/api/knowledge/statements", input); },
 };
 
 async function json(url, body) {

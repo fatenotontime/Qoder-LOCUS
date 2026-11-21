@@ -846,3 +846,171 @@ test("E2 守卫：结构化阅读壳在未适配消费者前 fail-closed（422/4
     await close();
   }
 });
+
+// ── E3 路由：分项人审在 HTTP 上真实可用（§8.1 items/contexts/evidence + §4.6.9 派生审计）──
+test("E3 路由：新壳定位修订→条件审核→分项确认→整壳解锁消费者", async () => {
+  const { post, get, close } = await boot(new MemoryStore());
+  const ai = stubStructAi(() => structJson({
+    evidence: [evOf("e1", "chunk_0", "响应时间0.8 s"), evOf("e2", "chunk_0", "重复测量3次")],
+    contexts: [ctxOf("c1", { conditions: [{ field: "温度", value: scalar("25 °C", "25", "°C"), appliesTo: { subject: "石墨烯电极", stage: "测试" }, evidenceLocalIds: ["e1"] }] })],
+    cards: [cardOf("k1", "响应时间0.8 s", [
+      itemOf({ localId: "i1", evidenceLocalIds: ["e1"], contextLocalIds: ["c1"] }),
+      itemOf({ localId: "i2", text: "重复测量3次取平均", nature: "to_verify", predicate: { raw: "测量次数" }, value: scalar("3次", "3", "次"), evidenceLocalIds: ["e2"] }),
+    ])],
+  }));
+  try {
+    const topic = await post("/api/topics", { name: "课题甲", researchQuestion: "Q" });
+    const topicId = topic.body.topicId as string;
+    const { paperId, attachments } = await mkPaper(post, "论文甲", [{ name: "a1.md", text: "石墨烯电极在25 °C下响应时间0.8 s。重复测量3次取平均值。" }], [topicId]);
+    const imp = await post("/api/import/measurements", { name: "d.csv", csv: "t,v\n0,1", topicId });
+    assert.equal(imp.status, 200);
+    const job = await post("/api/knowledge/jobs", { paperId, attachmentIds: attachments.map((a) => a.attachmentId), purpose: "比较响应时间", topicId, idempotencyKey: "k-e3-chain" });
+    assert.equal(job.status, 202);
+    await waitJobEnd(get, job.body.jobId as string);
+    const s0 = await st(get);
+    const shell = s0.cards.find((c) => (c.knowledgeItemIds ?? []).length === 2)!;
+    assert.ok(shell, "提取产出两项的新壳");
+    const tableId = s0.tables[0].id;
+    const itemIds = shell.knowledgeItemIds!;
+    assert.equal(shell.audit, "unreviewed", "全待审 → 派生 unreviewed");
+
+    // §8.1 指定版本读取：revision 必填；快照读取留待 E5；课题归属校验
+    assert.equal((await get(`/api/knowledge/items/${itemIds[0]}`)).code, "revision_required");
+    assert.equal((await get(`/api/knowledge/items/${itemIds[0]}?revision=1&topicId=tp_absent`)).code, "topic_mismatch");
+    assert.equal((await get(`/api/knowledge/items/${itemIds[0]}?revision=1&snapshotId=ks_x`)).code, "snapshot_read_unavailable");
+    const v1 = await get(`/api/knowledge/items/${itemIds[0]}?revision=1&topicId=${encodeURIComponent(topicId)}`);
+    assert.equal(v1.revision, 1);
+    const payload = v1.payload as { evidenceRefs: { ref: { id: string } }[]; contextRefs: { id: string }[] };
+    const evId = payload.evidenceRefs[0].ref.id;
+    const ctxId = payload.contextRefs[0].id;
+    assert.deepEqual(v1.availableRevisions, [1]);
+
+    // 定位修订不接受伪造引文；未审条件挡住分项确认
+    const fake = await post(`/api/knowledge/evidence/${evId}/resolve`, { baseRevision: 1, quote: "响应时间1.5 s" });
+    assert.equal(fake.status, 422, JSON.stringify(fake.body));
+    assert.equal(fake.body.code, "quote_mismatch");
+    const forge = await post(`/api/knowledge/items/${itemIds[0]}/update`, { baseRevision: 1, patch: { review: { status: "confirmed" } } });
+    assert.equal(forge.status, 422);
+    assert.equal(forge.body.code, "lifecycle_field_forbidden");
+    const early = await post(`/api/knowledge/items/${itemIds[0]}/review`, { baseRevision: 1, decision: "confirmed", basis: "先看值" });
+    assert.equal(early.status, 422);
+    assert.equal(early.body.code, "context_pending");
+
+    // 条件审核 → 新版；再确认分项（生成第 2 版）
+    const ctxReview = await post(`/api/knowledge/contexts/${ctxId}/review`, { baseRevision: 1, decision: "confirmed", basis: "温度按原文第一句" });
+    assert.equal(ctxReview.status, 200, JSON.stringify(ctxReview.body));
+    assert.equal(ctxReview.body.review, "confirmed");
+    assert.deepEqual(ctxReview.body.pendingConditions, []);
+    const stale = await post(`/api/knowledge/items/${itemIds[0]}/update`, { baseRevision: 99, patch: { scopeText: "只看该电极" } });
+    assert.equal(stale.status, 409);
+    assert.equal(stale.body.code, "stale_revision");
+
+    const r1 = await post(`/api/knowledge/items/${itemIds[0]}/review`, { baseRevision: 1, decision: "confirmed", basis: "逐字核对第一句" });
+    assert.equal(r1.status, 200, JSON.stringify(r1.body));
+    assert.equal(r1.body.revision, 2);
+    assert.equal(r1.body.review, "confirmed");
+    assert.equal(r1.body.cardAudit, "need_info", "一确认一待审 → 不给整卡确认");
+
+    // 中间态：整壳仍不可选入，分项可（固定版本）
+    const wholeBlocked = await post("/api/analysis/tasks", { topicId, title: "分析甲", core: [{ kind: "table", id: tableId }, { kind: "card", id: shell.id }] });
+    assert.equal(wholeBlocked.status, 422);
+    assert.equal(wholeBlocked.body.code, "structured_knowledge_required");
+    const itemTask = await post("/api/analysis/tasks", { topicId, title: "分析乙", core: [{ kind: "table", id: tableId }, { kind: "item", id: itemIds[0], revision: 2 }] });
+    assert.equal(itemTask.status, 200, JSON.stringify(itemTask.body));
+    const pendingItem = await post("/api/analysis/tasks", { topicId, title: "分析丙", core: [{ kind: "table", id: tableId }, { kind: "item", id: itemIds[1], revision: 1 }] });
+    assert.equal(pendingItem.status, 422);
+    assert.equal(pendingItem.body.code, "item_not_confirmed");
+    const map1 = (await get(`/api/analysis/map?topicId=${encodeURIComponent(topicId)}`)) as unknown as { nodes: { key: string; selectable: boolean }[] };
+    assert.equal(map1.nodes.find((n) => n.key === `card:${shell.id}`)!.selectable, false, "部分项未审 → 整壳不可选");
+
+    // 全部确认 → 派生 confirm，整壳与地图同时解锁（§4.6.9）
+    const r2 = await post(`/api/knowledge/items/${itemIds[1]}/review`, { baseRevision: 1, decision: "confirmed", basis: "逐字核对第二句" });
+    assert.equal(r2.body.cardAudit, "confirm");
+    const wholeTask = await post("/api/analysis/tasks", { topicId, title: "分析丁", core: [{ kind: "table", id: tableId }, { kind: "card", id: shell.id }] });
+    assert.equal(wholeTask.status, 200, JSON.stringify(wholeTask.body));
+    const map2 = (await get(`/api/analysis/map?topicId=${encodeURIComponent(topicId)}`)) as unknown as { nodes: { key: string; selectable: boolean }[] };
+    assert.equal(map2.nodes.find((n) => n.key === `card:${shell.id}`)!.selectable, true, "全部分项确认后整壳可选");
+    const s1 = await st(get);
+    assert.equal(s1.cards.find((c) => c.id === shell.id)!.audit, "confirm", "审计由分项派生并落库");
+    assert.equal((await get(`/api/knowledge/items/${itemIds[0]}?revision=1`)).revision, 1, "旧版仍可回查");
+  } finally {
+    ai.restore();
+    await close();
+  }
+});
+
+// ── E3 路由：旧卡显式结构化 + 主题/新增认识（§4.6.6、§8.1 themes/statements）──
+test("E3 路由：旧卡显式结构化后走分项审阅；主题当前认识受确认门槛约束", async () => {
+  const { post, get, close } = await boot(new MemoryStore());
+  try {
+    const topic = await post("/api/topics", { name: "课题甲", researchQuestion: "Q" });
+    const topicId = topic.body.topicId as string;
+    const lit = await post("/api/import/literature", { name: "old.md", text: "石墨烯电极在25 °C下响应时间0.8 s。重复测量3次取平均值。", mode: "draft", topicId });
+    assert.equal(lit.status, 200);
+    const s0 = await st(get);
+    const legacy = s0.cards.find((c) => c.assetId === lit.body.assetId)!;
+    assert.ok(legacy, "旧卡存在");
+
+    const structure = await post(`/api/knowledge/cards/${legacy.id}/structure`, {
+      baseRevision: legacy.revision,
+      evidence: [{ localId: "e1", quote: "响应时间0.8 s" }],
+      contexts: [{ localId: "c1", subject: "石墨烯电极", stage: "测试", topicIds: [topicId], conditions: [
+        { field: { raw: "温度" }, value: scalar("25 °C", "25", "°C"), appliesTo: { subject: "石墨烯电极", stage: "测试" }, obtainedBy: "source_explicit" },
+      ] }],
+      items: [{ localId: "i1", contentType: "observation", nature: "observation", text: "25 °C下响应时间0.8 s", topicIds: [topicId], value: scalar("0.8 s", "0.8", "s"), contextRefs: [{ kind: "context", localId: "c1" }], evidenceRefs: [{ localId: "e1", fieldPaths: ["quote"] }] }],
+    });
+    assert.equal(structure.status, 200, JSON.stringify(structure.body));
+    const itemIds = structure.body.itemIds as string[];
+    assert.equal(structure.body.audit, "unreviewed", "壳审计由分项派生");
+    const s1 = await st(get);
+    const ctxId = s1.knowledge.contexts[0].id;
+    const condId = s1.knowledge.contexts[0].payload.conditions[0].id;
+    assert.equal(s1.knowledge.contexts[0].payload.review.status, "pending", "新结构一律待审");
+    assert.equal(s1.knowledge.evidence[0].payload.locationStatus, "matched", "引文由服务端逐字核对");
+
+    const again = await post(`/api/knowledge/cards/${legacy.id}/structure`, { baseRevision: (await st(get)).cards.find((c) => c.id === legacy.id)!.revision, items: [{ text: "重复结构化" }] });
+    assert.equal(again.status, 409, JSON.stringify(again.body));
+    assert.equal(again.body.code, "already_structured");
+    const dbl = await post(`/api/cards/${legacy.id}/review`, { extracted: { fields: { 响应时间: "0.9 s" } }, reason: "改草稿" });
+    assert.equal(dbl.status, 409, "结构化后不再双编辑旧 fields：" + JSON.stringify(dbl.body));
+
+    const blocked = await post(`/api/knowledge/items/${itemIds[0]}/review`, { baseRevision: 1, decision: "confirmed", basis: "先确认项" });
+    assert.equal(blocked.status, 422);
+    assert.equal(blocked.body.code, "context_pending");
+
+    // 条件更改 → 整体待审（本例无条件已确认，affectedItems 为空）
+    const ctxUpd = await post(`/api/knowledge/contexts/${ctxId}/update`, {
+      baseRevision: 1,
+      patch: { conditions: [{ id: condId, field: { raw: "温度" }, value: scalar("30 °C", "30", "°C"), appliesTo: { subject: "石墨烯电极", stage: "测试" }, obtainedBy: "human_record" }] },
+    });
+    assert.equal(ctxUpd.status, 200, JSON.stringify(ctxUpd.body));
+    assert.equal(ctxUpd.body.review, "pending");
+    assert.deepEqual(ctxUpd.body.affectedItems, []);
+
+    // 新增认识：AI 建议只作候选，人工陈述也须经 review 才算确认
+    const suggestion = await post("/api/knowledge/statements", { topicId, text: "响应时间随温度升高而下降", nature: "hypothesis", createdBy: "model" });
+    assert.equal(suggestion.status, 200, JSON.stringify(suggestion.body));
+    assert.equal(suggestion.body.review, "pending");
+    assert.equal(suggestion.body.nature, "hypothesis");
+
+    const themePending = await post("/api/knowledge/themes", { topicId, name: "响应动力学", members: [{ kind: "item", id: itemIds[0], revision: 1 }, { kind: "item", id: suggestion.body.id as string, revision: 1 }] });
+    assert.equal(themePending.status, 200, JSON.stringify(themePending.body));
+    const badJudge = await post(`/api/knowledge/themes/${themePending.body.id as string}/update`, { baseRevision: 1, patch: { currentJudgmentRefs: [{ kind: "item", id: itemIds[0], revision: 1 }] } });
+    assert.equal(badJudge.status, 422);
+    assert.equal(badJudge.body.code, "judgment_not_confirmed");
+
+    const ctxReview = await post(`/api/knowledge/contexts/${ctxId}/review`, { baseRevision: 2, decision: "confirmed", basis: "温度按批次记录" });
+    assert.equal(ctxReview.status, 200, JSON.stringify(ctxReview.body));
+    const confirm = await post(`/api/knowledge/items/${itemIds[0]}/review`, { baseRevision: 1, decision: "confirmed", basis: "逐字核对" });
+    assert.equal(confirm.status, 200, JSON.stringify(confirm.body));
+    const judge = await post(`/api/knowledge/themes/${themePending.body.id as string}/update`, { baseRevision: 1, patch: { currentJudgmentRefs: [{ kind: "item", id: itemIds[0], revision: confirm.body.revision as number }] } });
+    assert.equal(judge.status, 200, JSON.stringify(judge.body));
+    assert.equal(judge.body.currentJudgmentRefs, 1);
+    const topicB = await post("/api/topics", { name: "课题乙", researchQuestion: "Q2" });
+    const cross = await post("/api/knowledge/themes", { topicId: topicB.body.topicId as string, name: "对照", members: [{ kind: "item", id: itemIds[0], revision: confirm.body.revision as number }] });
+    assert.equal(cross.status, 422, JSON.stringify(cross.body));
+    assert.equal(cross.body.code, "cross_topic_confirmation_required");
+  } finally {
+    await close();
+  }
+});

@@ -13,7 +13,7 @@ import { knowledgeLeftHtml, knowledgeWorkspaceHtml, knowledgeQueueHtml, renderKn
 import { renderAnalysisForm, currentTask, contextMapHtml, analysisRightHtml, snapshotHtml, bindAnalysis } from "./lib/pages/analysis.js";
 
 let state = { topics: [], subquestions: [], assets: [], papers: [], attachments: [], cards: [], tables: [], adoptions: [], mappings: [], comparisons: [], protocols: [], templates: [], executions: [], samples: [], measurements: [], impacts: [], ocrs: [], analysisTasks: [], analysisResults: [], reports: [], chats: [] };
-const ui = { nav: "topic", topicId: "", assetId: null, paperId: null, attId: null, tableId: null, highlight: null, cell: null, dirty: false, busy: false, cardFilter: "all", groupSel: new Set(), batch: null, ack: false, protocolId: null, executionId: null, stepSel: null, viewRev: null, editEventId: null, pauseSuggest: null, prepExtra: 0, taskId: null, chatId: null, reportId: null, reportWorking: {}, navCollapsed: false, kzTab: "todo", cardOpen: null, kzJob: null, suppressRecheck: null };
+const ui = { nav: "topic", topicId: "", assetId: null, paperId: null, attId: null, tableId: null, highlight: null, cell: null, dirty: false, busy: false, cardFilter: "all", groupSel: new Set(), batch: null, ack: false, protocolId: null, executionId: null, stepSel: null, viewRev: null, editEventId: null, pauseSuggest: null, prepExtra: 0, taskId: null, chatId: null, reportId: null, reportWorking: {}, navCollapsed: false, kzTab: "todo", kzPanel: "cards", cardOpen: null, kzJob: null, kzStruct: null, kiView: null, suppressRecheck: null };
 let lastAction = null; // { label, run }
 function setDirty(value) {
   const next = Boolean(value);
@@ -41,7 +41,7 @@ const PANEL_OF = (el) => { const p = el?.closest?.(".pane"); return p ? (p.class
 const UI_KEY = "locus.ui.v2"; // 阶段5 重构：七入口导航，旧选择态作废，默认落课题首页
 let uiRestored = false;
 function saveUi() {
-  try { localStorage.setItem(UI_KEY, JSON.stringify({ nav: ui.nav, topicId: ui.topicId, assetId: ui.assetId, paperId: ui.paperId, tableId: ui.tableId, cardFilter: ui.cardFilter, protocolId: ui.protocolId, executionId: ui.executionId, taskId: ui.taskId, chatId: ui.chatId, reportId: ui.reportId, navCollapsed: ui.navCollapsed })); } catch {}
+  try { localStorage.setItem(UI_KEY, JSON.stringify({ nav: ui.nav, topicId: ui.topicId, assetId: ui.assetId, paperId: ui.paperId, tableId: ui.tableId, cardFilter: ui.cardFilter, protocolId: ui.protocolId, executionId: ui.executionId, taskId: ui.taskId, chatId: ui.chatId, reportId: ui.reportId, navCollapsed: ui.navCollapsed, kzTab: ui.kzTab, kzPanel: ui.kzPanel, cardOpen: ui.cardOpen })); } catch {}
 }
 function restoreUi() {
   if (uiRestored) return;
@@ -61,6 +61,9 @@ function restoreUi() {
     if (state.chats.some((c) => c.id === s.chatId)) ui.chatId = s.chatId;
     if (state.reports.some((r) => r.id === s.reportId)) ui.reportId = s.reportId;
     if (typeof s.navCollapsed === "boolean") ui.navCollapsed = s.navCollapsed;
+    if (["todo", "cand", "skip", "excl"].includes(s.kzTab)) ui.kzTab = s.kzTab;
+    if (["cards", "themes"].includes(s.kzPanel)) ui.kzPanel = s.kzPanel;
+    if (typeof s.cardOpen === "string" || s.cardOpen === null) ui.cardOpen = s.cardOpen;
   } catch {}
 }
 
@@ -619,6 +622,10 @@ async function refresh() {
   if (ui.taskId && !state.analysisTasks.some((t) => t.id === ui.taskId)) ui.taskId = null;
   if (ui.chatId && !state.chats.some((c) => c.id === ui.chatId)) ui.chatId = null;
   if (ui.reportId && !state.reports.some((r) => r.id === ui.reportId)) ui.reportId = null;
+  // E3：分项回查/结构化/展开的卡都要指向仍存在的对象，否则刷新后会出现空白详情。
+  if (ui.kiView && !(state.knowledge?.items ?? []).some((e) => e.id === ui.kiView.id)) ui.kiView = null;
+  if (ui.kzStruct && !state.cards.some((c) => c.id === ui.kzStruct)) ui.kzStruct = null;
+  if (ui.cardOpen && !state.cards.some((c) => c.id === ui.cardOpen)) ui.cardOpen = null;
   renderAll();
   clearBootState();
 }

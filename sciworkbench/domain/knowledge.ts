@@ -65,6 +65,7 @@ export function refSpanKey(r: KnowledgeRef): string { return `${r.kind}:${r.id}`
 // ── 值（TypedValue）与未知项 ─────────────────────────────────
 
 export type ValueKind = "scalar" | "bound" | "range" | "category" | "summary" | "missing";
+export const VALUE_KINDS: readonly ValueKind[] = ["scalar", "bound", "range", "category", "summary", "missing"];
 
 /** 未知/缺失原因码（合同 §4.3）。 */
 export type UnknownReasonCode =
@@ -89,6 +90,8 @@ export interface SummaryTypedValue extends TypedValueBase {
 }
 export interface MissingTypedValue extends TypedValueBase { readonly kind: "missing"; readonly reasonCode: UnknownReasonCode; }
 export type TypedValue = ScalarTypedValue | BoundTypedValue | RangeTypedValue | CategoryTypedValue | SummaryTypedValue | MissingTypedValue;
+export const VALUE_OPERATORS: readonly ("gt" | "gte" | "lt" | "lte")[] = ["gt", "gte", "lt", "lte"];
+export const UNCERTAINTY_TYPES: readonly ("SD" | "SE" | "CI")[] = ["SD", "SE", "CI"];
 
 /** 明确缺失（不默认 0），与“有值但缺测”的 missing 区分。 */
 export function missingValue(raw: string, reasonCode: UnknownReasonCode): MissingTypedValue {
@@ -109,6 +112,8 @@ export interface Unknown {
 
 export type ReviewStatus = "pending" | "confirmed" | "needs_info" | "excluded" | "withdrawn";
 export const REVIEW_STATUSES: readonly ReviewStatus[] = ["pending", "confirmed", "needs_info", "excluded", "withdrawn"];
+/** 人工 review 操作可选的决定；pending 只由科学内容更改自动产生，不能由客户端设定。 */
+export const REVIEW_DECISIONS: readonly ReviewStatus[] = ["confirmed", "needs_info", "excluded", "withdrawn"];
 
 /** 只由专用 review 操作改变；客户端不得在普通内容更新时指定。 */
 export interface Review {
@@ -121,6 +126,7 @@ export const pendingReview = (): Review => ({ status: "pending" });
 
 /** origin = {sourceClass, createdBy, secondaryCitation}（合同 §4.4）。 */
 export type SourceClass = "literature_report" | "local_observation" | "historical_reconstruction" | "human_statement" | "model_suggestion";
+export const SOURCE_CLASSES: readonly SourceClass[] = ["literature_report", "local_observation", "historical_reconstruction", "human_statement", "model_suggestion"];
 export interface Origin {
   readonly sourceClass: SourceClass;
   readonly createdBy: "human" | "model" | "import";
@@ -149,6 +155,8 @@ export interface TopicScope {
 
 export type ItemContentType = "observation" | "method" | "definition" | "claim" | "limitation" | "question";
 export type ItemNature = "observation" | "hypothesis" | "interpretation" | "to_verify" | "human_judgment";
+export const ITEM_CONTENT_TYPES: readonly ItemContentType[] = ["observation", "method", "definition", "claim", "limitation", "question"];
+export const ITEM_NATURES: readonly ItemNature[] = ["observation", "hypothesis", "interpretation", "to_verify", "human_judgment"];
 
 export interface ItemPayload extends TopicScope {
   readonly contentType: ItemContentType;
@@ -172,6 +180,7 @@ export type KnowledgeItem = KnowledgeEnvelope<ItemPayload>;
 // ── context / condition ─────────────────────────────────────
 
 export type ObtainedBy = "source_explicit" | "human_record" | "human_assumption";
+export const OBTAINED_BY: readonly ObtainedBy[] = ["source_explicit", "human_record", "human_assumption"];
 export interface ConditionEntry {
   readonly id: string;
   readonly field: { readonly raw: string; readonly standardId?: string };
@@ -201,6 +210,7 @@ export interface LocatorTable { readonly type: "table"; readonly row: number; re
 export interface LocatorUnresolved { readonly type: "unresolved"; readonly description: string; }
 export type Locator = LocatorText | LocatorTable | LocatorUnresolved;
 export type LocationStatus = "matched" | "ambiguous" | "unmatched" | "source_missing";
+export const LOCATION_STATUSES: readonly LocationStatus[] = ["matched", "ambiguous", "unmatched", "source_missing"];
 export interface EvidencePayload {
   readonly sourceRef: SourceRef;
   readonly locator: Locator;

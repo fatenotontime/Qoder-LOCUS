@@ -7,7 +7,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createServer, type Server } from "node:http";
 import { emptyState, MemoryStore, rawHash, contentHash, type LocusState } from "../store.ts";
-import { AppError, importLiterature } from "../services/app.ts";
+import { AppError, addManualCard, importLiterature } from "../services/app.ts";
 import { addPaperAttachment, createPaper, importBibliography, linkPaperTopic, parseBibtex, updatePaper } from "../services/papers.ts";
 import { buildKnowledgeBatch, chunkInputTexts, commitKnowledgeChunk, prepareKnowledgeRun, validateKnowledgeBatch } from "../services/knowledge.ts";
 import { AiError } from "../services/ai.ts";
@@ -55,6 +55,16 @@ test("附件导入只归档不解析；同 DOI 补充材料不互拒；真重复
   assert.equal(asset.hash, rawHash("line1\r\nline2"));
   assert.equal(asset.fingerprint, contentHash("line1\nline2"));
   assert.throws(() => addPaperAttachment(crlf.state, { paperId: paper.id, name: "lf.md", text: "line1\nline2" }), (e: unknown) => e instanceof AppError && e.status === 409);
+});
+
+test("卡片归属文献条目：手动补卡经附件解析写入 paperId；未挂论文的原件留空不补造（E3 文献视图按此过滤）", async () => {
+  const { state, paper, assetId } = withPaper();
+  const m = addManualCard(state, { assetId, rawText: "At pH 4.0 and 25 C, Km was 0.5 mM." });
+  assert.equal(m.card.paperId, paper.id);
+  assert.equal(m.state.cards.filter((c) => c.paperId === paper.id).length, 1);
+  const draft = await importLiterature(emptyState(), { name: "loose.md", text: "第一句。\n\n第二句。", mode: "draft" }, null);
+  assert.ok(draft.state.cards.length > 0);
+  assert.equal(draft.state.cards.every((c) => c.paperId === undefined), true);
 });
 
 test("题录修订留历史；课题关联可多课题、可解除", () => {

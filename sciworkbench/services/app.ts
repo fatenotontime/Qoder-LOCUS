@@ -260,6 +260,25 @@ function newCard(
 }
 
 /**
+ * 卡片→论文条目归属（E3）：新建卡时按原件的论文附件解析，避免卡片游离在文献之外。
+ * 无附件（仅导入未挂论文）时返回 undefined，保持字段可选、不补造归属。
+ */
+export function paperIdForAsset(state: LocusState, assetId: string): string | undefined {
+  return state.attachments.find((a) => a.assetId === assetId)?.paperId;
+}
+
+/** 为缺归属的卡片补上论文条目（已有 paperId 者原样保留，不覆盖 AI 抽取写入的显式归属）。 */
+function linkCardsToPaper(state: LocusState, cards: LitCardRecord[]): LitCardRecord[] {
+  const paperIdOf = new Map<string, string | undefined>();
+  return cards.map((c) => {
+    if (c.paperId) return c;
+    if (!paperIdOf.has(c.assetId)) paperIdOf.set(c.assetId, paperIdForAsset(state, c.assetId));
+    const paperId = paperIdOf.get(c.assetId);
+    return paperId ? { ...c, paperId } : c;
+  });
+}
+
+/**
  * 导入文献文本 → 证据卡草稿。
  * mode="ai"：调用文献抽取任务（独立提示词/结构）；失败抛 AiError（不冒充成功、不降级为假 AI）。
  * mode="draft"：按行生成草稿（明确标注 extraction="draft"）。
@@ -277,7 +296,8 @@ export function prepareLiterature(state: LocusState, input: { name: string; text
 export function applyLiterature(state: LocusState, asset: AssetRecord, cards: LitCardRecord[], topicId?: string, audit?: ImportResult["audit"]): ImportResult {
   assertUniqueHash(state, asset.fingerprint!);
   const reminder = state.comparisons.some((c) => !topicId || c.topicId === topicId);
-  return { state: { ...state, assets: [...state.assets, asset], cards: [...state.cards, ...cards] }, asset, created: cards.length, audit, reminder };
+  const linked = linkCardsToPaper(state, cards);
+  return { state: { ...state, assets: [...state.assets, asset], cards: [...state.cards, ...linked] }, asset, created: linked.length, audit, reminder };
 }
 
 export async function importLiterature(
@@ -342,14 +362,18 @@ export function isStructuredShell(c: LitCardRecord | undefined): boolean {
 }
 
 /**
- * 尚未接入新壳的旧消费者（选择/计算/引用）一律明确拒绝：
- * 不用概述文本或空 `extracted.fields` 兜底，也不静默剔除用户以为已选的项（§4.6.3/§4.6.10）。
+ * 新旧共存消费者守卫（§4.6.3/§4.6.9/§4.6.10）：
+ * - 壳卡只要还有分项未确认，就拒绝整卡使用：不用概述文本或空 `extracted.fields` 兜底，
+ *   也不静默剔除用户以为已选的项，而是要求逐项审阅或逐项选择。
+ * - 全部分项已确认时，`audit` 由服务端派生为 confirm，此时整卡选择可等价展开为其分项。
+ *   （壳卡的 audit 客户端不能自行设置：`reviewCard` 对壳的语义/审计改动一律 409。）
  */
 export function assertLegacyCardConsumerUsable(card: LitCardRecord | undefined, entry: string): void {
   if (!isStructuredShell(card)) return;
+  if (card && card.audit === "confirm") return;
   throw new AppError(
     422,
-    `${entry}还不能直接使用结构化知识阅读壳：该卡的内容在知识项中，请到「知识」逐项核对确认后按分项选择。`,
+    `${entry}不能直接使用这张结构化知识壳：还有知识项待审。请到「知识」逐项核对确认（整卡将随分项自动派生状态），或改为逐项选择已确认的知识项。`,
     { code: "structured_knowledge_required" },
   );
 }
@@ -480,7 +504,9 @@ export function addManualCard(
     input.unknowns ?? [], "manual", quote || (asset.text.includes(rawText) ? rawText.slice(0, 80) : ""),
     input.secondaryCitation === true,
   );
-  return { state: { ...state, cards: [...state.cards, card] }, card };
+  const paperId = paperIdForAsset(state, asset.id);
+  const linked = paperId ? { ...card, paperId } : card;
+  return { state: { ...state, cards: [...state.cards, linked] }, card: linked };
 }
 
 export interface BatchPreview {
