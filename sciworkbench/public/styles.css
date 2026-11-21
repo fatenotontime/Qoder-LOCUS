@@ -1904,3 +1904,78 @@ button[aria-busy="true"] {
   .nav.spine .navitem:active .navsigil,
   .flowstep:hover, .flowstep:active { transform: none; }
 }
+
+/* ══ F1 壳层与导航：按页布局、顶栏课题切换器、课题子页 ══ */
+
+/* 壳层按页布局能力（§2.1）：由 app.js 给 .app 写 data-layout */
+.app[data-layout="aside"] { grid-template-columns: minmax(0, 1fr) minmax(300px, 380px); }
+.app[data-layout="aside"] > .pane.left { display: none; }
+.app[data-layout="single"] { grid-template-columns: minmax(0, 1fr); }
+.app[data-layout="single"] > .pane.left,
+.app[data-layout="single"] > .pane.right { display: none; }
+.app[data-layout="canvas"] { grid-template-columns: minmax(0, 1fr); }
+.app[data-layout="canvas"] > .pane.left { display: none; }
+
+/* 顶栏「当前课题」按钮：外观沿用 .curtopic，作为按钮时去掉默认样式 */
+button.curtopic {
+  display: inline-flex; align-items: baseline; gap: 9px; min-width: 0; max-width: 100%;
+  border: 1px solid transparent; background: transparent; border-radius: var(--radius-sm);
+  padding: 4px 8px; cursor: pointer; color: var(--fg); text-align: left;
+}
+button.curtopic:hover { border-color: var(--line-soft); background: var(--hover); }
+button.curtopic.none { color: var(--muted); }
+.ct-switch {
+  flex: none; font-size: 11px; letter-spacing: .12em; color: var(--seal);
+  border: 1px solid var(--seal-line); border-radius: 999px; padding: 1px 8px;
+}
+
+/* 课题切换器弹层 */
+.topic-switcher.drawer { width: min(460px, 92vw); display: flex; flex-direction: column; }
+.topic-switcher .ts-search {
+  width: 100%; margin-bottom: var(--space-3); padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--bg); color: var(--fg);
+}
+.ts-list { flex: 1; overflow: auto; display: grid; gap: 6px; align-content: start; }
+.ts-item {
+  display: grid; gap: 2px; text-align: left; padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--bg); cursor: pointer;
+}
+.ts-item:hover { border-color: var(--seal-line); background: var(--hover); }
+.ts-item.active { border-color: var(--accent); background: var(--surface-2); }
+.ts-name { font-weight: 600; color: var(--fg); }
+.ts-q { color: var(--muted); font-size: var(--text-sm); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ts-newbox { margin-top: var(--space-3); border-top: 1px dashed var(--line); padding-top: var(--space-2); }
+.ts-newbox summary { cursor: pointer; color: var(--muted); font-size: var(--text-sm); }
+.ts-newform { display: grid; gap: var(--space-2); margin-top: var(--space-2); }
+.ts-newform input { width: 100%; }
+
+/* 课题页：子问题块与子问题详情 */
+.subqbox { margin-top: var(--space-4); }
+.subq-head h3 { margin: 0 0 2px; font-size: var(--text-lg); }
+.subq-head .hint { margin: 0 0 var(--space-2); }
+.subq-open {
+  display: flex; align-items: center; justify-content: space-between; gap: var(--space-2);
+  width: 100%; text-align: left; padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--bg); cursor: pointer;
+}
+.subq-open:hover { border-color: var(--accent); }
+.subq-txt { color: var(--fg); }
+.subq-add { margin-top: var(--space-2); font-size: var(--text-sm); }
+.subq-add summary { cursor: pointer; color: var(--seal); }
+.subq-form { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-top: var(--space-2); align-items: center; }
+.subq-detail .back-btn, .back-btn {
+  display: inline-flex; align-items: center; gap: 6px; margin-bottom: var(--space-3);
+  padding: 5px 12px; border: 1px solid var(--line); border-radius: var(--radius-sm);
+  background: var(--surface-2); color: var(--fg); cursor: pointer;
+}
+.back-btn:hover { border-color: var(--seal-line); color: var(--seal); }
+.subq-detail-head { display: flex; align-items: baseline; gap: var(--space-3); flex-wrap: wrap; margin-bottom: var(--space-3); }
+.subq-detail-head h2 { margin: 0; font-family: var(--font-display); font-size: var(--text-lg); }
+.subq-sec { margin-top: var(--space-4); }
+.subq-sec h4 { margin: 0 0 var(--space-2); font-size: var(--text-sm); color: var(--muted); letter-spacing: .06em; }
+.subq-rel { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.subq-rel li { border: 1px solid var(--line); border-radius: var(--radius-sm); padding: var(--space-2) var(--space-3); background: var(--bg); }
+.subq-rel-open { border: 0; background: transparent; padding: 0; cursor: pointer; color: var(--fg); text-align: left; width: 100%; }
+.subq-rel-open:hover { color: var(--seal); }
+[data-theme="tech"] .ts-item.active,
+[data-theme="tech"] .back-btn { background: var(--surface-active, var(--surface-2)); }

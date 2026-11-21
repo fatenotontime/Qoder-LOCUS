@@ -6,14 +6,18 @@ import { computeLanes, timeLabel, durationSourceOf } from "./lib/lanes.js";
 import { fmtTime, fmtEnum, fmtVersion, fmtNameOnce, fmtKind } from "./lib/format.js";
 import { refLabel, reconTag, missingTag, topicObjects } from "./lib/refs.js";
 import {
-  topbarTopicHtml, emptyTopicGuideHtml, navHtml, navChar, panelErrorHtml, sidebarListHtml,
-  topicOverviewHtml, topicFlowHtml, topicTodosHtml, subqBlockHtml, nextStepHtml, NAV_ITEMS,
+  topbarTopicHtml, topicSwitcherListHtml, emptyTopicGuideHtml, navHtml, navChar, panelErrorHtml, sidebarListHtml,
+  topicOverviewHtml, topicFlowHtml, topicTodosHtml, subqBlockHtml, subqDetailHtml, nextStepHtml, NAV_ITEMS,
 } from "./lib/views.js";
 import { knowledgeLeftHtml, knowledgeWorkspaceHtml, knowledgeQueueHtml, renderKnowledgeForm, bindKnowledge } from "./lib/pages/knowledge.js";
 import { renderAnalysisForm, currentTask, contextMapHtml, analysisRightHtml, snapshotHtml, bindAnalysis } from "./lib/pages/analysis.js";
 
 let state = { topics: [], subquestions: [], assets: [], papers: [], attachments: [], cards: [], tables: [], adoptions: [], mappings: [], comparisons: [], protocols: [], templates: [], executions: [], samples: [], measurements: [], impacts: [], ocrs: [], analysisTasks: [], analysisResults: [], reports: [], chats: [] };
-const ui = { nav: "topic", topicId: "", assetId: null, paperId: null, attId: null, tableId: null, highlight: null, cell: null, dirty: false, busy: false, cardFilter: "all", groupSel: new Set(), batch: null, ack: false, protocolId: null, executionId: null, stepSel: null, viewRev: null, editEventId: null, pauseSuggest: null, prepExtra: 0, taskId: null, chatId: null, reportId: null, reportWorking: {}, navCollapsed: false, kzTab: "todo", kzPanel: "cards", cardOpen: null, kzJob: null, kzStruct: null, kiView: null, suppressRecheck: null };
+const ui = { nav: "topic", topicId: "", assetId: null, paperId: null, attId: null, tableId: null, highlight: null, cell: null, dirty: false, busy: false, cardFilter: "all", groupSel: new Set(), batch: null, ack: false, protocolId: null, executionId: null, stepSel: null, viewRev: null, editEventId: null, pauseSuggest: null, prepExtra: 0, taskId: null, chatId: null, reportId: null, reportWorking: {}, navCollapsed: false, kzTab: "todo", kzPanel: "cards", cardOpen: null, kzJob: null, kzStruct: null, kiView: null, suppressRecheck: null, topicPane: "overview", subqId: null };
+
+// 壳层按页布局能力（§2.1）：每页声明一种布局，壳层据此排布三块区域。
+const LAYOUT = { topic: "aside" }; // aside：主体＋辅助（撤出左栏课题目录）；其余页沿用三栏 review
+function layoutOf(nav) { return LAYOUT[nav] ?? "review"; }
 let lastAction = null; // { label, run }
 function setDirty(value) {
   const next = Boolean(value);
@@ -41,7 +45,7 @@ const PANEL_OF = (el) => { const p = el?.closest?.(".pane"); return p ? (p.class
 const UI_KEY = "locus.ui.v2"; // 阶段5 重构：七入口导航，旧选择态作废，默认落课题首页
 let uiRestored = false;
 function saveUi() {
-  try { localStorage.setItem(UI_KEY, JSON.stringify({ nav: ui.nav, topicId: ui.topicId, assetId: ui.assetId, paperId: ui.paperId, tableId: ui.tableId, cardFilter: ui.cardFilter, protocolId: ui.protocolId, executionId: ui.executionId, taskId: ui.taskId, chatId: ui.chatId, reportId: ui.reportId, navCollapsed: ui.navCollapsed, kzTab: ui.kzTab, kzPanel: ui.kzPanel, cardOpen: ui.cardOpen })); } catch {}
+  try { localStorage.setItem(UI_KEY, JSON.stringify({ nav: ui.nav, topicId: ui.topicId, assetId: ui.assetId, paperId: ui.paperId, tableId: ui.tableId, cardFilter: ui.cardFilter, protocolId: ui.protocolId, executionId: ui.executionId, taskId: ui.taskId, chatId: ui.chatId, reportId: ui.reportId, navCollapsed: ui.navCollapsed, kzTab: ui.kzTab, kzPanel: ui.kzPanel, cardOpen: ui.cardOpen, topicPane: ui.topicPane, subqId: ui.subqId })); } catch {}
 }
 function restoreUi() {
   if (uiRestored) return;
@@ -64,6 +68,7 @@ function restoreUi() {
     if (["todo", "cand", "skip", "excl"].includes(s.kzTab)) ui.kzTab = s.kzTab;
     if (["cards", "themes"].includes(s.kzPanel)) ui.kzPanel = s.kzPanel;
     if (typeof s.cardOpen === "string" || s.cardOpen === null) ui.cardOpen = s.cardOpen;
+    if (s.topicPane === "subq" && state.subquestions.some((q) => q.id === s.subqId)) { ui.topicPane = "subq"; ui.subqId = s.subqId; }
   } catch {}
 }
 
@@ -740,6 +745,60 @@ async function runJob(btn, label, fn) {
 
 function currentAsset() { return state.assets.find((a) => a.id === ui.assetId) ?? null; }
 
+// ── 课题子页（总览 ⇄ 子问题详情）与返回 ──
+function openSubq(id) {
+  if (!id || id === ui.subqId) return;
+  if (!guardLeave()) return;
+  ui.topicPane = "subq"; ui.subqId = id;
+  renderAll();
+  const c = $("#mid-content");
+  if (c) c.scrollTop = 0;
+}
+function backFromSubq() {
+  if (!guardLeave()) return;
+  ui.topicPane = "overview"; ui.subqId = null;
+  renderAll();
+}
+
+// ── 浏览器返回保护（§5.1：历史栈集成，不引入路由库）──
+let historyReady = false;
+let suppressHistory = false;
+let lastPushedKey = "";
+function pageState() { return { nav: ui.nav, topicId: ui.topicId, topicPane: ui.topicPane, subqId: ui.subqId }; }
+/** 页面状态变化时写入一条历史；首次替换、后台刷新/主题/动画不入历史。 */
+function syncHistory() {
+  if (suppressHistory) return;
+  const st = pageState();
+  const key = JSON.stringify(st);
+  if (!historyReady) { try { history.replaceState(st, ""); } catch {} historyReady = true; lastPushedKey = key; return; }
+  if (key === lastPushedKey) return;
+  try { history.pushState(st, ""); } catch {}
+  lastPushedKey = key;
+}
+function applyPageState(st) {
+  ui.nav = st.nav; ui.topicId = st.topicId ?? ""; ui.topicPane = st.topicPane ?? "overview";
+  ui.subqId = state.subquestions.some((q) => q.id === st.subqId) ? st.subqId : null;
+  if (ui.topicPane === "subq" && !ui.subqId) ui.topicPane = "overview";
+  ui.highlight = null; ui.cell = null; ui.groupSel.clear(); ui.batch = null; ui.ack = false;
+  ui.stepSel = null; ui.viewRev = null; ui.editEventId = null; ui.pauseSuggest = null; ui.prepExtra = 0;
+  renderAll();
+}
+window.addEventListener("popstate", (ev) => {
+  const st = ev.state;
+  if (!st || typeof st !== "object" || !st.nav) return; // 越过应用首条历史 → 交回浏览器，仍受 beforeunload 保护
+  if (!guardLeave()) {
+    suppressHistory = true;
+    try { history.pushState(pageState(), ""); } catch {}
+    suppressHistory = false;
+    lastPushedKey = JSON.stringify(pageState());
+    return;
+  }
+  suppressHistory = true;
+  applyPageState(st);
+  suppressHistory = false;
+  lastPushedKey = JSON.stringify(pageState());
+});
+
 /** 切换前脏检查；返回 true 表示可离开。 */
 function guardLeave() {
   if (!ui.dirty) return true;
@@ -777,6 +836,7 @@ async function activateNav(kind) {
   clearAllErrors();
   ui.nav = kind; ui.highlight = null; ui.cell = null; ui.tableId = null; ui.groupSel.clear(); ui.batch = null; ui.ack = false;
   ui.stepSel = null; ui.viewRev = null; ui.editEventId = null; ui.pauseSuggest = null; ui.prepExtra = 0;
+  ui.topicPane = "overview"; ui.subqId = null;
   renderAll();
   restoreNavScroll();
   if (prefersReducedMotion()) return;
@@ -791,6 +851,7 @@ function renderAll() {
   renderShell();
   renderMiddle(); renderRight();
   saveUi();
+  syncHistory();
 }
 
 /** 外壳：页头当前课题、侧栏（导航＋本页列表）、中间「＋新建」区、分区报错。 */
@@ -809,6 +870,7 @@ function renderShell() {
     if (ts.length) ui.taskId = ts[0].id;
   }
   document.querySelector(".app").classList.toggle("mode-knowledge", kz);
+  document.querySelector(".app").dataset.layout = layoutOf(ui.nav);
   document.querySelector(".app").classList.remove("nav-mini");
   $("#navrail").hidden = true;
   $("#nav").hidden = false;
@@ -874,11 +936,28 @@ function renderMiddle() {
   content.classList.remove("is-empty", "rich");
   content.classList.toggle("kzw", ui.nav === "knowledge");
   if (ui.nav === "topic") {
-    $("#mid-title").textContent = "课题";
     note.hidden = true;
-    content.innerHTML = state.topics.length
+    if (!state.topics.length) {
+      $("#mid-title").textContent = "课题";
+      content.innerHTML = emptyTopicGuideHtml();
+      content.classList.add("rich");
+      return;
+    }
+    if (ui.topicPane === "subq") {
+      const s = state.subquestions.find((x) => x.id === ui.subqId);
+      $("#mid-title").textContent = "子问题";
+      content.innerHTML = subqDetailHtml(state, ui);
+      content.classList.add("rich");
+      if (!s) ui.topicPane = "overview";
+      return;
+    }
+    const t = state.topics.find((x) => x.id === ui.topicId);
+    $("#mid-title").textContent = "课题";
+    content.innerHTML = t
       ? topicFlowHtml(state, ui) + topicOverviewHtml(state, ui) + subqBlockHtml(state, ui)
-      : emptyTopicGuideHtml();
+      : `<div class="empty-guide" data-empty="topic-pick"><div class="empty-seal" aria-hidden="true">课</div>
+          <div class="eyebrow">未选课题</div><h2>尚未选择课题</h2>
+          <p class="empty-sub">用顶栏「切换」选一个课题，或新建一个。</p></div>`;
     content.classList.add("rich");
     return;
   }
@@ -1818,6 +1897,7 @@ document.addEventListener("click", (ev) => {
   if (b.dataset.topic) ui.topicId = b.dataset.topic;
   if (b.dataset.paper) ui.paperId = b.dataset.paper;
   ui.nav = b.dataset.goto; ui.highlight = null; ui.cell = null; ui.groupSel.clear(); ui.batch = null; ui.ack = false;
+  ui.topicPane = "overview"; ui.subqId = null;
   renderAll();
 });
 document.addEventListener("click", (ev) => {
@@ -1836,12 +1916,57 @@ $("#nav").addEventListener("click", (ev) => {
   const b = ev.target.closest(".navitem"); if (!b || b.disabled) return;
   activateNav(b.dataset.nav);
 });
-// 页头「当前课题」（容器 #curtopic 常驻，用委托）
-$("#curtopic").addEventListener("change", (e) => {
-  if (e.target.id !== "topic-select") return;
-  if (!guardLeave()) { renderShell(); return; }
+// 页头「当前课题」（容器 #curtopic 常驻，用委托）：点击打开切换器弹层
+$("#curtopic").addEventListener("click", (ev) => {
+  if (!ev.target.closest("#topic-switch-btn")) return;
+  openTopicSwitcher();
+});
+
+// ── 顶栏课题切换器：可查找、可选、可新建；切换走未保存保护 ──
+function renderTopicSwitcherList() {
+  const q = $("#ts-search")?.value ?? "";
+  $("#ts-list").innerHTML = topicSwitcherListHtml(state, q, ui.topicId);
+}
+function openTopicSwitcher() {
+  renderTopicSwitcherList();
+  const n = $("#ts-new-name"), q = $("#ts-new-q");
+  if (n) n.value = ""; if (q) q.value = "";
+  const det = $("#topic-switcher .ts-newbox");
+  if (det && !state.topics.length) det.open = true;
+  openDialog($("#topic-switcher"), state.topics.length ? "#ts-search" : "#ts-new-name");
+  $("#topic-switch-btn")?.setAttribute("aria-expanded", "true");
+}
+function closeTopicSwitcher() {
+  closeDialog($("#topic-switcher"));
+  $("#topic-switch-btn")?.setAttribute("aria-expanded", "false");
+}
+function switchTopic(id) {
+  if (id === ui.topicId) { closeTopicSwitcher(); return; }
+  if (!guardLeave()) return;
   clearAllErrors();
-  ui.topicId = e.target.value; ui.assetId = null; ui.highlight = null; ui.groupSel.clear(); ui.batch = null; ui.protocolId = null; ui.executionId = null; ui.stepSel = null; ui.viewRev = null; ui.taskId = null; ui.chatId = null; ui.reportId = null; renderAll();
+  ui.topicId = id; ui.topicPane = "overview"; ui.subqId = null;
+  ui.assetId = null; ui.paperId = null; ui.highlight = null; ui.cell = null; ui.groupSel.clear(); ui.batch = null; ui.ack = false;
+  ui.protocolId = null; ui.executionId = null; ui.stepSel = null; ui.viewRev = null; ui.taskId = null; ui.chatId = null; ui.reportId = null;
+  closeTopicSwitcher();
+  renderAll();
+}
+$("#topic-switcher").addEventListener("input", (ev) => { if (ev.target.id === "ts-search") renderTopicSwitcherList(); });$("#topic-switcher").addEventListener("click", (ev) => {
+  if (ev.target.closest("#ts-close")) { closeTopicSwitcher(); return; }
+  const pick = ev.target.closest("[data-topicpick]");
+  if (pick) { switchTopic(pick.dataset.topicpick); return; }
+  if (ev.target.id === "ts-new-create") {
+    runBusy(ev.target, "创建课题", async () => {
+      const name = $("#ts-new-name").value.trim();
+      if (!name) { notify("mid", "课题名称不能为空"); return; }
+      const r = await api.createTopic(name, $("#ts-new-q").value);
+      setDirty(false);
+      const creating = ui.nav !== "topic";
+      ui.topicId = r.topicId; ui.topicPane = "overview"; ui.subqId = null;
+      if (creating) ui.nav = "topic";
+      closeTopicSwitcher();
+      await refresh(); setStatus("课题已创建");
+    });
+  }
 });
 // 创建课题 / 子问题（中间区随渲染重建，用委托）
 document.addEventListener("click", (ev) => {
@@ -1853,6 +1978,15 @@ document.addEventListener("click", (ev) => {
     if (!ui.topicId) { setError("mid", { panel: "mid", message: "请先创建或选择课题。", detail: "", retry: null }); return; }
     await api.createSubquestion(ui.topicId, $("#subq-q").value, $("#subq-kind").value); $("#subq-q").value = ""; setDirty(false); await refresh(); setStatus("子问题已添加");
   }); return; }
+  const subqOpen = ev.target.closest(".subq-open");
+  if (subqOpen) { openSubq(subqOpen.dataset.subq); return; }
+  if (ev.target.closest("[data-subq-back]")) { backFromSubq(); return; }
+  const relChat = ev.target.closest(".subq-rel-open");
+  if (relChat) {
+    if (!guardLeave()) return;
+    ui.nav = "chat"; ui.chatId = relChat.dataset.relChat; ui.topicPane = "overview"; ui.subqId = null;
+    renderAll(); setStatus("已打开相关会话"); return;
+  }
 });
 // 分区报错条：关闭 / 详情 / 重试
 document.addEventListener("click", (ev) => {
@@ -1954,7 +2088,7 @@ if (incident && targetOps.length) await api.appendEvent(ui.executionId, { kind: 
 });
 const dialogFocusReturns = new WeakMap();
 const dialogMotionIds = new WeakMap();
-const DIALOG_SELECTORS = ["#ai-drawer", "#drawer", "#navdrawer"];
+const DIALOG_SELECTORS = ["#ai-drawer", "#drawer", "#navdrawer", "#topic-switcher"];
 const isDialogOpen = (el) => Boolean(el && !el.hidden && !el.dataset.closing);
 function syncDialogScrim() {
   const scrim = $("#dialog-scrim");
@@ -2027,12 +2161,13 @@ function closeDialog(el) {
 $("#dialog-scrim").addEventListener("click", () => {
   if (isDialogOpen($("#ai-drawer"))) closeAiDrawer();
   else if (isDialogOpen($("#drawer"))) closeDialog($("#drawer"));
+  else if (isDialogOpen($("#topic-switcher"))) closeTopicSwitcher();
   else if (isDialogOpen($("#navdrawer"))) closeNavDrawer();
 });
 const DIALOG_FOCUSABLE = 'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])';
 document.addEventListener("keydown", (ev) => {
   if (ev.key !== "Tab") return;
-  const dialog = [...document.querySelectorAll("#ai-drawer:not([hidden]):not([data-closing]), #drawer:not([hidden]):not([data-closing]), #navdrawer:not([hidden]):not([data-closing])")].at(-1);
+  const dialog = [...document.querySelectorAll("#ai-drawer:not([hidden]):not([data-closing]), #drawer:not([hidden]):not([data-closing]), #topic-switcher:not([hidden]):not([data-closing]), #navdrawer:not([hidden]):not([data-closing])")].at(-1);
   if (!dialog) return;
   const items = [...dialog.querySelectorAll(DIALOG_FOCUSABLE)].filter((el) => el.getClientRects().length);
   if (!items.length) { ev.preventDefault(); dialog.focus(); return; }
@@ -2069,6 +2204,7 @@ $("#material-list").addEventListener("click", (ev) => {
     clearAllErrors();
     ui.topicId = el.dataset.topicpick; ui.assetId = null; ui.highlight = null; ui.groupSel.clear(); ui.batch = null;
     ui.protocolId = null; ui.executionId = null; ui.stepSel = null; ui.viewRev = null; ui.taskId = null; ui.chatId = null; ui.reportId = null;
+    ui.topicPane = "overview"; ui.subqId = null;
     renderAll(); return;
   }
   if (el.dataset.paperid) {
@@ -2534,6 +2670,7 @@ document.addEventListener("keydown", (e) => {
   let closed = false;
   if (isDialogOpen($("#drawer"))) { closeDialog($("#drawer")); closed = true; }
   if (isDialogOpen($("#ai-drawer"))) { closeAiDrawer(); closed = true; }
+  if (isDialogOpen($("#topic-switcher"))) { closeTopicSwitcher(); closed = true; }
   if (isDialogOpen($("#navdrawer"))) { closeNavDrawer(); closed = true; }
   const tm = $("#table-max"); if (tm) { tm.remove(); closed = true; }
   if (closed) e.preventDefault();
