@@ -14,8 +14,9 @@ import { contentHash } from "../store.ts";
 import { AppError, MAX_IMPORT_BYTES, makeAsset, assertLegacyCardConsumerUsable, isStructuredShell } from "./app.ts";
 import {
   createKnowledgeStatement, currentViewId, describeItem, freezeKnowledge, knowledgeItemConfirmedAt,
-  knowledgeItemGate, readKnowledge, readKnowledgeVersion, shellItemRefs,
+  knowledgeItemGate, knowledgeSourceFragment, readKnowledge, readKnowledgeVersion, shellItemRefs,
 } from "./knowledge-base.ts";
+import type { KnowledgeSourceKind } from "./knowledge-base.ts";
 import { exportKnowledge } from "./knowledge-export.ts";
 import { canonicalHash, knowledgeRef as makeKnowledgeRef } from "../domain/knowledge.ts";
 import type { ItemPayload, KnowledgeRef } from "../domain/knowledge.ts";
@@ -738,11 +739,15 @@ export interface KnowledgeAiInputRequest {
   readonly subquestionId?: string;
   readonly mode?: "formal" | "explore";
   readonly selectedRefs?: { kind: "item"; id: string; revision: number }[];
+  /** E8：其余模块对象（方案/模板/执行/样品/分析结果/报告块/已采纳对话）也可被 AI 选择器读取。 */
+  readonly sourceRefs?: { kind: KnowledgeSourceKind; id: string }[];
   readonly purpose: string;
   readonly model: string;
   readonly promptVersion?: string;
   readonly budgetBytes?: number;
 }
+
+export interface KnowledgeAiSourceEntry { readonly kind: KnowledgeSourceKind; readonly id: string; readonly label: string; readonly marker: string; readonly text: string; readonly sourceRef: { kind: string; id: string; version: string; contentHash: string } }
 
 export interface KnowledgeAiInputEntry { readonly ref: { kind: "item"; id: string; revision: number }; readonly text: string; readonly marker: string }
 
@@ -750,6 +755,7 @@ export interface KnowledgeAiInput {
   readonly snapshotHash: string;
   readonly scope: { topicId: string; subquestionId?: string; mode: "formal" | "explore" };
   readonly core: KnowledgeAiInputEntry[];
+  readonly sourceEntries: KnowledgeAiSourceEntry[];
   readonly optional: { ref: { kind: "item"; id: string; revision: number }; text: string; reason: string }[];
   readonly actualPayload: string;
   readonly omitted: { ref: string; reason: string }[];
@@ -809,9 +815,19 @@ export function buildKnowledgeAiInput(state: LocusState, req: KnowledgeAiInputRe
     return { ref: makeKnowledgeRef("item", e.id, e.revision), text: describeItem(state, e.payload as never, e.revision).slice(0, 200), reason: mode === "formal" ? "未选中；选中后经门槛复核才进入核心" : `未选中（当前审核：${p.review.status}）` };
   });
 
+  // E8：其余模块对象（类型随读随标；不可用者（未采纳提案/未确认 AI 草稿）不得进入）
+  const sourceEntries: KnowledgeAiSourceEntry[] = [];
+  for (const sr of req.sourceRefs ?? []) {
+    const frag = (() => { try { return knowledgeSourceFragment(state, sr.kind, sr.id); } catch { return null; } })();
+    if (!frag) { omitted.push({ ref: `${sr.kind} ${sr.id}`, reason: "对象不存在" }); continue; }
+    if (!frag.usable) { omitted.push({ ref: `${sr.kind} ${sr.id}`, reason: `不可用：${frag.note}` }); continue; }
+    sourceEntries.push({ kind: sr.kind, id: sr.id, label: frag.label, marker: `[${frag.label}]`, text: frag.excerpt, sourceRef: frag.sourceRef });
+  }
+
   const header = [`研究目的：${purpose}`, `视角：${mode === "formal" ? "正式（只用已确认）" : "探索（含待审，带标记）"}`, `课题：${topic.name}`].join("\n");
   const body = core.map((c) => `${c.marker ? `${c.marker} ` : ""}【${c.ref.id} 第 ${c.ref.revision} 版】\n${c.text}`).join("\n\n");
-  const actualPayload = `${header}\n\n核心（${core.length} 项）：\n${body}`;
+  const srcBody = sourceEntries.map((x) => `${x.marker}【${x.kind} ${x.id} ${x.sourceRef.version}】\n${x.text}`).join("\n\n");
+  const actualPayload = `${header}\n\n核心（${core.length} 项）：\n${body}${sourceEntries.length ? `\n\n外部对象（${sourceEntries.length} 项）：\n${srcBody}` : ""}`;
   const bytes = Buffer.byteLength(actualPayload, "utf8");
   const budgetBytes = req.budgetBytes ?? AI_BUDGET_DEFAULT;
   const requiresShrink = bytes > budgetBytes;
@@ -824,6 +840,7 @@ export function buildKnowledgeAiInput(state: LocusState, req: KnowledgeAiInputRe
   const snapshotHash = canonicalHash({
     scope: { topicId: req.topicId, subquestionId: req.subquestionId ?? null, mode },
     refs: core.map((c) => `${c.ref.id}@${c.ref.revision}`),
+    sourceRefs: sourceEntries.map((x) => `${x.kind}:${x.id}@${x.sourceRef.version}`),
     payload: actualPayload,
     promptVersion: req.promptVersion ?? "knowledge_input/v1",
   });
@@ -831,12 +848,13 @@ export function buildKnowledgeAiInput(state: LocusState, req: KnowledgeAiInputRe
     wrapper: "locus-knowledge-input/v1 (standalone-json)",
     purpose, mode, topic: { id: req.topicId, name: topic.name }, subquestionId: req.subquestionId ?? null,
     items: core.map((c) => ({ ref: { kind: "item", id: c.ref.id, revision: c.ref.revision }, payload: (byId.get(c.ref.id)!.payload) })),
+    sources: sourceEntries.map((x) => ({ ref: x.sourceRef, payload: { kind: x.kind, id: x.id, text: x.text } })),
     snapshotHash, notes,
   };
   return {
     snapshotHash,
     scope: { topicId: req.topicId, ...(req.subquestionId ? { subquestionId: req.subquestionId } : {}), mode },
-    core, optional, actualPayload, omitted, truncated, requiresShrink, notes,
+    core, sourceEntries, optional, actualPayload, omitted, truncated, requiresShrink, notes,
     counts: { coreItems: core.length, bytes, budgetBytes }, externalFile,
   };
 }
@@ -846,11 +864,28 @@ export interface AiReferenceCheck { readonly ref: string; readonly status: "vali
 /** T43：模型返回的引用必须落在本次输入快照内；不在即 invalid（不得自动写入正式报告/知识）。 */
 export function validateAiReferences(input: KnowledgeAiInput, refs: unknown[]): AiReferenceCheck[] {
   const allowed = new Set(input.core.map((c) => `${c.ref.id}@${c.ref.revision}`));
+  const allowedSources = new Set(input.sourceEntries.map((x) => `${x.kind}:${x.id}@${x.sourceRef.version}`));
+  const knownSourceIds = new Map(input.sourceEntries.map((x) => [`${x.kind}:${x.id}`, x.sourceRef.version]));
   return (Array.isArray(refs) ? refs : []).map((r) => {
     const o = (r ?? {}) as Record<string, unknown>;
     const id = typeof o.id === "string" ? o.id : typeof o.localId === "string" ? o.localId : "";
+    const kind = typeof o.kind === "string" ? o.kind : "item";
+    const version = typeof o.version === "string" ? o.version : null;
     const revision = typeof o.revision === "number" ? o.revision : null;
     if (!id) return { ref: "(缺 id)", status: "invalid" as const, reason: "引用缺 id" };
+    // 外部对象（E8 各类型）：必须给 kind+version 且落在本次输入快照内
+    if (kind !== "item") {
+      if (!version) {
+        const expected = knownSourceIds.get(`${kind}:${id}`);
+        return expected
+          ? { ref: `${kind}:${id}（未给版本）`, status: "invalid" as const, reason: "必须给出固定版本（不允许 latest 兜底）" }
+          : { ref: `${kind}:${id}`, status: "invalid" as const, reason: "not_in_snapshot" };
+      }
+      const key = `${kind}:${id}@${version}`;
+      return allowedSources.has(key)
+        ? { ref: key, status: "valid" as const, reason: "在本输入快照内（外部对象）" }
+        : { ref: key, status: "invalid" as const, reason: "not_in_snapshot（不存在或不属本次输入）" };
+    }
     if (revision === null) {
       const ok = input.core.some((c) => c.ref.id === id);
       return ok ? { ref: `${id}（未给版本）`, status: "invalid" as const, reason: "必须给出固定版本（不允许 latest 兜底）" } : { ref: id, status: "invalid" as const, reason: "not_in_snapshot" };

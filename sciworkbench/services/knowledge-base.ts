@@ -75,15 +75,28 @@ export function sourcePayload(state: LocusState, kind: SourceKind, id: string): 
   }
 }
 
-/** 某类型当前 SourceRef 的版本标识：业务修订 r:N；无修订的纳管对象 k:N；不可变原件 sha256:HASH。 */
-function currentVersion(kind: SourceKind, obj: Record<string, unknown>): string {
+/**
+ * 某类型当前 SourceRef 的版本标识（§4.2）：业务修订 r:N；无业务 revision 的纳管对象 k:N；
+ * 不可变原件 sha256:HASH。
+ *
+ * k:N 必须随内容变化**递增**：否则「先归档 k:1 → 更正来源 → 再次纳管」会复用同一版本号而内容不同，
+ * 新引用解析时命中旧归档 → content_mismatch（会毁结论）。内容与某次归档一致时复用该版本号，避免重复归档。
+ */
+function currentVersion(state: LocusState, kind: SourceKind, id: string, obj: Record<string, unknown>): string {
   if (kind === "asset") {
     const h = typeof obj.hash === "string" ? obj.hash : contentHash(String(obj.text ?? ""));
     return `sha256:${h}`;
   }
-  if (kind === "attachment") return "k:1";
   if (typeof obj.revision === "number") return `r:${obj.revision}`;
-  return "k:1";
+  const hash = canonicalHash(obj);
+  const archived = state.knowledge.sourceVersions.filter((v) => v.sourceRef.kind === kind && v.sourceRef.id === id);
+  const same = archived.find((v) => v.sourceRef.contentHash === hash);
+  if (same) return same.sourceRef.version;
+  const maxK = archived.reduce((m, v) => {
+    const n = /^k:(\d+)$/.exec(v.sourceRef.version);
+    return n ? Math.max(m, Number(n[1])) : m;
+  }, 0);
+  return `k:${maxK + 1}`;
 }
 
 /** 求某业务对象当前 SourceRef（version + contentHash）。对象不存在返回 null。 */
@@ -91,7 +104,7 @@ export function currentSourceRef(state: LocusState, kind: SourceKind, id: string
   const payload = sourcePayload(state, kind, id);
   if (payload === undefined || payload === null) return null;
   const obj = payload as Record<string, unknown>;
-  return makeSourceRef(kind, id, currentVersion(kind, obj), canonicalHash(payload));
+  return makeSourceRef(kind, id, currentVersion(state, kind, id, obj), canonicalHash(payload));
 }
 
 /** 纳管：同键只追加一次；已存在即复用，不覆盖。 */
@@ -2592,6 +2605,39 @@ export function knowledgePipelineStatus(state: LocusState, runId: string): Knowl
 
 export type KnowledgeSourceKind = "protocol" | "template" | "execution" | "sample" | "result" | "report_block" | "chat_proposal";
 
+export interface PinnedRefResolution {
+  readonly ref: { kind: string; id: string; version: string };
+  readonly status: "ok" | "unavailable";
+  readonly payload?: unknown;
+  readonly reason?: string;
+}
+
+/**
+ * 解析「当时引用的固定版本」（§10 E8 报告块等）：只读已归档版本，**不解析为最新**；取不到即明确不可用。
+ * kind 支持业务来源类型；`snapshot` 走本库快照；`note` 为旧版自由文字（无稳定对象）。
+ */
+export function resolvePinnedRefs(state: LocusState, refs: { kind: string; id: string; version: string }[]): PinnedRefResolution[] {
+  return refs.map((r) => {
+    if (r.kind === "note") return { ref: r, status: "unavailable" as const, reason: "旧版自由文字来源：无稳定对象，仅存于历史记录" };
+    if (r.kind === "snapshot") {
+      const snap = state.knowledge.snapshots.find((x) => x.snapshotId === r.id);
+      return snap
+        ? { ref: r, status: "ok" as const, payload: { snapshotId: snap.snapshotId, contentHash: snap.contentHash, coverage: snap.coverage } }
+        : { ref: r, status: "unavailable" as const, reason: "该快照不在本库（不重新生成）" };
+    }
+    const hit = state.knowledge.sourceVersions.find((v) => v.sourceRef.kind === (r.kind as SourceKind) && v.sourceRef.id === r.id && v.sourceRef.version === r.version);
+    if (hit) return { ref: r, status: "ok" as const, payload: hit.payload };
+    return { ref: r, status: "unavailable" as const, reason: "该版本未归档：不解析为最新版" };
+  });
+}
+
+/** E8 各类型对象的 AI 可读片段（供 AI 选择器读取；label/version/excerpt 与适配视图同源）。 */
+export function knowledgeSourceFragment(state: LocusState, kind: KnowledgeSourceKind, id: string, pinned?: SourceRef): { label: string; version: string; excerpt: string; usable: boolean; note: string; sourceRef: SourceRef } {
+  const a = knowledgeSourceAdapter(state, kind, id, pinned);
+  if (!a) throw new AppError(404, `${SRC_LABEL[kind]}不存在：${id}`);
+  return { label: `${a.label}${a.usable ? "" : "（不可用）"}`, version: a.sourceRef.version, excerpt: a.readText, usable: a.usable, note: a.usableNote, sourceRef: a.sourceRef };
+}
+
 export interface SourceKnowledgeAdapter {
   readonly kind: KnowledgeSourceKind;
   readonly id: string;
@@ -2758,6 +2804,25 @@ export function listSourceAdapters(state: LocusState, opts: { topicId?: string; 
     if (a && (!opts.topicId || a.topicIds.includes(opts.topicId))) out.push(a);
   }
   return out;
+}
+
+/**
+ * 采纳「已采纳的对话提案」为待审知识陈述（§10 E8：聊天只将明确采纳内容进入知识主题）。
+ * 必经来源守卫：未采纳 → 422 source_not_usable；采纳事件依据写入来源引用；结果恒为待审。
+ */
+export function adoptChatProposalToKnowledge(
+  state: LocusState,
+  input: { topicId: string; proposalRef: string; text: string; nature?: ItemNature; scopeText?: string },
+): { state: LocusState; itemId: string; review: string; sourceRef: SourceRef } {
+  const adapter = knowledgeSourceAdapter(state, "chat_proposal", input.proposalRef);
+  if (!adapter) throw new AppError(404, `对话提案不存在：${input.proposalRef}`);
+  assertSourceUsableForKnowledge(adapter);
+  const st = createKnowledgeStatement(state, {
+    topicId: input.topicId, text: input.text, nature: input.nature ?? "to_verify", createdBy: "model",
+    ...(input.scopeText ? { scopeText: input.scopeText } : {}),
+    sourceRefs: [adapter.sourceRef],
+  });
+  return { state: st.state, itemId: st.item.id, review: st.item.payload.review.status, sourceRef: adapter.sourceRef };
 }
 
 /** 进知识前置守卫：未采纳的对话提案、未确认的 AI 草稿不得进入正式知识（§10 E8）。 */

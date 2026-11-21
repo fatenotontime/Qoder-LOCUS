@@ -14,7 +14,7 @@ import {
   sourceRef as makeSourceRef, knowledgeRef as makeKnowledgeRef, assertKnowledgeShape,
 } from "../domain/knowledge.ts";
 import { importMeasurements, reviewTable, createTopic, makeAsset, addManualCard, reviewCard, createComparison, AppError } from "../services/app.ts";
-import { chatScopeSnapshot, createAnalysisTask, createChat, resolveFragment } from "../services/analysis.ts";
+import { buildKnowledgeAiInput, validateAiReferences, chatScopeSnapshot, createAnalysisTask, createChat, resolveFragment } from "../services/analysis.ts";
 import { buildWholeLibraryPackage, inspectLibraryJson, sha256 } from "../services/export.ts";
 import {
   archiveSourceVersion, currentSourceRef, readSourceVersion, resolveSourceVersion, sourcePayload,
@@ -25,6 +25,7 @@ import {
   createKnowledgeMapping, updateKnowledgeMapping, reviewKnowledgeMapping, createKnowledgeComparison, legacyComparisonViews,
   effectiveCurrentJudgments, freezeKnowledge, knowledgeAccess, assertKnowledgeAccess, upsertSourcePolicy,
   buildKnowledgeContainer, knowledgePipelineStatus, knowledgeSourceAdapter, listSourceAdapters, assertSourceUsableForKnowledge,
+  resolvePinnedRefs, knowledgeSourceFragment, adoptChatProposalToKnowledge,
   readSnapshotKnowledge, resolveSnapshotToken, readSnapshotDatasetRows,
 } from "../services/knowledge-base.ts";
 import { exportKnowledge, buildKnowledgePackage, snapshotCsv, snapshotWiki, snapshotSchemaFiles, safeFileName } from "../services/knowledge-export.ts";
@@ -1420,4 +1421,90 @@ test("T46f 对话提案：未采纳不得进知识；明确采纳后可用；AI 
   const list = listSourceAdapters(f.state, { topicId: f.topicId });
   assert.ok(list.length >= 6, "逐类清单可枚举");
   assert.ok(list.some((x) => x.kind === "report_block") && list.some((x) => x.kind === "chat_proposal"));
+});
+// ══ E8-A 修复回归（对应用户复现的四条问题）══════════════════════════════
+
+test("T46g 来源更正后再次纳管：新引用可解析（不再 content_mismatch），旧版本仍可读", () => {
+  const f = seedE8();
+  // 首次纳管
+  const ref1 = currentSourceRef(f.state, "execution", "ex_user")!;
+  assert.equal(ref1.version, "k:1", "无业务 revision：首个纳管版本 k:1");
+  let s2: LocusState = { ...f.state, knowledge: archiveSourceVersion(f.state.knowledge, ref1, sourcePayload(f.state, "execution", "ex_user")) };
+  // 更正来源
+  s2 = { ...s2, executions: s2.executions.map((x) => (x.id === "ex_user" ? { ...x, events: [...x.events, { id: "ev9", at: "t", recordedAt: "t", backfilled: false, kind: "note", text: "补记湿度" }] } : x)) };
+  const ref2 = currentSourceRef(s2, "execution", "ex_user")!;
+  assert.equal(ref2.version, "k:2", "内容变化 → 纳管版本递增（不再复用 k:1）");
+  assert.notEqual(ref2.contentHash, ref1.contentHash);
+  // 再次纳管：新引用可解析，不再 content_mismatch
+  s2 = { ...s2, knowledge: archiveSourceVersion(s2.knowledge, ref2, sourcePayload(s2, "execution", "ex_user")) };
+  assert.equal(resolveSourceVersion(s2, s2.knowledge, ref2).status, "ok", "更正后的新引用可解析");
+  assert.equal(resolveSourceVersion(s2, s2.knowledge, ref1).status, "ok", "旧 k:1 归档仍可读（历史不动）");
+  // 内容未变时复用同一版本号，避免重复归档
+  const ref2b = currentSourceRef(s2, "execution", "ex_user")!;
+  assert.equal(ref2b.version, "k:2");
+});
+
+test("T46h 未采纳的对话提案不得进知识（真实入口）；已采纳只落待审并留采纳依据", () => {
+  const f = seedE8();
+  const denied = (() => { try { adoptChatProposalToKnowledge(f.state, { topicId: f.topicId, proposalRef: "ch1/m1/pn_unadopted", text: "补记温度" }); return null; } catch (e) { return e as { status: number; details?: { code?: string } }; } })();
+  assert.ok(denied, "未采纳提案必须被拒");
+  assert.equal(denied!.status, 422);
+  assert.equal(denied!.details?.code, "source_not_usable");
+
+  const ok = adoptChatProposalToKnowledge(f.state, { topicId: f.topicId, proposalRef: "ch1/m2/pn_adopted", text: "报告待验证项：发芽率需复核" });
+  assert.equal(ok.review, "pending", "采纳只落待审，不自动转正式");
+  const item = ok.state.knowledge.items.find((i) => i.id === ok.itemId)!;
+  const p = item.payload as { sourceRefs: { kind: string; id: string; version: string }[]; origin: { sourceClass: string } };
+  assert.ok(p.sourceRefs.some((r) => r.kind === "chat_proposal"), "留采纳事件依据（提案来源引用）");
+  assert.equal(p.origin.sourceClass, "model_suggestion", "AI 产出不冒充人工陈述");
+});
+
+test("T46i 报告块 pinned refs 真解析：读归档当时版本；取不到给明确原因（note/snapshot 特例）", () => {
+  const f = seedE8();
+  const { a, archived } = pin(f.state, "report_block", "rp1#bk1");
+  assert.deepEqual(a.pinnedRefs, [{ kind: "result", id: "rs1", version: "r:1" }]);
+  // 先按当时版本纳管该结果
+  const resRef = currentSourceRef(archived, "result", "rs1")!;
+  let s2: LocusState = { ...archived, knowledge: archiveSourceVersion(archived.knowledge, resRef, sourcePayload(archived, "result", "rs1")) };
+  const resolved = resolvePinnedRefs(s2, a.pinnedRefs);
+  assert.equal(resolved[0].status, "ok", "当时版本已归档 → 可解析");
+  assert.ok((resolved[0].payload as { method: string }).method.includes("线性拟合"), "解析到的是当时版本内容");
+  // 未归档的版本 → 明确不可用（不解析为最新）
+  const miss = resolvePinnedRefs(s2, [{ kind: "measurement", id: "me_x", version: "r:9" }, { kind: "note", id: "n1", version: "-" }, { kind: "snapshot", id: "ks_missing", version: "-" }]);
+  assert.deepEqual(miss.map((x) => x.status), ["unavailable", "unavailable", "unavailable"]);
+  assert.ok(miss[0].reason!.includes("不解析为最新版"));
+  assert.ok(miss[1].reason!.includes("无稳定对象"));
+  assert.ok(miss[2].reason!.includes("快照不在本库"));
+  // 更正结果后再解析旧版本，仍是当时内容
+  const corrected: LocusState = { ...s2, analysisResults: s2.analysisResults.map((x) => (x.id === "rs1" ? { ...x, revision: 2, method: "多项式拟合" } : x)) };
+  assert.ok((resolvePinnedRefs(corrected, a.pinnedRefs)[0].payload as { method: string }).method.includes("线性拟合"), "旧引用解析当时版本，不随更正漂移");
+});
+
+test("T46j AI 读取：E8 各类型对象可进 AI 输入；未采纳提案被拒；引用校验认外部对象", () => {
+  const f = seedE8();
+  const input = buildKnowledgeAiInput(f.state, {
+    topicId: f.topicId, purpose: "汇总本课题执行与结果",
+    sourceRefs: [
+      { kind: "protocol", id: "pr_user" }, { kind: "execution", id: "ex_rec" }, { kind: "sample", id: "sp_pub" },
+      { kind: "result", id: "rs1" }, { kind: "report_block", id: "rp1#bk1" }, { kind: "chat_proposal", id: "ch1/m1/pn_unadopted" },
+    ],
+  });
+  const kinds = input.sourceEntries.map((x) => x.kind).sort();
+  assert.deepEqual(kinds, ["execution", "protocol", "report_block", "result", "sample"], "五类可读对象进入输入");
+  assert.ok(input.omitted.some((o) => o.ref.includes("chat_proposal") && o.reason.includes("不可用")), "未采纳提案被拒并说明原因");
+  assert.ok(input.actualPayload.includes("[执行"), "类型标记进入 payload");
+  assert.ok(input.actualPayload.includes("外部对象（5 项）"));
+  // 引用校验：外部对象须给 kind+version 且在快照内
+  const ex = input.sourceEntries.find((x) => x.kind === "protocol")!;
+  const checks = validateAiReferences(input, [
+    { kind: "protocol", id: "pr_user", version: ex.sourceRef.version },
+    { kind: "protocol", id: "pr_rec", version: ex.sourceRef.version },
+    { kind: "protocol", id: "pr_user" },
+  ]);
+  assert.deepEqual(checks.map((c) => c.status), ["valid", "invalid", "invalid"]);
+  assert.ok(checks[1].reason.includes("not_in_snapshot"));
+  assert.ok(checks[2].reason.includes("固定版本"));
+  // 片段读取与适配同源
+  const frag = knowledgeSourceFragment(f.state, "sample", "sp_pub");
+  assert.ok(frag.excerpt.includes("公开数据") && frag.usable);
 });
