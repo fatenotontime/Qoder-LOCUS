@@ -8,6 +8,7 @@
  */
 import type { LocusState, ObjectRef } from "../store.ts";
 import { AppError, assertLegacyCardConsumerUsable, isStructuredShell } from "./app.ts";
+import { shellAllItemsConfirmed } from "./knowledge-base.ts";
 import { buildNetwork, nodeForRef, type NetEdge, type NetKind, type NetNode } from "./references.ts";
 
 /** 可加入上下文的可选对象类型（以 resolveFragment 支持者为准）。 */
@@ -116,7 +117,8 @@ export function buildContextMap(state: LocusState, opts: { topicId: string; subq
     // 默认已选＝已入候选知识卡（新壳只作上下文呈现，不参与默认勾选与后续计算）
     for (const c of state.cards) {
       if (inTopic(state, topicId, "card", c.id) !== true) continue;
-      if (isStructuredShell(c)) { put({ kind: "card", id: c.id }, "optional"); continue; }
+      // §4.6.9：分项未全部确认的壳只呈现、不默认勾选；全部确认后与已确认旧卡同等参与默认选择。
+      if (isStructuredShell(c) && !shellAllItemsConfirmed(state, c)) { put({ kind: "card", id: c.id }, "optional"); continue; }
       if (c.audit !== "confirm") continue;
       put({ kind: "card", id: c.id }, "selected");
     }
@@ -137,11 +139,12 @@ export function buildContextMap(state: LocusState, opts: { topicId: string; subq
   const kept = new Map<string, MapNode>();
   const addNode = (n: NetNode, role: MapRole) => {
     if (kept.has(n.key)) return;
-    const shell = n.kind === "card" && isStructuredShell(state.cards.find((c) => c.id === n.id));
+    const shellCard = n.kind === "card" ? state.cards.find((c) => c.id === n.id) : undefined;
+    const shellLocked = isStructuredShell(shellCard) && !shellAllItemsConfirmed(state, shellCard!);
     kept.set(n.key, {
       key: n.key, kind: n.kind, id: n.id, label: n.label, version: n.version, external: n.external,
-      role, selectable: !shell && (role === "selected" || role === "optional"),
-      gaps: [...(extraGaps.get(n.key) ?? []), ...pendingGaps(n), ...(shell ? [GAP_STRUCTURED_REQUIRED] : [])],
+      role, selectable: !shellLocked && (role === "selected" || role === "optional"),
+      gaps: [...(extraGaps.get(n.key) ?? []), ...pendingGaps(n), ...(shellLocked ? [GAP_STRUCTURED_REQUIRED] : [])],
     });
   };
   for (const [key, role] of roles) {

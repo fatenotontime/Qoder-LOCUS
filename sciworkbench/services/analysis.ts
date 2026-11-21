@@ -11,7 +11,9 @@ import type {
   ChatSessionRecord, ChatMessage, ChatProposal,
 } from "../store.ts";
 import { contentHash } from "../store.ts";
-import { AppError, MAX_IMPORT_BYTES, makeAsset, assertLegacyCardConsumerUsable } from "./app.ts";
+import { AppError, MAX_IMPORT_BYTES, makeAsset, assertLegacyCardConsumerUsable, isStructuredShell } from "./app.ts";
+import { describeItem, knowledgeItemConfirmedAt, knowledgeItemLiveStatus, readKnowledgeVersion, shellItemRefs } from "./knowledge-base.ts";
+import type { ItemPayload, KnowledgeRef } from "../domain/knowledge.ts";
 import { effectiveSnapshot, appendEvent } from "./experiment.ts";
 
 const now = () => new Date().toISOString();
@@ -26,16 +28,29 @@ function cap(s: string): string {
   return s.length > EXCERPT_CAP ? `${s.slice(0, EXCERPT_CAP)}…（摘录截断，全文见原件）` : s;
 }
 
-const REF_KINDS = ["execution", "protocol", "measurement", "table", "card", "asset", "subquestion"];
+const REF_KINDS = ["execution", "protocol", "measurement", "table", "card", "asset", "subquestion", "item"];
 
+/** 知识分项引用必须固定版本（§4.2）：审核与摘录都按那一版判定，不用最新版兜底。 */
 function cleanRef(v: unknown): ObjectRef {
   const o = (v ?? {}) as Record<string, unknown>;
   const kind = str(o.kind);
   const id = str(o.id);
   if (!REF_KINDS.includes(kind)) throw new AppError(422, `不支持的上下文对象类型：${kind}`);
   if (!id) throw new AppError(422, "上下文对象缺少 id。");
+  if (kind === "item") {
+    const revision = o.revision;
+    if (typeof revision !== "number" || !Number.isInteger(revision) || revision < 1) {
+      throw new AppError(422, `知识项引用必须固定版本：item ${id} 缺少 revision。`, { code: "revision_required" });
+    }
+    return { kind: "item", id, revision };
+  }
+  if (o.revision !== undefined) throw new AppError(422, `只有知识项引用需要 revision：${kind} ${id} 不接受。`);
   return { kind: kind as ObjectRef["kind"], id };
 }
+
+/** 去重键：同 kind/id 不同 revision 不能合并（§4.2）。 */
+const refKeyOf = (r: ObjectRef): string => (r.kind === "item" ? `item:${r.id}@r${r.revision ?? 0}` : `${r.kind}:${r.id}`);
+const itemRef = (r: ObjectRef): KnowledgeRef => ({ kind: "item", id: r.id, revision: r.revision ?? 0 });
 
 /** 候选项统一契约（创建与保存候选共用）：{ref:{kind,id}, included}；included:false 保留为未选候选。 */
 function cleanOptionalItem(state: LocusState, v: unknown): { ref: ObjectRef; included: boolean } {
@@ -49,6 +64,16 @@ function cleanOptionalItem(state: LocusState, v: unknown): { ref: ObjectRef; inc
 /** 锁5（选择边界）：知识卡须人工确认才可被选用；核心与候选同查。取消选择（included:false）不经过此守卫。
  *  新契约阅读壳（§4.6.10）：分析上下文尚未接入分项选择，遇到即明确拒绝，不退回概述文本。 */
 function assertSelectable(state: LocusState, ref: ObjectRef): void {
+  if (ref.kind === "item") {
+    const payload = readKnowledgeVersion(state.knowledge, itemRef(ref)) as ItemPayload | null;
+    if (!payload) throw new AppError(422, `知识项版本不存在：item ${ref.id} 第 ${ref.revision ?? 0} 版（不退回最新版）。`, { code: "ref_unresolvable" });
+    // 固定版本决定读到的内容；能否进入正式上下文再看该项现在的审核状态（§4.7 分项复检）。
+    const live = knowledgeItemLiveStatus(state, itemRef(ref));
+    if (live !== "confirmed") {
+      throw new AppError(422, `知识项不是已确认状态（现在：${live ?? "已删除"}），不能进入上下文：${payload.text.slice(0, 30)}`, { code: "item_not_confirmed" });
+    }
+    return;
+  }
   if (ref.kind !== "card") return;
   const c = state.cards.find((x) => x.id === ref.id);
   assertLegacyCardConsumerUsable(c, "分析上下文");
@@ -57,6 +82,8 @@ function assertSelectable(state: LocusState, ref: ObjectRef): void {
 
 /** 锁5（冻结前统一复检）：送 AI 的上下文中不得含未确认知识卡——兜底旧任务遗留的未审候选。 */
 function assertCardsConfirmed(state: LocusState, refs: ObjectRef[]): void {
+  const badItems = refs.filter((r) => r.kind === "item").filter((r) => !knowledgeItemConfirmedAt(state, itemRef(r)));
+  if (badItems.length) throw new AppError(422, `上下文含未确认的知识项（${badItems.length} 个），请先逐项确认或取消选择。`, { code: "item_not_confirmed", refs: badItems.map(itemRef) });
   for (const r of refs) if (r.kind === "card") assertLegacyCardConsumerUsable(state.cards.find((c) => c.id === r.id), "分析上下文");
   const bad = refs.filter((r) => r.kind === "card").map((r) => state.cards.find((c) => c.id === r.id))
     .filter((c): c is NonNullable<typeof c> => !!c && c.audit !== "confirm");
@@ -116,7 +143,27 @@ export function resolveFragment(state: LocusState, ref: ObjectRef): ContextFragm
       if (!c) throw new AppError(404, `知识卡不存在：${ref.id}`);
       // §4.6.3：新壳 extracted 为空结构，不能读成「没数据就用概述」；此处 fail closed。
       assertLegacyCardConsumerUsable(c, "上下文摘录");
+      if (isStructuredShell(c)) {
+        // §4.6.9：整壳选择只在全部分项已确认后展开，逐项呈现（不拿 rawText 概述冒充内容）。
+        const refs = shellItemRefs(state, c);
+        const body = refs.map((r) => {
+          const p = readKnowledgeVersion(state.knowledge, r) as ItemPayload | null;
+          return p ? `【第 ${r.revision} 版】` + describeItem(state, p, r.revision) : `【${r.id}】版本不可读`;
+        }).join("\n\n");
+        return { ...base, label: `知识卡（结构化）· ${(c.rawText || c.note).slice(0, 40)}`, version: `${refs.length} 项·已确认`, excerpt: cap(body) };
+      }
       return { ...base, label: `知识卡 · ${c.rawText.slice(0, 40)}`, version: `核对 ${c.audit}`, excerpt: cap(`${c.rawText}${c.scope ? `\n适用范围：${c.scope}` : ""}${c.interpretation ? `\n作者解释：${c.interpretation}` : ""}${c.secondaryCitation ? "\n（二手转引）" : ""}`) };
+    }
+    case "item": {
+      // 固定版本读取：旧版从 history 取，取不到就拒绝，绝不用 latest 冒充（§4.2）。
+      const payload = readKnowledgeVersion(state.knowledge, itemRef(ref)) as ItemPayload | null;
+      if (!payload) throw new AppError(422, `知识项版本不存在：item ${ref.id} 第 ${ref.revision ?? 0} 版（不退回最新版）。`, { code: "ref_unresolvable" });
+      return {
+        ...base,
+        label: `知识项 · ${payload.text.slice(0, 40)}`,
+        version: `第${ref.revision ?? 0}版 · ${payload.review.status}`,
+        excerpt: cap(describeItem(state, payload, ref.revision ?? 0)),
+      };
     }
     case "asset": {
       const a = state.assets.find((x) => x.id === ref.id);
@@ -147,10 +194,10 @@ export function createAnalysisTask(
     throw new AppError(422, "分析任务的核心须来自执行或测量数据（方案/知识卡可作补充核心）。");
   }
   for (const r of core) { resolveFragment(state, r); assertSelectable(state, r); }
-  const coreKeys = new Set(core.map((r) => `${r.kind}:${r.id}`));
+  const coreKeys = new Set(core.map(refKeyOf));
   // 与核心重复的候选静默去重（前端必选自动推导可能与「其他可选」勾选重叠）。
   const optional = (input.optional ?? []).map((v) => cleanOptionalItem(state, v))
-    .filter((o) => !coreKeys.has(`${o.ref.kind}:${o.ref.id}`));
+    .filter((o) => !coreKeys.has(refKeyOf(o.ref)));
   for (const o of optional) if (o.included) assertSelectable(state, o.ref);
   const task: AnalysisTaskRecord = {
     id: `atask_${randomUUID()}`, topicId: input.topicId, subquestionId, title,
@@ -166,10 +213,10 @@ export function setTaskCandidates(
 ): { state: LocusState; task: AnalysisTaskRecord } {
   const cur = state.analysisTasks.find((t) => t.id === taskId);
   if (!cur) throw new AppError(404, `分析任务不存在：${taskId}`);
-  const coreKeys = new Set(cur.core.map((r) => `${r.kind}:${r.id}`));
+  const coreKeys = new Set(cur.core.map(refKeyOf));
   const list = optional.map((o) => {
     const item = cleanOptionalItem(state, o);
-    if (coreKeys.has(`${item.ref.kind}:${item.ref.id}`)) throw new AppError(422, "核心对象不能放入可取消候选。");
+    if (coreKeys.has(refKeyOf(item.ref))) throw new AppError(422, "核心对象不能放入可取消候选。");
     if (item.included) assertSelectable(state, item.ref);
     return item;
   });

@@ -351,6 +351,42 @@ table.grid .celledit input { width: auto; }
 .kzq-list { display: grid; gap: 4px; }
 .kzq-item { text-align: left; border: 1px solid var(--line); background: var(--surface); border-radius: var(--radius-sm); padding: 6px 8px; cursor: pointer; font-size: var(--text-sm); }
 
+/* E3 分项人审：知识项／条件／引文／结构化／主题 */
+.kzshell { display: grid; gap: 6px; margin-top: 6px; padding-left: 8px; border-left: 2px solid var(--line); }
+.kitem { border: 1px solid var(--line); border-radius: var(--radius-sm); padding: var(--space-2); display: grid; gap: 4px; }
+.kitem.oldview { border-style: dashed; background: #f7f6f1; }
+.kihead { display: flex; flex-wrap: wrap; gap: 6px; align-items: baseline; }
+.kihead b { font-size: var(--text); }
+.kv { font-size: var(--text-sm); }
+.kiacts { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.kiacts input, .kz-quote, .kc-basis { flex: 1 1 180px; }
+.kiedit { font-size: var(--text-sm); }
+.kiedit input { margin-top: 4px; }
+.kzev, .kzctx { border-top: 1px dashed var(--line); padding-top: 4px; display: grid; gap: 4px; }
+.kzcands { display: flex; gap: 4px; align-items: center; font-size: var(--text-sm); color: var(--muted); }
+.kzcond { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: var(--text-sm); }
+.kcedit { font-size: var(--text-sm); }
+.kzcond-edit { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-top: 4px; }
+.kzcond-edit input { flex: 1 1 110px; }
+.kzcond-edit .kcf-field { flex: 1 1 90px; }
+/* 钉在旧版的引文：显式提示＋人工改绑入口（不自动升级） */
+.stalev { color: var(--warn); display: flex; gap: 6px; flex-wrap: wrap; align-items: center; font-size: var(--text-sm); }
+.kzcond .kzev { flex: 1 1 100%; margin-top: 4px; }
+.kzstruct { display: grid; gap: 6px; border: 1px solid var(--line); border-radius: var(--radius-sm); padding: var(--space-2); background: #f7f6f1; }
+.ksrow { display: flex; gap: 6px; flex-wrap: wrap; }
+.kzq-items { margin-top: var(--space-3); }
+.kzq-kitem { text-align: left; border: 1px solid var(--line); background: var(--surface); border-radius: var(--radius-sm); padding: 6px 8px; cursor: pointer; font-size: var(--text-sm); }
+.kz-panel { border: 1px solid var(--line); background: var(--surface); border-radius: var(--radius-sm); padding: 4px 10px; cursor: pointer; }
+.kz-panel.active { border-color: var(--accent); font-weight: 600; }
+.kzthemes, .ktnew { display: grid; gap: 6px; }
+.ktheme { border: 1px solid var(--line); border-radius: var(--radius-sm); padding: var(--space-2); display: grid; gap: 4px; }
+.ktedit { font-size: var(--text-sm); display: grid; gap: 4px; }
+.kthint { color: var(--muted); font-size: var(--text-sm); margin-top: 4px; }
+.ktlist { display: grid; gap: 2px; max-height: 168px; overflow: auto; border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 4px; }
+.ktbox { display: flex; gap: 6px; align-items: baseline; font-size: var(--text-sm); cursor: pointer; }
+.ktbox.on { color: var(--fg); font-weight: 600; }
+.ktbox input[disabled] + * { color: var(--muted); }
+
 /* B2 窄导航条抽屉 */
 .navdrawer { position: fixed; top: 92px; left: 8px; width: 220px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: 0 8px 24px rgba(0,0,0,.14); z-index: 50; padding: var(--space-2); }
 .navdrawer[hidden] { display: none; }

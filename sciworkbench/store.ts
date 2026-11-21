@@ -439,10 +439,14 @@ export interface SubquestionRecord {
 
 // ── 阶段5E：分析任务 / 上下文快照 / 处理结果 / 初步报告 / 上下文对话 ──
 
-/** 上下文对象引用：kind＋id，版本在快照碎片中固定。 */
+/**
+ * 上下文对象引用：kind＋id，版本在快照碎片中固定。
+ * 知识分项（E3）额外带 `revision`：所选即所审的那一版，旧版从 history 读取，不用最新版兜底（§4.2）。
+ */
 export interface ObjectRef {
-  readonly kind: "execution" | "protocol" | "measurement" | "table" | "card" | "asset" | "subquestion";
+  readonly kind: "execution" | "protocol" | "measurement" | "table" | "card" | "asset" | "subquestion" | "item";
   readonly id: string;
+  readonly revision?: number;
 }
 
 export interface ContextFragment {
