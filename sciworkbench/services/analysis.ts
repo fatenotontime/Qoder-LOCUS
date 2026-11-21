@@ -13,9 +13,10 @@ import type {
 import { contentHash } from "../store.ts";
 import { AppError, MAX_IMPORT_BYTES, makeAsset, assertLegacyCardConsumerUsable, isStructuredShell } from "./app.ts";
 import {
-  assertKnowledgeAccess, createKnowledgeStatement, currentViewId, describeItem, freezeKnowledge,
-  knowledgeAccess, knowledgeItemConfirmedAt, knowledgeItemGate, knowledgeSourceAdapter,
-  knowledgeSourceFragment, readKnowledge, readKnowledgeVersion, resolvePinnedRefs, shellItemRefs,
+  accessClosure, assertFixedRefsIntact, assertKnowledgeAccess, createKnowledgeStatement, currentViewId,
+  describeItem, freezeKnowledge, knowledgeAccess, knowledgeItemConfirmedAt, knowledgeItemGate,
+  knowledgeSourceAdapter, knowledgeSourceFragment, readKnowledge, readKnowledgeVersion, resolvePinnedRefs,
+  shellItemRefs, snapshotAccessRefs,
 } from "./knowledge-base.ts";
 import type { KnowledgeSourceKind } from "./knowledge-base.ts";
 import { exportKnowledge } from "./knowledge-export.ts";
@@ -76,6 +77,9 @@ function assertSelectable(state: LocusState, ref: ObjectRef): void {
     if (!payload) throw new AppError(422, `知识项版本不存在：item ${ref.id} 第 ${ref.revision ?? 0} 版（不退回最新版）。`, { code: "ref_unresolvable" });
     // 固定版本决定读到的内容；能否进入正式上下文再看该项现在的审核状态（§4.7 分项复检）。
     // §4.2/§4.6.9：门槛以**被引用版本**的审核为准（现撤回/排除仍阻断）。
+    try { assertFixedRefsIntact(state, (payload.sourceRefs ?? [])); } catch (e) {
+      throw new AppError(422, `知识项不能进入正式上下文：${(e as Error).message.slice(0, 120)}`, { code: "report_refs_unresolvable" });
+    }
     const gate = knowledgeItemGate(state, itemRef(ref));
     if (!gate.ok) {
       const why = gate.reason === "pinned_not_confirmed"
@@ -804,10 +808,12 @@ export function buildKnowledgeAiInput(state: LocusState, req: KnowledgeAiInputRe
       omitted.push({ ref: key, reason: "不在当前视图范围（如主题/条件筛选或已加载页外）" });
       continue;
     }
-    const readOk = knowledgeAccess(state, "localRead", payload.sourceRefs);
+    // 闭包：无来源项按其稳定 ID 判策略；派生项展开到上游（含报告块固定引用）
+    const readOk = knowledgeAccess(state, "localRead", [fixed]);
     if (!readOk.ok) { omitted.push({ ref: key, reason: `未获本地读取许可：${readOk.denied[0]?.reason ?? ""}` }); continue; }
-    const sendOk = knowledgeAccess(state, "aiSend", payload.sourceRefs);
+    const sendOk = knowledgeAccess(state, "aiSend", [fixed]);
     if (!sendOk.ok) { omitted.push({ ref: key, reason: `未获发送 AI 许可：${sendOk.denied[0]?.reason ?? ""}（AI 发送须逐来源显式授权）` }); continue; }
+    try { assertFixedRefsIntact(state, (payload.sourceRefs ?? [])); } catch (e) { omitted.push({ ref: key, reason: `固定引用不可用：${(e as Error).message.slice(0, 90)}` }); continue; }
     core.push({
       ref: fixed, text: describeItem(state, payload, r.revision),
       marker: mode === "explore" && pinnedStatus !== "confirmed" ? `[待审·${pinnedStatus}]` : "",
@@ -833,6 +839,7 @@ export function buildKnowledgeAiInput(state: LocusState, req: KnowledgeAiInputRe
     if (!read.ok) { omitted.push({ ref: key, reason: `未获本地读取许可：${read.denied[0]?.reason ?? ""}` }); continue; }
     const send = knowledgeAccess(state, "aiSend", [adapter.sourceRef]);
     if (!send.ok) { omitted.push({ ref: key, reason: `未获发送 AI 许可：${send.denied[0]?.reason ?? ""}` }); continue; }
+    void accessClosure;
     // 报告块等：当时引用的版本必须能在本库解析（历史不存在即不放行）
     if (adapter.kind === "report_block" && adapter.pinnedRefs.length) {
       const res = resolvePinnedRefs(state, adapter.pinnedRefs);
@@ -938,8 +945,8 @@ export function adoptAiProposal(
 /** 手动下载「选定范围」知识包（E5 冻结 + 导出复用；不新建导出实现）。 */
 export function exportSelectedPackage(state: LocusState, input: { topicId: string; selectedRefs: { kind: "item"; id: string; revision: number }[]; mode?: "formal" | "explore"; purpose?: string }): { filename: string; buffer: Buffer } {
   const frozen = freezeKnowledge(state, { topicId: input.topicId, viewId: currentViewId(state, input.topicId), selectedRefs: input.selectedRefs, mode: input.mode ?? "formal" });
-  // §7.5：导出是独立许可——含被禁来源的整包直接拒绝（不降级为 warning）
-  assertKnowledgeAccess(state, "export", frozen.snapshot.sourceVersionRefs);
+  // §7.5：导出是独立许可——按快照**依赖闭包**检查（含无来源知识项自身的 item 策略）
+  assertKnowledgeAccess(state, "export", snapshotAccessRefs(frozen.snapshot));
   const out = exportKnowledge(frozen.snapshot, { format: "zip" });
   return { filename: out.filename, buffer: out.data as Buffer };
 }

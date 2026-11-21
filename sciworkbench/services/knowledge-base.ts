@@ -556,6 +556,8 @@ export function reviewKnowledgeItem(state: LocusState, id: string, input: unknow
     assertItemConfirmable(state, k, payload);
     // 确认入口同样必经来源守卫：来源后来变成不可用（如提案被回退/模板未确认）时不得确认
     assertSourceRefsUsable(state, payload.sourceRefs, "知识项来源");
+    // 报告块派生项：当时引用的版本必须完整可解析，否则不得确认
+    assertFixedRefsIntact(state, payload.sourceRefs);
   }
   if (payload.review.status === decision && payload.review.basis === basis) throw new AppError(422, "审核状态与依据均未变化。");
   const review: Review = { status: decision, reviewedAt: now(), reviewedBy: "human", basis };
@@ -2188,28 +2190,96 @@ export function sourceRefsOf(state: LocusState, ref: KnowledgeRef, acc: SourceRe
 
 export interface AccessDenied { readonly sourceKind: string; readonly sourceId: string; readonly operation: KnowledgeOperation; readonly reason: string }
 
+/** 报告块固定引用 → 来源引用（用于把报告的上游纳入依赖闭包；版本不明者按 kinds+id 无法展开则跳过）。 */
+function reportUpstreamRefs(state: LocusState, blockRef: SourceRef): SourceRef[] {
+  const res = resolveSourceVersion(state, state.knowledge, blockRef);
+  if (res.status !== "ok") return [];
+  const payload = res.payload as { refs?: { kind: string; id: string; version: string }[] } | null;
+  if (!payload?.refs) return [];
+  const out: SourceRef[] = [];
+  for (const r of payload.refs) {
+    if (r.kind === "note") continue;
+    const hit = state.knowledge.sourceVersions.find((v) => v.sourceRef.kind === (r.kind as SourceKind) && v.sourceRef.id === r.id && v.sourceRef.version === r.version);
+    if (hit) out.push(hit.sourceRef);
+  }
+  return out;
+}
+
+/**
+ * 实际依赖闭包（§7.5 核心）：把传入的 KnowledgeRef/SourceRef 展开为
+ * ① 全部上游 SourceRef（含派生判断的来源；报告块再展开其固定引用）；
+ * ② **无来源的人工陈述**——以该 item 的稳定 ID 建 `knowledge_item` 策略（不能因集合为空而放行）。
+ */
+export function accessClosure(state: LocusState, refs: (KnowledgeRef | SourceRef)[]): { sources: SourceRef[]; itemIds: string[] } {
+  const sources: SourceRef[] = [];
+  const itemIds: string[] = [];
+  const visited = new Set<string>();
+  const walk = (r: KnowledgeRef | SourceRef, depth: number): void => {
+    if (depth > 8) return;
+    if (isSourceRef(r)) {
+      const key = sourceKey(r);
+      if (visited.has(key)) return;
+      visited.add(key);
+      sources.push({ kind: r.kind, id: r.id, version: r.version, contentHash: r.contentHash });
+      if (r.kind === "report_block") for (const up of reportUpstreamRefs(state, r)) walk(up, depth + 1);
+      return;
+    }
+    const kref = r as KnowledgeRef;
+    const kk = `${kref.kind}:${kref.id}@${kref.revision}`;
+    if (visited.has(kk)) return;
+    visited.add(kk);
+    const before = sources.length;
+    sourceRefsOf(state, kref, sources, 0);
+    for (let i = before; i < sources.length; i++) {
+      const sr = sources[i];
+      if (sr.kind === "report_block") for (const up of reportUpstreamRefs(state, sr)) walk(up, depth + 1);
+    }
+    if (kref.kind === "item" && sources.length === before && !itemIds.includes(kref.id)) itemIds.push(kref.id);
+  };
+  for (const r of refs) walk(r, 0);
+  return { sources, itemIds };
+}
+
 /** 统一访问判定（§7.5）：返回是否放行与被拒明细（不抛错，供预览/告警）。 */
 export function knowledgeAccess(state: LocusState, operation: KnowledgeOperation, refs: (KnowledgeRef | SourceRef)[]): { ok: boolean; denied: AccessDenied[]; checkedSources: SourceRef[] } {
-  const sources: SourceRef[] = [];
-  const statementsWithoutSource: string[] = [];
-  for (const r of refs) {
-    if (isSourceRef(r)) { if (!sources.some((x) => sourceKey(x) === sourceKey(r))) sources.push(r); continue; }
-    const ref = r as KnowledgeRef;
-    const before = sources.length;
-    sourceRefsOf(state, ref, sources);
-    if (ref.kind === "item" && sources.length === before) statementsWithoutSource.push(ref.id);
-  }
+  const { sources, itemIds } = accessClosure(state, refs);
   const denied: AccessDenied[] = [];
   const flag = { localRead: "allowLocalRead", export: "allowExport", aiSend: "allowAiSend" } as const;
   for (const s of sources) {
     const p = policyFor(state, s.kind, s.id);
     if (!p[flag[operation]]) denied.push({ sourceKind: s.kind, sourceId: s.id, operation, reason: p.reason });
   }
-  for (const itemId of statementsWithoutSource) {
+  for (const itemId of itemIds) {
     const p = policyFor(state, "knowledge_item", itemId);
     if (!p[flag[operation]]) denied.push({ sourceKind: "knowledge_item", sourceId: itemId, operation, reason: p.reason });
   }
   return { ok: denied.length === 0, denied, checkedSources: sources };
+}
+
+/** 快照的依赖引用集合（含**无来源知识项自身**）：供导出/发送按闭包检查许可。 */
+export function snapshotAccessRefs(snapshot: KnowledgeSnapshot): (KnowledgeRef | SourceRef)[] {
+  const refs: (KnowledgeRef | SourceRef)[] = [...snapshot.sourceVersionRefs];
+  for (const it of snapshot.content.items) {
+    const p = it.payload as ItemPayload;
+    if ((p.sourceRefs ?? []).length === 0) refs.push(makeKnowledgeRef("item", it.id, it.revision));
+    else for (const sr of p.sourceRefs) refs.push(sr);
+  }
+  return refs;
+}
+
+/** 固定引用完整性/可用性门槛（报告块与派生项共用）：上游报告引用不可解析即拒绝。 */
+export function assertFixedRefsIntact(state: LocusState, refs: SourceRef[]): void {
+  for (const r of refs) {
+    if (r.kind !== "report_block") continue;
+    const res = resolveSourceVersion(state, state.knowledge, r);
+    if (res.status !== "ok") throw new AppError(422, `报告块版本不可读：${r.id}@${r.version}（${res.status}）`, { code: res.status, ref: r });
+    const payload = res.payload as { refs?: { kind: string; id: string; version: string }[] } | null;
+    const checks = resolvePinnedRefs(state, payload?.refs ?? []);
+    const bad = checks.filter((c) => c.status !== "ok");
+    if (bad.length) {
+      throw new AppError(422, `报告块的 ${bad.length} 个固定引用不可解析（${bad[0].reason}）：派生知识/正式使用须解析当时 refs 的版本。`, { code: "report_refs_unresolvable", refs: bad.map((b) => b.ref) });
+    }
+  }
 }
 
 /** 所有出口共用：被拒即 403（含被拒来源的整包拒绝，不加 warning 后继续返回）。 */
@@ -2364,8 +2434,8 @@ export function freezeKnowledge(state: LocusState, input: unknown): { state: Loc
   sourceSet.forEach((r, i) => { const token = `S${i + 1}`; refMap[token] = { kind: "source", ref: r, label: `${r.kind} ${r.id} ${r.version}` }; });
 
   const content: SnapshotContent = { items: selected, contexts, evidence, relations, datasets, themes, mappings, comparisons, referenceMap: refMap, datasetRows };
-  // 统一访问检查（§7.5）：本地冻结同走 localRead 门槛；被拒即 403，不生成快照。
-  assertKnowledgeAccess(state, "localRead", sourceSet);
+  // 统一访问检查（§7.5）：本地冻结按**闭包**检查（含无来源项自身与派生上游）；被拒即 403，不生成快照。
+  assertKnowledgeAccess(state, "localRead", [...selected.map((e) => makeKnowledgeRef("item", e.id, e.revision)), ...sourceSet]);
   const contentHash = canonicalHash(content);
   const omittedReasons = [...new Set(excluded.map((x) => x.reason))];
   const snapshot: KnowledgeSnapshot = {
@@ -2636,8 +2706,13 @@ export function resolvePinnedRefs(state: LocusState, refs: { kind: string; id: s
         : { ref: r, status: "unavailable" as const, reason: "该快照不在本库（不重新生成）" };
     }
     const hit = state.knowledge.sourceVersions.find((v) => v.sourceRef.kind === (r.kind as SourceKind) && v.sourceRef.id === r.id && v.sourceRef.version === r.version);
-    if (hit) return { ref: r, status: "ok" as const, payload: hit.payload };
-    return { ref: r, status: "unavailable" as const, reason: "该版本未归档：不解析为最新版" };
+    if (!hit) return { ref: r, status: "unavailable" as const, reason: "该版本未归档：不解析为最新版" };
+    // 完整性核验：归档 payload 必须与记录 hash 一致（否则视为 content_mismatch，不得当作 ok）
+    const actual = canonicalHash(hit.payload);
+    if (actual !== hit.sourceRef.contentHash) {
+      return { ref: r, status: "unavailable" as const, reason: `归档内容与记录 hash 不符（content_mismatch：期望 ${hit.sourceRef.contentHash.slice(0, 12)}…，实际 ${actual.slice(0, 12)}…）` };
+    }
+    return { ref: r, status: "ok" as const, payload: hit.payload };
   });
 }
 
@@ -2848,9 +2923,18 @@ export function assertSourceUsableForKnowledge(a: SourceKnowledgeAdapter): void 
 export function assertSourceRefsUsable(state: LocusState, refs: SourceRef[], field: string): void {
   for (const r of refs) {
     if (r.kind !== "chat_proposal" && r.kind !== "template") continue;
-    let adapter: SourceKnowledgeAdapter | null = null;
-    try { adapter = knowledgeSourceAdapter(state, r.kind as KnowledgeSourceKind, r.id); } catch { adapter = null; }
-    if (!adapter) throw new AppError(422, `${field} 引用的${r.kind === "chat_proposal" ? "对话提案" : "记录模板"}不存在：${r.id}`, { code: "source_not_usable", ref: r });
-    assertSourceUsableForKnowledge(adapter);
+    const label = r.kind === "chat_proposal" ? "对话提案" : "记录模板";
+    // 按**被引用版本**读取其归档内容：采纳/确认状态只看这一版，不被同 ID 的更新版本追授
+    const res = resolveSourceVersion(state, state.knowledge, r);
+    if (res.status !== "ok") {
+      throw new AppError(422, `${field} 引用的${label}版本不可读：${r.id}@${r.version}（${res.status}）`, { code: res.status, ref: r, field });
+    }
+    const payload = res.payload as { confirmed?: boolean; aiDraft?: boolean; humanConfirmed?: boolean } | null;
+    if (r.kind === "chat_proposal" && payload?.confirmed !== true) {
+      throw new AppError(422, `${field} 引用的对话提案在被引用版本（${r.version}）**未采纳**：不得进入正式知识（后来版本的采纳不追授旧版）。`, { code: "source_not_usable", ref: r, field });
+    }
+    if (r.kind === "template" && payload?.aiDraft === true && payload?.humanConfirmed !== true) {
+      throw new AppError(422, `${field} 引用的记录模板在被引用版本（${r.version}）为**未人工确认的 AI 草稿**：不得进入正式知识。`, { code: "source_not_usable", ref: r, field });
+    }
   }
 }
