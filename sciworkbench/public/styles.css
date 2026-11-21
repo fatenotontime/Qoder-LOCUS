@@ -2046,3 +2046,15 @@ button.curtopic.none { color: var(--muted); }
 .detail-actions .more { margin: 0; }
 .detail-actions .more > button { display: block; width: 100%; margin-top: 4px; }
 .stepeditor.readonly { border-style: solid; border-color: var(--line); background: var(--surface-2); }
+
+/* ── F2 记录：总览 ── */
+.rec-overview { display: grid; gap: var(--space-5); }
+.rec-sec h3 { margin: 0 0 var(--space-2); font-size: var(--text-lg); }
+.rec-sec .paper-item { cursor: default; }
+.rec-sec .paper-item[data-exrow] { cursor: pointer; }
+/* 通用详情栏（记录详情等） */
+.detail-bar {
+  display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap;
+  padding-bottom: var(--space-2); margin-bottom: var(--space-2);
+}
+.detail-bar .back-btn { margin-bottom: 0; }
