@@ -1458,6 +1458,7 @@ export function readKnowledge(state: LocusState, query: KnowledgeQuery): Knowled
       if (live && live.revision > r.revision) warnings.push({ code: "theme_member_outdated", detail: `主题「${(t.payload as ThemePayload).name}」成员 ${r.id} 已有新版（成员钉在第 ${r.revision} 版）`, ref: r });
     }
   }
+  warnings.push(...judgmentWarnings(state, themes));
 
   // referenceMap：稳定 token（预览态；冻结后以快照 token 为准）
   const refMap: SnapshotReferenceTokenMap = {};
@@ -1492,6 +1493,35 @@ export function readKnowledge(state: LocusState, query: KnowledgeQuery): Knowled
 /** 仅取视图 id（供 viewId 校验；不返回内容）。 */
 export function currentViewId(state: LocusState, topicId: string): string {
   return readKnowledge(state, { source: "current", topicId }).viewId;
+}
+
+/**
+ * 读取侧复检（E3 遗留，§4.7/§7.4）：主题「当前认识」只算现在仍 confirmed 且固定版本可读的 item。
+ * 写入侧门槛（assertJudgmentsConfirmed）只管建立当刻；条件级联回退后旧判断引用不得继续冒充当前认识。
+ */
+export function effectiveCurrentJudgments(state: LocusState, theme: KnowledgeTheme): KnowledgeRef[] {
+  const tp = theme.payload as ThemePayload;
+  return tp.currentJudgmentRefs.filter((r) => {
+    const env = findEnv(state.knowledge, "item", r.id);
+    if (!env || readKnowledgeVersion(state.knowledge, r) === null) return false;
+    const live = env.payload as ItemPayload;
+    return live.review.status === "confirmed" && (live.topicIds ?? []).includes(tp.topicId);
+  });
+}
+
+function judgmentWarnings(state: LocusState, themes: KnowledgeTheme[]): KnowledgeWarning[] {
+  const out: KnowledgeWarning[] = [];
+  for (const t of themes) {
+    const tp = t.payload as ThemePayload;
+    const effective = new Set(effectiveCurrentJudgments(state, t).map((r) => refKey(r)));
+    for (const r of tp.currentJudgmentRefs) {
+      if (effective.has(refKey(r))) continue;
+      const env = findEnv(state.knowledge, "item", r.id);
+      const live = env ? (env.payload as ItemPayload).review.status : "已删除";
+      out.push({ code: "judgment_not_live", detail: `主题「${tp.name}」的当前认识引用 ${r.id} 现在为「${live}」，不并入当前认识（历史内容不变）`, ref: r });
+    }
+  }
+  return out;
 }
 
 // ── 数据集（§4.4 dataset、§8.1 datasets 族）─────────────────────────────

@@ -22,6 +22,7 @@ import {
   syncShellAudit, updateKnowledgeContext, updateKnowledgeItem, updateKnowledgeTheme,
   readKnowledge, currentViewId, createKnowledgeDataset, reviewKnowledgeDataset, readDatasetRows,
   createKnowledgeMapping, updateKnowledgeMapping, reviewKnowledgeMapping, createKnowledgeComparison, legacyComparisonViews,
+  effectiveCurrentJudgments,
 } from "../services/knowledge-base.ts";
 import type { LocationStatus } from "../domain/knowledge.ts";
 import type { LocusState } from "../store.ts";
@@ -887,4 +888,19 @@ test("T28 两条映射都命中不取第一条；旧比较记录与快照保留�
   assert.equal(legacy[0].decision, "display_only");
   assert.ok(legacy[0].reasonCodes.includes("legacy_no_computation"));
   assert.ok(legacy[0].reasonCodes.includes("legacy_unbound_fields"), "未绑定单位的旧条目明确标出");
+});
+
+// ── E3 遗留（E4 读取侧复检）：当前认识只取现在仍确认有效的项 ──────────────
+test("E3遗留(E4) 读取侧复检：级联回退后当前认识不并入，历史引用保留", () => {
+  const f = seedE4();
+  const th = createKnowledgeTheme(f.state, { topicId: f.topicId, name: "培养时间主题", members: [{ kind: "item", id: "ki_A", revision: 1 }], currentJudgmentRefs: [{ kind: "item", id: "ki_A", revision: 1 }] });
+  let s = th.state;
+  assert.equal(effectiveCurrentJudgments(s, th.theme).length, 1);
+  assert.ok(!readKnowledge(s, { source: "current", topicId: f.topicId }).warnings.some((w) => w.code === "judgment_not_live"));
+
+  s = reviewKnowledgeItem(s, "ki_A", { baseRevision: 1, decision: "needs_info", basis: "复核条件" }).state;
+  const themeNow = s.knowledge.themes.find((t) => t.id === th.theme.id)!;
+  assert.equal(effectiveCurrentJudgments(s, themeNow).length, 0, "回退后不再作为当前认识（读取侧复检）");
+  assert.equal((themeNow.payload as { currentJudgmentRefs: unknown[] }).currentJudgmentRefs.length, 1, "历史引用保留，不静默改写");
+  assert.ok(readKnowledge(s, { source: "current", topicId: f.topicId }).warnings.some((w) => w.code === "judgment_not_live"), "读取侧给出动态提醒");
 });
