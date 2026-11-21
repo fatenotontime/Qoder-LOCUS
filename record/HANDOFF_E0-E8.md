@@ -169,7 +169,7 @@
 
 ## 五、记录与台账现状
 
-- 台账 [record/COMMIT_LEDGER.md](COMMIT_LEDGER.md)：#84（E1 commitState PR #6，merge `b09029b`）、#85（E2 `7ca563e` 13:01，PR #7 merge `0f361aa` 13:09）、**#86（E3 `26f7d65` 15:17 ＋ 记录 `22f677b` 15:18 ＋ 交接文档 `c065bb2` 15:25，PR #8 merge `410ea85` 15:22、PR #9 merge `57d6d3d` 15:28 均已回填）**、**#87（E4 `9b20c1a` 16:10 ＋ `1bb626b` 16:14 ＋ 记录 `5f70b37` 16:18，PR #10 merge `a40f7bb` 16:18 已回填）**、**#88（E5 `e3a148c` 17:00 ＋ 记录 `8372371` 17:02，PR #12 merge `42d2f05` 17:03 已回填）**。
+- 台账 [record/COMMIT_LEDGER.md](COMMIT_LEDGER.md)：#84（E1 commitState PR #6，merge `b09029b`）、#85（E2 `7ca563e` 13:01，PR #7 merge `0f361aa` 13:09）、**#86（E3 `26f7d65` 15:17 ＋ 记录 `22f677b` 15:18 ＋ 交接文档 `c065bb2` 15:25，PR #8 merge `410ea85` 15:22、PR #9 merge `57d6d3d` 15:28 均已回填）**、**#87（E4 `9b20c1a` 16:10 ＋ `1bb626b` 16:14 ＋ 记录 `5f70b37` 16:18，PR #10 merge `a40f7bb` 16:18 已回填）**、**#88（E5 `e3a148c` 17:00 ＋ 记录 `8372371` 17:02，PR #12 merge `42d2f05` 17:03 已回填）**、**#97（E7-A `a3a27dc` 23:28 ＋ 记录 `7d632f3` 23:29，PR #18 merge `9908c9a` 23:31 已回填；编号避让 S04-T12–T14 的 #94–#96）**。
 - 叙述记录：[record/sessions/2026-11-21_session-05.md](sessions/2026-11-21_session-05.md)（S05-T1 E0 / T2 基座 / T3 commitState / T4 E2 提取契约 / T5 E3 分项人审＋交接 / T6 E4 数据集/查询/比较 / **T7 E5 快照/wiki/知识包**）。E6 完成后追加 S05-T8。
 - 用户未跟踪/改动材料（`vibe_images/`、`record/screenshots/from-pictures/`、`reference reseach data/…`、session-02.md 的用户改动）：**不删不擅自提交**。
 - 每轮收尾照 AGENTS.md §8 清单：先 git log 取真实 hash/时间 → 台账双线表＋轮次索引 → 会话记录 → trailer → 分支 PR 审计合并。无提交的轮次显式记「本轮无提交」。
