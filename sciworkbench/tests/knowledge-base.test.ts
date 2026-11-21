@@ -24,6 +24,7 @@ import {
   readKnowledge, currentViewId, createKnowledgeDataset, reviewKnowledgeDataset, readDatasetRows,
   createKnowledgeMapping, updateKnowledgeMapping, reviewKnowledgeMapping, createKnowledgeComparison, legacyComparisonViews,
   effectiveCurrentJudgments, freezeKnowledge, knowledgeAccess, assertKnowledgeAccess, upsertSourcePolicy,
+  buildKnowledgeContainer, knowledgePipelineStatus,
   readSnapshotKnowledge, resolveSnapshotToken, readSnapshotDatasetRows,
 } from "../services/knowledge-base.ts";
 import { exportKnowledge, buildKnowledgePackage, snapshotCsv, snapshotWiki, snapshotSchemaFiles, safeFileName } from "../services/knowledge-export.ts";
@@ -1137,4 +1138,161 @@ test("T34b 快照读取：按快照内固定版本，不读当前库最新", () 
   assert.ok(resolveSnapshotToken(snap, tok[0]));
   assert.ok(readSnapshotDatasetRows(snap, f.datasetId, f.datasetRevision).rows.length >= 1, "快照内可读数据集实际行列");
   assert.equal(expectErr(() => readSnapshotDatasetRows(snap, "ds_missing", 1)).status, 404);
+});
+// ══ E6.5② 固定版本审核口径反例（§4.2 / §4.6.9）════════════════════════════
+// 合同要求：正式使用同时核查**被引用版本**的 review 与稳定 ID 当前是否 withdrawn/excluded。
+// 本节以反例固化**当前实现行为**，便于与合同逐条对照；发现不一致处标注「待用户裁决」，
+// 不在此降门槛、不自动换引用，也不据此改写合同。
+
+function seedPinned() {
+  const t = createTopic(emptyState(), { name: "合成课题甲", researchQuestion: "Q" });
+  const asset = makeAsset("literature", "p.md", "合成对象A在 1 d 下培养。", t.topic.id);
+  let s: LocusState = { ...t.state, assets: [...t.state.assets, asset] };
+  s = importMeasurements(s, { name: "d.csv", csv: "t,v\n0,1", topicId: t.topic.id }).state;
+  s = { ...s, knowledge: { ...s.knowledge, items: [...s.knowledge.items, envOf("ki_p", {
+    contentType: "observation", nature: "observation", text: "合成对象A在 1 d 下培养",
+    subject: { raw: "合成对象A" }, predicate: { raw: "培养时间", metricId: "time_germ" },
+    value: { kind: "scalar", raw: "1 d", value: "1", unit: "d" }, contextRefs: [], evidenceRefs: [],
+    sourceRefs: [currentSourceRef(s, "asset", asset.id)!],
+    origin: { sourceClass: "literature_report", createdBy: "model", secondaryCitation: false },
+    scopeText: "", unknowns: [], topicIds: [t.topic.id], subquestionIds: [], review: { status: "pending" },
+  })] } };
+  return { state: s, topicId: t.topic.id, tableId: s.tables[0].id };
+}
+
+const pickCore = (s: LocusState, tableId: string, revision: number) =>
+  createAnalysisTask(s, { topicId: (s.knowledge.items.find((i) => i.id === "ki_p")!.payload as ItemPayload).topicIds[0], title: "分析", core: [{ kind: "table", id: tableId }, { kind: "item", id: "ki_p", revision }] });
+
+test("E6.5②a 反例（待裁决）：引用钉在旧版 pending、新版已 confirmed 且未改绑时，消费者当前放行", () => {
+  const f = seedPinned();
+  const confirmed = reviewKnowledgeItem(f.state, "ki_p", { baseRevision: 1, decision: "confirmed", basis: "核对原文" }).state;
+  const pinnedStatus = (readKnowledgeVersion(confirmed.knowledge, { kind: "item", id: "ki_p", revision: 1 }) as ItemPayload).review.status;
+  const liveStatus = (confirmed.knowledge.items.find((i) => i.id === "ki_p")!.payload as ItemPayload).review.status;
+  assert.equal(pinnedStatus, "pending", "被引用版本（第 1 版）仍为 pending");
+  assert.equal(liveStatus, "confirmed", "当前版本（第 2 版）已 confirmed");
+
+  // 当前实现：按最新审核态判定 → 放行。合同 §4.2 要求核查**被引用版本**的 review →
+  // 「旧版 pending 且未显式改绑」应被拒绝直到改绑。此差异待用户裁决，不在此处改门槛。
+  let current = "allowed";
+  try {
+    pickCore(confirmed, f.tableId, 1);
+  } catch (e) {
+    current = (e as AppError).details?.code as string ?? "rejected";
+  }
+  assert.equal(current, "allowed", "记录当前行为：未改绑的旧版 pending 引用被放行（与 §4.2 待裁决差异）");
+});
+
+test("E6.5②b 反例（待裁决）：引用钉在旧版 confirmed、新版改回 pending 时，消费者当前拒绝", () => {
+  const f = seedPinned();
+  let s = reviewKnowledgeItem(f.state, "ki_p", { baseRevision: 1, decision: "confirmed", basis: "核对" }).state;
+  s = updateKnowledgeItem(s, "ki_p", { baseRevision: 2, patch: { text: "合成对象A在 1 d 下培养（修订）" }, reason: "内容修订" }).state;
+  const pinned = (readKnowledgeVersion(s.knowledge, { kind: "item", id: "ki_p", revision: 2 }) as ItemPayload).review.status;
+  const live = (s.knowledge.items.find((i) => i.id === "ki_p")!.payload as ItemPayload).review.status;
+  assert.equal(pinned, "confirmed", "被引用版本（第 2 版）已 confirmed");
+  assert.equal(live, "pending", "当前版本（第 3 版）为 pending");
+
+  let current = "allowed";
+  try {
+    pickCore(s, f.tableId, 2);
+  } catch (e) {
+    current = (e as AppError).details?.code as string ?? "rejected";
+  }
+  assert.equal(current, "item_not_confirmed", "记录当前行为：被引用版本已确认但新版回 pending 时被拒（与 §4.2 固定版口径待裁决差异）");
+});
+
+test("E6.5②c 与合同一致：当前版本被撤回时，即使固定版曾确认也拒绝（§4.2 现撤回阻断）", () => {
+  const f = seedPinned();
+  let s = reviewKnowledgeItem(f.state, "ki_p", { baseRevision: 1, decision: "confirmed", basis: "核对" }).state;
+  s = reviewKnowledgeItem(s, "ki_p", { baseRevision: 2, decision: "withdrawn", basis: "撤回" }).state;
+  const err = (() => { try { pickCore(s, f.tableId, 2); return null; } catch (e) { return e as AppError; } })();
+  assert.ok(err, "现撤回必须阻断正式使用");
+  assert.equal(err!.details?.code, "item_not_confirmed");
+});
+// ══ E6-A 容器/流水线数据接线（合同 E6.2/E6.3、E6.5 子用例 ①–⑤）══════════════
+
+test("E6-A① 计数分列：匹配/已加载/总量与元素、聚合、同源列表一致", () => {
+  const f = seedE4();
+  const c = buildKnowledgeContainer(f.state, { source: "current", topicId: f.topicId });
+  assert.equal(c.elements.filter((e) => e.kind === "item").length, c.totals.items);
+  assert.equal(c.elements.filter((e) => e.kind === "dataset").length, c.totals.datasets);
+  assert.equal(c.totals.datasets, 1, "数据集进容器为聚合元素，不展开为 item");
+  assert.equal(c.counts.loaded, c.elements.filter((e) => e.kind === "item").length, "已加载数=元素条数");
+  assert.equal(c.counts.matched, c.totals.items, "无筛选时匹配数=本视图条数");
+  assert.equal(c.counts.totalKnown, f.state.knowledge.items.length, "总量与库内条数一致（不把一页冒称全库）");
+  const agg = c.elements.find((e) => e.kind === "dataset")!;
+  assert.equal(agg.aggregate!.rows, 3, "聚合元素带真实行数（不改造成 item）");
+
+  const paged = buildKnowledgeContainer(f.state, { source: "current", topicId: f.topicId, pageSize: 3 });
+  assert.equal(paged.counts.loaded, 3);
+  assert.equal(paged.hasMore, true);
+  assert.ok(paged.nextCursor !== null);
+  assert.ok(paged.counts.matched > paged.counts.loaded, "匹配数与已加载数分开明示");
+});
+
+test("E6-A② 不重复计数：卡壳多分项按分项计、同源论文一份来源、卡不另计知识", () => {
+  const b = seed({ items: 2, withContext: true });
+  const c = buildKnowledgeContainer(b.state, { source: "current", topicId: b.topicId, mode: "explore" });
+  assert.equal(c.totals.items, 2, "两项分项各计一条");
+  assert.equal(c.elements.some((e) => (e as { kind: string }).kind === "card"), false, "卡壳本身不成为知识元素");
+  assert.equal(c.cardIndex.length, 1, "卡壳索引单列");
+  assert.equal(c.cardIndex[0].itemRefs.length, 2, "卡壳指向其分项（不重复计为独立知识）");
+  assert.equal(c.bySource.length, 1, "同源论文只呈现一份来源入口");
+  assert.equal(c.bySource[0].itemRefs.length, 2, "该来源下挂两项");
+  assert.ok(c.elements.every((e) => e.sourceClass !== "dataset" || e.kind === "dataset"));
+});
+
+test("E6-A③ 固定版本回查：元素 ref 可读且 revision 与当前一致；未知/条件随项带回", () => {
+  const f = seedE5();
+  const c = buildKnowledgeContainer(f.state, { source: "current", topicId: f.topicId });
+  const el = c.elements.find((e) => e.kind === "item" && e.ref.id === "ki_A")!;
+  assert.equal(el.ref.revision, 1);
+  assert.ok(readKnowledgeVersion(f.state.knowledge, el.ref), "元素 ref 按固定版本可读");
+  assert.equal(el.valueText, "1 d", "完整原值文本随元素（摘要只压缩显示）");
+  const t25 = c.elements.find((e) => e.ref.id === "ki_T25")!;
+  assert.ok(t25.conditionTexts.some((t) => t.includes("温度=25")), "条件跟随知识项");
+  const dsEl = c.elements.find((e) => e.kind === "dataset")!;
+  assert.ok(dsEl.sourceTokens.length >= 1, "数据集元素带来源 token 以便回查");
+});
+
+test("E6-A⑤ 作用域不串：容器只含本课题；主题筛选与未分主题单列", () => {
+  const f = seedE5();
+  const other = createTopic(f.state, { name: "合成课题乙", researchQuestion: "Q2" });
+  let s: LocusState = other.state;
+  s = { ...s, knowledge: { ...s.knowledge, items: [...s.knowledge.items, envOf("ki_bx", {
+    contentType: "claim", nature: "human_judgment", text: "乙的判断", subject: { raw: "合成对象A" }, predicate: { raw: "私有" },
+    value: null, contextRefs: [], evidenceRefs: [], sourceRefs: [f.srcRef],
+    origin: { sourceClass: "human_statement", createdBy: "human", secondaryCitation: false },
+    scopeText: "", unknowns: [], topicIds: [other.topic.id], subquestionIds: [], review: { status: "confirmed" },
+  })] } };
+  const c = buildKnowledgeContainer(s, { source: "current", topicId: f.topicId });
+  assert.ok(!c.elements.some((e) => e.ref.id === "ki_bx"), "容器不含其他课题内容");
+  const themed = buildKnowledgeContainer(s, { source: "current", topicId: f.topicId, themeId: f.themeId });
+  assert.ok(themed.totals.items < c.totals.items, "主题筛选收窄视图");
+  assert.ok(themed.byTheme.some((t) => t.themeId === f.themeId));
+  assert.ok(Array.isArray(c.undivided), "未分主题项单列，不丢弃");
+  assert.ok(c.dedupNote.includes("固定引用"));
+});
+
+test("E6-A④ 流水线状态只统计已落库回执：失败/取消/重放不重复计数", () => {
+  const f = seedE4();
+  const run = {
+    id: "kr_x", idempotencyKey: "k1", inputHash: "h", paperRef: f.srcRef, attachmentRefs: [f.srcRef],
+    purpose: "P", promptVersion: "v1", schemaVersion: 1, createdAt: "t", updatedAt: "t",
+    status: "partial" as const,
+    chunks: [
+      { id: "chunk_0", sourceRef: f.srcRef, start: 0, end: 5, additionalRanges: [], sourceTextHash: "a", status: "committed" as const, receipt: { inputHash: "a", committedAt: "t", cardIds: ["c1"], itemIds: ["i1"], contextIds: [], evidenceIds: [], relationIds: [], response: { created: 1, skipped: 0, createdItems: 2, pendingItems: 2 } } },
+      { id: "chunk_1", sourceRef: f.srcRef, start: 5, end: 10, additionalRanges: [], sourceTextHash: "b", status: "failed" as const, error: "boom" },
+      { id: "chunk_2", sourceRef: f.srcRef, start: 10, end: 15, additionalRanges: [], sourceTextHash: "c", status: "discarded" as const },
+    ],
+  };
+  const s: LocusState = { ...f.state, knowledge: { ...f.state.knowledge, extractionRuns: [...f.state.knowledge.extractionRuns, run] } };
+  const st = knowledgePipelineStatus(s, "kr_x")!;
+  assert.equal(st.status, "partial");
+  assert.deepEqual(st.counters, { created: 1, skipped: 0, createdItems: 2, pendingItems: 2 }, "计数只来自已落库回执");
+  assert.equal(st.chunks.filter((c) => c.hasReceipt).length, 1);
+  assert.ok(st.notes.some((n) => n.includes("失败")), "失败块可见");
+  assert.ok(st.notes.some((n) => n.includes("取消")), "丢弃块可见");
+  // 重复查询（等同回执重放/刷新）不改变计数
+  assert.deepEqual(knowledgePipelineStatus(s, "kr_x")!.counters, st.counters);
+  assert.equal(knowledgePipelineStatus(s, "kr_missing"), null);
 });

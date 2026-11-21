@@ -119,6 +119,17 @@ test("E5-V API 往返：view/freeze/snapshot/export/references 结构", async ()
     const bySnap = await get(`/api/knowledge/items/${itemId}?revision=1&snapshotId=${snapId}`);
     assert.equal(bySnap.ok, true);
 
+    // E6-A 容器数据接线（只读）
+    const container = await get(`/api/knowledge/container?source=current&topicId=${topicId}`);
+    assert.equal(container.ok, true);
+    assert.equal((container.elements as { kind: string }[]).filter((e) => e.kind === "item").length, 1);
+    assert.equal((container.elements as { kind: string }[]).filter((e) => e.kind === "dataset").length, 1);
+    assert.equal((container.totals as { datasets: number }).datasets, 1, "知识项数与数据集数分开");
+    assert.ok((container.counts as { totalKnown: number }).totalKnown >= 1);
+    assert.ok((container.sources as unknown[]).length >= 1, "来源 token 可回查");
+    const missing = await get(`/api/knowledge/pipeline/kr_missing`);
+    assert.equal((missing as { code?: string }).code, "run_missing");
+
     // 包结构（纯函数）：manifest 列每文件 sha256/schema、NOTICE 列排除附件
     const pkg = buildKnowledgePackage(snap.snapshot as never);
     const manifest = pkg.manifest as { files: { file: string; sha256: string; schema: string }[]; excludedAttachments: unknown[] };

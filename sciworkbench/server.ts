@@ -87,7 +87,7 @@ import {
   structureLegacyCard, updateKnowledgeContext, updateKnowledgeDataset, updateKnowledgeItem,
   updateKnowledgeMapping, updateKnowledgeTheme,
   assertKnowledgeAccess, freezeKnowledge, knowledgeAccess, readSnapshotKnowledge, readSnapshotDatasetRows,
-  resolveSnapshotToken, upsertSourcePolicy,
+  resolveSnapshotToken, upsertSourcePolicy, buildKnowledgeContainer, knowledgePipelineStatus,
 } from "./services/knowledge-base.ts";
 import { exportKnowledge, buildKnowledgePackage } from "./services/knowledge-export.ts";
 import type { ExtractionRunRecord, ExtractionRunStatus, SourceKind, SourceRef } from "./domain/knowledge.ts";
@@ -587,6 +587,40 @@ export async function createApp(store: Store, opts: { aiConfigPath?: string } = 
         const p = payload as { topicIds?: string[] };
         if (topicId && !(p.topicIds ?? []).includes(topicId)) { send(res, 422, { error: `该版本不属于课题 ${topicId}。`, code: "topic_mismatch" }); return; }
         send(res, 200, { ok: true, id, revision, payload, availableRevisions: [env.revision, ...env.history.map((h) => h.revision)].sort((a, b) => a - b) });
+        return;
+      }
+      // E6-A 容器数据接线（只读；复用 §7.1 读取路径与门槛）：返回元素/聚合/计数/同源列表与稳定 token。
+      if (method === "GET" && path === "/api/knowledge/container") {
+        const source = url.searchParams.get("source") === "snapshot" ? "snapshot" : "current";
+        const num = (k: string) => { const v = url.searchParams.get(k); return v === null || v === "" ? undefined : Number(v); };
+        const container = buildKnowledgeContainer(state, {
+          source,
+          topicId: url.searchParams.get("topicId") ?? undefined,
+          snapshotId: url.searchParams.get("snapshotId") ?? undefined,
+          themeId: url.searchParams.get("themeId") ?? undefined,
+          subquestionId: url.searchParams.get("subquestionId") ?? undefined,
+          text: url.searchParams.get("text") ?? undefined,
+          contentType: url.searchParams.get("contentType") ?? undefined,
+          nature: url.searchParams.get("nature") ?? undefined,
+          sourceClass: url.searchParams.get("sourceClass") ?? undefined,
+          metricId: url.searchParams.get("metricId") ?? undefined,
+          condition: url.searchParams.get("condition") ?? undefined,
+          status: url.searchParams.get("status") ?? undefined,
+          mode: url.searchParams.get("mode") === "explore" ? "explore" : "formal",
+          cursor: num("cursor"),
+          pageSize: num("pageSize"),
+        });
+        const gateRefs = container.elements.filter((e) => e.kind === "item").map((e) => e.ref);
+        assertKnowledgeAccess(state, "localRead", gateRefs.flatMap((r) => (readKnowledgeVersion(state.knowledge, r) as { sourceRefs?: SourceRef[] } | null)?.sourceRefs ?? []));
+        send(res, 200, { ok: true, ...container });
+        return;
+      }
+      // E6-A 流水线状态（只读；计数只来自已落库回执）。
+      const kPipeline = path.match(/^\/api\/knowledge\/pipeline\/([^/]+)$/);
+      if (method === "GET" && kPipeline) {
+        const st = knowledgePipelineStatus(state, decodeURIComponent(kPipeline[1]));
+        if (!st) { send(res, 404, { error: `提取任务不存在：${kPipeline[1]}`, code: "run_missing" }); return; }
+        send(res, 200, { ok: true, ...st });
         return;
       }
       // §8.1 统一读取（§7.1）：current 必须 topicId；不写 state；viewId = 内容 hash；筛选/分页。
