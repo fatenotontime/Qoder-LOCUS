@@ -8,7 +8,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { writeFileSync, rmSync } from "node:fs";
 import { inflateRawSync } from "node:zlib";
-import { emptyState, JsonFileStore, STATE_VERSION } from "../store.ts";
+import { emptyState, JsonFileStore, STATE_VERSION, contentHash } from "../store.ts";
 import {
   emptyKnowledge, KNOWLEDGE_SCHEMA_VERSION, canonicalHash, refKey, sameRef,
   sourceRef as makeSourceRef, knowledgeRef as makeKnowledgeRef, assertKnowledgeShape,
@@ -24,7 +24,7 @@ import {
   readKnowledge, currentViewId, createKnowledgeDataset, reviewKnowledgeDataset, readDatasetRows,
   createKnowledgeMapping, updateKnowledgeMapping, reviewKnowledgeMapping, createKnowledgeComparison, legacyComparisonViews,
   effectiveCurrentJudgments, freezeKnowledge, knowledgeAccess, assertKnowledgeAccess, upsertSourcePolicy,
-  buildKnowledgeContainer, knowledgePipelineStatus,
+  buildKnowledgeContainer, knowledgePipelineStatus, knowledgeSourceAdapter, listSourceAdapters, assertSourceUsableForKnowledge,
   readSnapshotKnowledge, resolveSnapshotToken, readSnapshotDatasetRows,
 } from "../services/knowledge-base.ts";
 import { exportKnowledge, buildKnowledgePackage, snapshotCsv, snapshotWiki, snapshotSchemaFiles, safeFileName } from "../services/knowledge-export.ts";
@@ -1296,4 +1296,128 @@ test("E6-A④ 流水线状态只统计已落库回执：失败/取消/重放不�
   // 重复查询（等同回执重放/刷新）不改变计数
   assert.deepEqual(knowledgePipelineStatus(s, "kr_x")!.counters, st.counters);
   assert.equal(knowledgePipelineStatus(s, "kr_missing"), null);
+});
+// ══ E8-A 其余模块逐类贯通·数据层（合同 §10 E8；判据 T46 子用例）════════════
+//
+// 每类：当前读取 / 固定来源 / 性质继承 / 更新提示 / 更正后固定版仍可读；
+// 「wiki/总览入口」属 E6-B 页面层，此处只给来源定位（sourceRef）与读取文本。
+
+function seedE8() {
+  const t = createTopic(emptyState(), { name: "合成课题甲", researchQuestion: "Q" });
+  const topicId = t.topic.id;
+  const assetId = "as_rec";
+  let s: LocusState = {
+    ...t.state,
+    assets: [...t.state.assets, { id: assetId, kind: "literature", name: "hist.md", text: "历史文献：23/85 天发芽。", hash: contentHash("历史文献：23/85 天发芽。") } as never],
+    protocols: [
+      { id: "pr_user", topicId, name: "本地方案", sourceKind: "user", revision: 2, revisions: [{ revision: 1, at: "t", purpose: "本地目的", steps: [{ op: "取材", durationMin: 10 }], criteria: "成材" }, { revision: 2, at: "t", purpose: "本地目的", steps: [{ op: "取材", durationMin: 12 }], criteria: "成材" }], createdAt: "t", updatedAt: "t" } as never,
+      { id: "pr_rec", topicId, name: "文献重构方案", sourceKind: "reconstructed", sourceAssetId: assetId, revision: 1, revisions: [{ revision: 1, at: "t", purpose: "按文献复刻", steps: [{ op: "浸泡", durationMin: null }], criteria: "文献判据" }], createdAt: "t", updatedAt: "t" } as never,
+    ],
+    templates: [
+      { id: "tp_draft", protocolId: "pr_user", protocolRevision: 2, fields: ["温度", "时长"], aiDraft: true, humanConfirmed: false, revision: 1, history: [], createdAt: "t" } as never,
+    ],
+    executions: [
+      { id: "ex_user", topicId, protocolId: "pr_user", protocolRevision: 2, status: "done", events: [{ id: "ev1", at: "t", recordedAt: "t", backfilled: false, kind: "step", text: "取材 12min" }], createdAt: "t", updatedAt: "t" } as never,
+      { id: "ex_rec", topicId, protocolId: "pr_rec", protocolRevision: 1, status: "done", origin: "reconstructed", sourceAssetId: assetId, events: [{ id: "ev2", at: "t", recordedAt: "t", backfilled: true, kind: "note", text: "文献载 23 天发芽" }], createdAt: "t", updatedAt: "t" } as never,
+    ],
+    samples: [
+      { id: "sp_pub", topicId, shortName: "S-公开-1", displayName: "公开样品", origin: "public", states: [{ revision: 1, at: "t", amount: { value: "5", unit: "g", estimated: false }, handling: "常温", use: "公开数据对照", note: "" }], createdAt: "t" } as never,
+    ],
+    analysisResults: [
+      { id: "rs1", taskId: "task1", topicId, method: "线性拟合", params: "x=时间,y=值", reason: "看趋势", note: "", assetIds: [], reproducible: true, missing: ["重复次数"], adoptedRecommendation: "", revision: 1, history: [], createdAt: "t", updatedAt: "t" } as never,
+    ],
+    reports: [
+      { id: "rp1", topicId, pinned: { resultIds: ["rs1"] }, revision: 1, proposals: [], sources: [], at: "t", blocks: [{ id: "bk1", order: 1, nature: "interpretation", text: "由拟合推得趋势", refs: [{ kind: "result", id: "rs1", version: "r:1", label: "分析结果" }], draft: false, history: [] }] } as never,
+    ],
+    chats: [
+      { id: "ch1", topicId, scope: [], createdAt: "t", updatedAt: "t", messages: [
+        { id: "m1", role: "assistant", content: "建议记录温度", status: "done", proposals: [{ targetKind: "execution-note", targetId: "pn_unadopted", preview: "补记温度 25 °C", confirmed: false }], sources: [], at: "t" },
+        { id: "m2", role: "assistant", content: "已采纳建议", status: "done", proposals: [{ targetKind: "report-toVerify", targetId: "pn_adopted", preview: "报告加待验证项", confirmed: true, adoptedAt: "t" }], sources: [], at: "t" },
+      ] } as never,
+    ],
+  };
+  return { state: s, topicId };
+}
+
+const pin = (s: LocusState, kind: Parameters<typeof knowledgeSourceAdapter>[1], id: string) => {
+  const a = knowledgeSourceAdapter(s, kind, id)!;
+  const archived = { ...s, knowledge: archiveSourceVersion(s.knowledge, a.sourceRef, sourcePayload(s, a.sourceRef.kind, a.sourceRef.id)) };
+  return { a, archived };
+};
+
+test("T46a 方案/模板：读取＋固定来源＋性质继承（重构≠本地）＋AI 草稿未确认不可进知识", () => {
+  const f = seedE8();
+  const { a: user } = pin(f.state, "protocol", "pr_user");
+  assert.ok(user.readText.includes("本地方案") && user.readText.includes("取材"));
+  assert.equal(user.sourceClass, "human_statement", "用户编写方案 = 人工陈述");
+  assert.equal(user.usable, true);
+  const { a: rec } = pin(f.state, "protocol", "pr_rec");
+  assert.equal(rec.sourceClass, "historical_reconstruction", "文献重构方案不改写成用户方案");
+  assert.ok(rec.sourceRef.version.startsWith("r:"), "方案有业务修订 → r:N");
+  const { a: tpl } = pin(f.state, "template", "tp_draft");
+  assert.equal(tpl.usable, false, "AI 草稿模板未人工确认");
+  assert.equal(expectErr(() => assertSourceUsableForKnowledge(tpl)).details?.code, "source_not_usable");
+  assert.equal(tpl.sourceClass, "model_suggestion");
+});
+
+test("T46b 执行：reconstructed 不得伪装本地实测；更正后固定版仍可读且给出更新提示", () => {
+  const f = seedE8();
+  const { a: ex, archived } = pin(f.state, "execution", "ex_user");
+  assert.equal(ex.sourceClass, "local_observation");
+  assert.ok(ex.readText.includes("取材 12min"));
+  const { a: rec } = pin(f.state, "execution", "ex_rec");
+  assert.equal(rec.sourceClass, "historical_reconstruction", "按文献重构的执行≠本地实测");
+  assert.ok(rec.readText.includes("文献重构，非本地实测"));
+  // 更正：追加事件 → 固定版仍可读，且出现更新提示（不自动升级）
+  const corrected: LocusState = { ...archived, executions: archived.executions.map((x) => (x.id === "ex_user" ? { ...x, events: [...x.events, { id: "ev9", at: "t", recordedAt: "t", backfilled: false, kind: "note", text: "补记湿度" }] } : x)) };
+  assert.equal(resolveSourceVersion(corrected, corrected.knowledge, ex.sourceRef).status, "ok", "固定版仍可读（历史不动）");
+  const after = knowledgeSourceAdapter(corrected, "execution", "ex_user", ex.sourceRef)!;
+  assert.ok(after.staleNote && after.staleNote.includes("已有新版"), "更新提示：来源变更而固定引用未改绑");
+});
+
+test("T46c 样品：公开来源不伪装本地；无本地执行关联仍可作为资料存在", () => {
+  const f = seedE8();
+  const { a } = pin(f.state, "sample", "sp_pub");
+  assert.equal(a.sourceClass, "literature_report", "公开样品不标成本地实测");
+  assert.equal(a.natureHint, "to_verify");
+  assert.ok(a.usableNote.includes("无本地执行关联") && a.usableNote.includes("不创建虚构执行"));
+  assert.ok(a.readText.includes("公开数据"));
+});
+
+test("T46d 分析结果：计算返回不直接等于已确认结论；更正留历史与提示", () => {
+  const f = seedE8();
+  const { a, archived } = pin(f.state, "analysisResults" === "x" ? "result" : "result", "rs1");
+  assert.equal(a.sourceClass, "local_observation");
+  assert.equal(a.natureHint, "to_verify", "计算返回须人工确认后才成结论");
+  assert.ok(a.readText.includes("缺项：重复次数"));
+  const corrected: LocusState = { ...archived, analysisResults: archived.analysisResults.map((x) => (x.id === "rs1" ? { ...x, revision: 2, method: "多项式拟合" } : x)) };
+  assert.equal(resolveSourceVersion(corrected, corrected.knowledge, a.sourceRef).status, "ok");
+  assert.ok(knowledgeSourceAdapter(corrected, "result", "rs1", a.sourceRef)!.staleNote, "结果更正 → 更新提示");
+});
+
+test("T46e 报告块：派生陈述＋解析当时 refs 的固定版本＋草案标记", () => {
+  const f = seedE8();
+  const { a } = pin(f.state, "report_block", "rp1#bk1");
+  assert.equal(a.sourceClass, "human_statement", "报告块是派生陈述，不算新一手来源");
+  assert.equal(a.natureHint, "interpretation", "性质沿用块自身 nature");
+  assert.deepEqual(a.pinnedRefs, [{ kind: "result", id: "rs1", version: "r:1" }], "解析当时 refs 的版本（不用最新）");
+  assert.ok(a.usableNote.includes("派生陈述"));
+});
+
+test("T46f 对话提案：未采纳不得进知识；明确采纳后可用；AI 选择器可读外部对象", () => {
+  const f = seedE8();
+  const { a: un } = pin(f.state, "chat_proposal", "ch1/m1/pn_unadopted");
+  assert.equal(un.usable, false);
+  assert.equal(expectErr(() => assertSourceUsableForKnowledge(un)).details?.code, "source_not_usable");
+  assert.ok(un.readText.includes("未采纳"));
+  const { a: ok } = pin(f.state, "chat_proposal", "ch1/m2/pn_adopted");
+  assert.equal(ok.usable, true, "明确采纳后才可进知识主题");
+  assert.equal(ok.sourceClass, "model_suggestion");
+
+  // AI 选择器读取：既有 resolveFragment 覆盖外部对象类型（执行/方案/测量/表/卡/子问题）
+  const frag = resolveFragment(f.state, { kind: "protocol", id: "pr_user" });
+  assert.ok(frag.excerpt.length > 0 && frag.label.includes("方案"), "AI 选择器可读外部对象（方案）");
+  const list = listSourceAdapters(f.state, { topicId: f.topicId });
+  assert.ok(list.length >= 6, "逐类清单可枚举");
+  assert.ok(list.some((x) => x.kind === "report_block") && list.some((x) => x.kind === "chat_proposal"));
 });
