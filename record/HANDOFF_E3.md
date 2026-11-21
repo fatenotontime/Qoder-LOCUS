@@ -1,7 +1,7 @@
 # E3 完成交接（简要）
 
 > 范围：知识库防偏移执行合同 **E3 分项人审、主题与消费者开放**（§4.2/§4.6.5/§4.7/§8.1/§13 E3，判据 **T13–T16、T25** ＋ §10 E3 浏览器清单）。
-> 状态：**passed**，等待 PR #8 合入 main 后在台账生效。执行依据见 [KNOWLEDGE_BASE_EXECUTION_SPEC.md](../docs/architecture/KNOWLEDGE_BASE_EXECUTION_SPEC.md)；完整过程见 [会话记录 S05-T5](sessions/2026-11-21_session-05.md#s05-t5) 与 [提交台账 #86](COMMIT_LEDGER.md)。
+> 状态：**passed**（PR #8 已以 merge commit `410ea85` 于 2026-11-21 15:22 合入 main）。执行依据见 [KNOWLEDGE_BASE_EXECUTION_SPEC.md](../docs/architecture/KNOWLEDGE_BASE_EXECUTION_SPEC.md)；完整过程见 [会话记录 S05-T5](sessions/2026-11-21_session-05.md#s05-t5) 与 [提交台账 #86](COMMIT_LEDGER.md)。
 
 ## 一句话结论
 
@@ -56,7 +56,7 @@ E2 入库的结构化分项不再是「只读死数据」：**逐项可看原文
 
 ## Git 现状与下一步：E4（数据集／查询／比较）
 
-- 分支 `feat/s05-e3-item-review`：代码 `26f7d65`（2026-11-21 15:17，17 files +2776/−40）、记录 `22f677b`（15:18）；均已推送。
-- **PR #8**「E3 分项人审：逐项审阅／定位修订／旧卡结构化／主题门槛＋卡片归属修复」已开、`MERGEABLE`，审计通过（294/294、范围与标题一致、无敏感文件），**merge commit** 合入后按 §7.3 在下一轮回填台账 #86 的 merge hash。
+- 分支 `feat/s05-e3-item-review`：代码 `26f7d65`（2026-11-21 15:17，17 files +2776/−40）、记录 `22f677b`（15:18）；main 上另有交接文档提交 `c065bb2`（15:25，经 `docs/s05-e3-handoff` ＋ PR #9）。
+- **PR #8**「E3 分项人审：逐项审阅／定位修订／旧卡结构化／主题门槛＋卡片归属修复」审计通过（294/294、范围与标题一致、无敏感文件）后以 **merge commit `410ea85`（15:22）** 合入 main；台账 #86 已回填该 hash，PR #9 的 merge hash 按 §7.3 由下一轮回填。
 - E4 判据 **T17–T19、T26–T28**：数值换算要有独立 oracle（1 d vs 24 h 差 0 比 1；1 d vs 48 h 差 24 h 比 2）；missing／单位／类型不符正确拒绝；条件作自变量不得误拦截；scope 不得沿共享论文串到别的课题；禁止用摘要或前 30 行代替选定数据集。
 - 顺序纪律不变：短命分支 → 全绿 → 由 `git log` 写记录 → PR merge commit → 回填 merge hash；发现无法纳管的旁路按合同 §14 停下报告。

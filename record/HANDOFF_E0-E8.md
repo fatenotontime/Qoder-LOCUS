@@ -2,7 +2,7 @@
 
 > 用途：交给下一个执行会话/协作者，零上下文接手知识库防偏移执行合同的推进。
 > **唯一执行依据**：[知识库防偏移执行合同 v1.0](../docs/architecture/KNOWLEDGE_BASE_EXECUTION_SPEC.md)（下称「合同」）。本文与合同冲突时以合同为准；本文与仓库实际状态冲突时以 `git log` / `record/COMMIT_LEDGER.md` 为准。
-> 本文只保留最终版。撰写时点：2026-11-21 15:30 前后，main HEAD `0f361aa`（PR #7 merge，13:09）；E3 代码在 `feat/s05-e3-item-review`（`26f7d65` 15:17 ＋ 记录 `22f677b` 15:18），PR #8 待合。
+> 本文只保留最终版。撰写时点：2026-11-21 15:30，main HEAD `410ea85`（PR #8 merge，15:22）；E0–E3 全部 passed，下一步 E4。
 
 ---
 
@@ -111,7 +111,7 @@
 - 全量：**294/294 绿**（E2 后基线 279，本轮 +15）。浏览器验收在隔离实例（`PORT=5217`、`LOCUS_DATA=sciworkbench/data/scratch-e3/`、AI 环境变量全清、Edge）跑完 §12.3 步骤 1–3 与 §10 E3 清单，控制台 0 error／0 warn。
 - 修掉 9 个真实缺陷（详见 HANDOFF_E3 同名小节），其中「知识页显示 0 卡 0 待审」「条件引文不可见造成确认死路」「重抽静默清空人审」三项属会毁结论级。
 - 偏差如实：§12.3 步骤 1「总览」入口沿用现有顶部条路径；`scripts/frontend-text-check.ts` 在本机 headless Edge 取到空 DOM（环境限制），改用同规则在已连线 Edge 内扫描零命中替代；级联回退后「当前认识」读取侧复检留待 E4／E5。
-- PR：**#8**（`feat/s05-e3-item-review`，merge commit）审计通过——294/294、范围与标题一致、无敏感文件；合入后按 §7.3 在下一轮回填台账 #86 的 merge hash。
+- PR：**#8**（分支 `feat/s05-e3-item-review`）审计通过——294/294、范围与标题一致、无敏感文件，2026-11-21 15:22 以 **merge commit `410ea85`** 合入 main（台账 #86 已回填）。交接文档另走 `docs/s05-e3-handoff` → **PR #9**（含 `c065bb2` ＋ #86 回填 ＋ 本节更新），其 merge hash 按 §7.3 由下一轮回填。
 
 ## 四、E3–E8 与 B1 计划（一律引用合同，不另造路线）
 
@@ -131,7 +131,7 @@
 
 ## 五、记录与台账现状
 
-- 台账 [record/COMMIT_LEDGER.md](COMMIT_LEDGER.md)：#84（E1 commitState PR #6，merge `b09029b`）、#85（E2 `7ca563e` 13:01，PR #7 merge `0f361aa` 13:09，已回填）、**#86（E3 `26f7d65` 15:17 ＋ 记录 `22f677b` 15:18，分支 `feat/s05-e3-item-review`，PR #8 merge hash 待下一轮回填）**。
+- 台账 [record/COMMIT_LEDGER.md](COMMIT_LEDGER.md)：#84（E1 commitState PR #6，merge `b09029b`）、#85（E2 `7ca563e` 13:01，PR #7 merge `0f361aa` 13:09）、**#86（E3 `26f7d65` 15:17 ＋ 记录 `22f677b` 15:18 ＋ 交接文档 `c065bb2` 15:25，PR #8 merge `410ea85` 15:22 已回填；PR #9 merge hash 待下一轮回填）**。
 - 叙述记录：[record/sessions/2026-11-21_session-05.md](sessions/2026-11-21_session-05.md)（S05-T1 E0 / T2 基座 / T3 commitState / T4 E2 提取契约 / **T5 E3 分项人审＋交接**）。E4 完成后追加 S05-T6。
 - 用户未跟踪/改动材料（`vibe_images/`、`record/screenshots/from-pictures/`、`reference reseach data/…`、session-02.md 的用户改动）：**不删不擅自提交**。
 - 每轮收尾照 AGENTS.md §8 清单：先 git log 取真实 hash/时间 → 台账双线表＋轮次索引 → 会话记录 → trailer → 分支 PR 审计合并。无提交的轮次显式记「本轮无提交」。
