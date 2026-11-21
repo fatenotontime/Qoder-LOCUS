@@ -240,3 +240,609 @@ test("T23 多实体结果提交在save处失败：文件与结果均未发布，
     await close();
   }
 });
+
+// ══ E2：语义知识提取新契约（合同 §5.3/§5.4/§6）路由级测试 T06–T12、T24 ══
+
+interface StructCall { blockId: string; index: number; total: number; user: string }
+type Post = (p: string, body: unknown) => Promise<{ status: number; body: Record<string, unknown> }>;
+type Get = (p: string) => Promise<Record<string, unknown>>;
+
+function structCall(init: unknown): StructCall {
+  const body = JSON.parse(String((init as { body?: string }).body ?? "{}"));
+  const msgs = (body.messages ?? []) as { content?: unknown }[];
+  const user = String(msgs[msgs.length - 1]?.content ?? "");
+  const dm = /第 (\d+)\/(\d+) 部分/.exec(user);
+  return { blockId: /块ID：(\S+)/.exec(user)?.[1] ?? "", index: Number(dm?.[1] ?? 1) - 1, total: Number(dm?.[2] ?? 1), user };
+}
+
+/** 结构化提取模型桩：按调用即时返回 plan 给的 JSON 文本，并记录每次调用（用于「模型调用次数 0」这类硬断言）。 */
+function stubStructAi(plan: (call: StructCall) => string) {
+  const orig = globalThis.fetch;
+  const calls: StructCall[] = [];
+  globalThis.fetch = (async (u: unknown, init: unknown) => {
+    if (!String(u).includes("/chat/completions")) return orig(u as never, init as never);
+    const call = structCall(init);
+    calls.push(call);
+    return new Response(JSON.stringify({ choices: [{ message: { content: plan(call) } }] }), { status: 200 });
+  }) as typeof fetch;
+  setAiConfig({ baseUrl: "https://stub", model: "m", key: "k" });
+  return { calls, restore: () => { globalThis.fetch = orig; clearAiConfig(); } };
+}
+
+/** 挂起式模型桩：每次调用停在 await，测试可控地放行，用来制造「在途响应 vs 取消/暂停/重启」交错。 */
+const EMPTY_BATCH = '{"schemaVersion":1,"evidence":[],"contexts":[],"cards":[],"relations":[]}';
+function stubStructGated() {
+  const orig = globalThis.fetch;
+  const hooks: { call: StructCall; respond: (content: string) => void; answered: boolean }[] = [];
+  globalThis.fetch = (async (u: unknown, init: unknown) => {
+    if (!String(u).includes("/chat/completions")) return orig(u as never, init as never);
+    const call = structCall(init);
+    let respond!: (content: string) => void;
+    const waiting = new Promise<string>((r) => { respond = r; });
+    hooks.push({ call, respond, answered: false });
+    const content = await waiting;
+    hooks[hooks.length - 1].answered = true;
+    return new Response(JSON.stringify({ choices: [{ message: { content } }] }), { status: 200 });
+  }) as typeof fetch;
+  setAiConfig({ baseUrl: "https://stub", model: "m", key: "k" });
+  return {
+    get count(): number { return hooks.length; },
+    call(i: number): StructCall { return hooks[i].call; },
+    wasAnswered(i: number): boolean { return hooks[i].answered === true; },
+    respond(i: number, content: string): void { hooks[i].respond(content); },
+    restore: () => {
+      globalThis.fetch = orig;
+      clearAiConfig();
+      // 测试收尾：放行故意留在途的请求（否则 postChat 的 120s 超时定时器会拖住进程）；
+      // 用空批次应答，断言此时已全部完成，不影响任何结果。
+      hooks.forEach((h, i) => { if (!h.answered) h.respond(EMPTY_BATCH); });
+    },
+  };
+}
+
+const scalar = (raw: string, value: string, unit: string | null = null) => ({ kind: "scalar", raw, value, unit });
+const evOf = (localId: string, sourceBlockId: string, quote: string) => ({ localId, sourceBlockId, quote });
+const ctxOf = (localId: string, over: Record<string, unknown> = {}) => ({ localId, subject: "石墨烯电极", group: "G1", stage: "测试", method: "", conditions: [], unknowns: [], evidenceLocalIds: [], ...over });
+const itemOf = (over: Record<string, unknown> = {}) => ({ contentType: "observation", nature: "observation", text: "25 °C下响应时间0.8 s", subject: { raw: "石墨烯电极" }, predicate: { raw: "响应时间" }, value: scalar("0.8 s", "0.8", "s"), contextLocalIds: [], evidenceLocalIds: [], scopeText: "", unknowns: [], secondaryCitation: false, ...over });
+const cardOf = (localId: string, summary: string, items: Record<string, unknown>[]) => ({ localId, summary, items });
+const structJson = (o: Record<string, unknown>) => JSON.stringify({ schemaVersion: 1, evidence: [], contexts: [], cards: [], relations: [], ...o });
+const EMPTY = structJson({});
+async function mkPaper(post: Post, title: string, atts: { name: string; text: string }[], topicIds?: string[]): Promise<{ paperId: string; attachments: { attachmentId: string; assetId: string }[] }> {
+  const p = await post("/api/papers", { title, authors: "作者甲", year: "2024", topicIds });
+  assert.equal(p.status, 200);
+  const paperId = p.body.paperId as string;
+  const attachments: { attachmentId: string; assetId: string }[] = [];
+  for (const a of atts) {
+    const r = await post(`/api/papers/${paperId}/attachments`, { name: a.name, text: a.text, role: "fulltext" });
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+    attachments.push({ attachmentId: r.body.attachmentId as string, assetId: r.body.assetId as string });
+  }
+  return { paperId, attachments };
+}
+
+const st = async (get: Get): Promise<State> => (await get("/api/state")) as unknown as State;
+const jobOf = async (get: Get, jobId: string): Promise<Record<string, unknown>> => jobWithStatus(get, jobId);
+async function jobWithStatus(get: Get, jobId: string): Promise<Record<string, unknown>> {
+  const job = await get(`/api/jobs/${jobId}`);
+  if (job.error && !job.id) throw new Error(`job 不存在：${jobId}`);
+  return job;
+}
+interface RunView { ok: boolean; run: Record<string, unknown>; jobId: string | null; job: Record<string, unknown> | null }
+const runOf = async (get: Get, runId: string): Promise<RunView> => (await get(`/api/knowledge/runs/${runId}`)) as unknown as RunView;
+const chunksOf = (view: RunView): { status: string; receipt?: unknown; error?: string }[] => (view.run.chunks ?? []) as { status: string; receipt?: unknown; error?: string }[];
+const counts = (s: State) => ({ cards: s.cards.length, items: s.knowledge.items.length, contexts: s.knowledge.contexts.length, evidence: s.knowledge.evidence.length, relations: s.knowledge.relations.length });
+/** 等 job 离开 running（done / error / paused）；轮询而非挂死。 */
+async function waitJobEnd(get: Get, jobId: string): Promise<Record<string, unknown>> {
+  for (let i = 0; i < 800; i++) {
+    const job = await jobOf(get, jobId);
+    if (job.status !== "running") return job;
+    await sleep(5);
+  }
+  throw new Error(`等待超时：job ${jobId} 未结束`);
+}
+async function waitChunk(get: Get, runId: string, index: number, status: string): Promise<void> {
+  for (let i = 0; i < 800; i++) {
+    const c = chunksOf(await runOf(get, runId))[index];
+    if (c && c.status === status) return;
+    await sleep(5);
+  }
+  throw new Error(`等待超时：${runId} 第 ${index} 块未变为 ${status}`);
+}
+
+test("T06 输入非法早拒：422/404，模型调用 0 次，无 run 与知识残留", async () => {
+  const { post, get, close } = await boot(new MemoryStore());
+  const ai = stubStructAi(() => EMPTY);
+  try {
+    const t1 = await post("/api/topics", { name: "课题甲", researchQuestion: "Q" });
+    const t2 = await post("/api/topics", { name: "课题乙", researchQuestion: "R" });
+    const topicId = t1.body.topicId as string, otherTopicId = t2.body.topicId as string;
+    const sqOther = await post(`/api/topics/${otherTopicId}/subquestions`, { question: "乙的子问题", kind: "declared" });
+    assert.equal(sqOther.status, 200);
+    const A = await mkPaper(post, "论文甲", [{ name: "a1.md", text: "石墨烯电极在25 °C下响应时间0.8 s。" }]);
+    const B = await mkPaper(post, "论文乙", [{ name: "b1.md", text: "碳纳米管电极在30 °C下响应时间1.4 s。" }]);
+    const key = "k-e2-t06";
+    const cases: [string, Record<string, unknown>, number][] = [
+      ["附件为空数组", { paperId: A.paperId, attachmentIds: [], purpose: "比较响应时间", idempotencyKey: key }, 422],
+      ["附件缺省（不得解释为全选）", { paperId: A.paperId, purpose: "比较响应时间", idempotencyKey: key }, 422],
+      ["附件含重复 ID", { paperId: A.paperId, attachmentIds: [A.attachments[0].attachmentId, A.attachments[0].attachmentId], purpose: "比较响应时间", idempotencyKey: key }, 422],
+      ["附件不属于该论文", { paperId: A.paperId, attachmentIds: [B.attachments[0].attachmentId], purpose: "比较响应时间", idempotencyKey: key }, 422],
+      ["附件不存在", { paperId: A.paperId, attachmentIds: ["att_不存在"], purpose: "比较响应时间", idempotencyKey: key }, 422],
+      ["缺研究目的", { paperId: A.paperId, attachmentIds: [A.attachments[0].attachmentId], purpose: "  ", idempotencyKey: key }, 422],
+      ["缺幂等键", { paperId: A.paperId, attachmentIds: [A.attachments[0].attachmentId], purpose: "比较响应时间", idempotencyKey: "" }, 422],
+      ["子问题不属于该课题", { paperId: A.paperId, attachmentIds: [A.attachments[0].attachmentId], purpose: "比较响应时间", topicId, subquestionId: sqOther.body.subquestionId as string, idempotencyKey: key }, 422],
+      ["只给子问题不给课题", { paperId: A.paperId, attachmentIds: [A.attachments[0].attachmentId], purpose: "比较响应时间", subquestionId: sqOther.body.subquestionId as string, idempotencyKey: key }, 422],
+      ["论文条目不存在", { paperId: "paper_不存在", attachmentIds: [A.attachments[0].attachmentId], purpose: "比较响应时间", idempotencyKey: key }, 404],
+    ];
+    for (const [what, body, status] of cases) {
+      const r = await post("/api/knowledge/jobs", body);
+      assert.equal(r.status, status, `${what} 应 ${status}，实得 ${r.status}：${JSON.stringify(r.body)}`);
+      assert.ok(String(r.body.error ?? "").length > 0, `${what} 应给出人话错误`);
+    }
+    assert.equal(ai.calls.length, 0, "早拒：一次模型调用都不许发生");
+    const s = await st(get);
+    assert.deepEqual(counts(s), { cards: 0, items: 0, contexts: 0, evidence: 0, relations: 0 }, "早拒：不产生任何知识对象");
+    assert.equal(s.knowledge.extractionRuns.length, 0, "早拒：不建提取 run");
+    assert.equal(s.assets.length, 2, "早拒不得留下半建来源");
+  } finally {
+    ai.restore();
+    await close();
+  }
+});
+
+test("T07 同概述不同组别/条件：两项均保留，不按概述去重（重复仅提示不合并）", async () => {
+  const { post, get, close } = await boot(new MemoryStore());
+  let current: (c: StructCall) => string = () => EMPTY;
+  const ai = stubStructAi((c) => current(c));
+  try {
+    const { paperId, attachments } = await mkPaper(post, "论文甲", [{ name: "a1.md", text: "石墨烯电极在25 °C下响应时间0.8 s。高湿组同为0.8 s。" }]);
+    const attIds = attachments.map((a) => a.attachmentId);
+    current = () => structJson({
+      evidence: [evOf("e1", "chunk_0", "响应时间0.8 s")],
+      contexts: [
+        ctxOf("c1", { group: "低温干燥组", conditions: [{ field: "温度", value: scalar("25 °C", "25", "°C"), appliesTo: { subject: "石墨烯电极", stage: "测试" }, evidenceLocalIds: ["e1"] }], evidenceLocalIds: ["e1"] }),
+        ctxOf("c2", { group: "高湿组", conditions: [{ field: "湿度", value: scalar("80 %RH", "80", "%RH"), appliesTo: { subject: "石墨烯电极", stage: "测试" }, evidenceLocalIds: ["e1"] }], evidenceLocalIds: ["e1"] }),
+      ],
+      cards: [cardOf("k1", "响应时间0.8 s", [itemOf({ text: "响应时间0.8 s", contextLocalIds: ["c1"], evidenceLocalIds: ["e1"] })]),
+        cardOf("k2", "响应时间0.8 s", [itemOf({ text: "响应时间0.8 s", contextLocalIds: ["c2"], evidenceLocalIds: ["e1"] })])],
+    });
+    const r1 = await post("/api/knowledge/jobs", { paperId, attachmentIds: attIds, purpose: "比较响应时间", idempotencyKey: "k-t07-a" });
+    assert.equal(r1.status, 202, JSON.stringify(r1.body));
+    await waitJobEnd(get, r1.body.jobId as string);
+    let s = await st(get);
+    assert.equal(s.cards.length, 2, "同概述两候选都建壳，不合并");
+    assert.equal(s.knowledge.items.length, 2, "两候选各 1 项，均保留");
+    assert.equal(s.knowledge.contexts.length, 2, "组别不同 → 两个上下文");
+    assert.ok(s.knowledge.contexts.every((c) => c.payload.review.status === "pending"), "全部待审");
+    assert.deepEqual(s.knowledge.items.map((i) => i.payload.text), ["响应时间0.8 s", "响应时间0.8 s"], "不按概述文本去重");
+
+    // 第二次运行再出同概述同谓词项：只提示疑似重复，不自动合并/删除
+    current = () => structJson({
+      evidence: [evOf("e1", "chunk_0", "响应时间0.8 s")],
+      cards: [cardOf("k1", "响应时间0.8 s", [itemOf({ text: "响应时间0.8 s", evidenceLocalIds: ["e1"] })])],
+    });
+    const r2 = await post("/api/knowledge/jobs", { paperId, attachmentIds: attIds, purpose: "另一研究目的", idempotencyKey: "k-t07-b" });
+    assert.equal(r2.status, 202);
+    const j2 = await waitJobEnd(get, r2.body.jobId as string);
+    s = await st(get);
+    assert.equal(s.cards.length, 3, "重复提示不得吞掉新候选");
+    assert.equal(s.knowledge.items.length, 3);
+    assert.ok(((j2.result as { duplicateCandidates?: string[] }).duplicateCandidates ?? []).length >= 1, "应给出疑似重复提示");
+  } finally {
+    ai.restore();
+    await close();
+  }
+});
+
+test("T08 幂等：同键同输入返回同 run 不重调模型；已成功块重放返回同 receipt 不增对象", async () => {
+  const { post, get, close } = await boot(new MemoryStore());
+  const g = stubStructGated();
+  try {
+    const { paperId, attachments } = await mkPaper(post, "论文甲", [{ name: "a1.md", text: "石墨烯电极在25 °C下响应时间0.8 s。" }]);
+    const attIds = attachments.map((a) => a.attachmentId);
+    const body = { paperId, attachmentIds: attIds, purpose: "比较响应时间", idempotencyKey: "k-t08" };
+    const batch = structJson({ evidence: [evOf("e1", "chunk_0", "响应时间0.8 s")], cards: [cardOf("k1", "响应时间0.8 s", [itemOf({ evidenceLocalIds: ["e1"] })])] });
+    const r1 = await post("/api/knowledge/jobs", body);
+    assert.equal(r1.status, 202);
+    const runId = r1.body.runId as string;
+    await waitFor(() => g.count >= 1, "第 1 块已请求模型");
+    g.respond(0, batch);
+    const j1 = await waitJobEnd(get, r1.body.jobId as string);
+    assert.equal((j1.result as { created?: number }).created, 1);
+    let s = await st(get);
+    const run1 = s.knowledge.extractionRuns[0];
+    const receipt1 = run1.chunks[0].receipt!;
+    const before = counts(s);
+    assert.equal(g.count, 1, "单次运行只调一次模型");
+
+    // ① 同键同输入重复提交（网络重试）：返回既有 run，不新建、不重调模型
+    const r2 = await post("/api/knowledge/jobs", body);
+    assert.equal(r2.status, 200, JSON.stringify(r2.body));
+    assert.equal(r2.body.replayed, true);
+    assert.equal(r2.body.runId, runId, "同键同输入必须复用同一 run");
+    g.respond(0, batch); // 若被误当作新调用重发，也不应产生第二次模型请求
+    s = await st(get);
+    assert.equal(s.knowledge.extractionRuns.length, 1, "不新建 run");
+    assert.deepEqual(counts(s), before, "重放不产生任何新对象");
+    assert.equal(g.count, 1, "重放不再调模型");
+
+    // ② 响应丢失后对已成功块重试：命中 receipt，返回同一回执，对象数与模型调用均不变
+    const retry = await post(`/api/knowledge/jobs/${runId}/retry-chunk`, { index: 0, runId });
+    assert.equal(retry.status, 200, JSON.stringify(retry.body));
+    assert.equal(retry.body.replayed, true, "已有回执的块必须重放而非重复入库");
+    assert.equal(retry.body.created, 0);
+    s = await st(get);
+    assert.equal(g.count, 1, "重放不调模型");
+    assert.deepEqual(counts(s), before, "重放不增加对象");
+    assert.deepEqual(s.knowledge.extractionRuns[0].chunks[0].receipt, receipt1, "返回同 receipt（卡片/实体 ID 不变）");
+
+    // ③ 同键不同输入：409 定位既有 run
+    const r3 = await post("/api/knowledge/jobs", { ...body, purpose: "换一个研究目的" });
+    assert.equal(r3.status, 409);
+    assert.equal(r3.body.code, "idempotency_conflict");
+  } finally {
+    g.restore();
+    await close();
+  }
+});
+
+test("T09 引文定位：合法范围内多命中才 ambiguous；范围外同句不构成候选、不默认首个", async () => {
+  const { post, get, close } = await boot(new MemoryStore());
+  let current: (c: StructCall) => string = () => EMPTY;
+  const ai = stubStructAi((c) => current(c));
+  try {
+    const { paperId, attachments } = await mkPaper(post, "论文甲", [
+      { name: "a1.md", text: "石墨烯电极在25 °C下响应时间0.8 s。\n\n重复记录：响应时间0.8 s。" },
+      { name: "a2.md", text: "另一附件同样写着响应时间0.8 s（不在本块允许范围内）。" },
+    ]);
+    const [a1, a2] = attachments;
+    current = (c) => c.blockId === "chunk_0"
+      ? structJson({
+        evidence: [evOf("e1", "chunk_0", "响应时间0.8 s")],
+        contexts: [ctxOf("c1", { evidenceLocalIds: ["e1"] })],
+        cards: [cardOf("k1", "响应时间0.8 s", [itemOf({ contextLocalIds: ["c1"], evidenceLocalIds: ["e1"] })])],
+      })
+      : EMPTY;
+    const r = await post("/api/knowledge/jobs", { paperId, attachmentIds: attachments.map((a) => a.attachmentId), purpose: "比较响应时间", idempotencyKey: "k-t09" });
+    assert.equal(r.status, 202);
+    await waitJobEnd(get, r.body.jobId as string);
+    const s = await st(get);
+    assert.equal(s.knowledge.evidence.length, 1);
+    const ev = s.knowledge.evidence[0].payload;
+    assert.equal(ev.locationStatus, "ambiguous", "范围内两处命中 → 歧义，不得当作已定位");
+    assert.equal(ev.candidates.length, 2, "范围外同句不得进入候选（不是 3 个）");
+    assert.ok(ev.candidates.every((c) => c.sourceRef.id === a1.assetId), "候选只来自本块所属原件");
+    assert.equal(ev.locator.type, "unresolved", "歧义时不给假定位，也不默认第一处");
+    assert.equal(s.knowledge.contexts[0].payload.unknowns.some((u) => u.reasonCode === "ambiguous"), true, "歧义须留待审线索");
+    assert.equal(s.knowledge.items[0].payload.review.status === "pending", true);
+    assert.equal(s.cards[0].spans[0].matched, false, "阅读壳引文不得标为已匹配");
+  } finally {
+    ai.restore();
+    await close();
+  }
+});
+
+test("T10 引文不在块内：pending + unmatched，不生成 matched 假定位", async () => {
+  const { post, get, close } = await boot(new MemoryStore());
+  const ai = stubStructAi(() => structJson({
+    evidence: [evOf("e1", "chunk_0", "响应时间9.9 s")],
+    contexts: [ctxOf("c1", { evidenceLocalIds: ["e1"] })],
+    cards: [cardOf("k1", "响应时间9.9 s", [itemOf({ text: "响应时间9.9 s", value: scalar("9.9 s", "9.9", "s"), contextLocalIds: ["c1"], evidenceLocalIds: ["e1"] })])],
+  }));
+  try {
+    const { paperId, attachments } = await mkPaper(post, "论文甲", [{ name: "a1.md", text: "石墨烯电极在25 °C下响应时间0.8 s。" }]);
+    const r = await post("/api/knowledge/jobs", { paperId, attachmentIds: attachments.map((a) => a.attachmentId), purpose: "比较响应时间", idempotencyKey: "k-t10" });
+    assert.equal(r.status, 202);
+    await waitJobEnd(get, r.body.jobId as string);
+    const s = await st(get);
+    assert.equal(s.knowledge.evidence.length, 1, "未匹配不等于整块拒收：仍入库待审");
+    const ev = s.knowledge.evidence[0].payload;
+    assert.equal(ev.locationStatus, "unmatched");
+    assert.equal(ev.locator.type, "unresolved", "未匹配不得给出 text 假定位");
+    assert.deepEqual(ev.candidates, []);
+    assert.equal(ev.sourceRef.id, attachments[0].assetId, "来源可确定，只是定位不足");
+    assert.equal(s.knowledge.items[0].payload.review.status === "pending", true, "全部保持待审");
+    assert.equal(s.knowledge.contexts[0].payload.unknowns.some((u) => u.reasonCode === "unresolved_link"), true, "定位不足须作为 unknown 呈现");
+    assert.equal(s.cards[0].spans[0].matched, false);
+    assert.equal(s.cards[0].locator.sectionQuote, "", "无已定位引文 → 壳不回查引文，不编造");
+  } finally {
+    ai.restore();
+    await close();
+  }
+});
+
+test("T11 跨块方法与结果：仅明确唯一引用可绑定；范围外引用整块拒收；补读失败不悄悄丢", async () => {
+  const { post, get, close } = await boot(new MemoryStore());
+  let current: (c: StructCall) => string = () => EMPTY;
+  const ai = stubStructAi((c) => current(c));
+  try {
+    const { paperId, attachments } = await mkPaper(post, "论文甲", [
+      { name: "结果.md", text: "石墨烯电极在25 °C下响应时间0.8 s（测试条件见表3）。" },
+      { name: "方法.md", text: "表3 计时电流法：电位0.6 V，电解液为PBS。\n\n其余参数原文未给出。" },
+      { name: "讨论.md", text: "响应提升的原因尚不清楚（相关数据见表9）。" },
+    ]);
+    const [res, met] = attachments;
+    current = (c) => c.blockId === "chunk_0"
+      ? structJson({
+        evidence: [evOf("e1", "chunk_0", "响应时间0.8 s"), evOf("e2", "chunk_0:sup0", "电位0.6 V")],
+        contexts: [ctxOf("c1", {
+          method: "计时电流法",
+          conditions: [{ field: "电位", value: scalar("0.6 V", "0.6", "V"), appliesTo: { subject: "石墨烯电极", stage: "测试" }, evidenceLocalIds: ["e2"] }],
+          evidenceLocalIds: ["e1"],
+        })],
+        cards: [cardOf("k1", "响应时间0.8 s", [itemOf({ contextLocalIds: ["c1"], evidenceLocalIds: ["e1", "e2"] })])],
+      })
+      // chunk_1（方法.md）试图引用别块的证据 → 整块拒收
+        : structJson({
+          evidence: [evOf("e1", "chunk_0", "响应时间0.8 s")],
+          cards: [cardOf("k1", "跨块串条件", [itemOf({ evidenceLocalIds: ["e1"] })])],
+        });
+    const r = await post("/api/knowledge/jobs", { paperId, attachmentIds: [res.attachmentId, met.attachmentId], purpose: "比较响应时间", idempotencyKey: "k-t11" });
+    assert.equal(r.status, 202, JSON.stringify(r.body));
+    assert.equal(r.body.total, 2);
+    const job = await waitJobEnd(get, r.body.jobId as string);
+    const s = await st(get);
+    const run = s.knowledge.extractionRuns.find((x) => x.id === (r.body.runId as string))!;
+    assert.equal(run.chunks[0].status, "committed");
+    assert.equal(run.chunks[1].status === "failed", true, "非法跨块引用：该块整块拒收");
+    assert.ok(String(run.chunks[1].error).includes("整块拒收"), "拒收理由可见");
+    // 唯一明确引用可绑定：补读来的方法证据落在方法.md，且定位合法
+    const sup = s.knowledge.evidence.find((e) => e.payload.quote === "电位0.6 V")!;
+    assert.equal(sup.payload.sourceRef.id, met.assetId, "补读证据来源为方法附件");
+    assert.equal(sup.payload.locationStatus, "matched");
+    assert.equal(sup.payload.locator.type === "text" && sup.payload.locator.start >= 0, true, "补读范围内给真实偏移");
+    // 不串条件：结果块只带自己的 1 个上下文，方法文字另存为 method 项
+    assert.equal(s.knowledge.contexts.length, 1, "被拒收的块不得留下任何上下文");
+    assert.equal(s.knowledge.contexts[0].payload.conditions.length, 1);
+    assert.equal(s.knowledge.contexts[0].payload.conditions[0].field.raw, "电位");
+    assert.equal(s.knowledge.contexts[0].payload.methodRefs.length, 1, "方法文字另存为 method 项");
+    assert.equal(s.knowledge.items.length, 2, "结果项＋方法项；拒收块 0 项");
+    assert.equal(s.cards.length, 1, "拒收块不返回半套知识");
+    assert.ok((job.result as { chunkErrors?: { index: number; recoverable: boolean }[] }).chunkErrors?.some((e) => e.index === 1 && e.recoverable), "失败块标为可重试");
+    assert.equal(run.status, "partial");
+
+    // 补读定位失败（表9 无处可寻）：既不编造绑定，也必须显式暴露而不是悄悄丢
+    current = () => structJson({
+      evidence: [evOf("e1", "chunk_0", "原因尚不清楚")],
+      contexts: [ctxOf("c1", { evidenceLocalIds: ["e1"] })],
+      cards: [cardOf("k1", "机制不明", [itemOf({ text: "机制未查明", value: null, contextLocalIds: ["c1"], evidenceLocalIds: ["e1"] })])],
+    });
+    const r2 = await post("/api/knowledge/jobs", { paperId, attachmentIds: [attachments[2].attachmentId], purpose: "弄清提升原因", idempotencyKey: "k-t11b" });
+    assert.equal(r2.status, 202);
+    const j2 = await waitJobEnd(get, r2.body.jobId as string);
+    assert.deepEqual(((j2.result as { unresolvedLinks?: string[] }).unresolvedLinks ?? []).length, 1, "未解析的表引用必须出现在任务结果");
+    const s2 = await st(get);
+    const ctx2 = s2.knowledge.contexts.find((c) => c.payload.unknowns.some((u) => u.fieldPath === "supplement"))!;
+    assert.ok(ctx2, "未解析的表引用同时落为上下文 unknown（可逐项审阅）");
+    assert.equal(ctx2.payload.unknowns.find((u) => u.fieldPath === "supplement")!.reasonCode, "unresolved_link");
+  } finally {
+    ai.restore();
+    await close();
+  }
+});
+
+test("T12 非法类型/localId 重复/悬空引用/伪造审核：整块拒收，不返回半套可用知识", async () => {
+  const { post, get, close } = await boot(new MemoryStore());
+  let current: (c: StructCall) => string = () => EMPTY;
+  const ai = stubStructAi((c) => current(c));
+  try {
+    const { paperId, attachments } = await mkPaper(post, "论文甲", [{ name: "a1.md", text: "石墨烯电极在25 °C下响应时间0.8 s。" }]);
+    const attIds = attachments.map((a) => a.attachmentId);
+    const okItem = itemOf({ evidenceLocalIds: ["e1"] });
+    const cases: [string, string, string][] = [
+      ["非法 contentType", structJson({ evidence: [evOf("e1", "chunk_0", "响应时间0.8 s")], cards: [cardOf("k1", "猜测", [itemOf({ contentType: "speculation", evidenceLocalIds: ["e1"] })])] }), "contentType"],
+      ["localId 重复", structJson({ evidence: [evOf("e1", "chunk_0", "响应时间0.8 s"), evOf("e1", "chunk_0", "25 °C")], cards: [cardOf("k1", "重复", [okItem])] }), "localId 重复"],
+      ["悬空 context 引用", structJson({ evidence: [evOf("e1", "chunk_0", "响应时间0.8 s")], cards: [cardOf("k1", "悬空", [itemOf({ contextLocalIds: ["cX"], evidenceLocalIds: ["e1"] })])] }), "悬空引用"],
+      ["一批两卡、第二卡非法 → 两卡都不入库", structJson({ evidence: [evOf("e1", "chunk_0", "响应时间0.8 s")], cards: [cardOf("k1", "合法", [okItem]), cardOf("k2", "非法 nature", [itemOf({ nature: "fact", evidenceLocalIds: ["e1"] })])] }), "nature"],
+      ["模型伪造 audit 生命周期", JSON.stringify({ schemaVersion: 1, cards: [{ localId: "k1", summary: "伪造", audit: "confirm", items: [itemOf({})] }] }), "audit"],
+      ["关系引用本批之外的库内 ID", structJson({ evidence: [evOf("e1", "chunk_0", "响应时间0.8 s")], cards: [cardOf("k1", "臆造关系", [okItem])], relations: [{ fromLocalId: "ki_库内不存在", toLocalId: "k1", relationType: "supports", basis: "臆造", evidenceLocalIds: ["e1"] }] }), "不接受臆造库内 ID"],
+      ["关系端点指向多项卡（歧义，不挑第一个）", structJson({ evidence: [evOf("e1", "chunk_0", "响应时间0.8 s")], cards: [cardOf("k1", "两项卡", [okItem, itemOf({ text: "另一项", evidenceLocalIds: ["e1"] })])], relations: [{ fromLocalId: "k1", toLocalId: "e1", relationType: "supports", basis: "歧义端点", evidenceLocalIds: ["e1"] }] }), "指向不明确"],
+    ];
+    for (const [what, content, hint] of cases) {
+      current = () => content;
+      const before = counts(await st(get));
+      const r = await post("/api/knowledge/jobs", { paperId, attachmentIds: attIds, purpose: "比较响应时间", idempotencyKey: `k-t12-${what}` });
+      assert.equal(r.status, 202, `${what}：${JSON.stringify(r.body)}`);
+      const runId = r.body.runId as string;
+      const job = await waitJobEnd(get, r.body.jobId as string);
+      assert.equal(job.status, "done", `${what}：任务要正常结束，不能挂住`);
+      const view = await runOf(get, runId);
+      assert.equal(chunksOf(view)[0].status === "failed", true, `${what} 应整块拒收`);
+      const why = String(chunksOf(view)[0].error ?? "");
+      assert.ok(why.includes("整块拒收"), `${what} 理由须说明整块拒收：${why}`);
+      assert.ok(why.includes(hint), `${what} 理由须指出问题（${hint}）：${why}`);
+      assert.deepEqual(counts(await st(get)), before, `${what}：不返回半套可用知识（对象数不变）`);
+      assert.equal((job.result as { created?: number }).created, 0);
+      assert.equal(view.run.status, "failed");
+      assert.equal(((job.result as { chunkErrors?: unknown[] }).chunkErrors ?? []).length, 1, "失败块可逐块重试");
+      assert.equal(chunksOf(view)[0].receipt, undefined, "拒收块不留 receipt");
+    }
+    // 全部拒收之后，同一附件的合法批次仍能正常入库：拒收没有把 run/来源写坏
+    current = () => structJson({
+      evidence: [evOf("e1", "chunk_0", "响应时间0.8 s")],
+      contexts: [ctxOf("c1", { evidenceLocalIds: ["e1"] })],
+      cards: [cardOf("k1", "合法", [okItem])],
+      relations: [{ fromLocalId: "k1", toLocalId: "c1", relationType: "belongs_to", basis: "同一研究对象", evidenceLocalIds: ["e1"] }],
+    });
+    const okRun = await post("/api/knowledge/jobs", { paperId, attachmentIds: attIds, purpose: "比较响应时间", idempotencyKey: "k-t12-ok" });
+    assert.equal(okRun.status, 202);
+    await waitJobEnd(get, okRun.body.jobId as string);
+    const s = await st(get);
+    assert.equal(s.cards.length, 1, "此前各块全部拒收后，合法批次仍能入库");
+    assert.equal(s.knowledge.items.length, 1);
+    assert.equal(s.knowledge.relations.length, 1, "合法的关系（只引用本批 localId）应被接受");
+  } finally {
+    ai.restore();
+    await close();
+  }
+});
+
+test("T24 暂停/继续/取消/重启：成功块保留，未提交块丢弃，计数与回执不重复", async () => {
+  const store = new MemoryStore();
+  const first = await boot(store);
+  const g = stubStructGated();
+  let second: Awaited<ReturnType<typeof boot>> | null = null;
+  const batch = (blockId: string, quote: string, text: string) => structJson({
+    evidence: [evOf("e1", blockId, quote)],
+    cards: [cardOf("k1", text, [itemOf({ text, predicate: { raw: "响应时间" }, evidenceLocalIds: ["e1"] })])],
+  });
+  try {
+    const { paperId, attachments } = await mkPaper(first.post, "论文甲", [
+      { name: "a1.md", text: "石墨烯电极在25 °C下响应时间0.8 s。" },
+      { name: "a2.md", text: "碳纳米管电极在30 °C下响应时间1.4 s。" },
+    ]);
+    const attIds = attachments.map((a) => a.attachmentId);
+    const { post, get } = first;
+
+    // ① 暂停：在途块完成后停止，成功块保留，未开始块不动
+    const r1 = await post("/api/knowledge/jobs", { paperId, attachmentIds: attIds, purpose: "比较响应时间", idempotencyKey: "k-t24-a" });
+    assert.equal(r1.status, 202);
+    const runIdA = r1.body.runId as string, jobA = r1.body.jobId as string;
+    await waitFor(() => g.count >= 1, "chunk_0 已请求模型");
+    const pause = await post(`/api/knowledge/jobs/${jobA}/pause`, {});
+    assert.equal(pause.status, 200);
+    assert.equal(pause.body.pending, true, "在途块不截断：先完成再停");
+    g.respond(0, batch("chunk_0", "响应时间0.8 s", "响应时间0.8 s"));
+    const j1 = await waitJobEnd(get, jobA);
+    assert.equal(j1.status, "paused");
+    let s = await st(get);
+    assert.equal(s.knowledge.extractionRuns.find((x) => x.id === runIdA)!.status, "paused");
+    assert.equal(g.count, 1, "暂停后不再请求下一块模型");
+    let run = s.knowledge.extractionRuns.find((x) => x.id === runIdA)!;
+    assert.equal(run.chunks[0].status, "committed", "成功块保留");
+    assert.equal(run.chunks[1].status, "pending", "未开始块保持 pending");
+    assert.equal(s.cards.length, 1);
+
+    // ② 继续：复用同一 run，已成功块不重调模型
+    const resume = await post(`/api/knowledge/jobs/${jobA}/resume`, { runId: runIdA });
+    assert.equal(resume.status, 200, JSON.stringify(resume.body));
+    await waitFor(() => g.count >= 2, "chunk_1 已请求模型");
+    assert.equal(g.call(1).blockId, "chunk_1", "继续只跑未完成块");
+    g.respond(1, batch("chunk_1", "响应时间1.4 s", "响应时间1.4 s"));
+    await waitJobEnd(get, resume.body.jobId as string);
+    s = await st(get);
+    run = s.knowledge.extractionRuns.find((x) => x.id === runIdA)!;
+    assert.equal(run.status, "completed");
+    assert.equal(s.cards.length, 2);
+    assert.equal(g.count, 2, "暂停/继续全程共 2 次模型调用，无重复");
+
+    // ③ 取消：在途响应作废，未提交块丢弃，已出内容保留
+    const r2 = await post("/api/knowledge/jobs", { paperId, attachmentIds: attIds, purpose: "换一个问题", idempotencyKey: "k-t24-b" });
+    const runIdB = r2.body.runId as string, jobB = r2.body.jobId as string;
+    await waitFor(() => g.count >= 3, "取消场景 chunk_0 已请求模型");
+    const cancel = await post(`/api/knowledge/jobs/${jobB}/cancel`, { runId: runIdB });
+    assert.equal(cancel.status, 200);
+    assert.equal(cancel.body.runStatus, "cancelled");
+    const beforeCancel = counts(await st(get));
+    g.respond(2, batch("chunk_0", "响应时间0.8 s", "响应时间0.8 s")); // 在途响应晚于取消
+    const j2 = await waitJobEnd(get, jobB);
+    s = await st(get);
+    run = s.knowledge.extractionRuns.find((x) => x.id === runIdB)!;
+    assert.equal(run.status, "cancelled");
+    assert.equal(run.chunks[0].status, "discarded", "取消后未提交块丢弃（不落 receipt）");
+    assert.equal(run.chunks[0].receipt, undefined);
+    assert.deepEqual(counts(s), beforeCancel, "取消后在途结果不写入");
+    assert.equal((j2.result as { created?: number }).created, 0);
+    assert.equal(j2.status, "done");
+
+    // ④ 重启：内存 job 不假称在跑 → 持久 run 标 interrupted，已成功块保留；按 runId 继续只补未完成块
+    const r3 = await post("/api/knowledge/jobs", { paperId, attachmentIds: attIds, purpose: "第三问", idempotencyKey: "k-t24-c" });
+    const runIdC = r3.body.runId as string;
+    await waitFor(() => g.count >= 4, "重启场景 chunk_0 已请求模型");
+    g.respond(3, batch("chunk_0", "响应时间0.8 s", "响应时间0.8 s")); // 第 1 块成功入库
+    await waitChunk(get, runIdC, 0, "committed");
+    await waitFor(() => g.count >= 5, "重启场景 chunk_1 已请求模型"); // 第 2 块在途，故意不响应
+    const cardsBefore = (await st(get)).cards.length;
+    second = await boot(store); // 新进程：内存 job 全丢，持久 run 仍是 running
+    const after = await runOf(second.get, runIdC);
+    assert.equal(after.run.status, "interrupted", "重启后不得假称仍在运行");
+    assert.equal(after.jobId, null, "重启后没有内存 job");
+    assert.equal(chunksOf(after)[0].status, "committed", "成功块保留");
+    assert.ok(chunksOf(after)[0].receipt, "成功块 receipt 保留");
+    assert.equal(chunksOf(after)[1].status, "pending", "在途未提交的块回到 pending（不谎称已入库）");
+    const resumeC = await second.post(`/api/knowledge/jobs/${runIdC}/resume`, { runId: runIdC });
+    assert.equal(resumeC.status, 200, JSON.stringify(resumeC.body));
+    await waitFor(() => g.count >= 6, "继续后重新请求模型");
+    assert.equal(g.count, 6, "已成功块不重调模型：继续只补 1 块");
+    assert.equal(g.call(5).blockId, "chunk_1", "继续只跑未完成块");
+    const receiptC0 = chunksOf(after)[0].receipt as { cardIds: string[] };
+    g.respond(5, batch("chunk_1", "响应时间1.4 s", "响应时间1.4 s"));
+    const j3 = await waitJobEnd(second.get, resumeC.body.jobId as string);
+    const s2 = await st(second.get);
+    const runC = s2.knowledge.extractionRuns.find((x) => x.id === runIdC)!;
+    assert.equal(runC.status, "completed", JSON.stringify(j3));
+    assert.equal(runC.chunks.filter((c) => c.receipt).length, 2, "两块各有回执");
+    assert.equal(s2.cards.length, cardsBefore + 1, "续跑只补未完成块，不重建已成功块的壳");
+    assert.ok(receiptC0.cardIds.every((id) => s2.cards.some((c) => c.id === id)), "重启前落库的壳仍在，receipt 指向未变");
+    assert.equal((j3.result as { created?: number }).created, 2, "计数由 receipt 推导：run 级累计 2 张，重启不重复计数");
+  } finally {
+    await first.close();
+    if (second) await second.close();
+    g.restore(); // 最后放行仍在途的请求，避免超时定时器拖住测试进程
+  }
+});
+
+test("E2 守卫：结构化阅读壳在未适配消费者前 fail-closed（422/409），note 与旧卡不受影响", async () => {
+  const { post, get, close } = await boot(new MemoryStore());
+  const ai = stubStructAi(() => structJson({ evidence: [evOf("e1", "chunk_0", "响应时间0.8 s")], cards: [cardOf("k1", "响应时间0.8 s", [itemOf({ evidenceLocalIds: ["e1"] })])] }));
+  try {
+    const topic = await post("/api/topics", { name: "课题甲", researchQuestion: "Q" });
+    const topicId = topic.body.topicId as string;
+    const { paperId, attachments } = await mkPaper(post, "论文甲", [{ name: "a1.md", text: "石墨烯电极在25 °C下响应时间0.8 s。" }], [topicId]);
+    const r = await post("/api/knowledge/jobs", { paperId, attachmentIds: attachments.map((a) => a.attachmentId), purpose: "比较响应时间", topicId, idempotencyKey: "k-guard" });
+    assert.equal(r.status, 202);
+    await waitJobEnd(get, r.body.jobId as string);
+    const s = await st(get);
+    const shell = s.cards.find((c) => c.knowledgeItemIds && c.knowledgeItemIds.length > 0)!;
+    assert.ok(shell, "提取产出新壳");
+    // 语义改写与整卡确认：新壳上拒绝
+    const bad = await post(`/api/cards/${shell.id}/review`, { audit: "confirm", reason: "整卡确认" });
+    assert.equal(bad.status, 409, JSON.stringify(bad.body));
+    assert.equal(bad.body.code, "structured_knowledge_required");
+    const bad2 = await post(`/api/cards/${shell.id}/review`, { rawText: "手改概述" });
+    assert.equal(bad2.status, 409);
+    // 备注/重要度：仍允许（不是科学判断改动）
+    const ok = await post(`/api/cards/${shell.id}/review`, { note: "先看分项", importance: "high" });
+    assert.equal(ok.status, 200, JSON.stringify(ok.body));
+    // 未适配消费者：比较入口 422 指向分项
+    const cmp = await post("/api/comparisons", { topicId, cardIds: [shell.id] });
+    assert.equal(cmp.status, 422);
+    assert.equal(cmp.body.code, "structured_knowledge_required");
+    // 整壳采用：新壳必须逐项选择（§4.6.8/§4.6.9），未适配入口 422 指向分项
+    const sq = await post(`/api/topics/${topicId}/subquestions`, { question: "响应时间是多少", kind: "declared" });
+    const adopt = await post("/api/adoptions", { cardId: shell.id, subquestionId: sq.body.subquestionId as string, decision: "adopt", reason: "整卡采用" });
+    assert.equal(adopt.status, 422, JSON.stringify(adopt.body));
+    assert.equal(adopt.body.code, "structured_knowledge_required");
+    // 排除该壳仍允许（清理候选用）
+    const exclude = await post("/api/adoptions", { cardId: shell.id, subquestionId: sq.body.subquestionId as string, decision: "exclude", reason: "暂时不相关" });
+    assert.equal(exclude.status, 200, JSON.stringify(exclude.body));
+    // 分析核心选择：新壳不可直接选入（核心须含数据对象，卡片作为补充核心被拒）
+    const imp = await post("/api/import/measurements", { name: "d.csv", csv: "t,v\n0,1", topicId });
+    assert.equal(imp.status, 200);
+    const tableId = (await st(get)).tables[0].id;
+    const task = await post("/api/analysis/tasks", { topicId, title: "分析", core: [{ kind: "table", id: tableId }, { kind: "card", id: shell.id }] });
+    assert.equal(task.status, 422, JSON.stringify(task.body));
+    assert.equal(task.body.code, "structured_knowledge_required");
+    // 上下文地图：新壳只作呈现，不默认勾选、不可选，并给出指向分项审阅的缺口
+    const map = (await get(`/api/analysis/map?topicId=${encodeURIComponent(topicId)}`)) as unknown as { nodes: { key: string; role: string; selectable: boolean; gaps: { code: string }[] }[] };
+    const shellNode = map.nodes.find((n) => n.key === `card:${shell.id}`);
+    assert.ok(shellNode, "地图呈现该壳");
+    assert.equal(shellNode!.role, "optional", "新壳不参与默认勾选");
+    assert.equal(shellNode!.selectable, false, "新壳在地图里不可选");
+    assert.ok(shellNode!.gaps.some((g) => g.code === "structured_knowledge_required"), "缺口指向逐项审阅");
+    // 旧卡（无逐项绑定）正常流程仍可走
+    const lit = await post("/api/import/literature", { name: "old.md", text: "旧卡原文片段。", mode: "draft", topicId });
+    assert.equal(lit.status, 200);
+    const oldState = await st(get);
+    const oldCard = oldState.cards.find((c) => c.assetId === lit.body.assetId)!;
+    const okOld = await post(`/api/cards/${oldCard.id}/review`, { audit: "confirm", reason: "人工核对" });
+    assert.equal(okOld.status, 200, JSON.stringify(okOld.body));
+    // 旧卡路径不变：确认后仍在地图里默认选入
+    const map2 = (await get(`/api/analysis/map?topicId=${encodeURIComponent(topicId)}`)) as unknown as { nodes: { key: string; role: string; selectable: boolean }[] };
+    const legacyNode = map2.nodes.find((n) => n.key === `card:${oldCard.id}`);
+    assert.equal(legacyNode?.role, "selected", "旧确认卡仍按原路径默认选入");
+    assert.equal(legacyNode?.selectable, true);
+  } finally {
+    ai.restore();
+    await close();
+  }
+});

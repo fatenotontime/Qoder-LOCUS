@@ -7,7 +7,7 @@
  * 见 docs/stage7/02_CONTEXT_MAP_API_PROMPT.md、ADR-0027。
  */
 import type { LocusState, ObjectRef } from "../store.ts";
-import { AppError } from "./app.ts";
+import { AppError, assertLegacyCardConsumerUsable, isStructuredShell } from "./app.ts";
 import { buildNetwork, nodeForRef, type NetEdge, type NetKind, type NetNode } from "./references.ts";
 
 /** 可加入上下文的可选对象类型（以 resolveFragment 支持者为准）。 */
@@ -34,6 +34,8 @@ export interface ContextMap {
 }
 
 const GAP_SOURCE_MISSING: MapGap = { code: "source_missing", label: "来源缺失" };
+/** §4.6.10：新契约阅读壳在分项选择接入（E3）前不进旧上下文，节点保留但明确不可选。 */
+const GAP_STRUCTURED_REQUIRED: MapGap = { code: "structured_knowledge_required", label: "需逐项审阅后选择" };
 const pendingGaps = (n: NetNode): MapGap[] => [
   ...(n.pending ?? []).map((p) => ({ code: "pending", label: p })),
   ...(n.gap ? [{ code: "missing", label: n.gap }] : []),
@@ -105,15 +107,18 @@ export function buildContextMap(state: LocusState, opts: { topicId: string; subq
       const belong = inTopic(state, topicId, p.kind, p.id);
       if (belong === null) throw new AppError(422, `所选对象不存在：${p.kind}:${p.id}`);
       if (belong === false) throw new AppError(422, `所选对象不属于该课题：${p.kind}:${p.id}`);
+      if (p.kind === "card") assertLegacyCardConsumerUsable(state.cards.find((c) => c.id === p.id), "上下文地图");
       return p;
     });
     const { core, gaps } = deriveCore(state, picks);
     for (const r of core) put(r, "core");
     for (const g of gaps) addGap(g.key, { code: g.code, label: g.label });
-    // 默认已选＝已入候选知识卡
+    // 默认已选＝已入候选知识卡（新壳只作上下文呈现，不参与默认勾选与后续计算）
     for (const c of state.cards) {
+      if (inTopic(state, topicId, "card", c.id) !== true) continue;
+      if (isStructuredShell(c)) { put({ kind: "card", id: c.id }, "optional"); continue; }
       if (c.audit !== "confirm") continue;
-      if (inTopic(state, topicId, "card", c.id) === true) put({ kind: "card", id: c.id }, "selected");
+      put({ kind: "card", id: c.id }, "selected");
     }
     // 其他可选＝同课题的执行/测量/数据表/方案（未被 core/selected 占用）
     for (const k of ["protocol", "execution", "measurement", "table"] as const) {
@@ -132,10 +137,11 @@ export function buildContextMap(state: LocusState, opts: { topicId: string; subq
   const kept = new Map<string, MapNode>();
   const addNode = (n: NetNode, role: MapRole) => {
     if (kept.has(n.key)) return;
+    const shell = n.kind === "card" && isStructuredShell(state.cards.find((c) => c.id === n.id));
     kept.set(n.key, {
       key: n.key, kind: n.kind, id: n.id, label: n.label, version: n.version, external: n.external,
-      role, selectable: role === "selected" || role === "optional",
-      gaps: [...(extraGaps.get(n.key) ?? []), ...pendingGaps(n)],
+      role, selectable: !shell && (role === "selected" || role === "optional"),
+      gaps: [...(extraGaps.get(n.key) ?? []), ...pendingGaps(n), ...(shell ? [GAP_STRUCTURED_REQUIRED] : [])],
     });
   };
   for (const [key, role] of roles) {

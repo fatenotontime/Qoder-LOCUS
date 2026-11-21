@@ -11,7 +11,7 @@ import type {
   ChatSessionRecord, ChatMessage, ChatProposal,
 } from "../store.ts";
 import { contentHash } from "../store.ts";
-import { AppError, MAX_IMPORT_BYTES, makeAsset } from "./app.ts";
+import { AppError, MAX_IMPORT_BYTES, makeAsset, assertLegacyCardConsumerUsable } from "./app.ts";
 import { effectiveSnapshot, appendEvent } from "./experiment.ts";
 
 const now = () => new Date().toISOString();
@@ -46,15 +46,18 @@ function cleanOptionalItem(state: LocusState, v: unknown): { ref: ObjectRef; inc
   return { ref, included: o.included === true };
 }
 
-/** 锁5（选择边界）：知识卡须人工确认才可被选用；核心与候选同查。取消选择（included:false）不经过此守卫。 */
+/** 锁5（选择边界）：知识卡须人工确认才可被选用；核心与候选同查。取消选择（included:false）不经过此守卫。
+ *  新契约阅读壳（§4.6.10）：分析上下文尚未接入分项选择，遇到即明确拒绝，不退回概述文本。 */
 function assertSelectable(state: LocusState, ref: ObjectRef): void {
   if (ref.kind !== "card") return;
   const c = state.cards.find((x) => x.id === ref.id);
+  assertLegacyCardConsumerUsable(c, "分析上下文");
   if (c && c.audit !== "confirm") throw new AppError(422, `知识卡未入候选（须人工确认）：${c.rawText.slice(0, 30)}…`);
 }
 
 /** 锁5（冻结前统一复检）：送 AI 的上下文中不得含未确认知识卡——兜底旧任务遗留的未审候选。 */
 function assertCardsConfirmed(state: LocusState, refs: ObjectRef[]): void {
+  for (const r of refs) if (r.kind === "card") assertLegacyCardConsumerUsable(state.cards.find((c) => c.id === r.id), "分析上下文");
   const bad = refs.filter((r) => r.kind === "card").map((r) => state.cards.find((c) => c.id === r.id))
     .filter((c): c is NonNullable<typeof c> => !!c && c.audit !== "confirm");
   if (bad.length) throw new AppError(422, `上下文含未确认知识卡（${bad.length} 张），请先人工确认或取消选择：${bad.map((c) => c.rawText.slice(0, 20)).join("；")}`);
@@ -111,6 +114,8 @@ export function resolveFragment(state: LocusState, ref: ObjectRef): ContextFragm
     case "card": {
       const c = state.cards.find((x) => x.id === ref.id);
       if (!c) throw new AppError(404, `知识卡不存在：${ref.id}`);
+      // §4.6.3：新壳 extracted 为空结构，不能读成「没数据就用概述」；此处 fail closed。
+      assertLegacyCardConsumerUsable(c, "上下文摘录");
       return { ...base, label: `知识卡 · ${c.rawText.slice(0, 40)}`, version: `核对 ${c.audit}`, excerpt: cap(`${c.rawText}${c.scope ? `\n适用范围：${c.scope}` : ""}${c.interpretation ? `\n作者解释：${c.interpretation}` : ""}${c.secondaryCitation ? "\n（二手转引）" : ""}`) };
     }
     case "asset": {

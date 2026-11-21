@@ -334,6 +334,26 @@ export function mapAiLiteratureCards(asset: AssetRecord, cards: unknown[]): LitC
 // 排除不再强制原因（2026-11-18 用户拍板：原因可选填）；改关键文本/字段/转引仍须原因。
 const CARD_BLOCKING_AUDIT = new Set<LitCardRecord["audit"]>([]);
 
+// ── 新旧卡片共存（合同 §4.6）：新壳最低 fail-closed 守卫 ─────
+
+/** 新契约阅读壳判定：`knowledgeItemIds` 非空即语义以 knowledge.items 为准（§4.6.2）。 */
+export function isStructuredShell(c: LitCardRecord | undefined): boolean {
+  return !!c && Array.isArray(c.knowledgeItemIds) && c.knowledgeItemIds.length > 0;
+}
+
+/**
+ * 尚未接入新壳的旧消费者（选择/计算/引用）一律明确拒绝：
+ * 不用概述文本或空 `extracted.fields` 兜底，也不静默剔除用户以为已选的项（§4.6.3/§4.6.10）。
+ */
+export function assertLegacyCardConsumerUsable(card: LitCardRecord | undefined, entry: string): void {
+  if (!isStructuredShell(card)) return;
+  throw new AppError(
+    422,
+    `${entry}还不能直接使用结构化知识阅读壳：该卡的内容在知识项中，请到「知识」逐项核对确认后按分项选择。`,
+    { code: "structured_knowledge_required" },
+  );
+}
+
 export interface CardPatch {
   audit?: LitCardRecord["audit"];
   importance?: LitCardRecord["importance"];
@@ -349,6 +369,16 @@ export function reviewCard(state: LocusState, id: string, patch: CardPatch): Loc
   const idx = state.cards.findIndex((c) => c.id === id);
   if (idx < 0) throw new AppError(404, `证据卡不存在：${id}`);
   const cur = state.cards[idx];
+  // §4.6.5：旧端点对新壳的语义修改/整卡确认返回 409 并指向知识审阅入口；备注与重要度照常可改。
+  if (isStructuredShell(cur)) {
+    const semantic = patch.rawText !== undefined || patch.extracted !== undefined || patch.secondaryCitation !== undefined;
+    if (semantic) {
+      throw new AppError(409, "该卡是结构化知识阅读壳：内容、字段与转引须在知识分项中修改，旧卡片端点不双写（§4.6.2）。", { code: "structured_knowledge_required" });
+    }
+    if (patch.audit !== undefined && patch.audit !== cur.audit) {
+      throw new AppError(409, "该卡是结构化知识阅读壳：审核状态由各知识项派生，不能整卡确认/排除（§4.6.5）。请到「知识」逐项确认。", { code: "structured_knowledge_required" });
+    }
+  }
   const reason = (patch.reason ?? cur.reason ?? "").trim();
   const textChanged = patch.rawText !== undefined && patch.rawText !== cur.rawText;
   const markingSecondary = patch.secondaryCitation === true && !cur.secondaryCitation;
@@ -497,6 +527,8 @@ export function upsertAdoption(
   if (!card) throw new AppError(404, `证据卡不存在：${input.cardId}`);
   if (!state.subquestions.some((q) => q.id === input.subquestionId)) throw new AppError(404, `子问题不存在：${input.subquestionId}`);
   if (input.decision !== "adopt" && input.decision !== "exclude") throw new AppError(422, "采用决定只能是 adopt / exclude。");
+  // 新壳不能整壳采用（§4.6.8：不得把壳与其知识项算两份证据）；排除该壳仍允许，用于清理候选。
+  if (input.decision === "adopt") assertLegacyCardConsumerUsable(card, "任务采用");
   const reason = (input.reason ?? "").trim();
   if (input.decision === "adopt" && (card.audit !== "confirm" || !card.locator.sectionQuote)) {
     throw new AppError(422, "不足以正式采用：核对未确认或缺少原文定位（可先暂存搜索，不用于正式判断）。");
@@ -548,6 +580,7 @@ export function createComparison(
   const cards = ids.map((id) => {
     const c = state.cards.find((x) => x.id === id);
     if (!c) throw new AppError(404, `证据卡不存在：${id}`);
+    assertLegacyCardConsumerUsable(c, "比较");
     if (c.audit !== "confirm") throw new AppError(422, `证据卡 ${id} 未确认，不能进入正式比较（先核对）。`);
     if (state.assets.find((a) => a.id === c.assetId)?.topicId !== input.topicId) throw new AppError(422, `证据卡 ${id} 不属于该课题。`);
     return c;
