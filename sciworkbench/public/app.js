@@ -13,11 +13,15 @@ import { knowledgeLeftHtml, knowledgeWorkspaceHtml, knowledgeQueueHtml, renderKn
 import { renderAnalysisForm, currentTask, contextMapHtml, analysisRightHtml, snapshotHtml, bindAnalysis } from "./lib/pages/analysis.js";
 
 let state = { topics: [], subquestions: [], assets: [], papers: [], attachments: [], cards: [], tables: [], adoptions: [], mappings: [], comparisons: [], protocols: [], templates: [], executions: [], samples: [], measurements: [], impacts: [], ocrs: [], analysisTasks: [], analysisResults: [], reports: [], chats: [] };
-const ui = { nav: "topic", topicId: "", assetId: null, paperId: null, attId: null, tableId: null, highlight: null, cell: null, dirty: false, busy: false, cardFilter: "all", groupSel: new Set(), batch: null, ack: false, protocolId: null, executionId: null, stepSel: null, viewRev: null, editEventId: null, pauseSuggest: null, prepExtra: 0, taskId: null, chatId: null, reportId: null, reportWorking: {}, navCollapsed: false, kzTab: "todo", kzPanel: "cards", cardOpen: null, kzJob: null, kzStruct: null, kiView: null, suppressRecheck: null, topicPane: "overview", subqId: null };
+const ui = { nav: "topic", topicId: "", assetId: null, paperId: null, attId: null, tableId: null, highlight: null, cell: null, dirty: false, busy: false, cardFilter: "all", groupSel: new Set(), batch: null, ack: false, protocolId: null, executionId: null, stepSel: null, viewRev: null, editEventId: null, pauseSuggest: null, prepExtra: 0, taskId: null, chatId: null, reportId: null, reportWorking: {}, navCollapsed: false, kzTab: "todo", kzPanel: "cards", cardOpen: null, kzJob: null, kzStruct: null, kiView: null, suppressRecheck: null, topicPane: "overview", subqId: null, paperView: "manage", paperQuery: "", paperFilter: "all" };
 
 // 壳层按页布局能力（§2.1）：每页声明一种布局，壳层据此排布三块区域。
-const LAYOUT = { topic: "aside" }; // aside：主体＋辅助（撤出左栏课题目录）；其余页沿用三栏 review
-function layoutOf(nav) { return LAYOUT[nav] ?? "review"; }
+// aside：主体＋辅助（撤出左栏常驻目录）；single：只留主体（阅读）；review：三栏；canvas：宽画布。
+const LAYOUT = { topic: "aside", papers: "aside" };
+function layoutOf() {
+  if (ui.nav === "papers" && ui.paperView === "read") return "single"; // 阅读页：只留原文
+  return LAYOUT[ui.nav] ?? "review";
+}
 let lastAction = null; // { label, run }
 function setDirty(value) {
   const next = Boolean(value);
@@ -45,7 +49,7 @@ const PANEL_OF = (el) => { const p = el?.closest?.(".pane"); return p ? (p.class
 const UI_KEY = "locus.ui.v2"; // 阶段5 重构：七入口导航，旧选择态作废，默认落课题首页
 let uiRestored = false;
 function saveUi() {
-  try { localStorage.setItem(UI_KEY, JSON.stringify({ nav: ui.nav, topicId: ui.topicId, assetId: ui.assetId, paperId: ui.paperId, tableId: ui.tableId, cardFilter: ui.cardFilter, protocolId: ui.protocolId, executionId: ui.executionId, taskId: ui.taskId, chatId: ui.chatId, reportId: ui.reportId, navCollapsed: ui.navCollapsed, kzTab: ui.kzTab, kzPanel: ui.kzPanel, cardOpen: ui.cardOpen, topicPane: ui.topicPane, subqId: ui.subqId })); } catch {}
+  try { localStorage.setItem(UI_KEY, JSON.stringify({ nav: ui.nav, topicId: ui.topicId, assetId: ui.assetId, paperId: ui.paperId, tableId: ui.tableId, cardFilter: ui.cardFilter, protocolId: ui.protocolId, executionId: ui.executionId, taskId: ui.taskId, chatId: ui.chatId, reportId: ui.reportId, navCollapsed: ui.navCollapsed, kzTab: ui.kzTab, kzPanel: ui.kzPanel, cardOpen: ui.cardOpen, topicPane: ui.topicPane, subqId: ui.subqId, paperView: ui.paperView, paperQuery: ui.paperQuery })); } catch {}
 }
 function restoreUi() {
   if (uiRestored) return;
@@ -69,6 +73,8 @@ function restoreUi() {
     if (["cards", "themes"].includes(s.kzPanel)) ui.kzPanel = s.kzPanel;
     if (typeof s.cardOpen === "string" || s.cardOpen === null) ui.cardOpen = s.cardOpen;
     if (s.topicPane === "subq" && state.subquestions.some((q) => q.id === s.subqId)) { ui.topicPane = "subq"; ui.subqId = s.subqId; }
+    if (s.paperView === "read" || s.paperView === "manage") ui.paperView = s.paperView;
+    if (typeof s.paperQuery === "string") ui.paperQuery = s.paperQuery;
   } catch {}
 }
 
@@ -760,11 +766,26 @@ function backFromSubq() {
   renderAll();
 }
 
+// ── 文献：管理页 ⇄ 阅读页（相互独立）──
+function openPaperRead(id) {
+  if (!id) return;
+  if (!guardLeave()) return;
+  ui.paperId = id; ui.attId = null; ui.paperView = "read";
+  renderAll();
+  const c = $("#mid-content");
+  if (c) c.scrollTop = 0;
+}
+function backToPaperManage() {
+  if (!guardLeave()) return;
+  ui.paperView = "manage";
+  renderAll();
+}
+
 // ── 浏览器返回保护（§5.1：历史栈集成，不引入路由库）──
 let historyReady = false;
 let suppressHistory = false;
 let lastPushedKey = "";
-function pageState() { return { nav: ui.nav, topicId: ui.topicId, topicPane: ui.topicPane, subqId: ui.subqId }; }
+function pageState() { return { nav: ui.nav, topicId: ui.topicId, topicPane: ui.topicPane, subqId: ui.subqId, paperView: ui.paperView, paperId: ui.paperId }; }
 /** 页面状态变化时写入一条历史；首次替换、后台刷新/主题/动画不入历史。 */
 function syncHistory() {
   if (suppressHistory) return;
@@ -779,6 +800,8 @@ function applyPageState(st) {
   ui.nav = st.nav; ui.topicId = st.topicId ?? ""; ui.topicPane = st.topicPane ?? "overview";
   ui.subqId = state.subquestions.some((q) => q.id === st.subqId) ? st.subqId : null;
   if (ui.topicPane === "subq" && !ui.subqId) ui.topicPane = "overview";
+  ui.paperId = state.papers.some((p) => p.id === st.paperId) ? st.paperId : null;
+  ui.paperView = st.paperView === "read" && ui.paperId ? "read" : "manage";
   ui.highlight = null; ui.cell = null; ui.groupSel.clear(); ui.batch = null; ui.ack = false;
   ui.stepSel = null; ui.viewRev = null; ui.editEventId = null; ui.pauseSuggest = null; ui.prepExtra = 0;
   renderAll();
@@ -836,7 +859,7 @@ async function activateNav(kind) {
   clearAllErrors();
   ui.nav = kind; ui.highlight = null; ui.cell = null; ui.tableId = null; ui.groupSel.clear(); ui.batch = null; ui.ack = false;
   ui.stepSel = null; ui.viewRev = null; ui.editEventId = null; ui.pauseSuggest = null; ui.prepExtra = 0;
-  ui.topicPane = "overview"; ui.subqId = null;
+  ui.topicPane = "overview"; ui.subqId = null; ui.paperView = "manage";
   renderAll();
   restoreNavScroll();
   if (prefersReducedMotion()) return;
@@ -870,7 +893,7 @@ function renderShell() {
     if (ts.length) ui.taskId = ts[0].id;
   }
   document.querySelector(".app").classList.toggle("mode-knowledge", kz);
-  document.querySelector(".app").dataset.layout = layoutOf(ui.nav);
+  document.querySelector(".app").dataset.layout = layoutOf();
   document.querySelector(".app").classList.remove("nav-mini");
   $("#navrail").hidden = true;
   $("#nav").hidden = false;
@@ -888,14 +911,15 @@ function renderShell() {
 /** 中间「＋新建」区：本页的新建/上传表单与工具（不再放侧栏）。 */
 function renderCreateArea() {
   const box = $("#create-area"), tools = $("#tools-area");
-  if (ui.nav === "topic" || (ui.nav === "knowledge" && !state.papers.length)) { box.innerHTML = ""; tools.innerHTML = ""; return; }
+  // 课题页、文献页（管理/阅读分离，表单移入按需流程）不走通用创建区；知识页无文献时不显示。
+  if (ui.nav === "topic" || ui.nav === "papers" || (ui.nav === "knowledge" && !state.papers.length)) { box.innerHTML = ""; tools.innerHTML = ""; return; }
   box.innerHTML = ""; tools.innerHTML = "";
   renderImportBox(box);
   renderLitTools(tools);
 }
 
 function renderImportBox(box) {
-  if (ui.nav === "papers") { renderPaperForm(box); return; }
+  if (ui.nav === "papers") { box.innerHTML = ""; return; } // 文献页表单移入管理页按需流程
   if (ui.nav === "knowledge") { renderKnowledgeForm(box); return; }
   if (ui.nav === "protocol") { renderProtocolImport(box); return; }
   if (ui.nav === "record") { renderRecordImport(box); return; }
@@ -933,7 +957,7 @@ function midEmpty(kind, title, desc) {
 function renderMiddle() {
   const note = $("#mid-note"), content = $("#mid-content");
   document.body.dataset.nav = ui.nav;
-  content.classList.remove("is-empty", "rich");
+  content.classList.remove("is-empty", "rich", "reader");
   content.classList.toggle("kzw", ui.nav === "knowledge");
   if (ui.nav === "topic") {
     note.hidden = true;
@@ -962,15 +986,9 @@ function renderMiddle() {
     return;
   }
   if (ui.nav === "papers") {
-    const p = currentPaper();
-    const att = currentAttachment();
-    $("#mid-title").textContent = att ? `文献原文 · ${state.assets.find((a) => a.id === att.assetId)?.name ?? ""}` : "文献原文";
-    if (!p) { note.hidden = true; $("#mid-title").textContent = "文献条目"; midEmpty("papers", state.papers.length ? "还没有选择论文条目" : "还没有论文条目", "在左栏创建条目，或在上方导入题录；附件在右栏管理。"); return; }
-    if (!att) { note.hidden = true; midEmpty("papers", "这个条目还没有附件", "在右栏导入正文或补充材料；导入后这里显示可定位的原文。"); return; }
-    const asset = state.assets.find((a) => a.id === att.assetId);
-    note.hidden = false; note.textContent = `角色：${ROLE_LABEL[att.role]}${att.version ? " · 版本 " + att.version : ""} · 原件 ${asset?.bytes ?? 0}B`;
-    content.innerHTML = esc(asset?.text ?? "");
-    return;
+    if (ui.paperView === "read" && currentPaper()) return renderPaperRead(content, note);
+    ui.paperView = "manage";
+    return renderPaperManage(content, note);
   }
   if (ui.nav === "knowledge") {
     $("#mid-title").textContent = "卡片审阅";
@@ -1040,7 +1058,10 @@ function renderMiddle() {
 }
 function renderRight() {
   if (ui.nav === "topic") { $("#right-title").textContent = "下一步与待办"; $("#right-content").innerHTML = nextStepHtml(state, ui) + topicTodosHtml(state, ui); return; }
-  if (ui.nav === "papers") { $("#right-title").textContent = "条目与附件"; $("#right-content").innerHTML = paperHtml(); return; }
+  if (ui.nav === "papers") {
+    if (ui.paperView === "read") { $("#right-title").textContent = ""; $("#right-content").innerHTML = ""; return; }
+    $("#right-title").textContent = "条目与附件"; $("#right-content").innerHTML = paperHtml(); return;
+  }
   if (ui.nav === "knowledge") {
     $("#right-title").textContent = "审阅队列";
     $("#right-content").innerHTML = knowledgeQueueHtml(state, ui);
@@ -1072,31 +1093,119 @@ function showLocate(msg, paperId) {
   setError("right", { panel: "right", message: msg, detail: "", retry: paperId ? () => { clearAllErrors(); ui.paperId = paperId; ui.attId = null; renderAll(); } : null });
 }
 
-function renderPaperForm(box) {
-  box.innerHTML = `
-    <details class="mini" ${state.papers.length ? "" : "open"}>
-      <summary>新建论文条目（题名必填）</summary>
-      <input id="pp-title" placeholder="题名（必填）" />
-      <input id="pp-authors" placeholder="作者（and 或分号分隔）" />
-      <div class="row"><input id="pp-year" placeholder="年份" /><input id="pp-doi" placeholder="DOI（可空）" /></div>
-      <input id="pp-source" placeholder="来源（期刊/预印本/网址）" />
-      <input id="pp-license" placeholder="许可（如 CC BY 4.0；未提供留空，不补造）" />
-      <button class="primary" id="pp-create">创建条目</button>
-      <p class="hint">条目是题录身份，不是文件；附件在右栏导入，收藏不触发 AI 解析。</p>
-    </details>`;
-  $("#pp-create").addEventListener("click", (ev) => runBusy(ev.target, "创建论文条目", async () => {
-    try {
-      const r = await api.createPaper({
-        title: $("#pp-title").value, authors: $("#pp-authors").value, year: $("#pp-year").value,
-        doi: $("#pp-doi").value, source: $("#pp-source").value, license: $("#pp-license").value,
-        topicIds: ui.topicId ? [ui.topicId] : [],
-      });
-      ui.paperId = r.paperId; ui.attId = null; await refresh(); setStatus("论文条目已创建（未解析）");
-    } catch (e) {
-      if (e.status === 409 && e.details?.existingPaperId) { showLocate(e.message, e.details.existingPaperId); return; }
-      throw e;
-    }
-  }));
+/** 新建条目表单字段（按需展开，落在文献管理页顶部）。 */
+function paperFormFieldsHtml() {
+  return `
+    <input id="pp-title" placeholder="题名（必填）" />
+    <input id="pp-authors" placeholder="作者（and 或分号分隔）" />
+    <div class="row"><input id="pp-year" placeholder="年份" /><input id="pp-doi" placeholder="DOI（可空）" /></div>
+    <input id="pp-source" placeholder="来源（期刊/预印本/网址）" />
+    <input id="pp-license" placeholder="许可（如 CC BY 4.0；未提供留空，不补造）" />
+    <button class="primary" id="pp-create" type="button">创建条目</button>
+    <p class="hint">条目是题录身份，不是文件；附件在条目详情里导入，收藏不触发 AI 解析。</p>`;
+}
+/** 题录导入表单字段（按需展开，落在文献管理页顶部）。 */
+function bibImportFieldsHtml() {
+  return `
+    <select id="bib-format"><option value="bibtex">BibTeX（.bib）</option><option value="csl-json">CSL-JSON（Zotero 导出）</option></select>
+    <textarea id="bib-text" rows="4" placeholder="粘贴题录内容；同 DOI 已有条目会跳过并给定位"></textarea>
+    <button class="primary" id="bib-import" type="button">导入题录</button>
+    <p class="hint">题录导入（本功能）/ 附件导入（条目详情里上传）/ 实时连接（未实现，不做假入口）。</p>`;
+}
+
+/** 文献管理页列表（搜索/筛选后）。 */
+function paperListHtml() {
+  const scoped = state.papers.filter((p) => !ui.topicId || p.topicIds.includes(ui.topicId) || !p.topicIds.length);
+  if (!scoped.length) return emptyStateHtml("papers", "还没有论文条目", "新建条目或导入题录；条目是题录身份，附件另存、不触发解析。");
+  const q = (ui.paperQuery ?? "").trim().toLowerCase();
+  let ps = scoped;
+  if (q) ps = ps.filter((p) => p.title.toLowerCase().includes(q) || p.authors.join(" ").toLowerCase().includes(q));
+  if (ui.paperFilter === "has") ps = ps.filter((p) => state.attachments.some((a) => a.paperId === p.id));
+  if (ui.paperFilter === "none") ps = ps.filter((p) => !state.attachments.some((a) => a.paperId === p.id));
+  if (!ps.length) {
+    return `<div class="empty-state" data-empty="papers-filter"><span class="es-seal" aria-hidden="true">文</span>
+      <div class="es-eyebrow">无匹配</div><h3>没有匹配的文献</h3><p>清空搜索或调整筛选。</p>
+      <div class="empty-actions"><button class="primary" type="button" data-paper-clear>清除条件</button></div></div>`;
+  }
+  return ps.map((p) => {
+    const nAtt = state.attachments.filter((a) => a.paperId === p.id).length;
+    const nCard = state.cards.filter((c) => c.paperId === p.id).length;
+    const authors = p.authors.join("、");
+    return `<article class="paper-item ${p.id === ui.paperId ? "active" : ""}" data-paperrow="${p.id}">
+      <div class="pi-main">
+        <div class="pi-title">${esc(p.title)}</div>
+        <div class="pi-meta">${p.year ? esc(p.year) + " · " : ""}${esc(authors.length > 40 ? authors.slice(0, 40) + "…" : authors)} · ${nAtt} 附件 · ${nCard} 卡</div>
+      </div>
+      <div class="pi-actions">
+        <button class="mini-act paper-read" type="button" data-paper="${p.id}"${nAtt ? "" : ' disabled title="这个条目还没有附件"'}>阅读</button>
+      </div>
+    </article>`;
+  }).join("");
+}
+
+/** 文献管理页：主体＝可扫描列表；新建/导入按需展开；条目详情在右侧辅助区。 */
+function renderPaperManage(content, note) {
+  note.hidden = true;
+  $("#mid-title").textContent = "文献管理";
+  $("#tools-area").innerHTML = "";
+  content.classList.remove("is-empty");
+  content.classList.add("rich");
+  const paused = ui.paperQuery ? ` · 搜索「${esc(ui.paperQuery)}」` : "";
+  content.innerHTML = `
+    <div class="lit-manage-head">
+      <div class="lm-search"><input id="paper-search" placeholder="搜索题名或作者" value="${esc(ui.paperQuery ?? "")}" aria-label="搜索文献" /></div>
+      <div class="lm-filter">
+        <select id="paper-filter" aria-label="筛选文献">
+          <option value="all"${ui.paperFilter !== "has" && ui.paperFilter !== "none" ? " selected" : ""}>全部</option>
+          <option value="has"${ui.paperFilter === "has" ? " selected" : ""}>有附件</option>
+          <option value="none"${ui.paperFilter === "none" ? " selected" : ""}>无附件</option>
+        </select>
+      </div>
+      <div class="lm-tools">
+        <details class="mini"><summary>新建条目</summary>${paperFormFieldsHtml()}</details>
+        <details class="mini"><summary>导入题录</summary>${bibImportFieldsHtml()}</details>
+      </div>
+    </div>
+    <p class="hint">共 ${state.papers.filter((p) => !ui.topicId || p.topicIds.includes(ui.topicId) || !p.topicIds.length).length} 篇${paused}；点条目在右侧管理题录与附件，「阅读」进入原文。</p>
+    <div id="paper-list" class="paper-list">${paperListHtml()}</div>`;
+}
+
+/** 阅读页工具栏：返回、题名、当前附件，多附件时可切换（阅读行为）。 */
+function paperReadToolbarHtml(p, att) {
+  const atts = state.attachments.filter((a) => a.paperId === p.id);
+  const opts = atts.map((a) => {
+    const asset = state.assets.find((x) => x.id === a.assetId);
+    return `<option value="${a.id}"${a.id === att?.id ? " selected" : ""}>${ROLE_LABEL[a.role]}：${esc(asset?.name ?? a.assetId)}${a.version ? " · " + esc(a.version) : ""}</option>`;
+  }).join("");
+  const asset = att && state.assets.find((x) => x.id === att.assetId);
+  return `<div class="read-bar">
+    <button class="back-btn" type="button" data-paper-back>← 返回文献管理</button>
+    <div class="read-head">
+      <div class="read-title" title="${esc(p.title)}">${esc(p.title)}</div>
+      <div class="read-sub">${att ? `${ROLE_LABEL[att.role]} · ${esc(asset?.name ?? "")}${att.version ? " · " + esc(att.version) : ""}` : "无附件"}</div>
+    </div>
+    ${atts.length > 1 ? `<label class="read-more"><span class="hint">切换附件</span><select id="read-att">${opts}</select></label>` : ""}
+  </div>`;
+}
+
+/** 阅读页：以原文为中心，无导入/列表/附件管理/大块元数据。 */
+function renderPaperRead(content, note) {
+  const p = currentPaper();
+  const att = currentAttachment();
+  note.hidden = true;
+  $("#mid-title").textContent = "文献阅读";
+  $("#tools-area").innerHTML = paperReadToolbarHtml(p, att);
+  content.classList.remove("rich", "is-empty");
+  if (!att) {
+    content.classList.add("is-empty");
+    content.innerHTML = `<div class="empty-state" data-empty="papers-read"><span class="es-seal" aria-hidden="true">文</span>
+      <div class="es-eyebrow">正文尚无</div><h3>这个条目还没有附件</h3><p>回到文献管理，在条目详情里导入正文。</p>
+      <div class="empty-actions"><button class="primary" type="button" data-paper-back>返回文献管理</button></div></div>`;
+    return;
+  }
+  const asset = state.assets.find((a) => a.id === att.assetId);
+  content.classList.add("reader");
+  content.innerHTML = esc(asset?.text ?? "");
 }
 
 /** 右栏：条目元信息（修订留历史）＋附件管理＋课题关联＋去知识提取。 */
@@ -1150,24 +1259,7 @@ function paperHtml() {
 /** 左栏文献工具：命名映射 + 条件比较（仅文献导航显示）。 */
 function renderLitTools(box) {
   if (ui.nav === "record") { renderRecordTools(box); return; }
-  if (ui.nav === "papers") {
-    box.innerHTML = `
-      <details class="mini">
-        <summary>题录导入（Zotero 导出）</summary>
-        <select id="bib-format"><option value="bibtex">BibTeX（.bib）</option><option value="csl-json">CSL-JSON（Zotero 导出）</option></select>
-        <textarea id="bib-text" rows="4" placeholder="粘贴题录内容；同 DOI 已有条目会跳过并给定位"></textarea>
-        <button class="primary" id="bib-import">导入题录</button>
-        <p class="hint">Zotero 三模式如实区分：题录导入（本功能）/ 附件导入（右栏上传）/ 实时连接（未验证、未实现，不做假入口）。</p>
-      </details>`;
-    $("#bib-import").addEventListener("click", (ev) => runBusy(ev.target, "导入题录", async () => {
-      const r = await api.importBibliography($("#bib-format").value, $("#bib-text").value);
-      $("#bib-text").value = "";
-      if (r.created?.length) ui.paperId = r.created[0];
-      await refresh();
-      setStatus(`题录导入：新建 ${r.created?.length ?? 0} 条${r.skipped?.length ? `，跳过同 DOI ${r.skipped.length} 条（已有条目可定位）` : ""}`);
-    }));
-    return;
-  }
+  if (ui.nav === "papers") { box.innerHTML = ""; return; } // 题录导入移入文献管理页
   if (ui.nav !== "knowledge") { box.innerHTML = ""; return; }
   const maps = state.mappings.filter((m) => !ui.topicId || !m.topicId || m.topicId === ui.topicId);
   const cmps = state.comparisons.filter((c) => !ui.topicId || c.topicId === ui.topicId);
@@ -1897,7 +1989,7 @@ document.addEventListener("click", (ev) => {
   if (b.dataset.topic) ui.topicId = b.dataset.topic;
   if (b.dataset.paper) ui.paperId = b.dataset.paper;
   ui.nav = b.dataset.goto; ui.highlight = null; ui.cell = null; ui.groupSel.clear(); ui.batch = null; ui.ack = false;
-  ui.topicPane = "overview"; ui.subqId = null;
+  ui.topicPane = "overview"; ui.subqId = null; ui.paperView = "manage";
   renderAll();
 });
 document.addEventListener("click", (ev) => {
@@ -1981,12 +2073,28 @@ document.addEventListener("click", (ev) => {
   const subqOpen = ev.target.closest(".subq-open");
   if (subqOpen) { openSubq(subqOpen.dataset.subq); return; }
   if (ev.target.closest("[data-subq-back]")) { backFromSubq(); return; }
-  const relChat = ev.target.closest(".subq-rel-open");
-  if (relChat) {
-    if (!guardLeave()) return;
-    ui.nav = "chat"; ui.chatId = relChat.dataset.relChat; ui.topicPane = "overview"; ui.subqId = null;
-    renderAll(); setStatus("已打开相关会话"); return;
-  }
+  if (ev.target.closest("[data-paper-back]")) { backToPaperManage(); return; }
+  if (ev.target.id === "pp-create") { runBusy(ev.target, "创建论文条目", async () => {
+    try {
+      const r = await api.createPaper({
+        title: $("#pp-title").value, authors: $("#pp-authors").value, year: $("#pp-year").value,
+        doi: $("#pp-doi").value, source: $("#pp-source").value, license: $("#pp-license").value,
+        topicIds: ui.topicId ? [ui.topicId] : [],
+      });
+      ui.paperId = r.paperId; ui.attId = null; ui.paperView = "manage"; await refresh(); setStatus("论文条目已创建（未解析）");
+    } catch (e) {
+      if (e.status === 409 && e.details?.existingPaperId) { showLocate(e.message, e.details.existingPaperId); return; }
+      throw e;
+    }
+  }); return; }
+  if (ev.target.id === "bib-import") { runBusy(ev.target, "导入题录", async () => {
+    const r = await api.importBibliography($("#bib-format").value, $("#bib-text").value);
+    $("#bib-text").value = "";
+    if (r.created?.length) ui.paperId = r.created[0];
+    ui.paperView = "manage";
+    await refresh();
+    setStatus(`题录导入：新建 ${r.created?.length ?? 0} 条${r.skipped?.length ? `，跳过同 DOI ${r.skipped.length} 条（已有条目可定位）` : ""}`);
+  }); return; }
 });
 // 分区报错条：关闭 / 详情 / 重试
 document.addEventListener("click", (ev) => {
@@ -2237,6 +2345,11 @@ $("#material-list").addEventListener("click", (ev) => {
   ui.assetId = el.dataset.id; ui.highlight = null; ui.cell = null; ui.tableId = null; ui.groupSel.clear(); ui.batch = null; ui.ack = false; renderAll();
 });
 $("#mid-content").addEventListener("click", async (ev) => {
+  const readBtn = ev.target.closest(".paper-read");
+  if (readBtn) { if (!readBtn.disabled) openPaperRead(readBtn.dataset.paper); return; }
+  if (ev.target.closest("[data-paper-clear]")) { ui.paperQuery = ""; ui.paperFilter = "all"; renderAll(); return; }
+  const prow = ev.target.closest("[data-paperrow]");
+  if (prow) { const id = prow.dataset.paperrow; if (id !== ui.paperId) { ui.paperId = id; ui.attId = null; renderAll(); } return; }
   if (ev.target.classList.contains("tbl-open")) { openTableMax(ev.target.dataset.tid); return; }
   if (ev.target.id === "chat-send") {
     const c = currentChat(); if (!c) return;
@@ -2268,6 +2381,22 @@ $("#mid-content").addEventListener("click", async (ev) => {
     }); return;
   }
 });
+$("#mid-content").addEventListener("input", (ev) => {
+  if (ev.target.id !== "paper-search") return;
+  ui.paperQuery = ev.target.value;
+  const list = $("#paper-list");
+  if (list) list.innerHTML = paperListHtml();
+});
+$("#mid-content").addEventListener("change", (ev) => {
+  if (ev.target.id !== "paper-filter") return;
+  ui.paperFilter = ev.target.value;
+  const list = $("#paper-list");
+  if (list) list.innerHTML = paperListHtml();
+});
+document.addEventListener("change", (ev) => {
+  if (ev.target.id !== "read-att") return;
+  ui.attId = ev.target.value; ui.highlight = null; renderMiddle();
+});
 $("#right-content").addEventListener("change", async (ev) => {
   if (ev.target.classList.contains("paper-topic")) {
     const p = currentPaper(); const checkbox = ev.target; const desired = checkbox.checked;
@@ -2295,6 +2424,7 @@ function trackMidDirty(ev) {
   const el = ev.target;
   if (!el.closest?.("#mid-content")) return;
   if (el.matches(".kz-note, .kz-imp, #kz-paper, #proto-rev")) return;
+  if (el.closest(".lit-manage-head") || el.id === "paper-search" || el.id === "paper-filter") return; // 搜索/筛选/创建表单不算未保存编辑
   if (el.matches('input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="range"]), textarea, select')) setDirty(true);
 }
 document.addEventListener("input", trackMidDirty);
