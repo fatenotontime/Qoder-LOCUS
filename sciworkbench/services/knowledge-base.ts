@@ -2368,3 +2368,199 @@ export function readSnapshotDatasetRows(snapshot: KnowledgeSnapshot, datasetId: 
 export function resolveSnapshotToken(snapshot: KnowledgeSnapshot, token: string): { kind: "knowledge" | "source"; ref: KnowledgeRef | SourceRef; label: string } | null {
   return snapshot.content.referenceMap[token] ?? null;
 }
+// ══ E6-A 容器与流水线数据接线（合同 E6.2/E6.3；前端无关的数据适配层）════════
+//
+// - 一条知识项 = 一个可寻址元素（固定 KnowledgeRef(kind=item,id,revision)）；卡壳不单独算一条知识。
+// - 数据集以**聚合元素**进入，明确区分“知识项数”和“数据集数”；不每单元格造 item。
+// - 外观类别由数据决定（contentType/nature/sourceClass/review），不由随机颜色暗示可信度。
+// - 计数分别明示：匹配数 / 已加载数 / 总量，不把默认一页冒称全库。
+
+export interface ContainerElement {
+  readonly ref: KnowledgeRef;
+  readonly kind: "item" | "dataset";
+  readonly contentType: ItemContentType | null;
+  readonly nature: ItemNature | null;
+  readonly sourceClass: SourceClass | "dataset";
+  readonly reviewStatus: ReviewStatus | null;
+  readonly label: string;
+  readonly valueText: string;
+  readonly unit: string | null;
+  readonly unknownCount: number;
+  readonly themeIds: string[];
+  readonly sourceTokens: string[];
+  readonly conditionTexts: string[];
+  /** 数据集聚合：成员为其列绑定 + 行数（不展开为 item）。 */
+  readonly aggregate?: { readonly columns: number; readonly rows: number; readonly datasetRef: KnowledgeRef };
+}
+
+export interface KnowledgeContainer {
+  readonly viewId: string;
+  readonly scope: KnowledgeView["scope"];
+  readonly mode: "formal" | "explore";
+  readonly elements: ContainerElement[];
+  readonly totals: { readonly items: number; readonly datasets: number; readonly pending: number; readonly notFormal: number };
+  readonly counts: { readonly matched: number; readonly loaded: number; readonly totalKnown: number };
+  readonly undivided: KnowledgeRef[];
+  readonly byTheme: { readonly themeId: string; readonly name: string; readonly memberRefs: KnowledgeRef[] }[];
+  readonly bySource: { readonly token: string; readonly label: string; readonly itemRefs: KnowledgeRef[] }[];
+  readonly sources: { readonly token: string; readonly ref: SourceRef; readonly label: string }[];
+  readonly cardIndex: { readonly cardId: string; readonly itemRefs: KnowledgeRef[] }[];
+  readonly dedupNote: string;
+  readonly warnings: KnowledgeWarning[];
+  readonly hasMore: boolean;
+  readonly nextCursor: number | null;
+}
+
+const SOURCE_CLASS_OF = (p: ItemPayload): SourceClass | "dataset" => p.origin.sourceClass;
+
+/** 容器视图（复用 readKnowledge 的同一条读取路径与 viewId；前端只消费本结构）。 */
+export function buildKnowledgeContainer(state: LocusState, query: KnowledgeQuery): KnowledgeContainer {
+  const mode: "formal" | "explore" = query.mode === "explore" ? "explore" : "formal";
+  const q: KnowledgeQuery = { ...query, mode };
+  const view = readKnowledge(state, q);
+  const topicId = view.scope.topicId;
+  const all = readAll(state, q);
+  const k = state.knowledge;
+
+  // 容器内自洽的稳定 token 表（预览态）：知识引用 K1..、来源引用 S1..（排序后生成）
+  const kRefList: KnowledgeRef[] = [
+    ...view.items.map((e) => makeKnowledgeRef("item", e.id, e.revision)),
+    ...view.contexts.map((e) => makeKnowledgeRef("context", e.id, e.revision)),
+    ...view.evidence.map((e) => makeKnowledgeRef("evidence", e.id, e.revision)),
+    ...view.relations.map((e) => makeKnowledgeRef("relation", e.id, e.revision)),
+    ...(view.datasets ?? []).map((e) => makeKnowledgeRef("dataset", e.id, e.revision)),
+    ...view.themes.map((e) => makeKnowledgeRef("theme", e.id, e.revision)),
+    ...view.mappings.map((e) => makeKnowledgeRef("mapping", e.id, e.revision)),
+    ...view.comparisons.map((e) => makeKnowledgeRef("comparison", e.id, e.revision)),
+  ].sort((a, b) => (refKey(a) < refKey(b) ? -1 : 1));
+  const kToken = new Map<string, string>(kRefList.map((r, i) => [refKey(r), `K${i + 1}`]));
+  const srcList: SourceRef[] = [];
+  const addSrc = (r: SourceRef) => { if (!srcList.some((x) => sourceKey(x) === sourceKey(r))) srcList.push(r); };
+  for (const env of view.items) for (const sr of (env.payload as ItemPayload).sourceRefs) addSrc(sr);
+  for (const env of view.evidence) addSrc((env.payload as EvidencePayload).sourceRef);
+  for (const env of (view.datasets ?? [])) addSrc((env.payload as DatasetPayload).sourceRef);
+  srcList.sort((a, b) => (sourceKey(a) < sourceKey(b) ? -1 : 1));
+  const sToken = new Map<string, string>(srcList.map((r, i) => [sourceKey(r), `S${i + 1}`]));
+  const tokenOf = (r: KnowledgeRef | SourceRef): string =>
+    "revision" in r ? (kToken.get(refKey(r as KnowledgeRef)) ?? "") : (sToken.get(sourceKey(r as SourceRef)) ?? "");
+  const tokenOfSource = (r: SourceRef): string => sToken.get(sourceKey(r)) ?? "";
+
+  const themesOfTopic = all.themes.map((t) => t.payload as ThemePayload);
+  const themeIdsOf = (itemId: string): string[] =>
+    all.themes.filter((t) => (t.payload as ThemePayload).members.some((m) => m.id === itemId)).map((t) => t.id);
+
+  const conditionTextsOf = (p: ItemPayload): string[] => {
+    const out: string[] = [];
+    for (const cr of p.contextRefs) {
+      const cp = readKnowledgeVersion(k, cr) as ContextPayload | null;
+      if (!cp) continue;
+      for (const c of cp.conditions) out.push(`${c.field.raw}=${describeValue(c.value)}`);
+    }
+    return out;
+  };
+
+  const items: ContainerElement[] = view.items.map((env) => {
+    const p = env.payload as ItemPayload;
+    return {
+      ref: makeKnowledgeRef("item", env.id, env.revision), kind: "item",
+      contentType: p.contentType, nature: p.nature, sourceClass: SOURCE_CLASS_OF(p), reviewStatus: p.review.status,
+      label: p.text.length > 40 ? `${p.text.slice(0, 40)}…` : p.text,
+      valueText: describeValue(p.value),
+      unit: p.value && "unit" in p.value ? (p.value.unit ?? null) : null,
+      unknownCount: p.unknowns.length,
+      themeIds: themeIdsOf(env.id),
+      sourceTokens: p.sourceRefs.map((r) => tokenOfSource(r)).filter(Boolean),
+      conditionTexts: conditionTextsOf(p),
+    };
+  });
+
+  const datasets: ContainerElement[] = (view.datasets ?? []).map((ds) => {
+    const dp = ds.payload as DatasetPayload;
+    const rows = (snapshotRowsFor(state, ds.id, ds.revision) ?? { rows: dp.selection.rowIndices.length });
+    return {
+      ref: makeKnowledgeRef("dataset", ds.id, ds.revision), kind: "dataset",
+      contentType: null, nature: null, sourceClass: "dataset", reviewStatus: dp.review.status,
+      label: `数据集 · ${dp.sourceRef.id}`, valueText: `选定 ${dp.selection.rowIndices.length} 行 × ${dp.selection.columnIndices.length} 列`,
+      unit: null, unknownCount: dp.unknowns.length, themeIds: [], sourceTokens: [tokenOfSource(dp.sourceRef)].filter(Boolean),
+      conditionTexts: dp.rowBindings.filter((b) => b.group || b.time).map((b) => `行 ${b.rowIndex}${b.group ? ` · ${b.group}` : ""}${b.time ? ` · ${b.time}` : ""}`),
+      aggregate: { columns: dp.selection.columnIndices.length, rows: rows.rows, datasetRef: makeKnowledgeRef("dataset", ds.id, ds.revision) },
+    };
+  });
+
+  const formalItems = all.items.filter((e) => itemFormalUsable(k, e));
+  const notFormal = view.items.filter((e) => !itemFormalUsable(k, e)).length;
+  const pending = view.items.filter((e) => (e.payload as ItemPayload).review.status === "pending").length;
+
+  // 主题聚合（成员只取本视图已加载元素；未分主题的正式项单列，不丢弃）
+  const loadedItemIds = new Set(view.items.map((e) => e.id));
+  const themeMembers = all.themes.map((t) => {
+    const tp = t.payload as ThemePayload;
+    return { themeId: t.id, name: tp.name, memberRefs: tp.members.filter((m) => loadedItemIds.has(m.id)) };
+  });
+  const inAnyTheme = new Set(themeMembers.flatMap((t) => t.memberRefs.map((r) => r.id)));
+  const undivided = view.items.filter((e) => !inAnyTheme.has(e.id)).map((e) => makeKnowledgeRef("item", e.id, e.revision));
+
+  // 同源列表（键盘/窄屏/辅助阅读入口）与卡壳索引（卡壳不重复计为知识）
+  const sourceMap = new Map<string, KnowledgeRef[]>();
+  for (const el of items) for (const t of el.sourceTokens) sourceMap.set(t, [...(sourceMap.get(t) ?? []), el.ref]);
+  const cardMap = new Map<string, KnowledgeRef[]>();
+  for (const env of view.items) {
+    const cid = (env.payload as ItemPayload).cardId;
+    if (!cid) continue;
+    cardMap.set(cid, [...(cardMap.get(cid) ?? []), makeKnowledgeRef("item", env.id, env.revision)]);
+  }
+
+  return {
+    viewId: view.viewId, scope: view.scope, mode,
+    elements: [...items, ...datasets],
+    totals: { items: view.items.length, datasets: datasets.length, pending, notFormal },
+    counts: { matched: view.totalKnown, loaded: view.items.length, totalKnown: all.items.length },
+    undivided,
+    byTheme: themeMembers,
+    bySource: [...sourceMap.entries()].map(([token, itemRefs]) => ({ token, label: srcList.find((r) => sToken.get(sourceKey(r)) === token)?.id ?? token, itemRefs })),
+    sources: srcList.map((r) => ({ token: sToken.get(sourceKey(r))!, ref: r, label: `${r.kind} ${r.id} ${r.version}` })),
+    cardIndex: [...cardMap.entries()].map(([cardId, itemRefs]) => ({ cardId, itemRefs })),
+    dedupNote: "去重以固定引用（kind+id+revision）为准；同一卡壳的多个分项按分项计数、卡壳不另计一条知识；不同版本不合并。",
+    warnings: view.warnings,
+    hasMore: view.hasMore, nextCursor: view.nextCursor,
+  };
+}
+
+/** 快照/当前的数据集行数（聚合元素计数用；读不到即按选定行数兜底，不猜）。 */
+function snapshotRowsFor(state: LocusState, datasetId: string, revision: number): { rows: number } | null {
+  const env = state.knowledge.datasets.find((d) => d.id === datasetId);
+  if (!env) return null;
+  const dp = env.payload as DatasetPayload;
+  return { rows: dp.selection.rowIndices.length };
+}
+
+// ── “继续积累”流水线状态（E6.3：只表达真实 run/chunk/receipt/review 状态）──
+
+export interface KnowledgePipelineStatus {
+  readonly runId: string;
+  readonly status: ExtractionRunStatus;
+  readonly chunks: { readonly index: number; readonly status: ChunkStatus; readonly hasReceipt: boolean }[];
+  readonly counters: { readonly created: number; readonly skipped: number; readonly createdItems: number; readonly pendingItems: number };
+  readonly notes: string[];
+}
+
+/** 从**持久化** run/chunk/receipt 推导流水线状态；不把「请求已发出」当候选已保存。 */
+export function knowledgePipelineStatus(state: LocusState, runId: string): KnowledgePipelineStatus | null {
+  const run = state.knowledge.extractionRuns.find((r) => r.id === runId);
+  if (!run) return null;
+  const counters = run.chunks.reduce((acc, c) => {
+    const rcp = c.receipt;
+    if (!rcp) return acc;
+    return { created: acc.created + rcp.response.created, skipped: acc.skipped + rcp.response.skipped, createdItems: acc.createdItems + rcp.response.createdItems, pendingItems: acc.pendingItems + rcp.response.pendingItems };
+  }, { created: 0, skipped: 0, createdItems: 0, pendingItems: 0 });
+  const notes: string[] = [];
+  if (run.status === "running") notes.push("任务在跑，计数只统计已落库回执（未回执块不计入）");
+  if (run.chunks.some((c) => c.status === "failed")) notes.push("存在失败块：可单独重试，失败块不计入正式沉淀");
+  if (run.chunks.some((c) => c.status === "discarded")) notes.push("存在被丢弃块（取消）：保留已提交内容");
+  if (run.status === "interrupted") notes.push("服务重启后中断：凭回执续跑，已提交块不重复");
+  return {
+    runId: run.id, status: run.status,
+    chunks: run.chunks.map((c, i) => ({ index: i, status: c.status, hasReceipt: !!c.receipt })),
+    counters, notes,
+  };
+}
