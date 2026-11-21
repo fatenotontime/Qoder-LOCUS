@@ -136,7 +136,7 @@
 合同 E6（最新修订版，**工作区未提交、随本 PR 原样落库**）拆为 **E6-A 数据接线** 与 **E6-B 页面集成＋浏览器验收**。
 
 - 落地：`buildKnowledgeContainer`（E6.2：一条知识=一个可寻址元素、数据集聚合且计数分列、外观类别由数据决定、条件随项＋来源 token 回查、匹配/已加载/总量分列、卡壳不另计知识、未分主题不丢弃）；`knowledgePipelineStatus`（E6.3：只表达真实 run/chunk/receipt/review，回执重放不重复计数）；只读路由 `GET /api/knowledge/container`、`GET /api/knowledge/pipeline/:runId`。测试 321/321。
-- **E6.5② 反例已跑，差异确认**：引用钉旧版 pending＋新版 confirmed 未改绑 → 当前放行；钉旧版 confirmed＋新版 pending → 当前拒绝；现撤回一致阻断。与 §4.2 不一致，属业务行为变更 → **未改门槛，待用户裁决**。
+- **E6.5② 已闭环（S05-T9）**：反例取证后经用户裁决**按 §4.2 修正**——新增 `knowledgeItemGate`（被引用版本 review ＋ 当前非 withdrawn/excluded），消费者门槛/比较/analysis 勾选与冻结前复检统一改用；受影响测试有意更新（T13、E6.5②a/b），E3 其余用例未改即通过。详见 [S05-T9](sessions/2026-11-21_session-05.md#s05-t9)。
 - E6.5③ 旧比较清单：写入 `POST /api/comparisons`→`createComparison`→`state.comparisons`；消费者 `public/lib/api.js:20`、`public/app.js:1094`、`public/app.js:2514`；`legacyComparisonViews` 仅测试在用。
 - 容量：**未验证**（合同负载 10000 行×10 列；E5 交接的 31 行是防截断样例，已勘误）。
 - **E6-B 未开工**：需前端交付（模块/路由/阅读定位/素材）＋E6.4 接入表前端列＋用户确认恢复；占位不算通过。E6 整体**不得标 passed**。
@@ -167,7 +167,7 @@
 ## 六、常用命令
 
 ```bash
-npm --prefix sciworkbench test          # 全量测试（E1 后 269；E2 后 279；E3 后 294；E4 后 302；E5 后 313；E6-A 后 321）
+npm --prefix sciworkbench test          # 全量测试（E1 后 269；E2 后 279；E3 后 294；E4 后 302；E5 后 313；E6-A/E6.5② 后 321）
 cd sciworkbench && node server.ts       # 起服务（ PORT/LOCUS_DATA 环境变量隔离数据）
 git -c http.proxy= -c https.proxy= push # 代理 7897 失败时直连推送
 ```

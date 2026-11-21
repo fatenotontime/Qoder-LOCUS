@@ -280,12 +280,16 @@ test("T13 一卡两项一确认一待审：正式范围只含确认项，整卡�
   assert.equal(noRev.status, 422);
   assert.equal(code(noRev), "revision_required");
 
-  // 对话：确认项入范围；冻结前复检，若已选项被改回待审则拒绝送模型
+  // 对话：确认项入范围；冻结前复检按**被引用版本**判定（§4.2 修正后）：
+  // 1) 新版回 needs_info：被引用版本仍是 confirmed、当前未撤回/排除 → 放行（固定版语义）
+  // 2) 当前撤回：即使被引用版本曾确认 → 拒绝送模型（§4.2 现撤回阻断）
   const chat = createChat(s1, { topicId: b.topicId, scope: [{ kind: "item", id: b.itemIds[0], revision: 2 }] });
   const snap = chatScopeSnapshot(chat.state, chat.chat, "问答", "m");
   assert.equal(snap.fragments.length, 1);
   const demoted = reviewKnowledgeItem(chat.state, b.itemIds[0], { baseRevision: 2, decision: "needs_info", basis: "再核对单位" }).state;
-  const frozenErr = expectErr(() => chatScopeSnapshot(demoted, demoted.chats[0], "问答", "m"));
+  assert.equal(chatScopeSnapshot(demoted, demoted.chats[0], "问答", "m").fragments.length, 1, "固定版仍 confirmed 且未撤回 → 放行");
+  const withdrawn = reviewKnowledgeItem(demoted, b.itemIds[0], { baseRevision: 3, decision: "withdrawn", basis: "撤回该结论" }).state;
+  const frozenErr = expectErr(() => chatScopeSnapshot(withdrawn, withdrawn.chats[0], "问答", "m"));
   assert.equal(frozenErr.status, 422);
   assert.equal(code(frozenErr), "item_not_confirmed");
 
@@ -1163,7 +1167,7 @@ function seedPinned() {
 const pickCore = (s: LocusState, tableId: string, revision: number) =>
   createAnalysisTask(s, { topicId: (s.knowledge.items.find((i) => i.id === "ki_p")!.payload as ItemPayload).topicIds[0], title: "分析", core: [{ kind: "table", id: tableId }, { kind: "item", id: "ki_p", revision }] });
 
-test("E6.5②a 反例（待裁决）：引用钉在旧版 pending、新版已 confirmed 且未改绑时，消费者当前放行", () => {
+test("E6.5②a 固定版口径（§4.2 修正后）：引用钉在旧版 pending、新版已 confirmed 且未改绑 → 拒绝", () => {
   const f = seedPinned();
   const confirmed = reviewKnowledgeItem(f.state, "ki_p", { baseRevision: 1, decision: "confirmed", basis: "核对原文" }).state;
   const pinnedStatus = (readKnowledgeVersion(confirmed.knowledge, { kind: "item", id: "ki_p", revision: 1 }) as ItemPayload).review.status;
@@ -1171,18 +1175,16 @@ test("E6.5②a 反例（待裁决）：引用钉在旧版 pending、新版已 co
   assert.equal(pinnedStatus, "pending", "被引用版本（第 1 版）仍为 pending");
   assert.equal(liveStatus, "confirmed", "当前版本（第 2 版）已 confirmed");
 
-  // 当前实现：按最新审核态判定 → 放行。合同 §4.2 要求核查**被引用版本**的 review →
-  // 「旧版 pending 且未显式改绑」应被拒绝直到改绑。此差异待用户裁决，不在此处改门槛。
-  let current = "allowed";
-  try {
-    pickCore(confirmed, f.tableId, 1);
-  } catch (e) {
-    current = (e as AppError).details?.code as string ?? "rejected";
-  }
-  assert.equal(current, "allowed", "记录当前行为：未改绑的旧版 pending 引用被放行（与 §4.2 待裁决差异）");
+  const err = (() => { try { pickCore(confirmed, f.tableId, 1); return null; } catch (e) { return e as AppError; } })();
+  assert.ok(err, "未改绑的旧版 pending 引用必须被拒绝（§4.2：核查被引用版本 review）");
+  assert.equal(err!.details?.code, "item_not_confirmed");
+  assert.equal((err!.details as { reason?: string }).reason, "pinned_not_confirmed");
+  // 显式改绑到已确认新版 → 放行
+  const task = pickCore(confirmed, f.tableId, 2);
+  assert.equal(task.task.core.length, 2, "改绑到第 2 版（已确认）后可进入正式上下文");
 });
 
-test("E6.5②b 反例（待裁决）：引用钉在旧版 confirmed、新版改回 pending 时，消费者当前拒绝", () => {
+test("E6.5②b 固定版口径（§4.2 修正后）：引用钉在旧版 confirmed、新版回 pending → 放行；现撤回则拒绝", () => {
   const f = seedPinned();
   let s = reviewKnowledgeItem(f.state, "ki_p", { baseRevision: 1, decision: "confirmed", basis: "核对" }).state;
   s = updateKnowledgeItem(s, "ki_p", { baseRevision: 2, patch: { text: "合成对象A在 1 d 下培养（修订）" }, reason: "内容修订" }).state;
@@ -1191,13 +1193,12 @@ test("E6.5②b 反例（待裁决）：引用钉在旧版 confirmed、新版改�
   assert.equal(pinned, "confirmed", "被引用版本（第 2 版）已 confirmed");
   assert.equal(live, "pending", "当前版本（第 3 版）为 pending");
 
-  let current = "allowed";
-  try {
-    pickCore(s, f.tableId, 2);
-  } catch (e) {
-    current = (e as AppError).details?.code as string ?? "rejected";
-  }
-  assert.equal(current, "item_not_confirmed", "记录当前行为：被引用版本已确认但新版回 pending 时被拒（与 §4.2 固定版口径待裁决差异）");
+  const task = pickCore(s, f.tableId, 2);
+  assert.equal(task.task.core.length, 2, "被引用版本仍 confirmed 且当前未撤回/排除 → 放行（固定版语义）");
+  const withdrawnState = reviewKnowledgeItem(s, "ki_p", { baseRevision: 3, decision: "withdrawn", basis: "撤回" }).state;
+  const afterWithdraw = (() => { try { pickCore(withdrawnState, f.tableId, 2); return null; } catch (e) { return e as AppError; } })();
+  assert.ok(afterWithdraw, "当前撤回后，旧 confirmed 版本不得继续用于正式使用（§4.2）");
+  assert.equal(afterWithdraw!.details?.code, "item_not_confirmed");
 });
 
 test("E6.5②c 与合同一致：当前版本被撤回时，即使固定版曾确认也拒绝（§4.2 现撤回阻断）", () => {

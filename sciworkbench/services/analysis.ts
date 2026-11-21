@@ -12,7 +12,7 @@ import type {
 } from "../store.ts";
 import { contentHash } from "../store.ts";
 import { AppError, MAX_IMPORT_BYTES, makeAsset, assertLegacyCardConsumerUsable, isStructuredShell } from "./app.ts";
-import { describeItem, knowledgeItemConfirmedAt, knowledgeItemLiveStatus, readKnowledgeVersion, shellItemRefs } from "./knowledge-base.ts";
+import { describeItem, knowledgeItemConfirmedAt, knowledgeItemGate, readKnowledgeVersion, shellItemRefs } from "./knowledge-base.ts";
 import type { ItemPayload, KnowledgeRef } from "../domain/knowledge.ts";
 import { effectiveSnapshot, appendEvent } from "./experiment.ts";
 
@@ -68,9 +68,13 @@ function assertSelectable(state: LocusState, ref: ObjectRef): void {
     const payload = readKnowledgeVersion(state.knowledge, itemRef(ref)) as ItemPayload | null;
     if (!payload) throw new AppError(422, `知识项版本不存在：item ${ref.id} 第 ${ref.revision ?? 0} 版（不退回最新版）。`, { code: "ref_unresolvable" });
     // 固定版本决定读到的内容；能否进入正式上下文再看该项现在的审核状态（§4.7 分项复检）。
-    const live = knowledgeItemLiveStatus(state, itemRef(ref));
-    if (live !== "confirmed") {
-      throw new AppError(422, `知识项不是已确认状态（现在：${live ?? "已删除"}），不能进入上下文：${payload.text.slice(0, 30)}`, { code: "item_not_confirmed" });
+    // §4.2/§4.6.9：门槛以**被引用版本**的审核为准（现撤回/排除仍阻断）。
+    const gate = knowledgeItemGate(state, itemRef(ref));
+    if (!gate.ok) {
+      const why = gate.reason === "pinned_not_confirmed"
+        ? `被引用版本（第 ${ref.revision ?? 0} 版）审核为「${gate.pinnedStatus}」，当前版本为「${gate.liveStatus}」；须显式改绑到已确认版本后再选（不自动升级）`
+        : gate.reason === "withdrawn" ? "该知识项已被撤回" : gate.reason === "excluded" ? "该知识项已被排除" : "引用版本不可读";
+      throw new AppError(422, `知识项不能进入正式上下文：${why}（${payload.text.slice(0, 30)}）`, { code: "item_not_confirmed", reason: gate.reason });
     }
     return;
   }
