@@ -10,6 +10,17 @@ const ROLE_LABEL = { fulltext: "正文", supplement: "补充材料", other: "其
 
 let ctx = null;
 
+/**
+ * 幂等键（合同 §6.3）：由本次请求输入决定——同一表单重复点击得到同键同输入 → 后端复用既有 run；
+ * 改了附件/目的即换键，不会把新意图当成旧任务的重放。
+ */
+function kzKey(o) {
+  const s = `${o.paperId}|${[...o.attachmentIds].sort().join(",")}|${o.topicId ?? ""}|${o.subquestionId ?? ""}|${o.purpose}`;
+  let h = 5381;
+  for (let i = 0; i < s.length; i++) h = (((h << 5) + h) + s.charCodeAt(i)) >>> 0;
+  return `kz_${h.toString(16)}_${s.length}`;
+}
+
 // ── 渲染：原文区 ────────────────────────────────────────────
 
 const KZ_PART = (c) => (c.audit === "confirm" ? "cand" : c.audit === "skip" ? "skip" : c.audit === "exclude" ? "excl" : "todo");
@@ -58,11 +69,15 @@ export function knowledgeWorkspaceHtml(state, ui) {
   const rows = part[tab].map((c) => {    const open = ui.cardOpen === c.id;
     const type = c.kind ? fmtEnum(c.kind) : (c.extraction === "ai" ? "模型摘录" : "摘录");
     const q = firstQuote(c);
-    const acts = tab === "todo"
-      ? `<button class="kz-cand" data-cid="${c.id}">入候选</button><button class="kz-skip" data-cid="${c.id}">跳过</button><button class="kz-excl" data-cid="${c.id}">排除</button>`
-      : `<button class="kz-undo" data-cid="${c.id}">撤回</button>`;
+    // §4.6.5：新壳审核状态由知识项派生，旧整卡确认/排除端点会返回冲突 → 这里先不呈现该动作。
+    const shell = Array.isArray(c.knowledgeItemIds) && c.knowledgeItemIds.length > 0;
+    const acts = shell
+      ? `<span class="hint">结构化知识壳（${c.knowledgeItemIds.length} 项）：逐项核对与确认在「知识」分项开放后使用；此处仅可改备注与重要度。</span>`
+      : tab === "todo"
+        ? `<button class="kz-cand" data-cid="${c.id}">入候选</button><button class="kz-skip" data-cid="${c.id}">跳过</button><button class="kz-excl" data-cid="${c.id}">排除</button>`
+        : `<button class="kz-undo" data-cid="${c.id}">撤回</button>`;
     return `<div class="kzcard ${open ? "open" : ""}" data-cid="${c.id}">
-      <div class="kzhead"><button class="kz-open" data-cid="${c.id}"><span class="kztype">${esc(type)}</span> · <span class="kzsum">${esc(c.rawText.slice(0, 40))}</span></button><span class="badge">${KZ_STATUS[KZ_PART(c)]}</span></div>
+      <div class="kzhead"><button class="kz-open" data-cid="${c.id}"><span class="kztype">${esc(type)}</span> · <span class="kzsum">${esc(c.rawText.slice(0, 40))}</span></button><span class="badge">${shell ? "待逐项审" : KZ_STATUS[KZ_PART(c)]}</span></div>
       ${open ? `<div class="kzbody">
         <div class="kv">内容：${esc(c.rawText)}</div>
         ${c.scope ? `<div class="kv">适用范围：${esc(c.scope)}</div>` : ""}
@@ -84,10 +99,10 @@ export function knowledgeQueueHtml(state, ui) {
   const queue = kzCards(state, ui).filter((c) => c.extraction === "ai" && KZ_PART(c) === "todo");
   const j = ui.kzJob;
   const task = j ? `<div class="kzq-task">
-    <span class="hint">${j.status === "running" ? `抽取中 ${j.done}/${j.total} 段，已出 ${j.created} 张` : (j.status === "paused" ? `已暂停：已出 ${j.created} 张` : (j.cancelled ? `已取消，保留已出 ${j.created} 张` : esc(j.message ?? "")))}</span>
+    <span class="hint">${j.status === "running" ? `抽取中 ${j.done}/${j.total} 块，已出 ${j.created} 张／${j.pendingItems ?? 0} 项待审` : (j.status === "paused" ? `已暂停：已出 ${j.created} 张（${j.runStatus ?? "可继续"}）` : (j.cancelled ? `已取消，保留已出 ${j.created} 张` : esc(j.message ?? "")))}</span>
     ${j.status === "running" ? `<button class="kzq-pause">暂停</button><button class="kzq-cancel">取消</button>` : ""}
     ${j.status === "paused" ? `<button class="kzq-resume">继续</button><button class="kzq-cancel">取消</button>` : ""}
-  </div>${(j.chunkErrors ?? []).map((e) => `<div class="kzq-err">第 ${e.index + 1} 段失败 · <button class="kzq-retry" data-index="${e.index}">重试</button></div>`).join("")}` : "";
+  </div>${(j.chunkErrors ?? []).map((e) => `<div class="kzq-err">第 ${e.index + 1} 块失败 · <button class="kzq-retry" data-index="${e.index}">重试</button></div>`).join("")}${(j.unresolvedLinks ?? []).length ? `<div class="kzq-warn">有 ${j.unresolvedLinks.length} 处表号/小节引用未能唯一定位，已在对应知识项标为待补来源。</div>` : ""}` : "";
   return `<div class="kzq">
     <div class="kzq-head">AI 待审队列 <span class="badge">新增 ${queue.length}</span></div>
     ${task}
@@ -123,10 +138,18 @@ export function renderKnowledgeForm(box) {
   const start = $("#k-start");
   if (start) start.addEventListener("click", (ev) => ctx.runJob(ev.target, "语义知识提取", async () => {
     const attachmentIds = [...$$(".k-att")].filter((x) => x.checked).map((x) => x.value);
-    const r = await ctx.api.knowledgeJob({ paperId: p.id, attachmentIds, purpose: $("#k-purpose").value, topicId: ui.topicId || undefined, subquestionId: $("#k-subq")?.value || undefined });
-    ui.kzJob = { id: r.jobId, status: "running", done: 0, total: r.total ?? 0, created: 0, chunkErrors: [], message: "语义提取中…" };
+    const purpose = $("#k-purpose").value;
+    const topicId = ui.topicId || undefined;
+    const subquestionId = $("#k-subq")?.value || undefined;
+    const r = await ctx.api.knowledgeJob({ paperId: p.id, attachmentIds, purpose, topicId, subquestionId, idempotencyKey: kzKey({ paperId: p.id, attachmentIds, topicId, subquestionId, purpose }) });
+    if (r.replayed) {
+      ctx.setStatus("同样的输入已提取过（沿用原任务，不重复抽取）。如需重跑请用「继续」或改选附件。");
+      if (r.jobId) { await pollKnowledgeJob(r.jobId, r.runId); await ctx.refreshAfterJob(); }
+      return;
+    }
+    ui.kzJob = { id: r.jobId, runId: r.runId, status: "running", done: 0, total: r.total ?? 0, created: 0, chunkErrors: [], message: "语义提取中…" };
     ctx.renderRight();
-    const job = await pollKnowledgeJob(r.jobId);
+    const job = await pollKnowledgeJob(r.jobId, r.runId);
     await ctx.refreshAfterJob();
     if (job.status === "done") { ctx.setStatus(job.message); }
     else { const h = ctx.humanError(job.error ?? ""); ctx.setStatus("知识提取失败，详情见错误面板。"); ctx.setError("right", { panel: "right", message: `知识提取失败：${h.message}`, detail: h.detail, retry: null }); }
@@ -144,12 +167,12 @@ async function kzAct(fn, msg) {
   catch (e) { const h = ctx.humanError(e); ctx.setError("mid", { panel: "mid", message: h.message, detail: h.detail, retry: null }); }
 }
 
-/** 知识抽取流式轮询：只更新右栏队列（不动中栏编辑）。 */
-async function pollKnowledgeJob(jobId) {
+/** 知识抽取流式轮询：只更新右栏队列（不动中栏编辑）。runId 随 job 一起留存，重启后仍可继续/重试。 */
+async function pollKnowledgeJob(jobId, runId) {
   const { api, ui } = ctx;
   for (let i = 0; i < 2400; i++) {
     const job = await api.getJob(jobId);
-    ui.kzJob = { id: jobId, status: job.status, done: job.done ?? 0, total: job.total ?? 0, created: job.result?.created ?? 0, chunkErrors: job.result?.chunkErrors ?? [], cancelled: job.result?.cancelled, message: job.message };
+    ui.kzJob = { id: jobId, runId: runId ?? job.result?.runId ?? ui.kzJob?.runId ?? null, status: job.status, done: job.done ?? 0, total: job.total ?? 0, created: job.result?.created ?? 0, createdItems: job.result?.createdItems ?? 0, pendingItems: job.result?.pendingItems ?? 0, runStatus: job.result?.runStatus ?? null, unresolvedLinks: job.result?.unresolvedLinks ?? [], chunkErrors: job.result?.chunkErrors ?? [], cancelled: job.result?.cancelled, message: job.message };
     ctx.renderRight();
     if (job.status === "done" || job.status === "error" || job.status === "paused") return job;
     await new Promise((r) => setTimeout(r, 700));
@@ -172,29 +195,29 @@ export function bindKnowledge(c) {
     if (loc) { ui.highlight = loc.dataset.quote || null; renderShell(); const m = document.querySelector("#kz-text mark"); if (m) m.scrollIntoView({ block: "center" }); return; }
     const CANCEL = t.closest?.(".kzq-cancel");
     if (CANCEL) {
-      if (ui.kzJob?.id) api.cancelKnowledgeJob(ui.kzJob.id).then(() => ctx.setStatus("已请求取消：保留已出内容"))
+      if (ui.kzJob?.id) api.cancelKnowledgeJob(ui.kzJob.id, ui.kzJob.runId).then(() => ctx.setStatus("已请求取消：保留已出内容"))
         .catch((e) => { const h = ctx.humanError(e); ctx.setError("right", { panel: "right", message: `取消任务失败：${h.message}`, detail: h.detail, retry: null }); });
       return;
     }
     const PAUSE = t.closest?.(".kzq-pause");
     if (PAUSE) {
       if (ui.kzJob?.id) { ctx.setStatus("正在请求暂停…");
-        api.pauseKnowledgeJob(ui.kzJob.id).then(() => { ui.kzJob = { ...ui.kzJob, status: "paused" }; ctx.renderRight(); ctx.setStatus("已请求暂停：保留已出内容"); })
+        api.pauseKnowledgeJob(ui.kzJob.id, ui.kzJob.runId).then(() => { ui.kzJob = { ...ui.kzJob, status: "paused" }; ctx.renderRight(); ctx.setStatus("已请求暂停：保留已出内容"); })
           .catch((e) => { const h = ctx.humanError(e); ctx.setError("right", { panel: "right", message: `暂停任务失败：${h.message}`, detail: h.detail, retry: null }); }); }
       return;
     }
     const RESUME = t.closest?.(".kzq-resume");
     if (RESUME) {
       if (ui.kzJob?.id) { ui.kzJob = { ...ui.kzJob, status: "running" }; ctx.renderRight(); ctx.setStatus("正在恢复任务…");
-        api.resumeKnowledgeJob(ui.kzJob.id).then(() => pollKnowledgeJob(ui.kzJob.id)).then((job) => ctx.refreshAfterJob().then(() => ctx.setStatus(job.status === "done" ? job.message : "已恢复")))
+        api.resumeKnowledgeJob(ui.kzJob.id, ui.kzJob.runId).then(() => pollKnowledgeJob(ui.kzJob.id, ui.kzJob.runId)).then((job) => ctx.refreshAfterJob().then(() => ctx.setStatus(job.status === "done" ? job.message : "已恢复")))
           .catch((e) => { const h = ctx.humanError(e); ctx.setError("right", { panel: "right", message: `恢复任务失败：${h.message}`, detail: h.detail, retry: null }); }); }
       return;
     }
     const RETRY = t.closest?.(".kzq-retry");
     if (RETRY) {
       const idx = Number(RETRY.dataset.index);
-      if (ui.kzJob?.id) { RETRY.disabled = true; api.retryKnowledgeChunk(ui.kzJob.id, idx)
-        .then(async (r) => { await ctx.refreshAfterJob(); ui.kzJob = { ...ui.kzJob, chunkErrors: (ui.kzJob.chunkErrors ?? []).filter((e) => e.index !== idx), created: ui.kzJob.created + (r.created ?? 0) }; ctx.renderRight(); ctx.setStatus(`第 ${idx + 1} 段已重试（新增 ${r.created} 张）`); })
+      if (ui.kzJob?.id) { RETRY.disabled = true; api.retryKnowledgeChunk(ui.kzJob.id, idx, ui.kzJob.runId)
+        .then(async (r) => { await ctx.refreshAfterJob(); ui.kzJob = { ...ui.kzJob, chunkErrors: (ui.kzJob.chunkErrors ?? []).filter((e) => e.index !== idx), created: ui.kzJob.created + (r.created ?? 0) }; ctx.renderRight(); ctx.setStatus(`第 ${idx + 1} 块已重试（新增 ${r.created} 张）`); })
         .catch((e) => { const h = ctx.humanError(e); ctx.setError("mid", { panel: "mid", message: h.message, detail: h.detail, retry: null }); RETRY.disabled = false; }); }
       return;
     }
@@ -208,8 +231,8 @@ export function bindKnowledge(c) {
     }
     const skipall = t.closest?.(".kz-skipall");
     if (skipall) {
-      if (!confirm("一键全部跳过：为时间紧准备，不推荐。确定跳过本页所有待审卡？")) return;
-      const ids = ctx.getState().cards.filter((c) => (ui.paperId ? c.paperId === ui.paperId : true) && ["unreviewed", "need_info"].includes(c.audit)).map((c) => c.id);
+      if (!confirm("一键全部跳过：为时间紧准备，不推荐。确定跳过本页所有待审旧卡？（结构化知识壳不在跳过范围）")) return;
+      const ids = ctx.getState().cards.filter((c) => (ui.paperId ? c.paperId === ui.paperId : true) && !(c.knowledgeItemIds?.length > 0) && ["unreviewed", "need_info"].includes(c.audit)).map((c) => c.id);
       kzAct(async () => { for (const id of ids) await api.reviewCard(id, { audit: "skip" }); }, `已跳过 ${ids.length} 张`);
       return;
     }

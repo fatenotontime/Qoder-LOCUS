@@ -191,11 +191,21 @@
 
 | # | 分支 `feat/s05-e1-commit-state` | 分支 `<其他>` | 关联轮次 | 说明 |
 | --- | --- | --- | --- | --- |
-| 84 | `e7245c9` · 2026-11-21 01:32 | — | S05-T3 | **E1-3 单一写入边界**：`createApp` 内 `commitState` 串行队列（changeFn 读最新 state、**保存成功才发布**、单笔失败不挂队列）；写请求整体入队、GET/HEAD 只读已提交态；49 处主模式＋reviewCard/batchConfirm/reviewTable+registerImpact/cancelChat/retryChat/atResult 多实体局部累积全部改先存后发布；后台 job（对话/知识分块/文献 AI/方案解析/影响评估/OCR/方法推荐）模型调用留在队列外、写回 `commitState` 内对最新合并（影响评估只合并本条记录＋stale 不复活；对话取消检查入队）；新 `tests/knowledge-pipeline.test.ts` **T04/T05/T22/T23**（GatedStore 延迟/失败驱动真实 HTTP）；**269/269** → **E1 判据 T01–T05/T20–T23 全过**；[会话记录](sessions/2026-11-21_session-05.md#s05-t3) |
+| 84 | `e7245c9` · 2026-11-21 01:32、`1725fae` · 01:34（PR #6 merge `b09029b` · 01:35） | — | S05-T3 | **E1-3 单一写入边界**：`createApp` 内 `commitState` 串行队列（changeFn 读最新 state、**保存成功才发布**、单笔失败不挂队列）；写请求整体入队、GET/HEAD 只读已提交态；49 处主模式＋reviewCard/batchConfirm/reviewTable+registerImpact/cancelChat/retryChat/atResult 多实体局部累积全部改先存后发布；后台 job（对话/知识分块/文献 AI/方案解析/影响评估/OCR/方法推荐）模型调用留在队列外、写回 `commitState` 内对最新合并（影响评估只合并本条记录＋stale 不复活；对话取消检查入队）；新 `tests/knowledge-pipeline.test.ts` **T04/T05/T22/T23**（GatedStore 延迟/失败驱动真实 HTTP）；**269/269** → **E1 判据 T01–T05/T20–T23 全过**；[会话记录](sessions/2026-11-21_session-05.md#s05-t3) |
 
 | 轮次 | 分支 | 提交 | 提交时间 | 本轮产出 |
 | --- | --- | --- | --- | --- |
 | S05-T3 | feat/s05-e1-commit-state | `e7245c9` | 2026-11-21 01:32 | commitState 单写入边界＋T04/T05/T22/T23；269/269；E1 判据齐备待 PR 合入；[会话记录](sessions/2026-11-21_session-05.md#s05-t3) |
+
+### 会话 S05（续）· E2 提取契约
+
+| # | 分支 `feat/s05-e2-extraction` | 分支 `<其他>` | 关联轮次 | 说明 |
+| --- | --- | --- | --- | --- |
+| 85 | `7ca563e` · 2026-11-21 13:01 | — | S05-T4 | **E2 提取契约**（合同 §5.3/§5.4/§6）：`prepareKnowledgeRun` 冻结 run 输入（附件**显式选择**＋幂等键，`paperRevision`/原件 hash/分块偏移入 `inputHash`）；`chunkInputTexts` 只读冻结块（内容漂移 409 `content_mismatch`）＋有界补读；`validateKnowledgeBatch` 整批校验——一处非法即**整块拒收**（不半写、消息含「整块拒收」）；`locateQuote` 服务端逐字定位 matched/ambiguous/unmatched（多处命中不挑第一个、未命中不给假偏移）；`commitKnowledgeChunk` 回执优先→取消判定→**壳＋实体同笔**；路由：同键同输入 `replayed` 200、同键异输入 409 `idempotency_conflict`、单块失败隔离（`chunkErrors`）＋失败块单独重试、取消保留已产出/暂停停块边界/重启 `running→interrupted` 且凭回执续跑、`GET /api/knowledge/runs/:id`；新壳 fail-closed 守卫（比较/采用 adopt/分析 core/地图 pick → 422 `structured_knowledge_required`，整卡确认与整卡改原文 → 409，备注/重要度放行）；前端表单带 `attachmentIds`＋输入派生幂等键、动作改按 `runId`。**修 5 处真实缺陷**：回执重放按 `prepared.index` 找块、循环收尾不置 `job.status`、relation 被要求带 `localId`、relation 端点建期崩溃（改校验期可寻址集合＋单项卡别名）、重试后 run 状态不回推。测试新增 **T06–T12、T24＋守卫**；`ai-stream` 五例改写结构化契约并加**落盘重启续跑**；`papers-knowledge` 单元段改用新 API；`web-loop` 任务表加 `knowledge_struct`（9 个）；**279/279** → E2 判据齐备；另出 [简要交接](HANDOFF_E2.md)；[会话记录](sessions/2026-11-21_session-05.md#s05-t4) |
+
+| 轮次 | 分支 | 提交 | 提交时间 | 本轮产出 |
+| --- | --- | --- | --- | --- |
+| S05-T4 | feat/s05-e2-extraction | `7ca563e` | 2026-11-21 13:01 | E2 提取契约后端＋守卫＋前端接线＋测试改写（T06–T12/T24/守卫，279/279）；简要交接文档；PR 审计后合入（merge hash 待下轮回填）；[会话记录](sessions/2026-11-21_session-05.md#s05-t4) |
 
 ## 独立提示词维护记录 S02-T1
 

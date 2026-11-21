@@ -13,6 +13,7 @@
  */
 import type { LocusState } from "../store.ts";
 import type { EdgeKind } from "../domain/graph.ts";
+import { isStructuredShell } from "./app.ts";
 
 export type NetKind =
   | "topic" | "subquestion" | "paper" | "attachment" | "asset" | "card"
@@ -121,7 +122,13 @@ export function buildNetwork(state: LocusState): Network {
 
   // 知识卡 → 原件（provenance）与 论文（affiliation）
   for (const c of state.cards) {
-    const cn: NetNode = { key: key("card", c.id), kind: "card", id: c.id, label: c.rawText.slice(0, 30) || c.id, version: `核对 ${AUDIT_CN[c.audit] ?? c.audit}` };
+    const shell = isStructuredShell(c);
+    const cn: NetNode = {
+      key: key("card", c.id), kind: "card", id: c.id, label: c.rawText.slice(0, 30) || c.id,
+      version: shell ? "结构化知识壳" : `核对 ${AUDIT_CN[c.audit] ?? c.audit}`,
+      // §4.6.5：新壳的审核状态由知识项派生，旧 audit 不代表整卡已确认。
+      pending: shell ? ["结构化知识壳：内容以知识项为准，须逐项审阅后才能被分析/比较使用"] : undefined,
+    };
     link(asset(c.assetId), cn, "provenance", c.extraction === "ai" ? "run" : "human", c.mechanical ? "机械草稿（开发调试）" : undefined);
     if (c.paperId) { const pn = paper(c.paperId); if (pn) link(pn, cn, "affiliation", "human"); }
     for (const sp of c.spans ?? []) link(asset(sp.assetId), cn, "provenance", "run", sp.matched ? undefined : "定位未匹配");
@@ -266,7 +273,16 @@ export function nodeForRef(state: LocusState, ref: { kind: string; id: string })
     case "protocol": { const p = state.protocols.find((x) => x.id === ref.id); return p ? { key: key("protocol", p.id), kind: "protocol", id: p.id, label: p.name, version: ver(p.revision) } : undefined; }
     case "measurement": { const m = state.measurements.find((x) => x.id === ref.id); return m ? { key: key("measurement", m.id), kind: "measurement", id: m.id, label: m.value } : undefined; }
     case "table": { const t = state.tables.find((x) => x.id === ref.id); return t ? { key: key("table", t.id), kind: "table", id: t.id, label: t.name } : undefined; }
-    case "card": { const c = state.cards.find((x) => x.id === ref.id); return c ? { key: key("card", c.id), kind: "card", id: c.id, label: c.rawText.slice(0, 30) } : undefined; }
+    case "card": {
+      const c = state.cards.find((x) => x.id === ref.id);
+      if (!c) return undefined;
+      const shell = isStructuredShell(c);
+      return {
+        key: key("card", c.id), kind: "card", id: c.id, label: c.rawText.slice(0, 30),
+        version: shell ? "结构化知识壳" : undefined,
+        pending: shell ? ["内容以知识项为准，须逐项审阅后才能被分析/比较使用"] : undefined,
+      };
+    }
     case "asset": { const a = state.assets.find((x) => x.id === ref.id); return a ? { key: key("asset", a.id), kind: "asset", id: a.id, label: a.name } : undefined; }
     case "subquestion": { const q = state.subquestions.find((x) => x.id === ref.id); return q ? { key: key("subquestion", q.id), kind: "subquestion", id: q.id, label: q.question } : undefined; }
     case "result": { const r = state.analysisResults.find((x) => x.id === ref.id); return r ? { key: key("result", r.id), kind: "result", id: r.id, label: r.method, external: true } : undefined; }

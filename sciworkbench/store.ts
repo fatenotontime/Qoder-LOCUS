@@ -110,6 +110,8 @@ export interface LitCardRecord {
   readonly spans?: { readonly assetId: string; readonly quote: string; readonly matched: boolean }[];
   /** 机械草稿（开发调试保留）：明确标记，不与真实 AI 语义提取混淆。 */
   readonly mechanical?: boolean;
+  /** 新契约阅读壳（E2）：非空即结构化知识壳，语义以 knowledge.items 为准；旧卡无此字段。 */
+  readonly knowledgeItemIds?: string[];
   readonly revision: number;
   readonly history: RevisionEntry[];
   readonly createdAt: string;

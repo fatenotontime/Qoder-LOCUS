@@ -62,7 +62,7 @@ import {
   updatePreparation,
   uploadProtocolSource,
 } from "./services/experiment.ts";
-import { extractLiterature, runTask, extractKnowledgeProgressive, knowledgeChunks, extractKnowledgeChunk } from "./services/ai.ts";
+import { extractLiterature, runTask } from "./services/ai.ts";
 import {
   createAnalysisTask, setTaskCandidates, buildSnapshot, snapshotInput, applyRecommendation,
   submitResult, editResult, archiveResultFile, createReport,
@@ -74,7 +74,13 @@ import { traverseNetwork, changeHits } from "./services/references.ts";
 import { buildContextMap, parsePicks } from "./services/context-map.ts";
 import { buildReportDocx, buildTraceabilityPackage, buildWholeLibraryPackage, inspectLibraryJson, countsOf } from "./services/export.ts";
 import { addPaperAttachment, createPaper, importBibliography, linkPaperTopic, updatePaper } from "./services/papers.ts";
-import { applyKnowledge, mapKnowledgeCards, prepareKnowledge } from "./services/knowledge.ts";
+import {
+  buildKnowledgeBatch, chunkInputTexts, commitKnowledgeChunk, prepareKnowledgeRun, settleRun, validateKnowledgeBatch,
+  type BuiltBatch, type KnowledgeRunInput, type SearchSpace, type StructBatch,
+} from "./services/knowledge.ts";
+import { extractKnowledgeStructChunk, knowledgeStructInput } from "./services/ai.ts";
+import { ensureArchived } from "./services/knowledge-base.ts";
+import type { ExtractionRunRecord, ExtractionRunStatus, SourceKind } from "./domain/knowledge.ts";
 
 const HERE = fileURLToPath(new URL(".", import.meta.url));
 const PUBLIC_DIR = join(HERE, "public");
@@ -108,13 +114,30 @@ const MIME: Record<string, string> = {
   ".ico": "image/x-icon",
 };
 
+/** 知识提取任务的运行控制句柄（内存）；持久判定以 run.status/receipt 为准。 */
+export interface KnowledgeControl {
+  runId: string;
+  cancel(): void;
+  pause(): void;
+  resume(): void;
+  retryChunk(index: number): Promise<{ created: number; skipped: number; createdItems: number; pendingItems: number; replayed: boolean; discarded: boolean; duplicateCandidates: string[] }>;
+}
+
 export interface Job {
   id: string;
-  status: "running" | "done" | "error";
+  status: "running" | "done" | "error" | "paused";
   done: number;
   total: number;
   message: string;
-  result?: { assetId?: string; created?: number; reminder?: boolean; protocolId?: string; impactId?: string; ocrIds?: string[]; discarded?: boolean; paperId?: string; skipped?: number; chunkErrors?: { index: number; error: string; recoverable: boolean }[]; cancelled?: boolean; paused?: boolean };
+  result?: {
+    assetId?: string; created?: number; reminder?: boolean; protocolId?: string; impactId?: string;
+    ocrIds?: string[]; discarded?: boolean; paperId?: string; skipped?: number;
+    chunkErrors?: { index: number; error: string; recoverable: boolean }[];
+    cancelled?: boolean; paused?: boolean;
+    /** 知识提取（合同 §5.4/§6）：jobId 与持久 runId 同时返回；计数按阅读壳与知识项分别给出。 */
+    runId?: string; runStatus?: ExtractionRunStatus; createdItems?: number; pendingItems?: number;
+    duplicateCandidates?: string[]; unresolvedLinks?: string[];
+  };
   error?: string;
 }
 
@@ -145,9 +168,244 @@ export async function createApp(store: Store, opts: { aiConfigPath?: string } = 
   // 任务身份/重复提交守卫：同一原件的方案解析同时只允许一个在跑 job。
   const parsingAssets = new Set<string>();
   const recommendingTasks = new Set<string>();
-  // 知识抽取流式任务的运行控制（取消 / 只重试失败块）
-  const knowledgeRuns = new Map<string, { cancel(): void; pause(): void; resume(): void; retryChunk(index: number): Promise<{ created: number; skipped: number }> }>();
+  // 知识提取运行控制（合同 §5.3/§5.4）：运行时 jobId ↔ 持久 runId；取消/暂停/继续/重试以 run 与 receipt 为准。
+  const knowledgeRuns = new Map<string, KnowledgeControl>();
+  const knowledgeJobByRun = new Map<string, string>();
+  /** 循环内的软控制位（内存）：真正的取消/暂停判定以已提交 run.status 与 receipt 为准。 */
+  const knowledgeSignals = new Map<string, { cancelling: boolean; pausing: boolean; running: boolean; fatal: string | null }>();
+
+  /** 队列外准备出的单块结果（模型已回、整批校验已通过），供队列内构建＋提交复用。 */
+  type PreparedChunk = { index: number; chunkId: string; batch: StructBatch; spaces: SearchSpace[]; unresolvedLinks: string[]; raw: string };
+  type ChunkCommitOutcome = { created: number; skipped: number; createdItems: number; pendingItems: number; replayed: boolean; discarded: boolean; duplicateCandidates: string[] };
+  const RUN_STATUS_TEXT: Record<ExtractionRunStatus, string> = {
+    running: "进行中", paused: "已暂停", completed: "全部块已入库", partial: "部分块失败",
+    failed: "全部块失败", cancelled: "已取消", interrupted: "已中断（服务重启，可继续/重试）",
+  };
+
+  const knowledgeRun = (runId: string): ExtractionRunRecord | undefined =>
+    state.knowledge.extractionRuns.find((r) => r.id === runId);
+  const knowledgeJobOf = (runId: string): Job | undefined => {
+    const jobId = knowledgeJobByRun.get(runId);
+    return jobId ? jobs.get(jobId) : undefined;
+  };
+  /** jobId 或 runId 均可定位持久 run（重启后 jobId 失效，界面带 runId 继续）。 */
+  const resolveKnowledgeRunId = (ident: string, bodyRunId?: unknown): string | null => {
+    const byJob = knowledgeJobByRun.get(String(bodyRunId ?? ""));
+    if (byJob) return String(bodyRunId);
+    if (knowledgeRun(String(bodyRunId ?? ""))) return String(bodyRunId);
+    const mapped = knowledgeRuns.get(ident)?.runId;
+    if (mapped) return mapped;
+    return knowledgeRun(ident) ? ident : null;
+  };
+  /** 计数一律从已提交 run 的 receipt 推导：重放不重复计数，重启后仍正确。 */
+  const recountKnowledgeJob = (runId: string) => {
+    const job = knowledgeJobOf(runId);
+    const run = knowledgeRun(runId);
+    if (!job || !job.result || !run) return;
+    const receipts = run.chunks.filter((c) => c.receipt).map((c) => c.receipt!);
+    job.result.created = receipts.reduce((n, c) => n + c.response.created, 0);
+    job.result.createdItems = receipts.reduce((n, c) => n + c.response.createdItems, 0);
+    job.result.pendingItems = receipts.reduce((n, c) => n + c.response.pendingItems, 0);
+    job.result.runStatus = run.status;
+    job.total = run.chunks.length;
+    job.done = run.chunks.filter((c) => c.status !== "pending").length;
+  };
+  const pushUnique = (arr: string[] | undefined, ...items: string[]) => {
+    if (!arr) return;
+    for (const x of items) if (!arr.includes(x)) arr.push(x);
+  };
+
+  /** 模型调用（队列外）：读冻结块 → 结构化提取 → 整批校验；已成功块返回 undefined 表示重放。 */
+  const prepareKnowledgeChunkModel = async (cfg: NonNullable<ReturnType<typeof getAiConfig>>, runId: string, index: number): Promise<PreparedChunk | undefined> => {
+    const run = knowledgeRun(runId);
+    if (!run) throw new AppError(404, `提取任务不存在：${runId}`);
+    const chunk = run.chunks[index];
+    if (!chunk) throw new AppError(422, `块序号越界：${index}`);
+    if (chunk.receipt) return undefined;
+    const { chunkText, supplements, spaces, blockIds, unresolvedLinks } = chunkInputTexts(state, run, chunk);
+    const input = knowledgeStructInput(run.purpose, chunk.id, chunkText, index, run.chunks.length, supplements.map((s) => ({ blockId: s.blockId, text: s.text })));
+    const { value, raw } = await extractKnowledgeStructChunk(cfg, input);
+    return { index, chunkId: chunk.id, batch: validateKnowledgeBatch(value, blockIds), spaces, unresolvedLinks, raw };
+  };
+
+  /** 块提交（队列内）：成功批次与壳/实体/receipt 同笔；失败/取消分别落 failed/discarded。 */
+  const commitKnowledgeChunkNow = (runId: string, index: number, prepared: PreparedChunk | null, errorMsg?: string): Promise<ChunkCommitOutcome> =>
+    commitState(async (latest) => {
+      const run = latest.knowledge.extractionRuns.find((r) => r.id === runId);
+      if (!run) throw new AppError(404, `提取任务不存在：${runId}`);
+      const chunk = run.chunks[index];
+      if (!chunk) throw new AppError(422, `块不存在：${runId} 第 ${index} 块`);
+      const built: BuiltBatch | null = prepared
+        ? buildKnowledgeBatch(latest, run, chunk, prepared.batch, prepared.spaces, prepared.unresolvedLinks)
+        : null;
+      const res = commitKnowledgeChunk(latest, runId, chunk.id, built, prepared?.raw, errorMsg);
+      if (res.state !== latest) { await store.save(res.state); state = res.state; }
+      return {
+        created: res.replayed ? 0 : res.created,
+        skipped: res.replayed ? 1 : 0,
+        createdItems: res.replayed ? 0 : res.createdItems,
+        pendingItems: res.replayed ? 0 : res.pendingItems,
+        replayed: res.replayed === true, discarded: res.discarded === true,
+        duplicateCandidates: res.duplicateCandidates,
+      };
+    });
+
+  /** run 级状态落库（循环收尾/暂停/取消）。 */
+  const settleKnowledgeRun = (runId: string, opts: { cancelled?: boolean; paused?: boolean; settled?: boolean }): Promise<ExtractionRunRecord | undefined> =>
+    commitState(async (latest) => {
+      const next = settleRun(latest, runId, opts);
+      await store.save(next); state = next;
+      return next.knowledge.extractionRuns.find((r) => r.id === runId);
+    });
+
+  /** 重试收尾：全部块已定（无 pending/failed）时把 run 状态回推为 completed，避免"最后一块重试成功却仍显示部分完成"。 */
+  const settleKnowledgeRunWhenAllSettled = (runId: string): Promise<void> =>
+    commitState(async (latest) => {
+      const run = latest.knowledge.extractionRuns.find((r) => r.id === runId);
+      if (!run) return;
+      if (run.status === "cancelled" || run.status === "paused" || run.status === "interrupted") return;
+      if (run.chunks.some((c) => c.status === "pending" || c.status === "failed" || c.status === "discarded")) return;
+      const at = new Date().toISOString();
+      const next: LocusState = {
+        ...latest,
+        knowledge: { ...latest.knowledge, extractionRuns: latest.knowledge.extractionRuns.map((r) => (r.id === runId ? { ...r, status: "completed" as const, updatedAt: at } : r)) },
+      };
+      await store.save(next); state = next;
+    });
+
+  /** 失败块单独重试（合同 §5.3）：复用冻结输入与块 ID；已成功块由 receipt 重放，不重调模型。job 在不在都可执行。 */
+  const retryKnowledgeChunk = async (cfg: NonNullable<ReturnType<typeof getAiConfig>>, runId: string, index: number): Promise<ChunkCommitOutcome> => {
+    const run = knowledgeRun(runId);
+    if (!run) throw new AppError(404, `提取任务不存在：${runId}`);
+    if (!Number.isInteger(index) || index < 0 || index >= run.chunks.length) throw new AppError(422, `块序号越界：${index}`);
+    const job = knowledgeJobOf(runId);
+    let prepared: PreparedChunk | null = null;
+    let errorMsg: string | undefined;
+    let recoverable = true;
+    try {
+      prepared = (await prepareKnowledgeChunkModel(cfg, runId, index)) ?? null;
+    } catch (e) {
+      errorMsg = (e as Error).message ?? "提取失败";
+      recoverable = !(e instanceof AiError && e.fatal);
+      prepared = null;
+    }
+    const out = await commitKnowledgeChunkNow(runId, index, prepared, errorMsg);
+    await settleKnowledgeRunWhenAllSettled(runId); // 状态与块结果一致后，下面 recount 取到的是新状态
+    if (job?.result) {
+      if (out.replayed) pushUnique(undefined);
+      if (errorMsg === undefined && !out.discarded) job.result.chunkErrors = (job.result.chunkErrors ?? []).filter((x) => x.index !== index);
+      else if (errorMsg !== undefined) job.result.chunkErrors = [...(job.result.chunkErrors ?? []), { index, error: errorMsg, recoverable }];
+      pushUnique(job.result.duplicateCandidates, ...out.duplicateCandidates);
+      recountKnowledgeJob(runId);
+      job.message = errorMsg !== undefined
+        ? `第 ${index + 1} 块重试仍失败：${errorMsg}`
+        : `第 ${index + 1} 块${out.replayed ? "已有回执（未重复入库）" : out.discarded ? "已丢弃（任务已取消）" : "重试成功"}`;
+    }
+    return out;
+  };
+
+  /** 逐块调度（队列外跑模型，队列内逐块提交）：单块失败隔离，致命错误停止后续块并保留已产出。 */
+  const runKnowledgeLoop = async (cfg: NonNullable<ReturnType<typeof getAiConfig>>, runId: string): Promise<void> => {
+    const signals = knowledgeSignals.get(runId)!;
+    const job = knowledgeJobOf(runId)!;
+    if (signals.running) return;
+    signals.running = true;
+    const total = knowledgeRun(runId)?.chunks.length ?? 0;
+    try {
+      for (let index = 0; index < total; index++) {
+        const run = knowledgeRun(runId);
+        const chunk = run?.chunks[index];
+        if (!run || !chunk) break;
+        if (chunk.receipt) continue; // 已成功块不重调模型
+        if (signals.cancelling || run.status === "cancelled") break;
+        if (signals.pausing) break;
+        job.message = `第 ${index + 1}/${total} 块，已出 ${job.result?.created ?? 0} 张`;
+        let prepared: PreparedChunk | null = null;
+        let errorMsg: string | undefined;
+        let recoverable = true;
+        try {
+          prepared = (await prepareKnowledgeChunkModel(cfg, runId, index)) ?? null;
+        } catch (e) {
+          errorMsg = (e as Error).message ?? "提取失败";
+          recoverable = !(e instanceof AiError && e.fatal);
+          prepared = null;
+        }
+        if (prepared) {
+          const out = await commitKnowledgeChunkNow(runId, index, prepared);
+          if (out.replayed) job.result!.skipped = (job.result!.skipped ?? 0) + 1;
+          pushUnique(job.result!.duplicateCandidates, ...out.duplicateCandidates);
+          pushUnique(job.result!.unresolvedLinks, ...prepared.unresolvedLinks);
+        } else {
+          await commitKnowledgeChunkNow(runId, index, null, errorMsg);
+          job.result!.chunkErrors = [...(job.result!.chunkErrors ?? []), { index, error: errorMsg!, recoverable }];
+          job.message = `第 ${index + 1}/${total} 块失败`;
+          if (!recoverable) { signals.fatal = errorMsg!; break; }
+        }
+        recountKnowledgeJob(runId);
+      }
+    } finally {
+      signals.running = false;
+    }
+    const cancelled = signals.cancelling || knowledgeRun(runId)?.status === "cancelled";
+    const paused = !cancelled && signals.pausing;
+    const settled = await settleKnowledgeRun(runId, { cancelled, paused, settled: true });
+    recountKnowledgeJob(runId);
+    const created = job.result?.created ?? 0;
+    const failedCount = job.result?.chunkErrors?.length ?? 0;
+    const tail = `（${RUN_STATUS_TEXT[settled?.status ?? "partial"]}）`;
+    if (cancelled) { job.status = "done"; job.result!.cancelled = true; job.message = `已取消：保留已出 ${created} 张${tail}`; }
+    else if (paused) { job.status = "paused"; job.result!.paused = true; job.message = `已暂停：已出 ${created} 张（可继续）`; }
+    else if (signals.fatal) { job.status = "error"; job.error = signals.fatal; job.message = `任务中断：${signals.fatal}${tail}`; }
+    else { job.status = "done"; job.message = `${settled?.status === "completed" ? "完成" : "结束"}：新增 ${created} 张待审阅读壳${failedCount ? `，${failedCount} 块失败（可逐块重试）` : ""}${tail}`; }
+    if (settled?.status === "completed") knowledgeSignals.delete(runId);
+  };
+
+  /** 为持久 run 建 job 句柄并启动调度；重启后按 receipt 跳过已成功块。 */
+  const startKnowledgeRun = (cfg: NonNullable<ReturnType<typeof getAiConfig>>, runId: string): string => {
+    const existing = knowledgeJobByRun.get(runId);
+    if (existing && jobs.get(existing)?.status === "running") return existing;
+    const run = knowledgeRun(runId)!;
+    const id = existing && jobs.has(existing) && knowledgeSignals.has(runId) ? existing : `job_${randomUUID()}`;
+    if (!knowledgeSignals.has(runId)) knowledgeSignals.set(runId, { cancelling: false, pausing: false, running: false, fatal: null });
+    const job: Job = {
+      id, status: "running", done: 0, total: run.chunks.length, message: "语义提取中…",
+      result: {
+        paperId: run.paperRef.id, runId, created: 0, skipped: 0, createdItems: 0, pendingItems: 0,
+        chunkErrors: run.chunks.map((c, i) => (c.status === "failed" ? { index: i, error: c.error ?? "提取失败", recoverable: true } : null)).filter((x): x is { index: number; error: string; recoverable: boolean } => x !== null),
+        duplicateCandidates: [], unresolvedLinks: [], runStatus: run.status,
+      },
+    };
+    jobs.set(id, job); trimJobs();
+    knowledgeJobByRun.set(runId, id);
+    knowledgeRuns.set(id, {
+      runId,
+      cancel: () => { knowledgeSignals.get(runId)!.cancelling = true; },
+      pause: () => { knowledgeSignals.get(runId)!.pausing = true; },
+      resume: () => { knowledgeSignals.get(runId)!.pausing = false; },
+      retryChunk: (index: number) => retryKnowledgeChunk(cfg, runId, index),
+    });
+    void runKnowledgeLoop(cfg, runId);
+    return id;
+  };
+
   const trimJobs = () => { if (jobs.size > 20) { for (const k of jobs.keys()) { if (jobs.size <= 20) break; jobs.delete(k); } } };
+  // 重启恢复（合同 §5.3）：内存 job 不能假称仍在跑——持久 run 的 running 一律标 interrupted，候选与 receipt 保留。
+  {
+    const interrupted = state.knowledge.extractionRuns.filter((r) => r.status === "running");
+    if (interrupted.length > 0) {
+      await commitState(async (latest) => {
+        const at = new Date().toISOString();
+        const next: LocusState = {
+          ...latest,
+          knowledge: {
+            ...latest.knowledge,
+            extractionRuns: latest.knowledge.extractionRuns.map((r) => (r.status === "running" ? { ...r, status: "interrupted" as const, updatedAt: at } : r)),
+          },
+        };
+        await store.save(next); state = next;
+      });
+    }
+  }
 
   /** 5E 对话 job：发送时冻结快照；写回前检查取消（在途请求无法中止，结果丢弃不写回）。 */
   const startChatJob = (chatId: string, messageId: string, userText: string): string => {
@@ -277,6 +535,19 @@ export async function createApp(store: Store, opts: { aiConfigPath?: string } = 
         send(res, 200, job);
         return;
       }
+      // 持久提取任务：job 仅内存，run 落库；重启后仍可按 runId 查看块状态与 receipt（rawResponse 属审计，不默认返回）。
+      const kRunGet = path.match(/^\/api\/knowledge\/runs\/([^/]+)$/);
+      if (method === "GET" && kRunGet) {
+        const run = knowledgeRun(decodeURIComponent(kRunGet[1]));
+        if (!run) { send(res, 404, { error: `提取任务不存在：${kRunGet[1]}` }); return; }
+        send(res, 200, {
+          ok: true,
+          run: { ...run, chunks: run.chunks.map((c) => ({ ...c, rawResponse: undefined })) },
+          jobId: knowledgeJobByRun.get(run.id) ?? null,
+          job: knowledgeJobOf(run.id) ?? null,
+        });
+        return;
+      }
       if (method === "DELETE" && path === "/api/ai/config") {
         clearAiConfig();
         if (aiConfigPath) removeAiConfigFile(aiConfigPath);
@@ -361,108 +632,101 @@ export async function createApp(store: Store, opts: { aiConfigPath?: string } = 
           send(res, 200, { ok: true, topicIds: r.paper.topicIds });
           return;
         }
-        // ── 领域知识积累（5C）：选文献+目的 → 语义提取 job → 待审卡 ──
+        // ── 领域知识积累（合同 §6）：显式附件＋研究目的 → 固定 run 输入 → 逐块结构化入库（新壳＋实体同笔）──
         if (path === "/api/knowledge/jobs") {
           const cfg = getAiConfig();
           if (!cfg) { send(res, 400, { error: "未配置 AI：请在页面「AI 配置」填写 baseUrl / 模型 / Key。" }); return; }
-          const { jobInput, assets, snapshotHash } = prepareKnowledge(state, {
-            paperId: String(body.paperId ?? ""), attachmentIds: body.attachmentIds as string[] | undefined,
-            purpose: String(body.purpose ?? ""), topicId: body.topicId as string | undefined, subquestionId: body.subquestionId as string | undefined,
-          });
-          const paper = state.papers.find((p) => p.id === jobInput.paperId)!;
-          const text = assets.map((a) => a.text).join("\n\n");
-          const chunks = knowledgeChunks(text); // 空/超长早拒
-          const id = `job_${randomUUID()}`;
-          const job: Job = { id, status: "running", done: 0, total: chunks.length, message: "语义提取中…", result: { paperId: paper.id, created: 0, skipped: 0, chunkErrors: [] } };
-          jobs.set(id, job); trimJobs();
-          const raws: { index: number; content: string }[] = [];
-          const doneSet = new Set<number>();
-          let cancelled = false, paused = false, running = false;
-          // 串行落库：每块完成即 map→apply→save（重跑/重试/续跑按概述去重，不重复入库）。
-          // 本身不入队：后台回调用 commitState 包裹；retry-chunk 路由已在提交队列内执行。
-          const persistChunk = async (index: number, raw: string, cards: unknown[]) => {
-            const mapped = mapKnowledgeCards(paper, assets, cards);
-            const r = applyKnowledge(state, paper.id, mapped);
-            await store.save(r.state); state = r.state;
-            doneSet.add(index);
-            job.result!.created = (job.result!.created ?? 0) + r.created;
-            job.result!.skipped = (job.result!.skipped ?? 0) + r.skipped;
-            return r;
+          const input: KnowledgeRunInput = {
+            paperId: String(body.paperId ?? ""),
+            attachmentIds: Array.isArray(body.attachmentIds) ? body.attachmentIds.map((x) => String(x)) : (body.attachmentIds as never),
+            purpose: String(body.purpose ?? ""),
+            topicId: body.topicId ? String(body.topicId) : undefined,
+            subquestionId: body.subquestionId ? String(body.subquestionId) : undefined,
+            idempotencyKey: String(body.idempotencyKey ?? ""),
           };
-          const finishIfSettled = () => { if (job.status === "done" && !(job.result?.chunkErrors?.length)) knowledgeRuns.delete(id); };
-          const runOnce = async () => {
-            if (running) return;
-            running = true;
-            try {
-              const res = await extractKnowledgeProgressive(cfg, text, jobInput.purpose, {
-                isCancelled: () => cancelled || paused,
-                isDone: (i) => doneSet.has(i),
-                onChunkStart: (i, total) => { job.total = total; job.message = `第 ${i + 1}/${total} 段，已出 ${job.result!.created} 张`; },
-                onChunkCards: async (i, total, cards, raw) => {
-                  raws.push({ index: i, content: raw });
-                  await commitState(() => persistChunk(i, raw, cards));
-                  job.done = doneSet.size; job.message = `第 ${i + 1}/${total} 段，已出 ${job.result!.created} 张`;
-                },
-                onChunkError: (i, total, err, recoverable) => {
-                  job.result!.chunkErrors = [...(job.result!.chunkErrors ?? []), { index: i, error: err.message, recoverable }];
-                  job.message = `第 ${i + 1}/${total} 段失败`;
-                },
-              });
-              await commitState((latest) => store.save(latest));
-              writeAudit(paper.id, { raws, model: cfg.model }, "knowledge_extract");
-              if (cancelled) { job.result!.cancelled = true; job.status = "done"; job.message = `已取消：保留已出 ${job.result!.created} 张`; }
-              else if (paused) { job.result!.paused = true; job.status = "paused"; job.message = `已暂停：已出 ${job.result!.created} 张（可继续）`; }
-              else {
-                job.status = "done";
-                job.message = `完成：新增 ${job.result!.created} 张待审知识卡${job.result!.skipped ? `，跳过重复 ${job.result!.skipped}` : ""}${res.failed.length ? `，${res.failed.length} 段失败（可逐块重试）` : ""}（输入快照 ${snapshotHash.slice(0, 12)}）`;
-              }
-            } catch (e) { job.status = "error"; job.error = (e as Error).message ?? "失败"; }
-            finally { running = false; finishIfSettled(); }
-          };
-          knowledgeRuns.set(id, {
-            cancel: () => { cancelled = true; job.message = "取消中…（保留已出）"; },
-            pause: () => { if (running) { paused = true; job.message = "暂停中…（保留已出）"; } else { job.status = "paused"; job.result!.paused = true; job.message = `已暂停：已出 ${job.result!.created} 张`; } },
-            resume: () => { if (running) return; paused = false; job.status = "running"; job.message = "继续抽取…"; void runOnce(); },
-            retryChunk: async (index: number) => {
-              if (!Number.isInteger(index) || index < 0 || index >= chunks.length) throw new AppError(422, `块序号越界：${index}`);
-              const { cards, raw } = await extractKnowledgeChunk(cfg, jobInput.purpose, chunks[index], index, chunks.length);
-              raws.push({ index, content: raw });
-              const r = await persistChunk(index, raw, cards);
-              job.result!.chunkErrors = (job.result!.chunkErrors ?? []).filter((e) => e.index !== index);
-              job.done = doneSet.size;
-              job.message = `第 ${index + 1}/${chunks.length} 段重试成功（已出 ${job.result!.created} 张）`;
-              if (job.status === "done") finishIfSettled();
-              return r;
-            },
-          });
-          void runOnce();
-          send(res, 202, { ok: true, jobId: id, snapshotHash, total: chunks.length });
+          // 校验先于落库与模型调用：非法输入不建 run、不产生知识、不调模型（T06）。
+          const { run: fresh, assets, inputHash } = prepareKnowledgeRun(state, input);
+          const sameKey = state.knowledge.extractionRuns.filter((r) => r.idempotencyKey === fresh.idempotencyKey);
+          const replay = sameKey.find((r) => r.inputHash === inputHash);
+          if (replay) {
+            // 同键同输入：返回既有 run，不新建、不重调模型（§6.3）；未跑完由「继续」显式续跑。
+            send(res, 200, { ok: true, replayed: true, jobId: knowledgeJobByRun.get(replay.id) ?? null, runId: replay.id, total: replay.chunks.length, runStatus: replay.status });
+            return;
+          }
+          if (sameKey.length > 0) {
+            send(res, 409, { error: "幂等键已被不同输入使用（附件、目的或来源版本已变化）。请复用原任务或换新幂等键。", code: "idempotency_conflict" });
+            return;
+          }
+          // 纳管固定来源：论文条目＋各选定附件原件，首次引用保存基线（§5.2）。
+          let k = state.knowledge;
+          const toArchive: [SourceKind, string][] = [["paper", fresh.paperRef.id], ...assets.map((a) => ["asset", a.id] as [SourceKind, string])];
+          for (const [kind, srcId] of toArchive) {
+            const ensured = ensureArchived(state, k, kind, srcId);
+            if (!ensured) { send(res, 404, { error: `来源不存在：${kind} ${srcId}` }); return; }
+            k = ensured.knowledge;
+          }
+          const withRun: LocusState = { ...state, knowledge: { ...k, extractionRuns: [...k.extractionRuns, fresh] } };
+          await store.save(withRun); state = withRun;
+          const jobId = startKnowledgeRun(cfg, fresh.id);
+          send(res, 202, { ok: true, jobId, runId: fresh.id, total: fresh.chunks.length, inputHash, runStatus: fresh.status });
           return;
         }
-        const kjCancel = path.match(/^\/api\/knowledge\/jobs\/([^/]+)\/cancel$/);
-        if (kjCancel) {
-          const run = knowledgeRuns.get(decodeURIComponent(kjCancel[1]));
-          if (!run) { send(res, 404, { error: "该抽取任务不在运行（可能已完成/已结束）。" }); return; }
-          run.cancel(); send(res, 200, { ok: true }); return;
-        }
-        const kjPause = path.match(/^\/api\/knowledge\/jobs\/([^/]+)\/pause$/);
-        if (kjPause) {
-          const run = knowledgeRuns.get(decodeURIComponent(kjPause[1]));
-          if (!run) { send(res, 404, { error: "该抽取任务不在运行。" }); return; }
-          run.pause(); send(res, 200, { ok: true }); return;
-        }
-        const kjResume = path.match(/^\/api\/knowledge\/jobs\/([^/]+)\/resume$/);
-        if (kjResume) {
-          const run = knowledgeRuns.get(decodeURIComponent(kjResume[1]));
-          if (!run) { send(res, 404, { error: "该抽取任务不在运行。" }); return; }
-          run.resume(); send(res, 200, { ok: true }); return;
+        const kjAction = path.match(/^\/api\/knowledge\/jobs\/([^/]+)\/(cancel|pause|resume)$/);
+        if (kjAction) {
+          const runId = resolveKnowledgeRunId(decodeURIComponent(kjAction[1]), body.runId);
+          if (!runId) { send(res, 404, { error: "该抽取任务不在运行，也没有对应的持久记录（可能已完成或已清理）。" }); return; }
+          const action = kjAction[2];
+          const ctl = knowledgeRuns.get(knowledgeJobByRun.get(runId) ?? "");
+          if (action === "cancel") {
+            ctl?.cancel();
+            const next = settleRun(state, runId, { cancelled: true });
+            await store.save(next); state = next;
+            recountKnowledgeJob(runId);
+            const job = knowledgeJobOf(runId);
+            if (job && !knowledgeSignals.get(runId)?.running) {
+              job.status = "done"; job.result = { ...job.result, cancelled: true };
+              job.message = `已取消：保留已出 ${job.result?.created ?? 0} 张（${RUN_STATUS_TEXT.cancelled}）`;
+            }
+            send(res, 200, { ok: true, runId, runStatus: next.knowledge.extractionRuns.find((r) => r.id === runId)!.status });
+            return;
+          }
+          if (action === "pause") {
+            if (knowledgeSignals.get(runId)?.running) {
+              ctl?.pause();
+              send(res, 200, { ok: true, runId, runStatus: knowledgeRun(runId)!.status, pending: true, message: "已请求暂停：在途块完成后停止" });
+              return;
+            }
+            const next = settleRun(state, runId, { paused: true, settled: false });
+            await store.save(next); state = next;
+            recountKnowledgeJob(runId);
+            const st = next.knowledge.extractionRuns.find((r) => r.id === runId)!.status;
+            send(res, 200, { ok: true, runId, runStatus: st });
+            return;
+          }
+          const cfg = getAiConfig();
+          if (!cfg) { send(res, 400, { error: "未配置 AI：无法继续抽取。" }); return; }
+          ctl?.resume();
+          const next = settleRun(state, runId, { settled: false });
+          await store.save(next); state = next;
+          const resumed = next.knowledge.extractionRuns.find((r) => r.id === runId)!;
+          if (resumed.status === "running") {
+            const jobId = startKnowledgeRun(cfg, runId);
+            send(res, 200, { ok: true, jobId, runId, runStatus: resumed.status, total: resumed.chunks.length });
+            return;
+          }
+          recountKnowledgeJob(runId);
+          send(res, 200, { ok: true, runId, runStatus: resumed.status });
+          return;
         }
         const kjRetry = path.match(/^\/api\/knowledge\/jobs\/([^/]+)\/retry-chunk$/);
         if (kjRetry) {
-          const run = knowledgeRuns.get(decodeURIComponent(kjRetry[1]));
-          if (!run) { send(res, 404, { error: "该抽取任务不在运行，无法重试该块。" }); return; }
-          const r = await run.retryChunk(Number(body.index));
-          send(res, 200, { ok: true, ...r }); return;
+          const cfg = getAiConfig();
+          if (!cfg) { send(res, 400, { error: "未配置 AI：无法重试该块。" }); return; }
+          const runId = resolveKnowledgeRunId(decodeURIComponent(kjRetry[1]), body.runId);
+          if (!runId) { send(res, 404, { error: "该抽取任务没有对应的持久记录，无法重试该块。" }); return; }
+          const out = await retryKnowledgeChunk(cfg, runId, Number(body.index));
+          send(res, 200, { ok: true, runId, ...out });
+          return;
         }
         if (path === "/api/import/literature") {
           const mode = (body.mode as "draft" | "ai") ?? "draft";
@@ -1104,6 +1368,8 @@ export async function createApp(store: Store, opts: { aiConfigPath?: string } = 
     const m = req.method ?? "GET";
     // 只读请求直接读已提交 state（GET 不落库、不排队）；写请求串行进入单提交边界。
     if (m === "GET" || m === "HEAD" || m === "OPTIONS") { void handle(req, res); return; }
+    // 失败块重试要调模型：合同禁止队列内网络调用，故该路由不入队，其写入仍经 commitState。
+    if (m === "POST" && /^\/api\/knowledge\/jobs\/[^/]+\/retry-chunk$/.test(new URL(req.url ?? "/", "http://localhost").pathname)) { void handle(req, res); return; }
     void commitState(() => handle(req, res));
   });
 }

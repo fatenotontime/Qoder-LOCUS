@@ -211,13 +211,15 @@ test("v2–v8 → v9 迁移：保留既有数据与原件 hash，补论文/附�
 });
 
 // ── AI：独立任务 + 进程内配置 ───────────────────────────────
-test("八个任务提示词与输出结构互不相同（不混用）", () => {
+test("九个任务提示词与输出结构互不相同（不混用）", () => {
   const names = Object.keys(TASKS);
-  assert.deepEqual(names.sort(), ["analysis_recommend", "context_chat", "handwriting_ocr", "impact_assess", "knowledge_extract", "literature_extract", "pause_assist", "protocol_parse"]);
+  // 合同 §6.2：E2 起知识提取改走 knowledge_struct（结构化批次），旧 knowledge_extract 暂留作逐段草稿路径。
+  assert.deepEqual(names.sort(), ["analysis_recommend", "context_chat", "handwriting_ocr", "impact_assess", "knowledge_extract", "knowledge_struct", "literature_extract", "pause_assist", "protocol_parse"]);
   const systems = new Set(Object.values(TASKS).map((t) => t.system));
   const schemas = new Set(Object.values(TASKS).map((t) => t.schema));
-  assert.equal(systems.size, 8);
-  assert.equal(schemas.size, 8);
+  assert.equal(systems.size, 9);
+  assert.equal(schemas.size, 9);
+  assert.ok(TASKS.knowledge_struct.schema.includes("schemaVersion")); // 结构化任务把版本写进输出契约
 });
 
 test("配置来自环境、缺项即 null；状态不泄露 key", () => {
