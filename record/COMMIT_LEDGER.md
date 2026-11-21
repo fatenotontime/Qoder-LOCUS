@@ -267,11 +267,11 @@
 
 | # | 分支 `feat/s05-e6a2-pinned-gate` | 分支 `<其他>` | 关联轮次 | 说明 |
 | --- | --- | --- | --- | --- |
-| 93 | `PLACEHOLDER_CODE` · 2026-11-21 | — | S05-T9 | **E6.5② 按 §4.2 修正**（用户裁决）：新增 `knowledgeItemGate`（被引用版本 review ＋ 现撤回/排除）；`knowledgeItemConfirmedAt`／`itemFormalUsable`／比较门槛／analysis 勾选与冻结前复检统一改用；错误消息区分 `pinned_not_confirmed`/`withdrawn`/`excluded`/`unreadable`。受影响测试**有意更新**：E6.5②a/b 改为断言合同行为；T13 的「回 needs_info」改判放行并**补撤回断言**（原意图保留）；E3 其余用例未改即通过（实现与 HANDOFF_E3 所述口径对齐）。**321/321**；[会话记录](sessions/2026-11-21_session-05.md#s05-t9) |
+| 93 | `e6f48d8` · 2026-11-21 20:15、`0fe0420` · 20:15（记录）｜PR #16 merge `f6bc9f5` · 20:16（本轮回填） | — | S05-T9 | **E6.5② 按 §4.2 修正**（用户裁决）：新增 `knowledgeItemGate`（被引用版本 review ＋ 现撤回/排除）；`knowledgeItemConfirmedAt`／`itemFormalUsable`／比较门槛／analysis 勾选与冻结前复检统一改用；错误消息区分 `pinned_not_confirmed`/`withdrawn`/`excluded`/`unreadable`。受影响测试**有意更新**：E6.5②a/b 改为断言合同行为；T13 的「回 needs_info」改判放行并**补撤回断言**（原意图保留）；E3 其余用例未改即通过（实现与 HANDOFF_E3 所述口径对齐）。**321/321**；[会话记录](sessions/2026-11-21_session-05.md#s05-t9) |
 
 | 轮次 | 分支 | 提交 | 提交时间 | 本轮产出 |
 | --- | --- | --- | --- | --- |
-| S05-T9 | feat/s05-e6a2-pinned-gate | `PLACEHOLDER_CODE` | 2026-11-21 | E6.5② 固定版审核口径修正＋受影响测试更新（321/321）；[会话记录](sessions/2026-11-21_session-05.md#s05-t9) |
+| S05-T9 | feat/s05-e6a2-pinned-gate | `e6f48d8`、`0fe0420` | 2026-11-21 20:15 | E6.5② 固定版审核口径修正＋受影响测试更新（321/321）；[会话记录](sessions/2026-11-21_session-05.md#s05-t9) |
 
 ## 独立提示词维护记录 S02-T1
 
