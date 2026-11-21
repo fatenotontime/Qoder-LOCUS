@@ -2025,3 +2025,24 @@ button.curtopic.none { color: var(--muted); }
   white-space: pre-wrap; word-break: break-word;
   max-width: 860px; margin: 0 auto; color: var(--fg);
 }
+
+/* ── F2 方案：管理页 ── */
+.proto-manage-head { display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: flex-start; margin-bottom: var(--space-3); }
+.proto-manage-head #proto-search { flex: 1 1 260px; min-width: 200px; }
+.proto-manage-head .lm-tools-details { margin: 0; }
+.proto-manage-head .lm-tools-details[open] { flex-basis: 100%; }
+
+/* ── F2 方案：详情页 ── */
+.proto-detail .detail-bar {
+  display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap;
+  padding-bottom: var(--space-3); margin-bottom: var(--space-3); border-bottom: 1px dashed var(--line);
+}
+.proto-detail .back-btn { margin-bottom: 0; }
+.detail-head { min-width: 0; flex: 1 1 200px; }
+.detail-title { font-weight: 600; color: var(--fg); font-family: var(--font-display); font-size: var(--text-lg); }
+.detail-sub { color: var(--muted); font-size: var(--text-sm); margin-top: 2px; }
+.detail-actions { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
+.detail-actions select { width: auto; max-width: 240px; }
+.detail-actions .more { margin: 0; }
+.detail-actions .more > button { display: block; width: 100%; margin-top: 4px; }
+.stepeditor.readonly { border-style: solid; border-color: var(--line); background: var(--surface-2); }

@@ -13,13 +13,14 @@ import { knowledgeLeftHtml, knowledgeWorkspaceHtml, knowledgeQueueHtml, renderKn
 import { renderAnalysisForm, currentTask, contextMapHtml, analysisRightHtml, snapshotHtml, bindAnalysis } from "./lib/pages/analysis.js";
 
 let state = { topics: [], subquestions: [], assets: [], papers: [], attachments: [], cards: [], tables: [], adoptions: [], mappings: [], comparisons: [], protocols: [], templates: [], executions: [], samples: [], measurements: [], impacts: [], ocrs: [], analysisTasks: [], analysisResults: [], reports: [], chats: [] };
-const ui = { nav: "topic", topicId: "", assetId: null, paperId: null, attId: null, tableId: null, highlight: null, cell: null, dirty: false, busy: false, cardFilter: "all", groupSel: new Set(), batch: null, ack: false, protocolId: null, executionId: null, stepSel: null, viewRev: null, editEventId: null, pauseSuggest: null, prepExtra: 0, taskId: null, chatId: null, reportId: null, reportWorking: {}, navCollapsed: false, kzTab: "todo", kzPanel: "cards", cardOpen: null, kzJob: null, kzStruct: null, kiView: null, suppressRecheck: null, topicPane: "overview", subqId: null, paperView: "manage", paperQuery: "", paperFilter: "all" };
+const ui = { nav: "topic", topicId: "", assetId: null, paperId: null, attId: null, tableId: null, highlight: null, cell: null, dirty: false, busy: false, cardFilter: "all", groupSel: new Set(), batch: null, ack: false, protocolId: null, executionId: null, stepSel: null, viewRev: null, editEventId: null, pauseSuggest: null, prepExtra: 0, taskId: null, chatId: null, reportId: null, reportWorking: {}, navCollapsed: false, kzTab: "todo", kzPanel: "cards", cardOpen: null, kzJob: null, kzStruct: null, kiView: null, suppressRecheck: null, topicPane: "overview", subqId: null, paperView: "manage", paperQuery: "", paperFilter: "all", protocolView: "manage", protocolEdit: false, protoQuery: "" };
 
 // 壳层按页布局能力（§2.1）：每页声明一种布局，壳层据此排布三块区域。
 // aside：主体＋辅助（撤出左栏常驻目录）；single：只留主体（阅读）；review：三栏；canvas：宽画布。
-const LAYOUT = { topic: "aside", papers: "aside" };
+const LAYOUT = { topic: "aside", papers: "aside", protocol: "aside" };
 function layoutOf() {
   if (ui.nav === "papers" && ui.paperView === "read") return "single"; // 阅读页：只留原文
+  if (ui.nav === "protocol" && ui.protocolView === "manage") return "single"; // 方案管理：只留列表
   return LAYOUT[ui.nav] ?? "review";
 }
 let lastAction = null; // { label, run }
@@ -49,7 +50,7 @@ const PANEL_OF = (el) => { const p = el?.closest?.(".pane"); return p ? (p.class
 const UI_KEY = "locus.ui.v2"; // 阶段5 重构：七入口导航，旧选择态作废，默认落课题首页
 let uiRestored = false;
 function saveUi() {
-  try { localStorage.setItem(UI_KEY, JSON.stringify({ nav: ui.nav, topicId: ui.topicId, assetId: ui.assetId, paperId: ui.paperId, tableId: ui.tableId, cardFilter: ui.cardFilter, protocolId: ui.protocolId, executionId: ui.executionId, taskId: ui.taskId, chatId: ui.chatId, reportId: ui.reportId, navCollapsed: ui.navCollapsed, kzTab: ui.kzTab, kzPanel: ui.kzPanel, cardOpen: ui.cardOpen, topicPane: ui.topicPane, subqId: ui.subqId, paperView: ui.paperView, paperQuery: ui.paperQuery })); } catch {}
+  try { localStorage.setItem(UI_KEY, JSON.stringify({ nav: ui.nav, topicId: ui.topicId, assetId: ui.assetId, paperId: ui.paperId, tableId: ui.tableId, cardFilter: ui.cardFilter, protocolId: ui.protocolId, executionId: ui.executionId, taskId: ui.taskId, chatId: ui.chatId, reportId: ui.reportId, navCollapsed: ui.navCollapsed, kzTab: ui.kzTab, kzPanel: ui.kzPanel, cardOpen: ui.cardOpen, topicPane: ui.topicPane, subqId: ui.subqId, paperView: ui.paperView, paperQuery: ui.paperQuery, protocolView: ui.protocolView, protoQuery: ui.protoQuery })); } catch {}
 }
 function restoreUi() {
   if (uiRestored) return;
@@ -75,6 +76,8 @@ function restoreUi() {
     if (s.topicPane === "subq" && state.subquestions.some((q) => q.id === s.subqId)) { ui.topicPane = "subq"; ui.subqId = s.subqId; }
     if (s.paperView === "read" || s.paperView === "manage") ui.paperView = s.paperView;
     if (typeof s.paperQuery === "string") ui.paperQuery = s.paperQuery;
+    if (s.protocolView === "detail" || s.protocolView === "manage") ui.protocolView = s.protocolView;
+    if (typeof s.protoQuery === "string") ui.protoQuery = s.protoQuery;
   } catch {}
 }
 
@@ -781,11 +784,25 @@ function backToPaperManage() {
   renderAll();
 }
 
+// ── 方案：管理页 ⇄ 详情页（实验图）──
+function openProtocolDetail(id) {
+  if (!id) return;
+  if (!guardLeave()) return;
+  ui.protocolId = id; ui.protocolView = "detail"; ui.protocolEdit = false; ui.viewRev = null; ui.stepSel = null;
+  renderAll();
+  const c = $("#mid-content"); if (c) c.scrollTop = 0;
+}
+function backToProtocolManage() {
+  if (!guardLeave()) return;
+  ui.protocolView = "manage"; ui.protocolEdit = false;
+  renderAll();
+}
+
 // ── 浏览器返回保护（§5.1：历史栈集成，不引入路由库）──
 let historyReady = false;
 let suppressHistory = false;
 let lastPushedKey = "";
-function pageState() { return { nav: ui.nav, topicId: ui.topicId, topicPane: ui.topicPane, subqId: ui.subqId, paperView: ui.paperView, paperId: ui.paperId }; }
+function pageState() { return { nav: ui.nav, topicId: ui.topicId, topicPane: ui.topicPane, subqId: ui.subqId, paperView: ui.paperView, paperId: ui.paperId, protocolView: ui.protocolView, protocolId: ui.protocolId }; }
 /** 页面状态变化时写入一条历史；首次替换、后台刷新/主题/动画不入历史。 */
 function syncHistory() {
   if (suppressHistory) return;
@@ -802,6 +819,9 @@ function applyPageState(st) {
   if (ui.topicPane === "subq" && !ui.subqId) ui.topicPane = "overview";
   ui.paperId = state.papers.some((p) => p.id === st.paperId) ? st.paperId : null;
   ui.paperView = st.paperView === "read" && ui.paperId ? "read" : "manage";
+  ui.protocolId = state.protocols.some((p) => p.id === st.protocolId) ? st.protocolId : null;
+  ui.protocolView = st.protocolView === "detail" && ui.protocolId ? "detail" : "manage";
+  ui.protocolEdit = false;
   ui.highlight = null; ui.cell = null; ui.groupSel.clear(); ui.batch = null; ui.ack = false;
   ui.stepSel = null; ui.viewRev = null; ui.editEventId = null; ui.pauseSuggest = null; ui.prepExtra = 0;
   renderAll();
@@ -860,6 +880,7 @@ async function activateNav(kind) {
   ui.nav = kind; ui.highlight = null; ui.cell = null; ui.tableId = null; ui.groupSel.clear(); ui.batch = null; ui.ack = false;
   ui.stepSel = null; ui.viewRev = null; ui.editEventId = null; ui.pauseSuggest = null; ui.prepExtra = 0;
   ui.topicPane = "overview"; ui.subqId = null; ui.paperView = "manage";
+  ui.protocolView = "manage"; ui.protocolEdit = false;
   renderAll();
   restoreNavScroll();
   if (prefersReducedMotion()) return;
@@ -921,7 +942,7 @@ function renderCreateArea() {
 function renderImportBox(box) {
   if (ui.nav === "papers") { box.innerHTML = ""; return; } // 文献页表单移入管理页按需流程
   if (ui.nav === "knowledge") { renderKnowledgeForm(box); return; }
-  if (ui.nav === "protocol") { renderProtocolImport(box); return; }
+  if (ui.nav === "protocol") { box.innerHTML = ""; return; } // 方案新建/导入移入方案管理页按需流程
   if (ui.nav === "record") { renderRecordImport(box); return; }
   if (ui.nav === "analysis") { renderAnalysisForm(box); return; }
   if (ui.nav === "chat") { renderChatForm(box); return; }
@@ -998,12 +1019,9 @@ function renderMiddle() {
     return;
   }
   if (ui.nav === "protocol") {
-    $("#mid-title").textContent = currentProtocol() ? "实验图" : "实验方案";
-    note.hidden = true;
-    if (!currentProtocol()) { midEmpty("protocol", "还没有实验方案", "在上方新建方案、上传原件解析，或从论文方法重构。"); return; }
-    content.innerHTML = protocolMainHtml();
-    content.classList.add("rich");
-    return;
+    if (ui.protocolView === "detail" && currentProtocol()) return renderProtocolDetail(content, note);
+    ui.protocolView = "manage"; ui.protocolEdit = false;
+    return renderProtocolManage(content, note);
   }
   if (ui.nav === "record") {
     const a = currentAsset();
@@ -1067,7 +1085,10 @@ function renderRight() {
     $("#right-content").innerHTML = knowledgeQueueHtml(state, ui);
     return;
   }
-  if (ui.nav === "protocol") { $("#right-title").textContent = "方案信息"; $("#right-content").innerHTML = protocolSideHtml(); return; }
+  if (ui.nav === "protocol") {
+    if (ui.protocolView !== "detail") { $("#right-title").textContent = ""; $("#right-content").innerHTML = ""; return; }
+    $("#right-title").textContent = "方案信息"; $("#right-content").innerHTML = protocolSideHtml(); return;
+  }
   if (ui.nav === "record") { $("#right-title").textContent = "实验记录"; $("#right-content").innerHTML = recordHtml(); return; }
   if (ui.nav === "analysis") { $("#right-title").textContent = "推荐 · 结果 · 分析初稿"; $("#right-content").innerHTML = analysisRightHtml(state, ui); return; }
   if (ui.nav === "chat") { $("#right-title").textContent = "范围 · 来源 · 采纳"; $("#right-content").innerHTML = chatRightHtml(); return; }
@@ -1413,85 +1434,132 @@ async function refreshAfterJob() {
   await refresh();
 }
 
-function renderProtocolImport(box) {
+/** 方案新建/导入字段（按需展开，落在方案管理页顶部）。事件走文档级委托。 */
+function protocolImportHtml() {
   const protos = state.assets.filter((a) => a.kind === "protocol" && (!ui.topicId || a.topicId === ui.topicId || !a.topicId));
   const paperAtts = state.assets.filter((a) => a.kind === "literature" && state.attachments.some((x) => x.assetId === a.id));
-  box.innerHTML = `
-    <details class="mini" ${state.protocols.length ? "" : "open"}>
-      <summary>＋新建方案</summary>
-      <details class="mini" open><summary>① 上传原件并解析</summary>
-        <input id="proto-up-name" placeholder="文件名（如 protocol.md）" />
-        <input id="proto-up-file" type="file" accept=".md,.markdown,.txt,.text,text/markdown,text/plain" />
-        <textarea id="proto-up-text" rows="3" placeholder="或粘贴方案文本（Markdown/纯文本）…"></textarea>
-        <button class="primary" id="proto-upload">上传并解析为方案草稿</button>
-        <p class="hint">原件按方案类归档；草稿标「模型草稿」，须人工编辑确认。AI 未配置时只归档，可稍后解析。</p>
-        ${protos.length ? `<div class="hint">已归档方案原件（${protos.length}）：</div>${protos.map((a) => `<div class="row protoasset" data-aid="${a.id}"><span class="hint">${esc(a.name)} · ${a.bytes}B</span><button class="protoasset-parse">解析为草稿</button></div>`).join("")}` : ""}
-      </details>
-      <details class="mini"><summary>② 从论文重构（非作者原始）</summary>
-        ${paperAtts.length ? `<select id="parse-asset">${paperAtts.map((a) => `<option value="${a.id}">${esc(a.name)}</option>`).join("")}</select>
-        <button id="proto-parse">重构为方案草稿</button>
-        <p class="hint">重构来源仅限论文附件；草稿标「重构」并固定来源原件，不是作者原始方案。</p>` : `<p class="hint">先在「文献整理」为论文条目导入正文/方法附件。</p>`}
-      </details>
-      <details class="mini"><summary>③ 手动新建</summary>
-        <input id="proto-name" placeholder="方案名称" />
-        <select id="proto-src"><option value="user">用户编写</option><option value="reconstructed">公开材料重构（须标来源）</option></select>
-        <input id="proto-purpose" placeholder="目的" />
-        <textarea id="proto-steps" rows="4" placeholder="每行一步：操作 | 时长分钟 | 支路名 | est&#10;例：配缓冲液 | 10 | |&#10;孵育 | 30 | | est&#10;对照 | 60 | 对照支路 |"></textarea>
-        <input id="proto-criteria" placeholder="完成判据" />
-        <input id="proto-frag" placeholder="来源片段（重构时必填，逗号分隔）" />
-        <button class="primary" id="proto-create">创建方案</button>
-      </details>
+  return `
+    <details class="mini" open><summary>① 上传原件并解析</summary>
+      <input id="proto-up-name" placeholder="文件名（如 protocol.md）" />
+      <input id="proto-up-file" type="file" accept=".md,.markdown,.txt,.text,text/markdown,text/plain" />
+      <textarea id="proto-up-text" rows="3" placeholder="或粘贴方案文本（Markdown/纯文本）…"></textarea>
+      <button class="primary" id="proto-upload" type="button">上传并解析为方案草稿</button>
+      <p class="hint">原件按方案类归档；草稿标「模型草稿」，须人工编辑确认。AI 未配置时只归档，可稍后解析。</p>
+      ${protos.length ? `<div class="hint">已归档方案原件（${protos.length}）：</div>${protos.map((a) => `<div class="row protoasset" data-aid="${a.id}"><span class="hint">${esc(a.name)} · ${a.bytes}B</span><button class="protoasset-parse" type="button">解析为草稿</button></div>`).join("")}` : ""}
+    </details>
+    <details class="mini"><summary>② 从论文重构（非作者原始）</summary>
+      ${paperAtts.length ? `<select id="parse-asset">${paperAtts.map((a) => `<option value="${a.id}">${esc(a.name)}</option>`).join("")}</select>
+      <button id="proto-parse" type="button">重构为方案草稿</button>
+      <p class="hint">重构来源仅限论文附件；草稿标「重构」并固定来源原件，不是作者原始方案。</p>` : `<p class="hint">先在「文献」为论文条目导入正文/方法附件。</p>`}
+    </details>
+    <details class="mini"><summary>③ 手动新建</summary>
+      <input id="proto-name" placeholder="方案名称" />
+      <select id="proto-src"><option value="user">用户编写</option><option value="reconstructed">公开材料重构（须标来源）</option></select>
+      <input id="proto-purpose" placeholder="目的" />
+      <textarea id="proto-steps" rows="4" placeholder="每行一步：操作 | 时长分钟 | 支路名 | est&#10;例：配缓冲液 | 10 | |&#10;孵育 | 30 | | est&#10;对照 | 60 | 对照支路 |"></textarea>
+      <input id="proto-criteria" placeholder="完成判据" />
+      <input id="proto-frag" placeholder="来源片段（重构时必填，逗号分隔）" />
+      <button class="primary" id="proto-create" type="button">创建方案</button>
     </details>`;
-  $("#proto-upload").addEventListener("click", (ev) => runJob(ev.target, "上传并解析方案", async () => {
-    if (!ui.topicId) throw new Error("请先选择/创建课题");
-    const file = $("#proto-up-file").files?.[0];
-    let text = $("#proto-up-text").value, name = $("#proto-up-name").value;
-    if (file) { text = await readTextFile(file); if (!name) name = file.name; }
-    let assetId;
-    try {
-      const up = await api.uploadProtocolSource(name, text, ui.topicId);
-      assetId = up.assetId;
-    } catch (e) {
-      if (e.status === 409 && e.details?.existingAssetId) { assetId = e.details.existingAssetId; setStatus("原件已归档：定位已有原件，继续解析"); }
-      else throw e;
-    }
-    $("#proto-up-text").value = ""; if ($("#proto-up-file")) $("#proto-up-file").value = "";
-    let r;
-    try { r = await api.parseProtocol(assetId, ui.topicId); }
-    catch (e) {
-      if (e.status === 422) { await refresh(); setStatus(`原件已归档。${e.message}`); return; }
-      throw e;
-    }
-    const res = await pollJob(r.jobId, "方案解析");
-    ui.protocolId = res.protocolId; ui.viewRev = null; await refreshAfterJob();
-    setStatus("方案草稿已生成（模型草稿，须人工确认）");
-  }));
-  $$(".protoasset-parse").forEach((b) => b.addEventListener("click", (ev) => runJob(ev.target, "AI 解析方案", async () => {
-    const aid = b.closest(".protoasset").dataset.aid;
-    const r = await api.parseProtocol(aid, ui.topicId);
-    const res = await pollJob(r.jobId, "方案解析");
-    ui.protocolId = res.protocolId; ui.viewRev = null; await refreshAfterJob();
-    setStatus("方案草稿已生成（模型草稿，须人工确认）");
-  })));
-  $("#proto-create").addEventListener("click", (ev) => runBusy(ev.target, "创建方案", async () => {
-    if (!ui.topicId) throw new Error("请先选择/创建课题");
-    const sourceKind = $("#proto-src").value;
-    await api.createProtocol({
-      topicId: ui.topicId, name: $("#proto-name").value, sourceKind,
-      purpose: $("#proto-purpose").value, criteria: $("#proto-criteria").value,
-      steps: parseStepsText($("#proto-steps").value),
-      sourceFragments: splitList($("#proto-frag").value),
-    });
-    await refresh(); setStatus("方案已创建（r1）");
-  }));
-  const parseBtn = $("#proto-parse");
-  if (parseBtn) parseBtn.addEventListener("click", (ev) => runJob(ev.target, "AI 重构方案", async () => {
-    if (!ui.topicId) throw new Error("请先选择/创建课题");
-    const r = await api.parseProtocol($("#parse-asset").value, ui.topicId, undefined, "reconstructed");
-    const res = await pollJob(r.jobId, "方案重构");
-    ui.protocolId = res.protocolId; ui.viewRev = null; await refreshAfterJob();
-    setStatus("重构草稿已生成（重构：非作者原始方案，须人工确认）");
-  }));
+}
+
+/** 方案管理页列表。 */
+function protocolListHtml() {
+  const scoped = state.protocols.filter((p) => !ui.topicId || p.topicId === ui.topicId);
+  if (!scoped.length) return emptyStateHtml("protocol", "还没有实验方案", "新建方案、上传原件解析，或从论文方法重构。");
+  const q = (ui.protoQuery ?? "").trim().toLowerCase();
+  let ps = scoped;
+  if (q) ps = ps.filter((p) => p.name.toLowerCase().includes(q) || (p.revisions[p.revisions.length - 1]?.purpose ?? "").toLowerCase().includes(q));
+  if (!ps.length) {
+    return `<div class="empty-state" data-empty="protocol-filter"><span class="es-seal" aria-hidden="true">案</span>
+      <div class="es-eyebrow">无匹配</div><h3>没有匹配的方案</h3><p>清空搜索。</p>
+      <div class="empty-actions"><button class="primary" type="button" data-proto-clear>清除条件</button></div></div>`;
+  }
+  return ps.map((p) => {
+    const latest = p.revisions[p.revisions.length - 1];
+    const steps = latest?.steps.length ?? 0;
+    return `<article class="paper-item" data-protorow="${p.id}">
+      <div class="pi-main">
+        <div class="pi-title">${esc(p.name)}</div>
+        <div class="pi-meta">${fmtEnum(p.sourceKind)} · ${fmtVersion(p.revision)} · ${steps} 步${latest?.purpose ? ` · ${esc(latest.purpose.slice(0, 40))}` : ""}</div>
+      </div>
+      <div class="pi-actions"><button class="mini-act proto-read" type="button" data-proto="${p.id}">打开</button></div>
+    </article>`;
+  }).join("");
+}
+
+/** 方案管理页：主体＝方案列表；新建/导入按需展开。 */
+function renderProtocolManage(content, note) {
+  note.hidden = true;
+  $("#mid-title").textContent = "实验方案";
+  $("#tools-area").innerHTML = "";
+  content.classList.remove("is-empty", "reader");
+  content.classList.add("rich");
+  const scoped = state.protocols.filter((p) => !ui.topicId || p.topicId === ui.topicId);
+  content.innerHTML = `
+    <div class="proto-manage-head">
+      <input id="proto-search" placeholder="搜索方案名称或目的" value="${esc(ui.protoQuery ?? "")}" aria-label="搜索方案" />
+      <details class="mini lm-tools-details"><summary>＋新建 / 导入方案</summary>${protocolImportHtml()}</details>
+    </div>
+    <p class="hint">共 ${scoped.length} 份${ui.protoQuery ? ` · 搜索「${esc(ui.protoQuery)}」` : ""}；点方案进入实验图。</p>
+    <div id="proto-list" class="paper-list">${protocolListHtml()}</div>`;
+}
+
+/** 步骤只读详情（非编辑态：点节点看详情）。 */
+function stepDetailHtml(p, snap) {
+  const s = snap.steps.find((x) => x.id === ui.stepSel);
+  if (!s) return `<div class="stepeditor readonly"><p class="hint">点击图中节点查看步骤详情；要修改就点「编辑当前方案」。</p></div>`;
+  const src = durationSourceOf(s);
+  const srcLabel = { fixed: "规定", estimated: "估计", computed: "由量·速率计算", unknown: "未知" }[src];
+  const durText = src === "unknown" ? "时长未知（不按 0）" : `${s.durationMin}min${src === "estimated" ? "（估计）" : src === "computed" ? "（由量·速率计算）" : ""}`;
+  const params = Object.entries(s.params ?? {});
+  return `<div class="stepeditor readonly">
+    <div class="meta">步骤详情 · ${esc(s.op)}</div>
+    <div class="hint">时长来源：${srcLabel} · ${durText}</div>
+    ${s.slackMin ? `<div class="hint">等待余量：${s.slackMin}min</div>` : ""}
+    ${s.branch ? `<div class="hint">支路：${esc(s.branch)}</div>` : ""}
+    ${s.observeEnd ? `<div class="hint">观察终点：${esc(s.observeEnd)}</div>` : ""}
+    ${params.length ? `<div class="hint">参数：${params.map(([k, v]) => esc(`${k}=${v}`)).join("、")}</div>` : ""}
+    ${s.note ? `<div class="hint">备注：${esc(s.note)}</div>` : ""}
+  </div>`;
+}
+
+/** 方案详情页：页头（返回/名称/版本/编辑）+ 实验图主体 + 步骤详情/编辑；属性与来源在右栏。 */
+function renderProtocolDetail(content, note) {
+  const p = currentProtocol();
+  const snap = viewSnapshot(p);
+  const viewingOld = snap.revision !== p.revision;
+  note.hidden = true;
+  $("#mid-title").textContent = "方案详情";
+  $("#tools-area").innerHTML = "";
+  content.classList.remove("is-empty", "reader");
+  content.classList.add("rich");
+  content.innerHTML = `
+    <div class="item proto-detail" data-id="${p.id}">
+      <div class="detail-bar">
+        <button class="back-btn" type="button" data-proto-back>← 返回方案</button>
+        <div class="detail-head">
+          <div class="detail-title">${esc(p.name)}</div>
+          <div class="detail-sub">${fmtEnum(p.sourceKind)} · 当前 ${fmtVersion(p.revision)}${viewingOld ? ` · 查看旧版 ${fmtVersion(snap.revision)}（只读）` : ""}</div>
+        </div>
+        <div class="detail-actions">
+          <select id="proto-rev" aria-label="查看版本">${p.revisions.map((r) => `<option value="${r.revision}" ${r.revision === snap.revision ? "selected" : ""}>${fmtVersion(r.revision)} · ${esc(r.reason)}</option>`).join("")}</select>
+          ${!viewingOld && !ui.protocolEdit ? `<button class="primary" type="button" data-proto-edit>编辑当前方案</button>` : ""}
+          ${ui.protocolEdit ? `<button class="primary" type="button" id="proto-edit-done">完成编辑</button>` : ""}
+          <details class="mini more"><summary>更多</summary>
+            <button id="proto-export" type="button">导出 JSON</button>
+            <button id="diagram-html" type="button">导出图 HTML</button>
+            <button id="diagram-png" type="button">导出图 PNG</button>
+            <button class="history-btn" type="button">快照历史(${p.revisions.length})</button>
+          </details>
+        </div>
+      </div>
+      ${viewingOld ? `<p class="hint warn">正在查看旧快照 ${fmtVersion(snap.revision)}（只读）；编辑将基于最新 ${fmtVersion(p.revision)} 追加。</p>` : ""}
+      ${ui.protocolEdit ? `<p class="hint">编辑态：点图中节点改步骤，或点下方「添加步骤」；保存追加新快照，旧版本不动。</p>` : ""}
+      ${diagramHtml(p, snap)}
+      ${!viewingOld && ui.protocolEdit ? stepEditorHtml(p, snap) : stepDetailHtml(p, snap)}
+    </div>
+    ${impactHtml([p.id])}`;
 }
 
 function renderRecordImport(box) {
@@ -1663,27 +1731,6 @@ function impactHtml(entityIds) {
       </details>`;
     }).join("")}
   </div>`;
-}
-
-function protocolMainHtml() {
-  const p = currentProtocol();
-  if (!p) return `<p class="hint">在左栏选择方案，或用中间「＋新建方案」创建。图中节点可点击编辑；保存追加新快照，旧版本与已固定的执行/模板不受影响。</p>`;
-  const snap = viewSnapshot(p);
-  const viewingOld = snap.revision !== p.revision;
-  return `
-    <div class="item" data-id="${p.id}">
-      <div class="meta">${esc(p.name)} · 来源 ${fmtEnum(p.sourceKind)}</div>
-      <div class="row"><label>查看版本</label>
-        <select id="proto-rev">${p.revisions.map((r) => `<option value="${r.revision}" ${r.revision === snap.revision ? "selected" : ""}>${fmtVersion(r.revision)} · ${esc(r.reason)}</option>`).join("")}</select>
-        <button id="proto-export">导出 JSON</button>
-        <button id="diagram-html">导出图 HTML</button>
-        <button id="diagram-png">导出图 PNG</button>
-        <button class="history-btn">快照历史(${p.revisions.length})</button></div>
-      ${viewingOld ? `<p class="hint warn">正在查看旧快照 ${fmtVersion(snap.revision)}（只读）；编辑将基于最新 ${fmtVersion(p.revision)} 追加。</p>` : ""}
-      ${diagramHtml(p, snap)}
-      ${!viewingOld ? stepEditorHtml(p, snap) : ""}
-    </div>
-    ${impactHtml([p.id])}`;
 }
 
 function protocolSideHtml() {
@@ -1990,6 +2037,7 @@ document.addEventListener("click", (ev) => {
   if (b.dataset.paper) ui.paperId = b.dataset.paper;
   ui.nav = b.dataset.goto; ui.highlight = null; ui.cell = null; ui.groupSel.clear(); ui.batch = null; ui.ack = false;
   ui.topicPane = "overview"; ui.subqId = null; ui.paperView = "manage";
+  ui.protocolView = "manage"; ui.protocolEdit = false;
   renderAll();
 });
 document.addEventListener("click", (ev) => {
@@ -2095,6 +2143,69 @@ document.addEventListener("click", (ev) => {
     await refresh();
     setStatus(`题录导入：新建 ${r.created?.length ?? 0} 条${r.skipped?.length ? `，跳过同 DOI ${r.skipped.length} 条（已有条目可定位）` : ""}`);
   }); return; }
+});
+
+// 方案：管理列表/详情/编辑 + 新建导入（文档级委托，跨 mid/右栏）
+document.addEventListener("click", (ev) => {
+  const readP = ev.target.closest(".proto-read");
+  if (readP) { openProtocolDetail(readP.dataset.proto); return; }
+  const prow = ev.target.closest("[data-protorow]");
+  if (prow) { openProtocolDetail(prow.dataset.protorow); return; }
+  if (ev.target.closest("[data-proto-back]")) { backToProtocolManage(); return; }
+  if (ev.target.closest("[data-proto-clear]")) { ui.protoQuery = ""; renderAll(); return; }
+  if (ev.target.closest("[data-proto-edit]")) { ui.protocolEdit = true; ui.stepSel = null; renderMiddle(); renderRight(); return; }
+  if (ev.target.id === "proto-edit-done") { ui.protocolEdit = false; ui.stepSel = null; setDirty(false); renderMiddle(); renderRight(); return; }
+  if (ev.target.id === "proto-upload") { runJob(ev.target, "上传并解析方案", async () => {
+    if (!ui.topicId) throw new Error("请先选择/创建课题");
+    const file = $("#proto-up-file").files?.[0];
+    let text = $("#proto-up-text").value, name = $("#proto-up-name").value;
+    if (file) { text = await readTextFile(file); if (!name) name = file.name; }
+    let assetId;
+    try { const up = await api.uploadProtocolSource(name, text, ui.topicId); assetId = up.assetId; }
+    catch (e) { if (e.status === 409 && e.details?.existingAssetId) { assetId = e.details.existingAssetId; setStatus("原件已归档：定位已有原件，继续解析"); } else throw e; }
+    $("#proto-up-text").value = ""; if ($("#proto-up-file")) $("#proto-up-file").value = "";
+    let r;
+    try { r = await api.parseProtocol(assetId, ui.topicId); }
+    catch (e) { if (e.status === 422) { await refresh(); setStatus(`原件已归档。${e.message}`); return; } throw e; }
+    const res = await pollJob(r.jobId, "方案解析");
+    ui.protocolId = res.protocolId; ui.viewRev = null; ui.protocolView = "detail"; await refreshAfterJob();
+    setStatus("方案草稿已生成（模型草稿，须人工确认）");
+  }); return; }
+  const parseAsset = ev.target.closest(".protoasset-parse");
+  if (parseAsset) { runJob(ev.target, "AI 解析方案", async () => {
+    const aid = parseAsset.closest(".protoasset").dataset.aid;
+    const r = await api.parseProtocol(aid, ui.topicId);
+    const res = await pollJob(r.jobId, "方案解析");
+    ui.protocolId = res.protocolId; ui.viewRev = null; ui.protocolView = "detail"; await refreshAfterJob();
+    setStatus("方案草稿已生成（模型草稿，须人工确认）");
+  }); return; }
+  if (ev.target.id === "proto-create") { runBusy(ev.target, "创建方案", async () => {
+    if (!ui.topicId) throw new Error("请先选择/创建课题");
+    await api.createProtocol({
+      topicId: ui.topicId, name: $("#proto-name").value, sourceKind: $("#proto-src").value,
+      purpose: $("#proto-purpose").value, criteria: $("#proto-criteria").value,
+      steps: parseStepsText($("#proto-steps").value),
+      sourceFragments: splitList($("#proto-frag").value),
+    });
+    await refresh(); setStatus("方案已创建（r1）");
+  }); return; }
+  if (ev.target.id === "proto-parse") { runJob(ev.target, "AI 重构方案", async () => {
+    if (!ui.topicId) throw new Error("请先选择/创建课题");
+    const r = await api.parseProtocol($("#parse-asset").value, ui.topicId, undefined, "reconstructed");
+    const res = await pollJob(r.jobId, "方案重构");
+    ui.protocolId = res.protocolId; ui.viewRev = null; ui.protocolView = "detail"; await refreshAfterJob();
+    setStatus("重构草稿已生成（重构：非作者原始方案，须人工确认）");
+  }); return; }
+});
+document.addEventListener("input", (ev) => {
+  if (ev.target.id !== "proto-search") return;
+  ui.protoQuery = ev.target.value;
+  const list = $("#proto-list");
+  if (list) list.innerHTML = protocolListHtml();
+});
+document.addEventListener("change", (ev) => {
+  if (ev.target.id !== "proto-rev") return;
+  ui.viewRev = Number(ev.target.value); ui.stepSel = null; renderMiddle(); renderRight();
 });
 // 分区报错条：关闭 / 详情 / 重试
 document.addEventListener("click", (ev) => {
