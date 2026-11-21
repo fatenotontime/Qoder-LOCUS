@@ -12,7 +12,12 @@ import type {
 } from "../store.ts";
 import { contentHash } from "../store.ts";
 import { AppError, MAX_IMPORT_BYTES, makeAsset, assertLegacyCardConsumerUsable, isStructuredShell } from "./app.ts";
-import { describeItem, knowledgeItemConfirmedAt, knowledgeItemGate, readKnowledgeVersion, shellItemRefs } from "./knowledge-base.ts";
+import {
+  createKnowledgeStatement, currentViewId, describeItem, freezeKnowledge, knowledgeItemConfirmedAt,
+  knowledgeItemGate, readKnowledge, readKnowledgeVersion, shellItemRefs,
+} from "./knowledge-base.ts";
+import { exportKnowledge } from "./knowledge-export.ts";
+import { canonicalHash, knowledgeRef as makeKnowledgeRef } from "../domain/knowledge.ts";
 import type { ItemPayload, KnowledgeRef } from "../domain/knowledge.ts";
 import { effectiveSnapshot, appendEvent } from "./experiment.ts";
 
@@ -719,4 +724,166 @@ export function archiveResultFile(
   }
   const asset = makeAsset("result", name, content, input.topicId);
   return { state: { ...state, assets: [...state.assets, asset] }, asset };
+}
+// ══ E7-A 内置 AI 统一输入与引用校验（合同 §10 E7；服务层，前端无关）════════
+//
+// - 核心/可选预览一律从 readKnowledge 产生：核心=已选且过了正式门槛的固定版本；
+//   可选=未选或未过门槛（含待审），带原因说明；explore 模式才允许待审进入核心并显式标记。
+// - 发送时冻结快照（snapshotHash 覆盖 scope/mode/引用固定版本 + 实际 payload）；payload 可复查。
+// - 超预算**不静默截断**：给出 requiresShrink 与省略说明，要求缩小范围或分页。
+// - 模型返回的引用必须在本输入快照内；不在即 invalid，不得自动写入正式报告/知识。
+
+export interface KnowledgeAiInputRequest {
+  readonly topicId: string;
+  readonly subquestionId?: string;
+  readonly mode?: "formal" | "explore";
+  readonly selectedRefs?: { kind: "item"; id: string; revision: number }[];
+  readonly purpose: string;
+  readonly model: string;
+  readonly promptVersion?: string;
+  readonly budgetBytes?: number;
+}
+
+export interface KnowledgeAiInputEntry { readonly ref: { kind: "item"; id: string; revision: number }; readonly text: string; readonly marker: string }
+
+export interface KnowledgeAiInput {
+  readonly snapshotHash: string;
+  readonly scope: { topicId: string; subquestionId?: string; mode: "formal" | "explore" };
+  readonly core: KnowledgeAiInputEntry[];
+  readonly optional: { ref: { kind: "item"; id: string; revision: number }; text: string; reason: string }[];
+  readonly actualPayload: string;
+  readonly omitted: { ref: string; reason: string }[];
+  readonly truncated: { ref: string; reason: string }[];
+  readonly requiresShrink: boolean;
+  readonly notes: string[];
+  readonly counts: { coreItems: number; bytes: number; budgetBytes: number };
+  /** T45：同一输入交给外部文件工具时的同源结构（科学字段与内置一致，仅包装不同）。 */
+  readonly externalFile: Record<string, unknown>;
+}
+
+const AI_BUDGET_DEFAULT = 24000;
+
+/** 从 readKnowledge 产生 AI 输入（核心/可选/省略/超预算），并冻结快照 hash。 */
+export function buildKnowledgeAiInput(state: LocusState, req: KnowledgeAiInputRequest): KnowledgeAiInput {
+  const mode: "formal" | "explore" = req.mode === "explore" ? "explore" : "formal";
+  const topic = state.topics.find((t) => t.id === req.topicId);
+  if (!topic) throw new AppError(404, `课题不存在：${req.topicId}`);
+  const purpose = (req.purpose ?? "").trim();
+  if (!purpose) throw new AppError(422, "请写明用途（purpose）：AI 发送必须说明目的。");
+  const view = readKnowledge(state, { source: "current", topicId: req.topicId, mode, subquestionId: req.subquestionId });
+  const byId = new Map(view.items.map((e) => [e.id, e]));
+
+  const selected = req.selectedRefs ?? [];
+  const core: KnowledgeAiInputEntry[] = [];
+  const omitted: { ref: string; reason: string }[] = [];
+  for (const r of selected) {
+    const key = `item ${r.id} 第 ${r.revision} 版`;
+    const fixed = makeKnowledgeRef("item", r.id, r.revision);
+    const envNow = state.knowledge.items.find((x) => x.id === r.id);
+    if (!envNow) { omitted.push({ ref: key, reason: "知识项不存在" }); continue; }
+    if (!((envNow.payload as ItemPayload).topicIds ?? []).includes(req.topicId)) { omitted.push({ ref: key, reason: "不属于本课题（跨课题引用）" }); continue; }
+    const payload = readKnowledgeVersion(state.knowledge, fixed) as ItemPayload | null;
+    if (!payload) { omitted.push({ ref: key, reason: "该固定版本不可读（不退回最新版）" }); continue; }
+    const pinnedStatus = payload.review.status;
+    const liveStatus = (envNow.payload as ItemPayload).review.status;
+    if (mode === "formal") {
+      const gate = knowledgeItemGate(state, fixed);
+      if (!gate.ok) { omitted.push({ ref: key, reason: `未过正式门槛（${gate.reason}${gate.reason === "pinned_not_confirmed" ? `：被引用版本为「${gate.pinnedStatus}」` : ""}）；待审内容请改用探索模式` }); continue; }
+    } else if (liveStatus === "withdrawn" || liveStatus === "excluded") {
+      omitted.push({ ref: key, reason: `探索模式也不得包含当前「${liveStatus}」的项` }); continue;
+    }
+    if (!byId.has(r.id)) {
+      // 视图内不存在但固定版可读：explore 下待审项本就在视图内；此处仅当视图过滤（如主题筛选）时发生
+      omitted.push({ ref: key, reason: "不在当前视图范围（如主题/条件筛选或已加载页外）" });
+      continue;
+    }
+    core.push({
+      ref: fixed, text: describeItem(state, payload, r.revision),
+      marker: mode === "explore" && pinnedStatus !== "confirmed" ? `[待审·${pinnedStatus}]` : "",
+    });
+  }
+  // 可选预览：视图内其余项（视图在 formal 下已只含正式项；explore 下含待审）
+  const coreIds = new Set(core.map((c) => c.ref.id));
+  const optional = view.items.filter((e) => !coreIds.has(e.id)).map((e) => {
+    const p = e.payload as { review: { status: string } };
+    return { ref: makeKnowledgeRef("item", e.id, e.revision), text: describeItem(state, e.payload as never, e.revision).slice(0, 200), reason: mode === "formal" ? "未选中；选中后经门槛复核才进入核心" : `未选中（当前审核：${p.review.status}）` };
+  });
+
+  const header = [`研究目的：${purpose}`, `视角：${mode === "formal" ? "正式（只用已确认）" : "探索（含待审，带标记）"}`, `课题：${topic.name}`].join("\n");
+  const body = core.map((c) => `${c.marker ? `${c.marker} ` : ""}【${c.ref.id} 第 ${c.ref.revision} 版】\n${c.text}`).join("\n\n");
+  const actualPayload = `${header}\n\n核心（${core.length} 项）：\n${body}`;
+  const bytes = Buffer.byteLength(actualPayload, "utf8");
+  const budgetBytes = req.budgetBytes ?? AI_BUDGET_DEFAULT;
+  const requiresShrink = bytes > budgetBytes;
+  const truncated: { ref: string; reason: string }[] = [];
+  const notes: string[] = [];
+  if (requiresShrink) notes.push(`输入约 ${bytes} 字节，超过预算 ${budgetBytes} 字节：请缩小选择范围或分页重发；**未做静默截断**。`);
+  if (mode === "explore") notes.push("探索模式：待审内容已标注，不得进入正式推荐/报告。");
+  if (omitted.length) notes.push(`${omitted.length} 项被省略（见 omitted），未混入 payload。`);
+
+  const snapshotHash = canonicalHash({
+    scope: { topicId: req.topicId, subquestionId: req.subquestionId ?? null, mode },
+    refs: core.map((c) => `${c.ref.id}@${c.ref.revision}`),
+    payload: actualPayload,
+    promptVersion: req.promptVersion ?? "knowledge_input/v1",
+  });
+  const externalFile = {
+    wrapper: "locus-knowledge-input/v1 (standalone-json)",
+    purpose, mode, topic: { id: req.topicId, name: topic.name }, subquestionId: req.subquestionId ?? null,
+    items: core.map((c) => ({ ref: { kind: "item", id: c.ref.id, revision: c.ref.revision }, payload: (byId.get(c.ref.id)!.payload) })),
+    snapshotHash, notes,
+  };
+  return {
+    snapshotHash,
+    scope: { topicId: req.topicId, ...(req.subquestionId ? { subquestionId: req.subquestionId } : {}), mode },
+    core, optional, actualPayload, omitted, truncated, requiresShrink, notes,
+    counts: { coreItems: core.length, bytes, budgetBytes }, externalFile,
+  };
+}
+
+export interface AiReferenceCheck { readonly ref: string; readonly status: "valid" | "invalid"; readonly reason: string }
+
+/** T43：模型返回的引用必须落在本次输入快照内；不在即 invalid（不得自动写入正式报告/知识）。 */
+export function validateAiReferences(input: KnowledgeAiInput, refs: unknown[]): AiReferenceCheck[] {
+  const allowed = new Set(input.core.map((c) => `${c.ref.id}@${c.ref.revision}`));
+  return (Array.isArray(refs) ? refs : []).map((r) => {
+    const o = (r ?? {}) as Record<string, unknown>;
+    const id = typeof o.id === "string" ? o.id : typeof o.localId === "string" ? o.localId : "";
+    const revision = typeof o.revision === "number" ? o.revision : null;
+    if (!id) return { ref: "(缺 id)", status: "invalid" as const, reason: "引用缺 id" };
+    if (revision === null) {
+      const ok = input.core.some((c) => c.ref.id === id);
+      return ok ? { ref: `${id}（未给版本）`, status: "invalid" as const, reason: "必须给出固定版本（不允许 latest 兜底）" } : { ref: id, status: "invalid" as const, reason: "not_in_snapshot" };
+    }
+    const key = `${id}@${revision}`;
+    return allowed.has(key)
+      ? { ref: key, status: "valid" as const, reason: "在本输入快照内" }
+      : { ref: key, status: "invalid" as const, reason: "not_in_snapshot（不存在或不属本次输入）" };
+  });
+}
+
+/** 人工采纳：AI 产出只能落为**待审**候选（statement），引用须全部有效；不自动转 confirmed 科学结论。 */
+export function adoptAiProposal(
+  state: LocusState,
+  input: { topicId: string; aiInput: KnowledgeAiInput; text: string; nature: "observation" | "hypothesis" | "interpretation" | "to_verify" | "human_judgment"; evidenceRefs?: unknown[]; scopeText?: string },
+): { state: LocusState; itemId: string; review: string } {
+  const checks = validateAiReferences(input.aiInput, [
+    ...input.aiInput.core.map((c) => ({ kind: "item", id: c.ref.id, revision: c.ref.revision })),
+    ...(input.evidenceRefs ?? []),
+  ]);
+  const invalid = checks.filter((c) => c.status === "invalid");
+  if (invalid.length) throw new AppError(422, `采纳被拒：${invalid.length} 个引用不属本次输入快照（${invalid.map((i) => i.ref).join("、")}）；不得自动写入正式报告/知识。`, { code: "ai_reference_invalid", invalid });
+  const st = createKnowledgeStatement(state, {
+    topicId: input.topicId, text: input.text, nature: input.nature, createdBy: "model",
+    ...(input.scopeText ? { scopeText: input.scopeText } : {}),
+  });
+  if (st.item.payload.review.status !== "pending") throw new AppError(500, "内部错误：AI 采纳必须落为待审。");
+  return { state: st.state, itemId: st.item.id, review: st.item.payload.review.status };
+}
+
+/** 手动下载「选定范围」知识包（E5 冻结 + 导出复用；不新建导出实现）。 */
+export function exportSelectedPackage(state: LocusState, input: { topicId: string; selectedRefs: { kind: "item"; id: string; revision: number }[]; mode?: "formal" | "explore"; purpose?: string }): { filename: string; buffer: Buffer } {
+  const frozen = freezeKnowledge(state, { topicId: input.topicId, viewId: currentViewId(state, input.topicId), selectedRefs: input.selectedRefs, mode: input.mode ?? "formal" });
+  const out = exportKnowledge(frozen.snapshot, { format: "zip" });
+  return { filename: out.filename, buffer: out.data as Buffer };
 }

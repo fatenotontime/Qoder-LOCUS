@@ -9,6 +9,7 @@ import type { AddressInfo } from "node:net";
 import { MemoryStore, emptyState, type LocusState, type Store } from "../store.ts";
 import { createTopic, makeAsset, importMeasurements } from "../services/app.ts";
 import { archiveSourceVersion, currentSourceRef, sourcePayload, createKnowledgeDataset, reviewKnowledgeDataset } from "../services/knowledge-base.ts";
+import { buildKnowledgeAiInput, validateAiReferences, adoptAiProposal, exportSelectedPackage, createAnalysisTask } from "../services/analysis.ts";
 import { clearAiConfig, setAiConfig } from "../services/ai.ts";
 import { chatScopeSnapshot } from "../services/analysis.ts";
 
@@ -1158,4 +1159,119 @@ test("E5 路由：快照导出与 token 引用按 §7.5 先验许可", async () 
   } finally {
     await close();
   }
+});
+// ══ E7-A 内置 AI 统一输入与引用校验（合同 §10 E7；判据 T41–T45）═════════════
+
+/** E7 种子：课题 + 一张表（数据核心）+ 一项已确认 + 一项待审（同一来源）。 */
+function seedAiInput() {
+  const t = createTopic(emptyState(), { name: "合成课题甲", researchQuestion: "培养时间" });
+  const topicId = t.topic.id;
+  let s: LocusState = t.state;
+  const asset = makeAsset("literature", "p.md", "合成对象A在 1 d 与 24 h 下培养。", topicId);
+  s = { ...s, assets: [...s.assets, asset] };
+  const ref = currentSourceRef(s, "asset", asset.id)!;
+  s = { ...s, knowledge: archiveSourceVersion(s.knowledge, ref, sourcePayload(s, "asset", asset.id)) };
+  s = importMeasurements(s, { name: "t.csv", csv: "时间,批注\n24,a\n48,b\n", topicId }).state;
+  const mk = (id: string, text: string, status: string) => ({
+    id, revision: 1, createdAt: "t", updatedAt: "t", history: [],
+    payload: {
+      contentType: "observation", nature: "observation", text, subject: { raw: "合成对象A" }, predicate: { raw: "培养时间", metricId: "time_germ" },
+      value: { kind: "scalar", raw: "1 d", value: "1", unit: "d" }, contextRefs: [], evidenceRefs: [], sourceRefs: [ref],
+      origin: { sourceClass: "literature_report", createdBy: "model", secondaryCitation: false },
+      scopeText: "", unknowns: [], topicIds: [topicId], subquestionIds: [], review: { status },
+    },
+  });
+  s = { ...s, knowledge: { ...s.knowledge, items: [...s.knowledge.items, mk("ki_ok", "合成对象A在 1 d 下培养", "confirmed") as never, mk("ki_pending", "合成对象A在 24 h 下培养（待核）", "pending") as never] } };
+  return { state: s, topicId, tableId: s.tables[0].id, srcRef: ref };
+}
+
+test("T41 内置正式AI选择新项+数据核心：仅选中且已确认内容进入核心，actualPayload 可复查", () => {
+  const f = seedAiInput();
+  // 既有 AnalysisTask 仍要求数据核心（表格）：不因知识输入放开该约束
+  const task = createAnalysisTask(f.state, { topicId: f.topicId, title: "分析", core: [{ kind: "table", id: f.tableId }, { kind: "item", id: "ki_ok", revision: 1 }] });
+  assert.equal(task.task.core.length, 2, "表格（数据核心）+ 已确认项可同选");
+
+  const input = buildKnowledgeAiInput(f.state, { topicId: f.topicId, selectedRefs: [{ kind: "item", id: "ki_ok", revision: 1 }], purpose: "比较培养时间" });
+  assert.equal(input.core.length, 1, "核心只含选中的已确认项");
+  assert.equal(input.scope.mode, "formal");
+  assert.ok(input.actualPayload.includes("研究目的：比较培养时间"));
+  assert.ok(input.actualPayload.includes("合成对象A在 1 d 下培养"), "actualPayload 含实际发送内容（可复查）");
+  assert.equal(input.requiresShrink, false);
+  // 同一输入 → 同一 snapshotHash；换选择 → 变化
+  const again = buildKnowledgeAiInput(f.state, { topicId: f.topicId, selectedRefs: [{ kind: "item", id: "ki_ok", revision: 1 }], purpose: "比较培养时间" });
+  assert.equal(again.snapshotHash, input.snapshotHash, "同输入冻结同一快照 hash");
+  const changed = buildKnowledgeAiInput(f.state, { topicId: f.topicId, selectedRefs: [], purpose: "比较培养时间" });
+  assert.notEqual(changed.snapshotHash, input.snapshotHash, "选择变化 → 快照变化");
+  assert.ok(changed.optional.length >= 1, "可选预览来自 readKnowledge，带原因");
+});
+
+test("T42 待审探索与正式推荐分别发送：探索有标记，正式守卫仍阻断待审", () => {
+  const f = seedAiInput();
+  const formalInput = buildKnowledgeAiInput(f.state, { topicId: f.topicId, selectedRefs: [{ kind: "item", id: "ki_pending", revision: 1 }], purpose: "正式用途" });
+  assert.equal(formalInput.core.length, 0, "正式模式不放行待审");
+  assert.ok(formalInput.omitted.some((o) => o.reason.includes("未过正式门槛")), "正式阻断给出理由并指向探索模式");
+
+  const exploreInput = buildKnowledgeAiInput(f.state, { topicId: f.topicId, mode: "explore", selectedRefs: [{ kind: "item", id: "ki_pending", revision: 1 }], purpose: "探索用途" });
+  assert.equal(exploreInput.core.length, 1);
+  assert.equal(exploreInput.core[0].marker, "[待审·pending]", "探索核心带待审标记");
+  assert.ok(exploreInput.actualPayload.includes("[待审·pending]"), "标记进入实际 payload");
+  assert.equal(exploreInput.scope.mode, "explore");
+  assert.ok(exploreInput.notes.some((n) => n.includes("探索模式")));
+});
+
+test("T43 模型返回不存在/不属快照的引用：标invalid，不能自动写入 confirmed 报告/知识", () => {
+  const f = seedAiInput();
+  const input = buildKnowledgeAiInput(f.state, { topicId: f.topicId, selectedRefs: [{ kind: "item", id: "ki_ok", revision: 1 }], purpose: "P" });
+  const checks = validateAiReferences(input, [
+    { kind: "item", id: "ki_ok", revision: 1 },
+    { kind: "item", id: "ki_missing", revision: 1 },
+    { kind: "item", id: "ki_pending", revision: 1 },
+    { kind: "item", id: "ki_ok" },
+  ]);
+  assert.deepEqual(checks.map((c) => c.status), ["valid", "invalid", "invalid", "invalid"]);
+  assert.ok(checks[1].reason.includes("not_in_snapshot"));
+  assert.ok(checks[3].reason.includes("固定版本"));
+
+  const bad = (() => { try { adoptAiProposal(f.state, { topicId: f.topicId, aiInput: input, text: "AI 建议", nature: "hypothesis", evidenceRefs: [{ kind: "item", id: "ki_missing", revision: 1 }] }); return null; } catch (e) { return e as { status: number; details?: { code?: string } }; } })();
+  assert.ok(bad, "含无效引用的采纳必须被拒");
+  assert.equal(bad!.status, 422);
+  assert.equal(bad!.details?.code, "ai_reference_invalid");
+
+  const ok = adoptAiProposal(f.state, { topicId: f.topicId, aiInput: input, text: "培养时间可能受温度影响", nature: "hypothesis" });
+  assert.equal(ok.review, "pending", "采纳只落待审候选，不自动转 confirmed");
+});
+
+test("T44 模型上下文超预算：显式要求缩小/分页，不默默截断条件", () => {
+  const f = seedAiInput();
+  const tight = buildKnowledgeAiInput(f.state, { topicId: f.topicId, selectedRefs: [{ kind: "item", id: "ki_ok", revision: 1 }], purpose: "P", budgetBytes: 40 });
+  assert.equal(tight.requiresShrink, true, "超预算显式标记要求缩小/分页");
+  assert.equal(tight.truncated.length, 0, "不做静默截断");
+  assert.ok(tight.notes.some((n) => n.includes("未做静默截断")));
+  assert.equal(tight.actualPayload, buildKnowledgeAiInput(f.state, { topicId: f.topicId, selectedRefs: [{ kind: "item", id: "ki_ok", revision: 1 }], purpose: "P" }).actualPayload, "payload 未被裁剪");
+  const roomy = buildKnowledgeAiInput(f.state, { topicId: f.topicId, selectedRefs: [{ kind: "item", id: "ki_ok", revision: 1 }], purpose: "P", budgetBytes: 100000 });
+  assert.equal(roomy.requiresShrink, false);
+});
+
+test("T45 相同输入给内置与外部文件：科学字段/引用相同，包装差异明确", () => {
+  const f = seedAiInput();
+  const req = { topicId: f.topicId, selectedRefs: [{ kind: "item", id: "ki_ok", revision: 1 }], purpose: "P" } as const;
+  const input = buildKnowledgeAiInput(f.state, req);
+  const ext = input.externalFile as { wrapper: string; items: { ref: { id: string; revision: number }; payload: { value: { value: string; unit: string }; subject: { raw: string }; origin: { sourceClass: string } } }[]; snapshotHash: string };
+  assert.ok(ext.wrapper.includes("standalone-json"), "外部文件包装明确标注");
+  assert.equal(ext.items.length, input.core.length, "条目数与内置一致");
+  assert.equal(ext.items[0].ref.id, "ki_ok");
+  assert.equal(ext.items[0].ref.revision, 1, "固定版本一致");
+  assert.equal(ext.items[0].payload.value.value, "1");
+  assert.equal(ext.items[0].payload.value.unit, "d", "科学字段（值/单位）一致");
+  assert.equal(ext.items[0].payload.subject.raw, "合成对象A");
+  assert.equal(ext.items[0].payload.origin.sourceClass, "literature_report");
+  assert.equal(ext.snapshotHash, input.snapshotHash, "同一输入共享快照 hash");
+  assert.ok(input.notes.length >= 0);
+});
+
+test("E7-A 手动下载选定包：冻结选定范围并导出 ZIP（复用 E5，不另造导出）", () => {
+  const f = seedAiInput();
+  const out = exportSelectedPackage(f.state, { topicId: f.topicId, selectedRefs: [{ kind: "item", id: "ki_ok", revision: 1 }] });
+  assert.ok(out.filename.endsWith(".zip"));
+  assert.equal(out.buffer.subarray(0, 2).toString("latin1"), "PK");
 });
