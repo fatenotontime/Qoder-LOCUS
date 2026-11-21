@@ -13,15 +13,16 @@ import { knowledgeLeftHtml, knowledgeWorkspaceHtml, knowledgeQueueHtml, renderKn
 import { renderAnalysisForm, currentTask, contextMapHtml, analysisRightHtml, snapshotHtml, bindAnalysis } from "./lib/pages/analysis.js";
 
 let state = { topics: [], subquestions: [], assets: [], papers: [], attachments: [], cards: [], tables: [], adoptions: [], mappings: [], comparisons: [], protocols: [], templates: [], executions: [], samples: [], measurements: [], impacts: [], ocrs: [], analysisTasks: [], analysisResults: [], reports: [], chats: [] };
-const ui = { nav: "topic", topicId: "", assetId: null, paperId: null, attId: null, tableId: null, highlight: null, cell: null, dirty: false, busy: false, cardFilter: "all", groupSel: new Set(), batch: null, ack: false, protocolId: null, executionId: null, stepSel: null, viewRev: null, editEventId: null, pauseSuggest: null, prepExtra: 0, taskId: null, chatId: null, reportId: null, reportWorking: {}, navCollapsed: false, kzTab: "todo", kzPanel: "cards", cardOpen: null, kzJob: null, kzStruct: null, kiView: null, suppressRecheck: null, topicPane: "overview", subqId: null, paperView: "manage", paperQuery: "", paperFilter: "all", protocolView: "manage", protocolEdit: false, protoQuery: "", recordView: "overview" };
+const ui = { nav: "topic", topicId: "", assetId: null, paperId: null, attId: null, tableId: null, highlight: null, cell: null, dirty: false, busy: false, cardFilter: "all", groupSel: new Set(), batch: null, ack: false, protocolId: null, executionId: null, stepSel: null, viewRev: null, editEventId: null, pauseSuggest: null, prepExtra: 0, taskId: null, chatId: null, reportId: null, reportWorking: {}, navCollapsed: false, kzTab: "todo", kzPanel: "cards", cardOpen: null, kzJob: null, kzStruct: null, kiView: null, suppressRecheck: null, topicPane: "overview", subqId: null, paperView: "manage", paperQuery: "", paperFilter: "all", protocolView: "manage", protocolEdit: false, protoQuery: "", recordView: "overview", chatView: "manage" };
 
 // 壳层按页布局能力（§2.1）：每页声明一种布局，壳层据此排布三块区域。
 // aside：主体＋辅助（撤出左栏常驻目录）；single：只留主体（阅读）；review：三栏；canvas：宽画布。
-const LAYOUT = { topic: "aside", papers: "aside", protocol: "aside" };
+const LAYOUT = { topic: "aside", papers: "aside", protocol: "aside", chat: "aside" };
 function layoutOf() {
   if (ui.nav === "papers" && ui.paperView === "read") return "single"; // 阅读页：只留原文
   if (ui.nav === "protocol" && ui.protocolView === "manage") return "single"; // 方案管理：只留列表
   if (ui.nav === "record" && ui.recordView !== "detail") return "single"; // 记录总览：只留主体
+  if (ui.nav === "chat" && ui.chatView !== "chat") return "single"; // 会话管理：只留列表
   return LAYOUT[ui.nav] ?? "review";
 }
 let lastAction = null; // { label, run }
@@ -51,7 +52,7 @@ const PANEL_OF = (el) => { const p = el?.closest?.(".pane"); return p ? (p.class
 const UI_KEY = "locus.ui.v2"; // 阶段5 重构：七入口导航，旧选择态作废，默认落课题首页
 let uiRestored = false;
 function saveUi() {
-  try { localStorage.setItem(UI_KEY, JSON.stringify({ nav: ui.nav, topicId: ui.topicId, assetId: ui.assetId, paperId: ui.paperId, tableId: ui.tableId, cardFilter: ui.cardFilter, protocolId: ui.protocolId, executionId: ui.executionId, taskId: ui.taskId, chatId: ui.chatId, reportId: ui.reportId, navCollapsed: ui.navCollapsed, kzTab: ui.kzTab, kzPanel: ui.kzPanel, cardOpen: ui.cardOpen, topicPane: ui.topicPane, subqId: ui.subqId, paperView: ui.paperView, paperQuery: ui.paperQuery, protocolView: ui.protocolView, protoQuery: ui.protoQuery, recordView: ui.recordView })); } catch {}
+  try { localStorage.setItem(UI_KEY, JSON.stringify({ nav: ui.nav, topicId: ui.topicId, assetId: ui.assetId, paperId: ui.paperId, tableId: ui.tableId, cardFilter: ui.cardFilter, protocolId: ui.protocolId, executionId: ui.executionId, taskId: ui.taskId, chatId: ui.chatId, reportId: ui.reportId, navCollapsed: ui.navCollapsed, kzTab: ui.kzTab, kzPanel: ui.kzPanel, cardOpen: ui.cardOpen, topicPane: ui.topicPane, subqId: ui.subqId, paperView: ui.paperView, paperQuery: ui.paperQuery, protocolView: ui.protocolView, protoQuery: ui.protoQuery, recordView: ui.recordView, chatView: ui.chatView })); } catch {}
 }
 function restoreUi() {
   if (uiRestored) return;
@@ -80,6 +81,7 @@ function restoreUi() {
     if (s.protocolView === "detail" || s.protocolView === "manage") ui.protocolView = s.protocolView;
     if (typeof s.protoQuery === "string") ui.protoQuery = s.protoQuery;
     if (s.recordView === "detail" || s.recordView === "overview") ui.recordView = s.recordView;
+    if (s.chatView === "chat" || s.chatView === "manage") ui.chatView = s.chatView;
   } catch {}
 }
 
@@ -814,11 +816,25 @@ function backToRecordOverview() {
   renderAll();
 }
 
+// ── 对话：会话管理 ⇄ 聊天 ──
+function openChatDetail(id) {
+  if (!id) return;
+  if (!guardLeave()) return;
+  ui.chatId = id; ui.chatView = "chat";
+  renderAll();
+  const c = $("#mid-content"); if (c) c.scrollTop = 0;
+}
+function backToChatManage() {
+  if (!guardLeave()) return;
+  ui.chatView = "manage";
+  renderAll();
+}
+
 // ── 浏览器返回保护（§5.1：历史栈集成，不引入路由库）──
 let historyReady = false;
 let suppressHistory = false;
 let lastPushedKey = "";
-function pageState() { return { nav: ui.nav, topicId: ui.topicId, topicPane: ui.topicPane, subqId: ui.subqId, paperView: ui.paperView, paperId: ui.paperId, protocolView: ui.protocolView, protocolId: ui.protocolId, recordView: ui.recordView, executionId: ui.executionId }; }
+function pageState() { return { nav: ui.nav, topicId: ui.topicId, topicPane: ui.topicPane, subqId: ui.subqId, paperView: ui.paperView, paperId: ui.paperId, protocolView: ui.protocolView, protocolId: ui.protocolId, recordView: ui.recordView, executionId: ui.executionId, chatView: ui.chatView, chatId: ui.chatId }; }
 /** 页面状态变化时写入一条历史；首次替换、后台刷新/主题/动画不入历史。 */
 function syncHistory() {
   if (suppressHistory) return;
@@ -840,6 +856,8 @@ function applyPageState(st) {
   ui.protocolEdit = false;
   ui.executionId = state.executions.some((e) => e.id === st.executionId) ? st.executionId : null;
   ui.recordView = st.recordView === "detail" && ui.executionId ? "detail" : "overview";
+  ui.chatId = state.chats.some((c) => c.id === st.chatId) ? st.chatId : null;
+  ui.chatView = st.chatView === "chat" && ui.chatId ? "chat" : "manage";
   ui.highlight = null; ui.cell = null; ui.groupSel.clear(); ui.batch = null; ui.ack = false;
   ui.stepSel = null; ui.viewRev = null; ui.editEventId = null; ui.pauseSuggest = null; ui.prepExtra = 0;
   renderAll();
@@ -900,6 +918,7 @@ async function activateNav(kind) {
   ui.topicPane = "overview"; ui.subqId = null; ui.paperView = "manage";
   ui.protocolView = "manage"; ui.protocolEdit = false;
   ui.recordView = "overview";
+  ui.chatView = "manage";
   renderAll();
   restoreNavScroll();
   if (prefersReducedMotion()) return;
@@ -958,6 +977,11 @@ function renderCreateArea() {
     renderRecordTools(tools);
     return;
   }
+  if (ui.nav === "chat") {
+    box.innerHTML = ""; tools.innerHTML = "";
+    if (ui.chatView === "chat") box.innerHTML = `<div class="detail-bar"><button class="back-btn" type="button" data-chat-back>← 返回会话列表</button><span class="hint">范围与建议采纳见右栏。</span></div>`;
+    return;
+  }
   // 课题页、文献页（管理/阅读分离，表单移入按需流程）不走通用创建区；知识页无文献时不显示。
   if (ui.nav === "topic" || ui.nav === "papers" || (ui.nav === "knowledge" && !state.papers.length)) { box.innerHTML = ""; tools.innerHTML = ""; return; }
   box.innerHTML = ""; tools.innerHTML = "";
@@ -971,7 +995,7 @@ function renderImportBox(box) {
   if (ui.nav === "protocol") { box.innerHTML = ""; return; } // 方案新建/导入移入方案管理页按需流程
   if (ui.nav === "record") { renderRecordImport(box); return; }
   if (ui.nav === "analysis") { renderAnalysisForm(box); return; }
-  if (ui.nav === "chat") { renderChatForm(box); return; }
+  if (ui.nav === "chat") { box.innerHTML = ""; return; } // 会话新建移入会话管理页按需流程
   box.innerHTML = "";
 }
 const EMPTY_META = {
@@ -1088,9 +1112,10 @@ function renderMiddle() {
     return;
   }
   if (ui.nav === "chat") {
+    if (ui.chatView !== "chat") return renderChatManage(content, note);
     const c = currentChat();
-    $("#mid-title").textContent = "上下文对话";
-    if (!c) { note.hidden = true; midEmpty("chat", "还没有对话", "在左侧选择会话，或围绕课题新建对话；范围与采纳入右栏。"); return; }
+    if (!c) { ui.chatView = "manage"; return renderChatManage(content, note); }
+    $("#mid-title").textContent = "聊天";
     note.hidden = false;
     note.textContent = `范围：${c.subquestionId ? "子问题 ＋ " : ""}${c.scope.length} 对象；发送即冻结快照。讨论不改对象；采纳需确认。`;
     content.innerHTML = chatHtml(c);
@@ -1121,7 +1146,10 @@ function renderRight() {
     $("#right-title").textContent = "实验记录"; $("#right-content").innerHTML = recordHtml(); return;
   }
   if (ui.nav === "analysis") { $("#right-title").textContent = "推荐 · 结果 · 分析初稿"; $("#right-content").innerHTML = analysisRightHtml(state, ui); return; }
-  if (ui.nav === "chat") { $("#right-title").textContent = "范围 · 来源 · 采纳"; $("#right-content").innerHTML = chatRightHtml(); return; }
+  if (ui.nav === "chat") {
+    if (ui.chatView !== "chat") { $("#right-title").textContent = ""; $("#right-content").innerHTML = ""; return; }
+    $("#right-title").textContent = "范围 · 来源 · 采纳"; $("#right-content").innerHTML = chatRightHtml(); return;
+  }
   $("#right-title").textContent = "结构化结果";
   $("#right-content").innerHTML = `<p class="hint">在左栏选择工作对象。</p>`;
 }
@@ -1978,31 +2006,55 @@ function recordHtml() {
 function currentChat() { return state.chats.find((c) => c.id === ui.chatId) ?? null; }
 const collectPicks = (cls) => [...$$(`.${cls}:checked`)].map((cb) => ({ kind: cb.dataset.kind, id: cb.dataset.id }));
 
-function renderChatForm(box) {
-  if (!ui.topicId) { box.innerHTML = `<p class="hint">先在上方选择课题，再创建对话。</p>`; return; }
+/** 新建会话字段（按需展开，落在会话管理页）。事件走文档级委托。会话无「标题/目的」字段。 */
+function chatFormHtml() {
+  if (!ui.topicId) return `<p class="hint">先在上方选择课题，再创建对话。</p>`;
   const { execs, tables, meas, protos, cards } = topicObjects(state, ui);
   const subqs = state.subquestions.filter((s) => s.topicId === ui.topicId);
   const conf = cards.filter((c) => c.audit === "confirm");
   const row = (kind, id, label) => `<label class="ctxpick"><input type="checkbox" class="ch-scope" data-kind="${kind}" data-id="${id}"/> ${esc(label)}</label>`;
-  box.innerHTML = `
-    <details class="mini" open>
-      <summary>＋新建对话</summary>
-      <select id="ch-subq"><option value="">（课题层，不挂子问题）</option>${subqs.map((s) => `<option value="${s.id}">${esc(s.question)}</option>`).join("")}</select>
-      <p class="hint">默认已选（已入候选知识卡，可取消）：</p>
-      ${conf.length ? conf.map((c) => `<label class="ctxpick"><input type="checkbox" class="ch-scope" data-kind="card" data-id="${c.id}" checked/> ${esc(c.scope || c.rawText.slice(0, 24))}</label>`).join("") : `<p class="hint">暂无。</p>`}
-      <details class="mini"><summary>其他可选（折叠：执行/测量/表/方案/其余卡）</summary>
-        ${execs.map((e) => row("execution", e.id, refLabel(state, { kind: "execution", id: e.id }))).join("")}
-        ${meas.map((m) => row("measurement", m.id, refLabel(state, { kind: "measurement", id: m.id }))).join("")}
-        ${tables.map((t) => row("table", t.id, refLabel(state, { kind: "table", id: t.id }))).join("")}
-        ${protos.map((p) => row("protocol", p.id, refLabel(state, { kind: "protocol", id: p.id }))).join("")}
-        ${cards.filter((c) => c.audit !== "confirm").map((c) => row("card", c.id, `知识卡 · ${c.scope || c.rawText.slice(0, 20)}`)).join("")}
-      </details>
-      <button class="primary" id="ch-create">创建会话</button>
-    </details>`;
-  $("#ch-create").addEventListener("click", (ev) => runBusy(ev.target, "创建会话", async () => {
-    const r = await api.createChat({ topicId: ui.topicId, subquestionId: $("#ch-subq").value || undefined, scope: collectPicks("ch-scope") });
-    ui.chatId = r.chatId; await refresh(); setStatus("会话已创建：在中栏开始讨论");
-  }));
+  return `
+    <select id="ch-subq"><option value="">（课题层，不挂子问题）</option>${subqs.map((s) => `<option value="${s.id}">${esc(s.question)}</option>`).join("")}</select>
+    <p class="hint">默认已选（已入候选知识卡，可取消）：</p>
+    ${conf.length ? conf.map((c) => `<label class="ctxpick"><input type="checkbox" class="ch-scope" data-kind="card" data-id="${c.id}" checked/> ${esc(c.scope || c.rawText.slice(0, 24))}</label>`).join("") : `<p class="hint">暂无。</p>`}
+    <details class="mini"><summary>其他可选（折叠：执行/测量/表/方案/其余卡）</summary>
+      ${execs.map((e) => row("execution", e.id, refLabel(state, { kind: "execution", id: e.id }))).join("")}
+      ${meas.map((m) => row("measurement", m.id, refLabel(state, { kind: "measurement", id: m.id }))).join("")}
+      ${tables.map((t) => row("table", t.id, refLabel(state, { kind: "table", id: t.id }))).join("")}
+      ${protos.map((p) => row("protocol", p.id, refLabel(state, { kind: "protocol", id: p.id }))).join("")}
+      ${cards.filter((c) => c.audit !== "confirm").map((c) => row("card", c.id, `知识卡 · ${c.scope || c.rawText.slice(0, 20)}`)).join("")}
+    </details>
+    <button class="primary" id="ch-create" type="button">创建会话</button>`;
+}
+
+/** 会话管理页列表（用所属对象与范围摘要识别；无标题字段）。 */
+function chatListHtml() {
+  const cs = state.chats.filter((c) => !ui.topicId || c.topicId === ui.topicId);
+  if (!cs.length) return emptyStateHtml("chat", "还没有会话", "围绕课题或子问题新建会话，先选范围再讨论。");
+  return cs.map((c) => {
+    const q = state.subquestions.find((x) => x.id === c.subquestionId);
+    const running = c.messages.some((m) => m.status === "running");
+    return `<article class="paper-item" data-chatrow="${c.id}">
+      <div class="pi-main">
+        <div class="pi-title">${esc(q ? q.question : topicName(c.topicId) ?? "课题对话")}${running ? ` <span class="badge warn">进行中</span>` : ""}</div>
+        <div class="pi-meta">${c.scope.length} 个对象 · ${c.messages.length} 条消息 · 最近 ${esc(fmtTime(c.updatedAt))}</div>
+      </div>
+      <div class="pi-actions"><button class="mini-act chat-open" type="button" data-chat="${c.id}">进入</button></div>
+    </article>`;
+  }).join("");
+}
+
+/** 会话管理页：主体＝会话列表；新建会话按需展开。 */
+function renderChatManage(content, note) {
+  note.hidden = true;
+  $("#mid-title").textContent = "对话";
+  content.classList.remove("is-empty", "reader");
+  content.classList.add("rich");
+  const cs = state.chats.filter((c) => !ui.topicId || c.topicId === ui.topicId);
+  content.innerHTML = `
+    <details class="mini chat-new"><summary>＋新建会话</summary>${chatFormHtml()}</details>
+    <p class="hint">共 ${cs.length} 段会话；点「进入」开始讨论。会话无标题字段，按所属对象与范围识别。</p>
+    <div class="chat-list">${chatListHtml()}</div>`;
 }
 
 function chatHtml(c) {
@@ -2020,7 +2072,7 @@ function chatHtml(c) {
   }).join("");
   const running = c.messages.some((m) => m.status === "running");
   return `<div class="chatlog">${msgs || `<p class="hint">还没有消息。输入问题开始讨论（范围与采纳见右栏）。</p>`}</div>
-    <div class="row"><textarea id="chat-text" rows="2" placeholder="围绕本课题/子问题与已选对象提问…"></textarea>
+    <div class="chat-inputbar"><textarea id="chat-text" rows="2" placeholder="围绕本课题/子问题与已选对象提问…"></textarea>
     <button class="primary" id="chat-send" ${running ? "disabled" : ""}>${running ? "回答运行中…" : "发送"}</button></div>`;
 }
 
@@ -2111,6 +2163,7 @@ document.addEventListener("click", (ev) => {
   ui.topicPane = "overview"; ui.subqId = null; ui.paperView = "manage";
   ui.protocolView = "manage"; ui.protocolEdit = false;
   ui.recordView = "overview";
+  ui.chatView = "manage";
   renderAll();
 });
 document.addEventListener("click", (ev) => {
@@ -2276,6 +2329,15 @@ document.addEventListener("click", (ev) => {
   const exrow = ev.target.closest("[data-exrow]");
   if (exrow) { openExecutionDetail(exrow.dataset.exrow); return; }
   if (ev.target.closest("[data-rec-back]")) { backToRecordOverview(); return; }
+  const co = ev.target.closest(".chat-open");
+  if (co) { openChatDetail(co.dataset.chat); return; }
+  const chatrow = ev.target.closest("[data-chatrow]");
+  if (chatrow) { openChatDetail(chatrow.dataset.chatrow); return; }
+  if (ev.target.closest("[data-chat-back]")) { backToChatManage(); return; }
+  if (ev.target.id === "ch-create") { runBusy(ev.target, "创建会话", async () => {
+    const r = await api.createChat({ topicId: ui.topicId, subquestionId: $("#ch-subq").value || undefined, scope: collectPicks("ch-scope") });
+    ui.chatId = r.chatId; ui.chatView = "chat"; await refresh(); setStatus("会话已创建：开始讨论");
+  }); return; }
 });
 document.addEventListener("input", (ev) => {
   if (ev.target.id !== "proto-search") return;

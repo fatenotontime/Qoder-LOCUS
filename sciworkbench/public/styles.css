@@ -2058,3 +2058,15 @@ button.curtopic.none { color: var(--muted); }
   padding-bottom: var(--space-2); margin-bottom: var(--space-2);
 }
 .detail-bar .back-btn { margin-bottom: 0; }
+
+/* ── F2 对话：会话管理 / 聊天 ── */
+.chat-new { margin-bottom: var(--space-3); }
+.chat-new[open] { background: var(--surface-2); }
+.chat-list { display: grid; gap: var(--space-2); }
+.chat-list .paper-item { cursor: pointer; }
+.chat-inputbar {
+  position: sticky; bottom: 0; display: flex; gap: var(--space-2); align-items: flex-end;
+  padding: var(--space-2) 0; margin-top: var(--space-2);
+  background: var(--bg); border-top: 1px solid var(--line);
+}
+.chat-inputbar textarea { flex: 1; }
