@@ -8,7 +8,7 @@ import assert from "node:assert/strict";
 import type { AddressInfo } from "node:net";
 import { MemoryStore, emptyState, type LocusState, type Store } from "../store.ts";
 import { createTopic, makeAsset, importMeasurements } from "../services/app.ts";
-import { archiveSourceVersion, currentSourceRef, sourcePayload, createKnowledgeDataset, reviewKnowledgeDataset } from "../services/knowledge-base.ts";
+import { archiveSourceVersion, currentSourceRef, sourcePayload, createKnowledgeDataset, reviewKnowledgeDataset, upsertSourcePolicy } from "../services/knowledge-base.ts";
 import { buildKnowledgeAiInput, validateAiReferences, adoptAiProposal, exportSelectedPackage, createAnalysisTask } from "../services/analysis.ts";
 import { clearAiConfig, setAiConfig } from "../services/ai.ts";
 import { chatScopeSnapshot } from "../services/analysis.ts";
@@ -1185,33 +1185,44 @@ function seedAiInput() {
   return { state: s, topicId, tableId: s.tables[0].id, srcRef: ref };
 }
 
+/** 显式授权（§7.5：AI 发送与导出默认拒绝，须逐来源授权）。 */
+function grantAll(state: LocusState, refs: { kind: string; id: string; version: string; contentHash: string }[], opts: { aiSend?: boolean; export?: boolean; localRead?: boolean } = {}) {
+  let s = state;
+  for (const r of refs) {
+    s = upsertSourcePolicy(s, { sourceKind: r.kind, sourceId: r.id, allowLocalRead: opts.localRead !== false, allowExport: opts.export === true, allowAiSend: opts.aiSend === true, reason: "测试显式授权" }).state;
+  }
+  return s;
+}
+
 test("T41 内置正式AI选择新项+数据核心：仅选中且已确认内容进入核心，actualPayload 可复查", () => {
   const f = seedAiInput();
   // 既有 AnalysisTask 仍要求数据核心（表格）：不因知识输入放开该约束
   const task = createAnalysisTask(f.state, { topicId: f.topicId, title: "分析", core: [{ kind: "table", id: f.tableId }, { kind: "item", id: "ki_ok", revision: 1 }] });
   assert.equal(task.task.core.length, 2, "表格（数据核心）+ 已确认项可同选");
 
-  const input = buildKnowledgeAiInput(f.state, { topicId: f.topicId, selectedRefs: [{ kind: "item", id: "ki_ok", revision: 1 }], purpose: "比较培养时间" });
+  const authed = grantAll(f.state, [f.srcRef], { aiSend: true });
+  const input = buildKnowledgeAiInput(authed, { topicId: f.topicId, selectedRefs: [{ kind: "item", id: "ki_ok", revision: 1 }], purpose: "比较培养时间" });
   assert.equal(input.core.length, 1, "核心只含选中的已确认项");
   assert.equal(input.scope.mode, "formal");
   assert.ok(input.actualPayload.includes("研究目的：比较培养时间"));
   assert.ok(input.actualPayload.includes("合成对象A在 1 d 下培养"), "actualPayload 含实际发送内容（可复查）");
   assert.equal(input.requiresShrink, false);
   // 同一输入 → 同一 snapshotHash；换选择 → 变化
-  const again = buildKnowledgeAiInput(f.state, { topicId: f.topicId, selectedRefs: [{ kind: "item", id: "ki_ok", revision: 1 }], purpose: "比较培养时间" });
+  const again = buildKnowledgeAiInput(authed, { topicId: f.topicId, selectedRefs: [{ kind: "item", id: "ki_ok", revision: 1 }], purpose: "比较培养时间" });
   assert.equal(again.snapshotHash, input.snapshotHash, "同输入冻结同一快照 hash");
-  const changed = buildKnowledgeAiInput(f.state, { topicId: f.topicId, selectedRefs: [], purpose: "比较培养时间" });
+  const changed = buildKnowledgeAiInput(authed, { topicId: f.topicId, selectedRefs: [], purpose: "比较培养时间" });
   assert.notEqual(changed.snapshotHash, input.snapshotHash, "选择变化 → 快照变化");
   assert.ok(changed.optional.length >= 1, "可选预览来自 readKnowledge，带原因");
 });
 
 test("T42 待审探索与正式推荐分别发送：探索有标记，正式守卫仍阻断待审", () => {
   const f = seedAiInput();
-  const formalInput = buildKnowledgeAiInput(f.state, { topicId: f.topicId, selectedRefs: [{ kind: "item", id: "ki_pending", revision: 1 }], purpose: "正式用途" });
+  const authed = grantAll(f.state, [f.srcRef], { aiSend: true });
+  const formalInput = buildKnowledgeAiInput(authed, { topicId: f.topicId, selectedRefs: [{ kind: "item", id: "ki_pending", revision: 1 }], purpose: "正式用途" });
   assert.equal(formalInput.core.length, 0, "正式模式不放行待审");
   assert.ok(formalInput.omitted.some((o) => o.reason.includes("未过正式门槛")), "正式阻断给出理由并指向探索模式");
 
-  const exploreInput = buildKnowledgeAiInput(f.state, { topicId: f.topicId, mode: "explore", selectedRefs: [{ kind: "item", id: "ki_pending", revision: 1 }], purpose: "探索用途" });
+  const exploreInput = buildKnowledgeAiInput(authed, { topicId: f.topicId, mode: "explore", selectedRefs: [{ kind: "item", id: "ki_pending", revision: 1 }], purpose: "探索用途" });
   assert.equal(exploreInput.core.length, 1);
   assert.equal(exploreInput.core[0].marker, "[待审·pending]", "探索核心带待审标记");
   assert.ok(exploreInput.actualPayload.includes("[待审·pending]"), "标记进入实际 payload");
@@ -1221,7 +1232,8 @@ test("T42 待审探索与正式推荐分别发送：探索有标记，正式守�
 
 test("T43 模型返回不存在/不属快照的引用：标invalid，不能自动写入 confirmed 报告/知识", () => {
   const f = seedAiInput();
-  const input = buildKnowledgeAiInput(f.state, { topicId: f.topicId, selectedRefs: [{ kind: "item", id: "ki_ok", revision: 1 }], purpose: "P" });
+  const authed = grantAll(f.state, [f.srcRef], { aiSend: true });
+  const input = buildKnowledgeAiInput(authed, { topicId: f.topicId, selectedRefs: [{ kind: "item", id: "ki_ok", revision: 1 }], purpose: "P" });
   const checks = validateAiReferences(input, [
     { kind: "item", id: "ki_ok", revision: 1 },
     { kind: "item", id: "ki_missing", revision: 1 },
@@ -1232,30 +1244,32 @@ test("T43 模型返回不存在/不属快照的引用：标invalid，不能自�
   assert.ok(checks[1].reason.includes("not_in_snapshot"));
   assert.ok(checks[3].reason.includes("固定版本"));
 
-  const bad = (() => { try { adoptAiProposal(f.state, { topicId: f.topicId, aiInput: input, text: "AI 建议", nature: "hypothesis", evidenceRefs: [{ kind: "item", id: "ki_missing", revision: 1 }] }); return null; } catch (e) { return e as { status: number; details?: { code?: string } }; } })();
+  const bad = (() => { try { adoptAiProposal(authed, { topicId: f.topicId, aiInput: input, text: "AI 建议", nature: "hypothesis", evidenceRefs: [{ kind: "item", id: "ki_missing", revision: 1 }] }); return null; } catch (e) { return e as { status: number; details?: { code?: string } }; } })();
   assert.ok(bad, "含无效引用的采纳必须被拒");
   assert.equal(bad!.status, 422);
   assert.equal(bad!.details?.code, "ai_reference_invalid");
 
-  const ok = adoptAiProposal(f.state, { topicId: f.topicId, aiInput: input, text: "培养时间可能受温度影响", nature: "hypothesis" });
+  const ok = adoptAiProposal(authed, { topicId: f.topicId, aiInput: input, text: "培养时间可能受温度影响", nature: "hypothesis" });
   assert.equal(ok.review, "pending", "采纳只落待审候选，不自动转 confirmed");
 });
 
 test("T44 模型上下文超预算：显式要求缩小/分页，不默默截断条件", () => {
   const f = seedAiInput();
-  const tight = buildKnowledgeAiInput(f.state, { topicId: f.topicId, selectedRefs: [{ kind: "item", id: "ki_ok", revision: 1 }], purpose: "P", budgetBytes: 40 });
+  const authed = grantAll(f.state, [f.srcRef], { aiSend: true });
+  const tight = buildKnowledgeAiInput(authed, { topicId: f.topicId, selectedRefs: [{ kind: "item", id: "ki_ok", revision: 1 }], purpose: "P", budgetBytes: 40 });
   assert.equal(tight.requiresShrink, true, "超预算显式标记要求缩小/分页");
   assert.equal(tight.truncated.length, 0, "不做静默截断");
   assert.ok(tight.notes.some((n) => n.includes("未做静默截断")));
-  assert.equal(tight.actualPayload, buildKnowledgeAiInput(f.state, { topicId: f.topicId, selectedRefs: [{ kind: "item", id: "ki_ok", revision: 1 }], purpose: "P" }).actualPayload, "payload 未被裁剪");
-  const roomy = buildKnowledgeAiInput(f.state, { topicId: f.topicId, selectedRefs: [{ kind: "item", id: "ki_ok", revision: 1 }], purpose: "P", budgetBytes: 100000 });
+  assert.equal(tight.actualPayload, buildKnowledgeAiInput(authed, { topicId: f.topicId, selectedRefs: [{ kind: "item", id: "ki_ok", revision: 1 }], purpose: "P" }).actualPayload, "payload 未被裁剪");
+  const roomy = buildKnowledgeAiInput(authed, { topicId: f.topicId, selectedRefs: [{ kind: "item", id: "ki_ok", revision: 1 }], purpose: "P", budgetBytes: 100000 });
   assert.equal(roomy.requiresShrink, false);
 });
 
 test("T45 相同输入给内置与外部文件：科学字段/引用相同，包装差异明确", () => {
   const f = seedAiInput();
   const req = { topicId: f.topicId, selectedRefs: [{ kind: "item", id: "ki_ok", revision: 1 }], purpose: "P" } as const;
-  const input = buildKnowledgeAiInput(f.state, req);
+  const authed = grantAll(f.state, [f.srcRef], { aiSend: true });
+  const input = buildKnowledgeAiInput(authed, req);
   const ext = input.externalFile as { wrapper: string; items: { ref: { id: string; revision: number }; payload: { value: { value: string; unit: string }; subject: { raw: string }; origin: { sourceClass: string } } }[]; snapshotHash: string };
   assert.ok(ext.wrapper.includes("standalone-json"), "外部文件包装明确标注");
   assert.equal(ext.items.length, input.core.length, "条目数与内置一致");
@@ -1271,7 +1285,23 @@ test("T45 相同输入给内置与外部文件：科学字段/引用相同，包
 
 test("E7-A 手动下载选定包：冻结选定范围并导出 ZIP（复用 E5，不另造导出）", () => {
   const f = seedAiInput();
-  const out = exportSelectedPackage(f.state, { topicId: f.topicId, selectedRefs: [{ kind: "item", id: "ki_ok", revision: 1 }] });
+  const authed = grantAll(f.state, [f.srcRef], { export: true });
+  const out = exportSelectedPackage(authed, { topicId: f.topicId, selectedRefs: [{ kind: "item", id: "ki_ok", revision: 1 }] });
   assert.ok(out.filename.endsWith(".zip"));
   assert.equal(out.buffer.subarray(0, 2).toString("latin1"), "PK");
+});
+
+test("E7-A② 未获 AI 发送许可：内容不得进入输入；导出须单独授权", () => {
+  const f = seedAiInput();
+  // 默认策略：localRead 允许、aiSend 拒绝 → 核心为空并说明原因
+  const input = buildKnowledgeAiInput(f.state, { topicId: f.topicId, selectedRefs: [{ kind: "item", id: "ki_ok", revision: 1 }], purpose: "P" });
+  assert.equal(input.core.length, 0, "未授权 aiSend 不得进入核心");
+  assert.ok(input.omitted.some((o) => o.reason.includes("未获发送 AI 许可")), "给出未授权原因");
+  assert.ok(!input.actualPayload.includes("合成对象A在 1 d 下培养"), "payload 不含被拒内容");
+  // 仅授权 localRead 不允许导出 → 选定包导出 403
+  const readOnly = grantAll(f.state, [f.srcRef], { export: false });
+  const denied = (() => { try { exportSelectedPackage(readOnly, { topicId: f.topicId, selectedRefs: [{ kind: "item", id: "ki_ok", revision: 1 }] }); return null; } catch (e) { return e as { status: number; details?: { code?: string } }; } })();
+  assert.ok(denied, "未获导出许可必须拒绝");
+  assert.equal(denied!.status, 403);
+  assert.equal(denied!.details?.code, "source_access_denied");
 });

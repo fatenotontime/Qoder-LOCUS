@@ -13,8 +13,9 @@ import type {
 import { contentHash } from "../store.ts";
 import { AppError, MAX_IMPORT_BYTES, makeAsset, assertLegacyCardConsumerUsable, isStructuredShell } from "./app.ts";
 import {
-  createKnowledgeStatement, currentViewId, describeItem, freezeKnowledge, knowledgeItemConfirmedAt,
-  knowledgeItemGate, knowledgeSourceFragment, readKnowledge, readKnowledgeVersion, shellItemRefs,
+  assertKnowledgeAccess, createKnowledgeStatement, currentViewId, describeItem, freezeKnowledge,
+  knowledgeAccess, knowledgeItemConfirmedAt, knowledgeItemGate, knowledgeSourceAdapter,
+  knowledgeSourceFragment, readKnowledge, readKnowledgeVersion, resolvePinnedRefs, shellItemRefs,
 } from "./knowledge-base.ts";
 import type { KnowledgeSourceKind } from "./knowledge-base.ts";
 import { exportKnowledge } from "./knowledge-export.ts";
@@ -803,6 +804,10 @@ export function buildKnowledgeAiInput(state: LocusState, req: KnowledgeAiInputRe
       omitted.push({ ref: key, reason: "不在当前视图范围（如主题/条件筛选或已加载页外）" });
       continue;
     }
+    const readOk = knowledgeAccess(state, "localRead", payload.sourceRefs);
+    if (!readOk.ok) { omitted.push({ ref: key, reason: `未获本地读取许可：${readOk.denied[0]?.reason ?? ""}` }); continue; }
+    const sendOk = knowledgeAccess(state, "aiSend", payload.sourceRefs);
+    if (!sendOk.ok) { omitted.push({ ref: key, reason: `未获发送 AI 许可：${sendOk.denied[0]?.reason ?? ""}（AI 发送须逐来源显式授权）` }); continue; }
     core.push({
       ref: fixed, text: describeItem(state, payload, r.revision),
       marker: mode === "explore" && pinnedStatus !== "confirmed" ? `[待审·${pinnedStatus}]` : "",
@@ -815,12 +820,26 @@ export function buildKnowledgeAiInput(state: LocusState, req: KnowledgeAiInputRe
     return { ref: makeKnowledgeRef("item", e.id, e.revision), text: describeItem(state, e.payload as never, e.revision).slice(0, 200), reason: mode === "formal" ? "未选中；选中后经门槛复核才进入核心" : `未选中（当前审核：${p.review.status}）` };
   });
 
-  // E8：其余模块对象（类型随读随标；不可用者（未采纳提案/未确认 AI 草稿）不得进入）
+  // E8：其余模块对象（逐条过：存在 → 归属本课题 → 可用 → 权限 → 报告引用可解析）
   const sourceEntries: KnowledgeAiSourceEntry[] = [];
   for (const sr of req.sourceRefs ?? []) {
-    const frag = (() => { try { return knowledgeSourceFragment(state, sr.kind, sr.id); } catch { return null; } })();
-    if (!frag) { omitted.push({ ref: `${sr.kind} ${sr.id}`, reason: "对象不存在" }); continue; }
-    if (!frag.usable) { omitted.push({ ref: `${sr.kind} ${sr.id}`, reason: `不可用：${frag.note}` }); continue; }
+    const key = `${sr.kind} ${sr.id}`;
+    const adapter = (() => { try { return knowledgeSourceAdapter(state, sr.kind, sr.id); } catch { return null; } })();
+    if (!adapter) { omitted.push({ ref: key, reason: "对象不存在" }); continue; }
+    if (!adapter.topicIds.includes(req.topicId)) { omitted.push({ ref: key, reason: `不属于本课题（归属：${adapter.topicIds.join("、") || "无法验证"}）——跨课题不得混入` }); continue; }
+    if (!adapter.usable) { omitted.push({ ref: key, reason: `不可用：${adapter.usableNote}` }); continue; }
+    // 权限：读 + 发送 两道都要过（默认策略下 aiSend 为否，须用户显式授权）
+    const read = knowledgeAccess(state, "localRead", [adapter.sourceRef]);
+    if (!read.ok) { omitted.push({ ref: key, reason: `未获本地读取许可：${read.denied[0]?.reason ?? ""}` }); continue; }
+    const send = knowledgeAccess(state, "aiSend", [adapter.sourceRef]);
+    if (!send.ok) { omitted.push({ ref: key, reason: `未获发送 AI 许可：${send.denied[0]?.reason ?? ""}` }); continue; }
+    // 报告块等：当时引用的版本必须能在本库解析（历史不存在即不放行）
+    if (adapter.kind === "report_block" && adapter.pinnedRefs.length) {
+      const res = resolvePinnedRefs(state, adapter.pinnedRefs);
+      const bad = res.filter((x) => x.status !== "ok");
+      if (bad.length) { omitted.push({ ref: key, reason: `${bad.length} 个引用版本不可解析（${bad[0].reason}）——不放行` }); continue; }
+    }
+    const frag = knowledgeSourceFragment(state, sr.kind, sr.id);
     sourceEntries.push({ kind: sr.kind, id: sr.id, label: frag.label, marker: `[${frag.label}]`, text: frag.excerpt, sourceRef: frag.sourceRef });
   }
 
@@ -919,6 +938,8 @@ export function adoptAiProposal(
 /** 手动下载「选定范围」知识包（E5 冻结 + 导出复用；不新建导出实现）。 */
 export function exportSelectedPackage(state: LocusState, input: { topicId: string; selectedRefs: { kind: "item"; id: string; revision: number }[]; mode?: "formal" | "explore"; purpose?: string }): { filename: string; buffer: Buffer } {
   const frozen = freezeKnowledge(state, { topicId: input.topicId, viewId: currentViewId(state, input.topicId), selectedRefs: input.selectedRefs, mode: input.mode ?? "formal" });
+  // §7.5：导出是独立许可——含被禁来源的整包直接拒绝（不降级为 warning）
+  assertKnowledgeAccess(state, "export", frozen.snapshot.sourceVersionRefs);
   const out = exportKnowledge(frozen.snapshot, { format: "zip" });
   return { filename: out.filename, buffer: out.data as Buffer };
 }

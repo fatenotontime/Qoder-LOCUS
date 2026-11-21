@@ -552,7 +552,11 @@ export function reviewKnowledgeItem(state: LocusState, id: string, input: unknow
   const decision = enumOf(body.decision, "decision", REVIEW_DECISIONS) as ReviewStatus;
   const basis = reqText(body.basis, "核对依据", 500);
   const payload = env.payload;
-  if (decision === "confirmed") assertItemConfirmable(state, k, payload);
+  if (decision === "confirmed") {
+    assertItemConfirmable(state, k, payload);
+    // 确认入口同样必经来源守卫：来源后来变成不可用（如提案被回退/模板未确认）时不得确认
+    assertSourceRefsUsable(state, payload.sourceRefs, "知识项来源");
+  }
   if (payload.review.status === decision && payload.review.basis === basis) throw new AppError(422, "审核状态与依据均未变化。");
   const review: Review = { status: decision, reviewedAt: now(), reviewedBy: "human", basis };
   const item = bumpEnv(env, { ...payload, review }, `人工审核：${decision}`) as unknown as KnowledgeItem;
@@ -1250,6 +1254,7 @@ export function createKnowledgeStatement(state: LocusState, input: unknown): { s
   for (const b of evidenceRefs) assertVersionResolvable(k, b.ref, "evidenceRefs");
   const sourceRefs = strictSourceRefs(body.sourceRefs, "sourceRefs");
   assertSourcesReadable(state, k, sourceRefs, "sourceRefs");
+  assertSourceRefsUsable(state, sourceRefs, "sourceRefs");
   const subquestionIds = body.subquestionIds === undefined ? [] : idArray(body.subquestionIds, "subquestionIds", 40);
   checkSubquestions(state, subquestionIds, [topicId], "subquestionIds");
   const payload: ItemPayload = {
@@ -2453,6 +2458,11 @@ export function buildKnowledgeContainer(state: LocusState, query: KnowledgeQuery
   const topicId = view.scope.topicId;
   const all = readAll(state, q);
   const k = state.knowledge;
+  // 结构自身先过本地读取：被禁读的来源不得出现在容器元素里
+  assertKnowledgeAccess(state, "localRead", [
+    ...view.items.flatMap((e) => (e.payload as ItemPayload).sourceRefs),
+    ...(view.datasets ?? []).map((e) => (e.payload as DatasetPayload).sourceRef),
+  ]);
 
   // 容器内自洽的稳定 token 表（预览态）：知识引用 K1..、来源引用 S1..（排序后生成）
   const kRefList: KnowledgeRef[] = [
@@ -2829,4 +2839,18 @@ export function adoptChatProposalToKnowledge(
 export function assertSourceUsableForKnowledge(a: SourceKnowledgeAdapter): void {
   if (a.usable) return;
   throw new AppError(422, `${a.label} ${a.id} 不能进入正式知识：${a.usableNote}`, { code: "source_not_usable", kind: a.kind, id: a.id, note: a.usableNote });
+}
+
+/**
+ * 通用入口守卫（§10 E8）：任何**来源引用**（sourceRefs）在被写进知识前，都必须逐条检查其可用性。
+ * 覆盖「未采纳的对话提案」「未人工确认的 AI 草稿模板」——新增便利函数不能替代这里，旧通用入口同样必经。
+ */
+export function assertSourceRefsUsable(state: LocusState, refs: SourceRef[], field: string): void {
+  for (const r of refs) {
+    if (r.kind !== "chat_proposal" && r.kind !== "template") continue;
+    let adapter: SourceKnowledgeAdapter | null = null;
+    try { adapter = knowledgeSourceAdapter(state, r.kind as KnowledgeSourceKind, r.id); } catch { adapter = null; }
+    if (!adapter) throw new AppError(422, `${field} 引用的${r.kind === "chat_proposal" ? "对话提案" : "记录模板"}不存在：${r.id}`, { code: "source_not_usable", ref: r });
+    assertSourceUsableForKnowledge(adapter);
+  }
 }

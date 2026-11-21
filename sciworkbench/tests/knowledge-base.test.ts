@@ -14,7 +14,7 @@ import {
   sourceRef as makeSourceRef, knowledgeRef as makeKnowledgeRef, assertKnowledgeShape,
 } from "../domain/knowledge.ts";
 import { importMeasurements, reviewTable, createTopic, makeAsset, addManualCard, reviewCard, createComparison, AppError } from "../services/app.ts";
-import { buildKnowledgeAiInput, validateAiReferences, chatScopeSnapshot, createAnalysisTask, createChat, resolveFragment } from "../services/analysis.ts";
+import { buildKnowledgeAiInput, validateAiReferences, exportSelectedPackage, chatScopeSnapshot, createAnalysisTask, createChat, resolveFragment } from "../services/analysis.ts";
 import { buildWholeLibraryPackage, inspectLibraryJson, sha256 } from "../services/export.ts";
 import {
   archiveSourceVersion, currentSourceRef, readSourceVersion, resolveSourceVersion, sourcePayload,
@@ -1482,7 +1482,17 @@ test("T46i 报告块 pinned refs 真解析：读归档当时版本；取不到�
 
 test("T46j AI 读取：E8 各类型对象可进 AI 输入；未采纳提案被拒；引用校验认外部对象", () => {
   const f = seedE8();
-  const input = buildKnowledgeAiInput(f.state, {
+  // 报告块引用要能解析 → 先把当时版本归档
+  const rsRef = currentSourceRef(f.state, "result", "rs1")!;
+  let st: LocusState = { ...f.state, knowledge: archiveSourceVersion(f.state.knowledge, rsRef, sourcePayload(f.state, "result", "rs1")) };
+  // 显式授权（§7.5：AI 发送默认拒绝）
+  for (const r of ["protocol pr_user", "execution ex_rec", "sample sp_pub", "result rs1", "report_block rp1#bk1"]) {
+    const [k, id] = r.split(" ");
+    const base = k === "report_block" ? "report_block" : k;
+    const ref = currentSourceRef(st, base as never, id)!;
+    st = upsertSourcePolicy(st, { sourceKind: ref.kind, sourceId: ref.id, allowLocalRead: true, allowExport: false, allowAiSend: true, reason: "测试授权" }).state;
+  }
+  const input = buildKnowledgeAiInput(st, {
     topicId: f.topicId, purpose: "汇总本课题执行与结果",
     sourceRefs: [
       { kind: "protocol", id: "pr_user" }, { kind: "execution", id: "ex_rec" }, { kind: "sample", id: "sp_pub" },
@@ -1505,6 +1515,90 @@ test("T46j AI 读取：E8 各类型对象可进 AI 输入；未采纳提案被�
   assert.ok(checks[1].reason.includes("not_in_snapshot"));
   assert.ok(checks[2].reason.includes("固定版本"));
   // 片段读取与适配同源
-  const frag = knowledgeSourceFragment(f.state, "sample", "sp_pub");
+  const frag = knowledgeSourceFragment(st, "sample", "sp_pub");
   assert.ok(frag.excerpt.includes("公开数据") && frag.usable);
+});
+
+// ══ E8-A 二次返工回归（对应用户第二轮四条阻断）══════════════════════════
+
+function seedE8b() {
+  const f = seedE8();
+  const srcRef = currentSourceRef(f.state, "asset", "as_rec")!;
+  let st: LocusState = { ...f.state, knowledge: archiveSourceVersion(f.state.knowledge, srcRef, sourcePayload(f.state, "asset", "as_rec")) };
+  return { ...f, state: st, srcRef };
+}
+const grantFor = (state: LocusState, kind: string, id: string, opts: { localRead?: boolean; export?: boolean; aiSend?: boolean } = {}) =>
+  upsertSourcePolicy(state, { sourceKind: kind as never, sourceId: id, allowLocalRead: opts.localRead !== false, allowExport: opts.export === true, allowAiSend: opts.aiSend === true, reason: "测试授权" }).state;
+
+test("T46k 通用创建/确认入口同样封住未采纳提案（旧入口不可绕过）", () => {
+  const f = seedE8b();
+  const propRef = currentSourceRef(f.state, "chat_proposal", "ch1/m1/pn_unadopted")!;
+  // 通用创建入口：带未采纳提案来源 → 拒绝
+  const denied = (() => { try { createKnowledgeStatement(f.state, { topicId: f.topicId, text: "经通用入口写入", nature: "to_verify", createdBy: "model", sourceRefs: [propRef] }); return null; } catch (e) { return e as { status: number; details?: { code?: string } }; } })();
+  assert.ok(denied, "通用创建入口不得放行未采纳提案");
+  assert.equal(denied!.status, 422);
+  assert.equal(denied!.details?.code, "source_not_usable");
+  // 已采纳提案 → 通用入口放行（仍为待审）
+  const adoptedRef = currentSourceRef(f.state, "chat_proposal", "ch1/m2/pn_adopted")!;
+  const ok = createKnowledgeStatement(f.state, { topicId: f.topicId, text: "经通用入口写入（已采纳）", nature: "to_verify", createdBy: "model", sourceRefs: [adoptedRef] });
+  assert.equal(ok.item.payload.review.status, "pending");
+  // 确认入口：来源后来不可用时不得确认（伪造一条含未采纳提案来源的待审项）
+  const forged: LocusState = { ...ok.state, knowledge: { ...ok.state.knowledge, items: ok.state.knowledge.items.map((i) => (i.id === ok.item.id ? { ...i, payload: { ...(i.payload as ItemPayload), sourceRefs: [propRef] } } : i)) } };
+  const confirmDenied = (() => { try { reviewKnowledgeItem(forged, ok.item.id, { baseRevision: 1, decision: "confirmed", basis: "尝试确认" }); return null; } catch (e) { return e as { status: number; details?: { code?: string } }; } })();
+  assert.ok(confirmDenied, "确认入口不得放行不可用来源");
+  assert.equal(confirmDenied!.details?.code, "source_not_usable");
+});
+
+test("T46l 明确禁止读取的来源：不进 AI 输入、导出的整包被拒（不降级为 warning）", () => {
+  const f = seedE8b();
+  // 加一条引用该原件的已确认知识项，作为「被禁来源」的消费者
+  const withItem: LocusState = { ...f.state, knowledge: { ...f.state.knowledge, items: [...f.state.knowledge.items, envOf("ki_asset", {
+    contentType: "observation", nature: "observation", text: "引用被禁原件的知识项",
+    subject: { raw: "合成对象A" }, predicate: { raw: "结论" }, value: null, contextRefs: [], evidenceRefs: [],
+    sourceRefs: [f.srcRef], origin: { sourceClass: "literature_report", createdBy: "model", secondaryCitation: false },
+    scopeText: "", unknowns: [], topicIds: [f.topicId], subquestionIds: [], review: { status: "confirmed" },
+  })] } };
+  const banned = grantFor(withItem, "asset", "as_rec", { localRead: false, export: true, aiSend: true });
+
+  const input = buildKnowledgeAiInput(banned, { topicId: f.topicId, selectedRefs: [{ kind: "item", id: "ki_asset", revision: 1 }], purpose: "P" });
+  assert.equal(input.core.length, 0, "禁读来源的知识项不得进入 AI 输入");
+  assert.ok(input.omitted.some((o) => o.reason.includes("未获本地读取许可")), "给出禁读原因");
+  assert.ok(!input.actualPayload.includes("引用被禁原件的知识项"), "payload 不含被拒内容");
+
+  const exDenied = (() => { try { exportSelectedPackage(banned, { topicId: f.topicId, selectedRefs: [{ kind: "item", id: "ki_asset", revision: 1 }] }); return null; } catch (e) { return e as { status: number; details?: { code?: string } }; } })();
+  assert.ok(exDenied, "含禁读来源的导出必须被拒");
+  assert.equal(exDenied!.status, 403);
+  assert.equal(exDenied!.details?.code, "source_access_denied");
+
+  const cDenied = (() => { try { buildKnowledgeContainer(banned, { source: "current", topicId: f.topicId }); return null; } catch (e) { return e as { status: number }; } })();
+  assert.ok(cDenied && cDenied.status === 403, "容器亦不得含禁读来源");
+});
+
+test("T46m 跨课题未拦截→已拦：课题 A 的输入不得混入课题 B 的对象", () => {
+  const f = seedE8b();
+  const other = createTopic(f.state, { name: "合成课题乙", researchQuestion: "Q2" });
+  let s: LocusState = other.state;
+  s = { ...s, executions: [...s.executions, { id: "exB", topicId: other.topic.id, protocolId: "pr_user", protocolRevision: 1, status: "done", events: [], createdAt: "t", updatedAt: "t" } as never] };
+  s = grantFor(s, "execution", "exB", { aiSend: true });
+  const input = buildKnowledgeAiInput(s, { topicId: f.topicId, purpose: "P", sourceRefs: [{ kind: "execution", id: "exB" }] });
+  assert.equal(input.sourceEntries.length, 0, "跨课题对象不得进入");
+  assert.ok(input.omitted.some((o) => o.reason.includes("不属于本课题")), "给出跨课题原因");
+});
+
+test("T46n 报告引用历史不存在：输入不放行（解析函数发现 → 接线后拒绝）", () => {
+  const f = seedE8();   // 未归档 rs1
+  let s = f.state;
+  for (const r of ["protocol pr_user", "report_block rp1#bk1"]) {
+    const [k, id] = r.split(" ");
+    const ref = currentSourceRef(s, k as never, id)!;
+    s = grantFor(s, k, id, { aiSend: true });
+  }
+  const blocked = buildKnowledgeAiInput(s, { topicId: f.topicId, purpose: "P", sourceRefs: [{ kind: "report_block", id: "rp1#bk1" }] });
+  assert.equal(blocked.sourceEntries.length, 0, "引用版本不可解析 → 不放行");
+  assert.ok(blocked.omitted.some((o) => o.reason.includes("引用版本不可解析")), "给出不放行原因");
+  // 归档后可放行
+  const rsRef = currentSourceRef(f.state, "result", "rs1")!;
+  let s2: LocusState = { ...s, knowledge: archiveSourceVersion(s.knowledge, rsRef, sourcePayload(s, "result", "rs1")) };
+  const okInput = buildKnowledgeAiInput(s2, { topicId: f.topicId, purpose: "P", sourceRefs: [{ kind: "report_block", id: "rp1#bk1" }] });
+  assert.equal(okInput.sourceEntries.length, 1, "归档后可放行");
 });
