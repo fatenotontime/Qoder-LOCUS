@@ -7,6 +7,7 @@ import assert from "node:assert/strict";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { writeFileSync, rmSync } from "node:fs";
+import { inflateRawSync } from "node:zlib";
 import { emptyState, JsonFileStore, STATE_VERSION } from "../store.ts";
 import {
   emptyKnowledge, KNOWLEDGE_SCHEMA_VERSION, canonicalHash, refKey, sameRef,
@@ -22,8 +23,11 @@ import {
   syncShellAudit, updateKnowledgeContext, updateKnowledgeItem, updateKnowledgeTheme,
   readKnowledge, currentViewId, createKnowledgeDataset, reviewKnowledgeDataset, readDatasetRows,
   createKnowledgeMapping, updateKnowledgeMapping, reviewKnowledgeMapping, createKnowledgeComparison, legacyComparisonViews,
-  effectiveCurrentJudgments,
+  effectiveCurrentJudgments, freezeKnowledge, knowledgeAccess, assertKnowledgeAccess, upsertSourcePolicy,
+  readSnapshotKnowledge, resolveSnapshotToken, readSnapshotDatasetRows,
 } from "../services/knowledge-base.ts";
+import { exportKnowledge, buildKnowledgePackage, snapshotCsv, snapshotWiki, snapshotSchemaFiles, safeFileName } from "../services/knowledge-export.ts";
+import { zip } from "../services/export.ts";
 import type { LocationStatus } from "../domain/knowledge.ts";
 import type { LocusState } from "../store.ts";
 
@@ -903,4 +907,234 @@ test("E3遗留(E4) 读取侧复检：级联回退后当前认识不并入，历�
   assert.equal(effectiveCurrentJudgments(s, themeNow).length, 0, "回退后不再作为当前认识（读取侧复检）");
   assert.equal((themeNow.payload as { currentJudgmentRefs: unknown[] }).currentJudgmentRefs.length, 1, "历史引用保留，不静默改写");
   assert.ok(readKnowledge(s, { source: "current", topicId: f.topicId }).warnings.some((w) => w.code === "judgment_not_live"), "读取侧给出动态提醒");
+});// ══ E5 快照／wiki／知识包（合同 §7.3/§7.4/§7.5；判据 T29–T34）════════════
+
+/** 最小 ZIP 解包（EOCD→中央目录→本地头→inflateRaw），用于「检查 ZIP 解包内容」。 */
+function unzipAll(buf: Buffer): { name: string; data: string }[] {
+  const eocd = buf.lastIndexOf(Buffer.from([0x50, 0x4b, 0x05, 0x06]));
+  if (eocd < 0) throw new Error("不是合法 ZIP（缺 EOCD）");
+  const count = buf.readUInt16LE(eocd + 10);
+  let off = buf.readUInt32LE(eocd + 16);
+  const out: { name: string; data: string }[] = [];
+  for (let i = 0; i < count; i++) {
+    const nameLen = buf.readUInt16LE(off + 28);
+    const extraLen = buf.readUInt16LE(off + 30);
+    const commentLen = buf.readUInt16LE(off + 32);
+    const localOff = buf.readUInt32LE(off + 42);
+    const name = buf.subarray(off + 46, off + 46 + nameLen).toString("utf8");
+    const lNameLen = buf.readUInt16LE(localOff + 26);
+    const lExtraLen = buf.readUInt16LE(localOff + 28);
+    const compLen = buf.readUInt32LE(localOff + 18);
+    const dataStart = localOff + 30 + lNameLen + lExtraLen;
+    const comp = buf.subarray(dataStart, dataStart + compLen);
+    out.push({ name, data: zlibInflate(comp) });
+    off += 46 + nameLen + extraLen + commentLen;
+  }
+  return out;
+}
+function zlibInflate(comp: Buffer): string {
+  return inflateRawSync(comp).toString("utf8");
+}
+
+/** E5 夹具：在 E4 基础上加一条可计算比较与一个主题（含当前认识）。 */
+function seedE5() {
+  const f = seedE4();
+  let s = f.state;
+  const cmp = createKnowledgeComparison(s, { topicId: f.topicId, viewId: viewIdOf(s, f.topicId), question: "1 d 与 48 h 之比", metricId: "time_germ", inputRefs: [itemOp("ki_A"), itemOp("ki_C")], varyingFields: [], requiredEqualFields: [], operation: "ratio", baselineRef: itemOp("ki_A") });
+  s = cmp.state;
+  const th = createKnowledgeTheme(s, { topicId: f.topicId, name: "培养时间主题", members: [{ kind: "item", id: "ki_A", revision: 1 }], currentJudgmentRefs: [{ kind: "item", id: "ki_A", revision: 1 }] });
+  s = th.state;
+  return { ...f, state: s, comparisonId: cmp.comparison.id, themeId: th.theme.id };
+}
+
+// ── T29：同快照 JSON/wiki/CSV 事实一致 ＋ T17 oracle ──────────────────────
+test("T29 同一快照生成 JSON/wiki/CSV：事实、单位、性质、unknowns、token 一致且过 T17 oracle", () => {
+  const f = seedE5();
+  const fr = freezeKnowledge(f.state, { topicId: f.topicId, viewId: viewIdOf(f.state, f.topicId) });
+  const snap = fr.snapshot;
+
+  const dsRows = snap.content.datasetRows!.find((r) => r.datasetRef.id === f.datasetId)!;
+  assert.deepEqual(dsRows.rows.map((r) => r.cells[0].raw), ["24", "24", "48"], "快照内为固定表版本的实际行");
+
+  const cmp = snap.content.comparisons.find((c) => c.id === f.comparisonId)!;
+  assert.equal((cmp.payload as unknown as { computedValue: { value: string } }).computedValue.value, "2", "1 d→24 h 基线，48 h → 比 2（T17 oracle）");
+
+  const csv = snapshotCsv(snap, { comparisonId: f.comparisonId });
+  const jsonOut = exportKnowledge(snap, { format: "json" });
+  const jsonObj = JSON.parse(jsonOut.data as string);
+  const wiki = snapshotWiki(snap).pages.map((p) => p.markdown).join("\n");
+
+  assert.ok(csv.content.startsWith("operand_type,item_id,dataset_id,revision,row_index,column_index,context_id,metric,raw_value,value_kind,normalized_value,unit,source_token"), "CSV 列固定");
+  assert.ok(csv.content.includes("48") && csv.content.includes(",2,"), "CSV 含规范化值与比值");
+  assert.ok(csv.content.includes(",h"), "CSV 单位与快照一致");
+  assert.equal(jsonObj.snapshotId, snap.snapshotId);
+  assert.ok(JSON.stringify(jsonObj.content).includes("培养 1 d"), "JSON 含同一事实原文");
+  assert.ok(wiki.includes("秒") || wiki.includes("比"), "wiki 含比较页");
+  assert.ok(wiki.includes("2"), "wiki 与本快照计算结果一致");
+
+  const tokens = [...csv.content.matchAll(/\b([KS]\d+)\b/g)].map((m) => m[1]);
+  assert.ok(tokens.length > 0, "CSV 带引用 token");
+  for (const t of tokens) assert.ok(snap.content.referenceMap[t], `token ${t} 必须能在同一快照 referenceMap 解析`);
+
+  const pgk = buildKnowledgePackage(snap);
+  const names = pgk.entries.map((e) => e.name);
+  for (const n of names) {
+    assert.ok(/^[A-Za-z0-9._/-]+$/.test(n) && !n.includes(".."), `包内文件名安全：${n}`);
+  }
+  assert.ok(names.includes("snapshot.json") && names.includes("manifest.json") && names.includes("NOTICE.txt"));
+  const schemaFiles = snapshotSchemaFiles();
+  assert.ok(JSON.parse(schemaFiles.schema).csvColumns.length === 13);
+  assert.ok(JSON.parse(schemaFiles.dictionary).valueKinds.includes("missing"));
+});
+
+// ── T30：冻结后改数据/映射/主题判断/比较 → 旧快照与 token 不变，新包变化 ──
+test("T30 冻结后改映射/主题判断/比较：旧快照事实与 token 不变，新包 hash 与版本变化", () => {
+  const f = seedE5();
+  const fr1 = freezeKnowledge(f.state, { topicId: f.topicId, viewId: viewIdOf(f.state, f.topicId) });
+  const snap1 = fr1.snapshot;
+  let s = fr1.state;
+
+  const mp2 = createKnowledgeMapping(s, { topicId: f.topicId, metricId: "time_germ", definition: "改动后的口径", valueKind: "scalar", targetUnit: "h", conversion: { kind: "scaleOffset", factor: "24", offset: "0", fromUnit: "d", toUnit: "h" }, basis: "改动" });
+  s = reviewKnowledgeMapping(mp2.state, mp2.mapping.id, { baseRevision: 1, decision: "confirmed", basis: "核对" }).state;
+  const th2 = updateKnowledgeTheme(s, f.themeId, { baseRevision: 1, patch: { currentJudgmentRefs: [{ kind: "item", id: "ki_C", revision: 1 }] } });
+  s = th2.state;
+  const cmp2 = createKnowledgeComparison(s, { topicId: f.topicId, viewId: viewIdOf(s, f.topicId), question: "24 h 与 48 h 之差", metricId: "time_germ", inputRefs: [itemOp("ki_B"), itemOp("ki_C")], varyingFields: [], requiredEqualFields: [], operation: "difference", baselineRef: itemOp("ki_B") });
+  s = cmp2.state;
+
+  const fr2 = freezeKnowledge(s, { topicId: f.topicId, viewId: viewIdOf(s, f.topicId) });
+  assert.notEqual(fr2.snapshot.contentHash, snap1.contentHash, "新版确有差异（新 hash）");
+  assert.equal(snap1.content.comparisons.length, 1, "旧快照只含冻结当时的比较");
+  assert.equal(snap1.content.themes[0].payload.currentJudgmentRefs[0].id, "ki_A", "旧快照保留当时判断");
+  assert.equal(fr2.snapshot.content.comparisons.length, 2);
+  const fr1b = freezeKnowledge(f.state, { topicId: f.topicId, viewId: viewIdOf(f.state, f.topicId) });
+  assert.notEqual(fr1b.snapshot.snapshotId, snap1.snapshotId, "重复冻结生成新 ID");
+  assert.equal(fr1b.snapshot.contentHash, snap1.contentHash, "同内容重复冻结：ID 不同但 contentHash 相同（§7.3）");
+  const wiki1 = snapshotWiki(snap1).pages.map((p) => p.markdown).join("\n");
+  const wiki2 = snapshotWiki(fr2.snapshot).pages.map((p) => p.markdown).join("\n");
+  assert.notEqual(wiki1, wiki2, "旧 wiki 与新版不同");
+  assert.ok(wiki1.includes("1 d 与 48 h 之比"), "旧 wiki 仍是冻结当时的事实");
+});
+
+// ── T31：31 行选择末行不同 → 无前 30 行截断，coverage 准确 ────────────────
+test("T31 选择表 31 行且末行不同：31 行全部在快照范围内，coverage 准确", () => {
+  const t = createTopic(emptyState(), { name: "合成课题甲", researchQuestion: "Q" });
+  let s = t.state;
+  const csv = "时间,批注\n" + Array.from({ length: 31 }, (_, i) => `${i === 30 ? "99" : String(24 + i)},r${i}`).join("\n") + "\n";
+  s = importMeasurements(s, { name: "t31.csv", csv, topicId: t.topic.id }).state;
+  const tableId = s.tables[0].id;
+  const tableRef = currentSourceRef(s, "table", tableId)!;
+  s = { ...s, knowledge: archiveSourceVersion(s.knowledge, tableRef, sourcePayload(s, "table", tableId)) };
+  const ds = createKnowledgeDataset(s, {
+    topicId: t.topic.id, sourceRef: tableRef,
+    selection: { rowIndices: Array.from({ length: 31 }, (_, i) => i), columnIndices: [0] },
+    columns: [{ index: 0, originalName: "时间", standardId: "m", type: "scalar", unit: "h" }],
+    rowBindings: Array.from({ length: 31 }, (_, i) => ({ rowIndex: i })),
+  });
+  s = ds.state;
+  const fr = freezeKnowledge(s, { topicId: t.topic.id, viewId: viewIdOf(s, t.topic.id) });
+  const rows = fr.snapshot.content.datasetRows!.find((r) => r.datasetRef.id === ds.dataset.id)!;
+  assert.equal(rows.rows.length, 31, "31 行全部在范围内（没有被前 30 行截断）");
+  assert.equal(rows.rows[30].cells[0].raw, "99", "末行不同且保留");
+  assert.deepEqual(fr.snapshot.coverage, { selected: 0, totalAvailable: 0, processed: 0, omittedReasons: [] }, "coverage 与选择一致（课题内无知识项）");
+  const csvOut = snapshotCsv(fr.snapshot, { datasetId: ds.dataset.id });
+  assert.equal(csvOut.rows, 31, "数据集 CSV 为 31 条观察（逐行）");
+});
+
+// ── T32：viewId 过期 → 冻结/比较 409 ─────────────────────────────────────
+test("T32 viewId 过期：冻结与比较均 409 要求刷新，不悄悄改输入", () => {
+  const f = seedE5();
+  const staleFreeze = expectErr(() => freezeKnowledge(f.state, { topicId: f.topicId, viewId: "bogus-view" }));
+  assert.equal(staleFreeze.status, 409);
+  assert.equal(code(staleFreeze), "view_stale");
+  const staleCmp = expectErr(() => createKnowledgeComparison(f.state, { topicId: f.topicId, viewId: "bogus-view", question: "q", metricId: null, inputRefs: [itemOp("ki_A")], varyingFields: [], requiredEqualFields: [], operation: "display" }));
+  assert.equal(code(staleCmp), "view_stale");
+});
+
+// ── T33：非法文件名 / HTML / javascript: / CSV 公式 ──────────────────────
+test("T33 非法文件名、HTML/script、javascript: 链接、CSV 公式：包路径与文本安全、机器值保真", () => {
+  const t = createTopic(emptyState(), { name: "合成课题甲", researchQuestion: "Q" });
+  let s = t.state;
+  s = importMeasurements(s, { name: "f.csv", csv: "公式,批注\n=SUM(A1),危险\n", topicId: t.topic.id }).state;
+  const tableId = s.tables[0].id;
+  const tableRef = currentSourceRef(s, "table", tableId)!;
+  s = { ...s, knowledge: archiveSourceVersion(s.knowledge, tableRef, sourcePayload(s, "table", tableId)) };
+  const asset = makeAsset("literature", "evil.md", "<script>alert(1)</script> 见 javascript:alert(1)", t.topic.id);
+  s = { ...s, assets: [...s.assets, asset] };
+  s = { ...s, knowledge: { ...s.knowledge, items: [...s.knowledge.items, envOf("ki_evil", {
+    contentType: "claim", nature: "human_judgment", text: "<script>alert(1)</script> 参考 javascript:alert(1)",
+    subject: { raw: "合成对象A" }, predicate: { raw: "危险文本" }, value: null, contextRefs: [], evidenceRefs: [],
+    sourceRefs: [currentSourceRef(s, "asset", asset.id)!],
+    origin: { sourceClass: "human_statement", createdBy: "human", secondaryCitation: false },
+    scopeText: "", unknowns: [], topicIds: [t.topic.id], subquestionIds: [], review: { status: "confirmed" },
+  })] } };
+  const ds = createKnowledgeDataset(s, { topicId: t.topic.id, sourceRef: tableRef, selection: { rowIndices: [0], columnIndices: [0] }, columns: [{ index: 0, originalName: "公式", type: "scalar", unit: null }], rowBindings: [{ rowIndex: 0 }] });
+  s = ds.state;
+
+  const fr = freezeKnowledge(s, { topicId: t.topic.id, viewId: viewIdOf(s, t.topic.id) });
+  const wiki = snapshotWiki(fr.snapshot).pages.map((p) => p.markdown).join("\n");
+  assert.ok(!wiki.includes("<script>"), "wiki 不含 raw HTML（已转义）");
+  assert.ok(!/javascript:\/\//.test(wiki), "wiki 不含 javascript: 协议");
+  assert.ok(wiki.includes("&lt;script&gt;"), "尖括号被转义为实体");
+
+  const machine = snapshotCsv(fr.snapshot, { datasetId: ds.dataset.id, variant: "machine" });
+  assert.ok(machine.content.includes("=SUM(A1)"), "机器版保真，公式原文不改写");
+  const safe = snapshotCsv(fr.snapshot, { datasetId: ds.dataset.id, variant: "sheet-safe" });
+  assert.ok(safe.content.includes("'=SUM(A1)"), "sheet-safe 版对公式样式前置单引号");
+  assert.ok(safe.filename.includes("sheet-safe"));
+
+  assert.equal(expectErr(() => safeFileName("../evil.md")).status, 422);
+  assert.equal(expectErr(() => safeFileName("a/b.md")).status, 422);
+  assert.equal(safeFileName("ks_ab12.json"), "ks_ab12.json");
+});
+
+// ── T34：scope 外与密钥哨兵不进导出（ZIP 解包检查）；撤权后整包 403 不改写原快照 ──
+test("T34 scope 外内容与密钥哨兵不进任何导出；撤权后整包 403 且不改写原快照", () => {
+  const SENTINEL = "SECRET-SENTINEL-9f3a";
+  const f = seedE5();
+  const other = createTopic(f.state, { name: "合成课题乙", researchQuestion: "Q2" });
+  let s: LocusState = other.state;
+  s = { ...s, knowledge: { ...s.knowledge, items: [...s.knowledge.items, envOf("ki_secret", {
+    contentType: "claim", nature: "human_judgment", text: `${SENTINEL} 乙的私有`,
+    subject: { raw: "合成对象A" }, predicate: { raw: "哨兵" }, value: null, contextRefs: [], evidenceRefs: [],
+    sourceRefs: [f.srcRef], origin: { sourceClass: "human_statement", createdBy: "human", secondaryCitation: false },
+    scopeText: "", unknowns: [], topicIds: [other.topic.id], subquestionIds: [], review: { status: "confirmed" },
+  })] } };
+
+  const fr = freezeKnowledge(s, { topicId: f.topicId, viewId: viewIdOf(s, f.topicId) });
+  const pkg = buildKnowledgePackage(fr.snapshot);
+  for (const e of pkg.entries) assert.ok(!String(e.data).includes(SENTINEL), `条目 ${e.name} 不得含 scope 外哨兵`);
+  const unzipped = unzipAll(zip(pkg.entries));
+  assert.ok(unzipped.length === pkg.entries.length, "ZIP 解包条目数与打包一致");
+  for (const u of unzipped) assert.ok(!u.data.includes(SENTINEL), `解包后 ${u.name} 不得含哨兵`);
+  assert.ok(!unzipped.some((u) => u.name.includes("evil") || u.name.includes("secret")), "包内不含附件/私有对象名");
+
+  // 默认（未设策略）：export 一律拒绝；显式用户允许后才放行；策略变更不改写原快照
+  const before = JSON.stringify(fr.state.knowledge.snapshots);
+  const denied = expectErr(() => assertKnowledgeAccess(fr.state, "export", fr.snapshot.sourceVersionRefs));
+  assert.equal(denied.status, 403);
+  assert.equal(code(denied), "source_access_denied");
+  let st = fr.state;
+  for (const r of fr.snapshot.sourceVersionRefs) {
+    st = upsertSourcePolicy(st, { sourceKind: r.kind, sourceId: r.id, allowLocalRead: true, allowExport: true, allowAiSend: false, reason: "用户本次明确允许带出" }).state;
+  }
+  assertKnowledgeAccess(st, "export", fr.snapshot.sourceVersionRefs);
+  assert.equal(JSON.stringify(st.knowledge.snapshots), before, "策略变更不改写已冻结快照");
+  const deniedLocal = upsertSourcePolicy(st, { sourceKind: "asset", sourceId: f.srcRef.id, baseRevision: 1, allowLocalRead: false, allowExport: true, allowAiSend: false, reason: "禁止本地读取" });
+  const noLocal = knowledgeAccess(deniedLocal.state, "localRead", [f.srcRef]);
+  assert.equal(noLocal.ok, false, "撤销本地读取后该来源不可读");
+  assert.equal(deniedLocal.policy.history.length, 1, "策略变更留历史");
+});
+
+// ── T34b：快照读取按固定版本，不退回当前库 ───────────────────────────────
+test("T34b 快照读取：按快照内固定版本，不读当前库最新", () => {
+  const f = seedE5();
+  const fr = freezeKnowledge(f.state, { topicId: f.topicId, viewId: viewIdOf(f.state, f.topicId) });
+  const snap = fr.snapshot;
+  const item = readSnapshotKnowledge(snap, { kind: "item", id: "ki_A", revision: 1 });
+  assert.ok(item && (item as { text: string }).text.includes("培养 1 d"));
+  assert.equal(readSnapshotKnowledge(snap, { kind: "item", id: "ki_A", revision: 99 }), null, "快照内不存在的版本不返回");
+  const tok = Object.entries(snap.content.referenceMap).find(([, e]) => e.kind === "knowledge")!;
+  assert.ok(resolveSnapshotToken(snap, tok[0]));
+  assert.ok(readSnapshotDatasetRows(snap, f.datasetId, f.datasetRevision).rows.length >= 1, "快照内可读数据集实际行列");
+  assert.equal(expectErr(() => readSnapshotDatasetRows(snap, "ds_missing", 1)).status, 404);
 });

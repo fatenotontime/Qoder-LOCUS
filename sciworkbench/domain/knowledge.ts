@@ -390,6 +390,13 @@ export interface ExtractionRunRecord {
 export interface SnapshotScope { readonly topicId: string; readonly subquestionId?: string; readonly source: "current"; }
 export interface SnapshotReferenceTokenMap { readonly [token: string]: { readonly kind: "knowledge" | "source"; readonly ref: KnowledgeRef | SourceRef; readonly label: string }; }
 export interface SnapshotCoverage { readonly selected: number; readonly totalAvailable: number; readonly processed: number; readonly omittedReasons: string[]; }
+/** 快照内冻结的实际行列（§7.3：datasets 及实际行列；缺失值保留 null，不写 0）。 */
+export interface SnapshotDatasetRows {
+  readonly datasetRef: KnowledgeRef;
+  readonly sourceRef: SourceRef;
+  readonly columns: { readonly index: number; readonly originalName: string; readonly standardId?: string; readonly type: ValueKind; readonly unit: string | null; readonly review: Review }[];
+  readonly rows: { readonly rowIndex: number; readonly cells: { readonly columnIndex: number; readonly raw: string | null }[]; readonly binding: RowBinding | null }[];
+}
 export interface SnapshotContent {
   readonly items: KnowledgeItem[];
   readonly contexts: KnowledgeContext[];
@@ -400,6 +407,7 @@ export interface SnapshotContent {
   readonly mappings: KnowledgeMapping[];
   readonly comparisons: KnowledgeComparison[];
   readonly referenceMap: SnapshotReferenceTokenMap;
+  readonly datasetRows?: SnapshotDatasetRows[];
 }
 export interface KnowledgeSnapshot {
   readonly snapshotId: string;
@@ -472,12 +480,13 @@ export function assertKnowledgeShape(k: unknown): asserts k is KnowledgeState {
 
 // ── hash 规范（合同 §7.3）：键递归排序、数组顺序稳定、UTF-8、SHA-256 ──
 
-/** 稳定序列化：对象键递归字典序；数组保持既有顺序。 */
+/** 稳定序列化：对象键递归字典序；数组保持既有顺序；undefined 按 JSON 语义处理（对象键略去、数组项记 null）。 */
 export function stableStringify(value: unknown): string {
-  if (value === null || typeof value !== "object") return JSON.stringify(value);
+  if (value === null || value === undefined) return "null";
+  if (typeof value !== "object") return JSON.stringify(value) ?? "null";
   if (Array.isArray(value)) return `[${value.map(stableStringify).join(",")}]`;
   const obj = value as Record<string, unknown>;
-  const keys = Object.keys(obj).sort();
+  const keys = Object.keys(obj).filter((k) => obj[k] !== undefined).sort();
   return `{${keys.map((k) => `${JSON.stringify(k)}:${stableStringify(obj[k])}`).join(",")}}`;
 }
 
