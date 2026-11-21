@@ -29,9 +29,9 @@ import {
   type KnowledgeItem, type KnowledgeKind, type KnowledgeMapping, type KnowledgeRef, type KnowledgeTheme,
   type KnowledgeState, type LocationStatus, type Locator, type MappingPayload, type NormalizedInput,
   type ObtainedBy, type Origin, type RelationPayload, type Review, type ReviewStatus, type RowBinding,
-  type SnapshotCoverage, type SnapshotReferenceTokenMap, type SourceClass, type SourceKind,
-  type SourceRef, type SourceVersionRecord, type ThemePayload, type TypedValue, type Unknown,
-  type UnknownReasonCode, type ValueKind,
+  type SnapshotCoverage, type SnapshotDatasetRows, type SnapshotReferenceTokenMap, type SourceClass, type SourceKind,
+  type SourcePolicyHistoryEntry, type SourcePolicyRecord, type SourceRef, type SourceVersionRecord, type ThemePayload,
+  type TypedValue, type Unknown, type UnknownReasonCode, type ValueKind, type KnowledgeSnapshot, type SnapshotContent,
 } from "../domain/knowledge.ts";
 import { AppError, isStructuredShell } from "./app.ts";
 
@@ -2073,4 +2073,298 @@ export function legacyComparisonViews(state: LocusState, topicId?: string): Lega
         record: c,
       };
     });
+}
+// ══ E5 来源策略、统一访问检查与冻结快照（合同 §7.5/§7.3、§8.1）══════════════
+//
+// - 策略缺省即「本机所有者模式」：允许本地读取，export/aiSend 默认不允许（§7.5）。
+// - 所有出口（view/item/rows/snapshot/reference/export/AI 发送）共用 assertKnowledgeAccess：
+//   检查实际依赖的源引用闭包（含派生判断的上游来源）；含被拒来源的整包 403，不降级为 warning。
+// - 冻结：viewId 校验 → 选中闭包 → 内容 hash（不含 createdAt/snapshotId）→ 稳定 token；
+//   来源历史与快照同笔提交；保存失败即不返回 ready（由调用方 commitState 保证）。
+
+export type KnowledgeOperation = "localRead" | "export" | "aiSend";
+
+export interface EffectivePolicy { readonly allowLocalRead: boolean; readonly allowExport: boolean; readonly allowAiSend: boolean; readonly reason: string; readonly origin: "record" | "default" }
+
+export const KNOWLEDGE_SOURCE_KINDS: readonly SourceKind[] = ["topic", "subquestion", "paper", "attachment", "asset", "card", "table", "protocol", "template", "execution", "sample", "measurement", "result", "report", "report_block", "chat_proposal", "ocr"];
+
+/** 生效策略：有记录用记录；无记录按本机所有者模式默认（只允许本地读取）。 */
+export function policyFor(state: LocusState, sourceKind: SourceKind | "knowledge_item", sourceId: string): EffectivePolicy {
+  const rec = state.knowledge.sourcePolicies.find((p) => p.sourceKind === sourceKind && p.sourceId === sourceId);
+  if (rec) return { allowLocalRead: rec.allowLocalRead, allowExport: rec.allowExport, allowAiSend: rec.allowAiSend, reason: rec.reason, origin: "record" };
+  return { allowLocalRead: true, allowExport: false, allowAiSend: false, reason: "未设策略：本机所有者模式仅允许本地读取；export / aiSend 默认不允许。", origin: "default" };
+}
+
+export function upsertSourcePolicy(state: LocusState, input: unknown): { state: LocusState; policy: SourcePolicyRecord } {
+  const body = record(input, "body");
+  assertKeys(body, ["sourceKind", "sourceId", "baseRevision", "allowLocalRead", "allowExport", "allowAiSend", "reason"], "body");
+  const sourceKind = enumOf(body.sourceKind, "sourceKind", [...KNOWLEDGE_SOURCE_KINDS, "knowledge_item"]) as SourceKind | "knowledge_item";
+  const sourceId = reqText(body.sourceId, "sourceId", 120);
+  if (sourceKind === "knowledge_item") {
+    if (!findEnv(state.knowledge, "item", sourceId)) throw new AppError(404, `知识项不存在：${sourceId}`);
+  } else if (!currentSourceRef(state, sourceKind, sourceId)) {
+    throw new AppError(404, `来源不存在：${sourceKind} ${sourceId}`);
+  }
+  const reason = reqText(body.reason, "reason", 400);
+  const want = { allowLocalRead: body.allowLocalRead === true, allowExport: body.allowExport === true, allowAiSend: body.allowAiSend === true };
+  const at = now();
+  const existing = state.knowledge.sourcePolicies.find((p) => p.sourceKind === sourceKind && p.sourceId === sourceId);
+  if (existing) {
+    requireBaseRevision(body.baseRevision, existing, "来源策略");
+    const entry: SourcePolicyHistoryEntry = { revision: existing.revision, at, allowLocalRead: existing.allowLocalRead, allowExport: existing.allowExport, allowAiSend: existing.allowAiSend, reason: existing.reason };
+    const policy: SourcePolicyRecord = { ...existing, revision: existing.revision + 1, ...want, reason, updatedAt: at, history: [...existing.history, entry] };
+    return { state: { ...state, knowledge: { ...state.knowledge, sourcePolicies: state.knowledge.sourcePolicies.map((p) => (p.id === policy.id ? policy : p)) } }, policy };
+  }
+  const policy: SourcePolicyRecord = { id: `sp_${uuid()}`, sourceKind, sourceId, revision: 1, ...want, reason, updatedAt: at, history: [] };
+  return { state: { ...state, knowledge: { ...state.knowledge, sourcePolicies: [...state.knowledge.sourcePolicies, policy] } }, policy };
+}
+
+/** 知识对象的源引用闭包（含派生判断的上游来源；人工无来源陈述落到 knowledge_item 自身策略）。 */
+export function sourceRefsOf(state: LocusState, ref: KnowledgeRef, acc: SourceRef[] = [], depth = 0): SourceRef[] {
+  if (depth > 6) return acc;
+  const k = state.knowledge;
+  const push = (r: SourceRef) => { if (!acc.some((x) => x.kind === r.kind && x.id === r.id && x.version === r.version)) acc.push(r); };
+  const payload = readKnowledgeVersion(k, ref);
+  if (!payload) return acc;
+  if (ref.kind === "item") {
+    const p = payload as ItemPayload;
+    for (const s of p.sourceRefs) push(s);
+    for (const b of p.evidenceRefs) sourceRefsOf(state, b.ref, acc, depth + 1);
+    for (const c of p.contextRefs) sourceRefsOf(state, c, acc, depth + 1);
+  } else if (ref.kind === "context") {
+    for (const c of (payload as ContextPayload).conditions) for (const e of c.evidenceRefs) sourceRefsOf(state, e, acc, depth + 1);
+  } else if (ref.kind === "evidence") {
+    push((payload as EvidencePayload).sourceRef);
+  } else if (ref.kind === "dataset") {
+    push((payload as DatasetPayload).sourceRef);
+  } else if (ref.kind === "mapping") {
+    for (const e of (payload as MappingPayload).evidenceRefs) sourceRefsOf(state, e, acc, depth + 1);
+  } else if (ref.kind === "relation") {
+    for (const e of (payload as RelationPayload).evidenceRefs) sourceRefsOf(state, e, acc, depth + 1);
+  } else if (ref.kind === "comparison") {
+    for (const n of (payload as ComparisonPayload).normalizedInputs) sourceRefsOf(state, n.operand.type === "item" ? n.operand.ref : n.operand.datasetRef, acc, depth + 1);
+  } else if (ref.kind === "theme") {
+    for (const m of (payload as ThemePayload).members) sourceRefsOf(state, m, acc, depth + 1);
+  }
+  return acc;
+}
+
+export interface AccessDenied { readonly sourceKind: string; readonly sourceId: string; readonly operation: KnowledgeOperation; readonly reason: string }
+
+/** 统一访问判定（§7.5）：返回是否放行与被拒明细（不抛错，供预览/告警）。 */
+export function knowledgeAccess(state: LocusState, operation: KnowledgeOperation, refs: (KnowledgeRef | SourceRef)[]): { ok: boolean; denied: AccessDenied[]; checkedSources: SourceRef[] } {
+  const sources: SourceRef[] = [];
+  const statementsWithoutSource: string[] = [];
+  for (const r of refs) {
+    if (isSourceRef(r)) { if (!sources.some((x) => sourceKey(x) === sourceKey(r))) sources.push(r); continue; }
+    const ref = r as KnowledgeRef;
+    const before = sources.length;
+    sourceRefsOf(state, ref, sources);
+    if (ref.kind === "item" && sources.length === before) statementsWithoutSource.push(ref.id);
+  }
+  const denied: AccessDenied[] = [];
+  const flag = { localRead: "allowLocalRead", export: "allowExport", aiSend: "allowAiSend" } as const;
+  for (const s of sources) {
+    const p = policyFor(state, s.kind, s.id);
+    if (!p[flag[operation]]) denied.push({ sourceKind: s.kind, sourceId: s.id, operation, reason: p.reason });
+  }
+  for (const itemId of statementsWithoutSource) {
+    const p = policyFor(state, "knowledge_item", itemId);
+    if (!p[flag[operation]]) denied.push({ sourceKind: "knowledge_item", sourceId: itemId, operation, reason: p.reason });
+  }
+  return { ok: denied.length === 0, denied, checkedSources: sources };
+}
+
+/** 所有出口共用：被拒即 403（含被拒来源的整包拒绝，不加 warning 后继续返回）。 */
+export function assertKnowledgeAccess(state: LocusState, operation: KnowledgeOperation, refs: (KnowledgeRef | SourceRef)[]): void {
+  const d = knowledgeAccess(state, operation, refs);
+  if (d.ok) return;
+  const head = d.denied.slice(0, 3).map((x) => `${x.sourceKind} ${x.sourceId}`).join("、");
+  const opText = operation === "export" ? "导出" : operation === "aiSend" ? "发送 AI" : "本地读取";
+  throw new AppError(403, `${d.denied.length} 个来源未获「${opText}」许可：${head}${d.denied.length > 3 ? " 等" : ""}。`, { code: "source_access_denied", operation, denied: d.denied });
+}
+
+// ── 冻结快照（§7.3）───────────────────────────────────────────────────
+
+/** 读整个作用域（跨页合并；冻结与预览共用同一条读取路径，避免两套口径）。 */
+function readAll(state: LocusState, q: KnowledgeQuery) {
+  const keys = ["items", "contexts", "evidence", "relations", "datasets", "themes", "mappings", "comparisons"] as const;
+  const acc: Record<string, AnyEnvelope[]> = { items: [], contexts: [], evidence: [], relations: [], datasets: [], themes: [], mappings: [], comparisons: [] };
+  const seen: Record<string, Set<string>> = { items: new Set(), contexts: new Set(), evidence: new Set(), relations: new Set(), datasets: new Set(), themes: new Set(), mappings: new Set(), comparisons: new Set() };
+  const warnings: KnowledgeWarning[] = [];
+  let cursor = 0;
+  for (let guard = 0; guard < 1000; guard++) {
+    const v = readKnowledge(state, { ...q, cursor, pageSize: PAGE_MAX });
+    for (const key of keys) for (const env of v[key] as AnyEnvelope[]) if (!seen[key].has(env.id)) { seen[key].add(env.id); acc[key].push(env); }
+    for (const w of v.warnings) if (!warnings.some((x) => x.code === w.code && x.detail === w.detail)) warnings.push(w);
+    if (!v.hasMore || v.nextCursor === null) break;
+    cursor = v.nextCursor;
+  }
+  return { items: acc.items as KnowledgeItem[], contexts: acc.contexts as KnowledgeContext[], evidence: acc.evidence as KnowledgeEvidence[], relations: acc.relations as KnowledgeRelation[], datasets: acc.datasets as KnowledgeDataset[], themes: acc.themes as KnowledgeTheme[], mappings: acc.mappings as KnowledgeMapping[], comparisons: acc.comparisons as KnowledgeComparison[], warnings };
+}
+
+export function freezeKnowledge(state: LocusState, input: unknown): { state: LocusState; snapshot: KnowledgeSnapshot } {
+  const body = record(input, "body");
+  assertKeys(body, ["topicId", "viewId", "subquestionId", "selectedRefs", "purpose", "mode"], "body");
+  const topicId = reqText(body.topicId, "topicId", 60);
+  if (!state.topics.some((t) => t.id === topicId)) throw new AppError(404, `课题不存在：${topicId}`);
+  const viewId = reqText(body.viewId, "viewId", 80);
+  const expected = currentViewId(state, topicId);
+  if (viewId !== expected) throw new AppError(409, "知识视图已变化（viewId 过期）。请刷新后重新冻结，本页两次读取不混用。", { code: "view_stale", currentViewId: expected });
+  const mode: "formal" | "explore" = body.mode === "explore" ? "explore" : "formal";
+  const subquestionId = body.subquestionId === undefined || body.subquestionId === null || String(body.subquestionId).trim() === "" ? undefined : reqText(body.subquestionId, "subquestionId", 60);
+  if (subquestionId) {
+    const q = state.subquestions.find((x) => x.id === subquestionId);
+    if (!q || q.topicId !== topicId) throw new AppError(404, "子问题不存在或不属于该课题。");
+  }
+  const k = state.knowledge;
+  const all = readAll(state, { source: "current", topicId, mode, subquestionId });
+  void all.warnings;
+  const excluded: { ref: KnowledgeRef | SourceRef; reason: string }[] = [];
+
+  let selected: KnowledgeItem[];
+  if (body.selectedRefs !== undefined && body.selectedRefs !== null) {
+    const refs = strictKnowledgeRefs(body.selectedRefs, ["item"], "selectedRefs");
+    if (refs.length === 0) throw new AppError(422, "selectedRefs 不能为空数组（不选任何内容时不要冻结）。");
+    selected = refs.map((r) => {
+      const env = findEnv(k, "item", r.id);
+      if (!env) throw new AppError(422, `selectedRefs 里的知识项不存在：${r.id}`, { code: "ref_unresolvable", ref: r });
+      const p = env.payload as ItemPayload;
+      if (!(p.topicIds ?? []).includes(topicId)) throw new AppError(422, `selectedRefs 里的知识项不属于该课题：${r.id}`, { code: "cross_topic_scope", ref: r });
+      if (mode === "formal" && !itemFormalUsable(k, env)) throw new AppError(422, `selectedRefs 含未确认或已撤回的知识项（formal 门槛）：${r.id}`, { code: "item_not_confirmed", ref: r });
+      return env as KnowledgeItem;
+    });
+  } else {
+    selected = all.items;
+  }
+  const selectedIds = new Set(selected.map((e) => e.id));
+  const allTopicItems = k.items.filter((e) => ((e.payload as ItemPayload).topicIds ?? []).includes(topicId));
+  for (const e of allTopicItems) {
+    if (selectedIds.has(e.id)) continue;
+    const p = e.payload as ItemPayload;
+    const why = mode === "formal" && p.review.status !== "confirmed" ? `未确认/已撤回（${p.review.status}）` : "未选中（selectedRefs）";
+    excluded.push({ ref: makeKnowledgeRef("item", e.id, e.revision), reason: why });
+  }
+
+  const ctxIds = new Set<string>(), evIds = new Set<string>();
+  for (const e of selected) {
+    const p = e.payload as ItemPayload;
+    for (const r of p.contextRefs) if (r.kind === "context") ctxIds.add(r.id);
+    for (const b of p.evidenceRefs) if (b.ref.kind === "evidence") evIds.add(b.ref.id);
+  }
+  const contexts = k.contexts.filter((e) => ctxIds.has(e.id));
+  for (const c of contexts) for (const cond of (c.payload as ContextPayload).conditions) for (const r of cond.evidenceRefs) if (r.kind === "evidence") evIds.add(r.id);
+  const evidence = k.evidence.filter((e) => evIds.has(e.id));
+  const inClosure = (r: KnowledgeRef) => selectedIds.has(r.id) || ctxIds.has(r.id) || evIds.has(r.id);
+  const relations = k.relations.filter((e) => {
+    const rp = e.payload as RelationPayload;
+    const knowledgeEnds = [rp.from, rp.to].filter((x) => "revision" in x) as KnowledgeRef[];
+    return knowledgeEnds.every(inClosure) && knowledgeEnds.some(inClosure);
+  });
+
+  const datasetRows: SnapshotDatasetRows[] = [];
+  const datasets: KnowledgeDataset[] = [];
+  for (const ds of k.datasets.filter((e) => ((e.payload as DatasetPayload).topicIds ?? []).includes(topicId))) {
+    try {
+      const first = readDatasetRows(state, ds.id, { revision: ds.revision });
+      const rowsOut = [...first.rows];
+      let cur = first.nextCursor;
+      while (cur !== null) {
+        const more = readDatasetRows(state, ds.id, { revision: ds.revision, cursor: cur });
+        rowsOut.push(...more.rows);
+        cur = more.nextCursor;
+      }
+      datasets.push(ds as KnowledgeDataset);
+      datasetRows.push({
+        datasetRef: makeKnowledgeRef("dataset", ds.id, ds.revision), sourceRef: (ds.payload as DatasetPayload).sourceRef,
+        columns: first.columns, rows: rowsOut.map((r) => ({ rowIndex: r.rowIndex, cells: r.cells.map((c) => ({ columnIndex: c.columnIndex, raw: c.raw })), binding: r.binding })),
+      });
+    } catch (e) {
+      excluded.push({ ref: makeKnowledgeRef("dataset", ds.id, ds.revision), reason: `数据集行列不可读：${(e as Error).message.slice(0, 80)}（按固定版本读取，不退回最新）` });
+    }
+  }
+  const datasetIds = new Set(datasets.map((e) => e.id));
+
+  const themes: KnowledgeTheme[] = [];
+  for (const th of k.themes.filter((e) => (e.payload as ThemePayload).topicId === topicId)) {
+    const tp = th.payload as ThemePayload;
+    const members = tp.members.filter((r) => inClosure(r));
+    const judgments = tp.currentJudgmentRefs.filter((r) => inClosure(r));
+    for (const r of tp.members) if (!members.some((m) => refKey(m) === refKey(r))) excluded.push({ ref: r, reason: `主题「${tp.name}」成员不在本次选择闭包内` });
+    for (const r of tp.currentJudgmentRefs) if (!judgments.some((m) => refKey(m) === refKey(r))) excluded.push({ ref: r, reason: `主题「${tp.name}」当前认识不在本次选择闭包内` });
+    themes.push({ ...th, payload: { ...tp, members, currentJudgmentRefs: judgments } } as KnowledgeTheme);
+  }
+  const comparisons: KnowledgeComparison[] = [];
+  for (const cmp of k.comparisons.filter((e) => (e.payload as ComparisonPayload).topicId === topicId)) {
+    const cp = cmp.payload as ComparisonPayload;
+    const okAll = cp.inputRefs.every((op) => (op.type === "item" ? selectedIds.has(op.ref.id) : datasetIds.has(op.datasetRef.id)));
+    if (okAll) comparisons.push(cmp as KnowledgeComparison);
+    else excluded.push({ ref: makeKnowledgeRef("comparison", cmp.id, cmp.revision), reason: "比较输入不在本次选择闭包内" });
+  }
+  const mappings = k.mappings.filter((e) => (e.payload as MappingPayload).topicId === topicId);
+
+  const kRefs = [
+    ...selected.map((e) => makeKnowledgeRef("item", e.id, e.revision)),
+    ...contexts.map((e) => makeKnowledgeRef("context", e.id, e.revision)),
+    ...evidence.map((e) => makeKnowledgeRef("evidence", e.id, e.revision)),
+    ...relations.map((e) => makeKnowledgeRef("relation", e.id, e.revision)),
+    ...datasets.map((e) => makeKnowledgeRef("dataset", e.id, e.revision)),
+    ...themes.map((e) => makeKnowledgeRef("theme", e.id, e.revision)),
+    ...mappings.map((e) => makeKnowledgeRef("mapping", e.id, e.revision)),
+    ...comparisons.map((e) => makeKnowledgeRef("comparison", e.id, e.revision)),
+  ].sort((a, b) => (refKey(a) < refKey(b) ? -1 : 1));
+  const sourceSet: SourceRef[] = [];
+  for (const e of selected) sourceRefsOf(state, makeKnowledgeRef("item", e.id, e.revision), sourceSet);
+  for (const e of evidence) { const sr = (e.payload as EvidencePayload).sourceRef; if (!sourceSet.some((x) => sourceKey(x) === sourceKey(sr))) sourceSet.push(sr); }
+  for (const e of datasets) { const sr = (e.payload as DatasetPayload).sourceRef; if (!sourceSet.some((x) => sourceKey(x) === sourceKey(sr))) sourceSet.push(sr); }
+  for (const e of mappings) sourceRefsOf(state, makeKnowledgeRef("mapping", e.id, e.revision), sourceSet);
+  for (const e of comparisons) sourceRefsOf(state, makeKnowledgeRef("comparison", e.id, e.revision), sourceSet);
+  sourceSet.sort((a, b) => (sourceKey(a) < sourceKey(b) ? -1 : 1));
+
+  const refMap: SnapshotReferenceTokenMap = {};
+  const labelOf = (r: KnowledgeRef): string => ({ item: "知识项", context: "条件", evidence: "引文", relation: "关系", theme: "主题", comparison: "比较", dataset: "数据集", mapping: "映射" } as Record<string, string>)[r.kind] + ` ${r.id}`;
+  kRefs.forEach((r, i) => { const token = `K${i + 1}`; refMap[token] = { kind: "knowledge", ref: r, label: labelOf(r) }; });
+  sourceSet.forEach((r, i) => { const token = `S${i + 1}`; refMap[token] = { kind: "source", ref: r, label: `${r.kind} ${r.id} ${r.version}` }; });
+
+  const content: SnapshotContent = { items: selected, contexts, evidence, relations, datasets, themes, mappings, comparisons, referenceMap: refMap, datasetRows };
+  // 统一访问检查（§7.5）：本地冻结同走 localRead 门槛；被拒即 403，不生成快照。
+  assertKnowledgeAccess(state, "localRead", sourceSet);
+  const contentHash = canonicalHash(content);
+  const omittedReasons = [...new Set(excluded.map((x) => x.reason))];
+  const snapshot: KnowledgeSnapshot = {
+    snapshotId: `ks_${uuid()}`, createdAt: now(), schemaVersion: 1, projectionVersion: 1,
+    mode, scope: { topicId, ...(subquestionId ? { subquestionId } : {}), source: "current" },
+    contentHash, content, sourceVersionRefs: sourceSet,
+    mappingRefs: mappings.map((e) => makeKnowledgeRef("mapping", e.id, e.revision)),
+    coverage: { selected: selected.length, totalAvailable: allTopicItems.length, processed: selected.length, omittedReasons },
+    excluded,
+  };
+  let knowledge = k;
+  for (const r of sourceSet) {
+    const ensured = ensureArchived(state, knowledge, r.kind, r.id);
+    if (ensured) knowledge = ensured.knowledge;
+  }
+  knowledge = { ...knowledge, snapshots: [...knowledge.snapshots, snapshot] };
+  return { state: { ...state, knowledge }, snapshot };
+}
+
+/** 快照内固定版本读取（不退回当前库）。 */
+export function readSnapshotKnowledge(snapshot: KnowledgeSnapshot, ref: KnowledgeRef): unknown | null {
+  const list = (snapshot.content as unknown as Record<string, AnyEnvelope[] | undefined>)[COLLECTION_BY_KIND[ref.kind] as string];
+  if (!Array.isArray(list)) return null;
+  const env = list.find((e) => e.id === ref.id);
+  if (!env) return null;
+  if (env.revision === ref.revision) return env.payload;
+  const hit = env.history.find((h) => h.revision === ref.revision);
+  return hit ? hit.payload ?? null : null;
+}
+
+export function readSnapshotDatasetRows(snapshot: KnowledgeSnapshot, datasetId: string, revision: number) {
+  const rows = (snapshot.content.datasetRows ?? []).find((r) => r.datasetRef.id === datasetId && r.datasetRef.revision === revision);
+  if (!rows) throw new AppError(404, `该快照内没有数据集 ${datasetId} 第 ${revision} 版的实际行列。`, { code: "snapshot_dataset_missing" });
+  return { datasetId, revision, sourceRef: rows.sourceRef, columns: rows.columns, rows: rows.rows };
+}
+
+export function resolveSnapshotToken(snapshot: KnowledgeSnapshot, token: string): { kind: "knowledge" | "source"; ref: KnowledgeRef | SourceRef; label: string } | null {
+  return snapshot.content.referenceMap[token] ?? null;
 }

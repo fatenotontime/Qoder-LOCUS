@@ -6,9 +6,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import type { AddressInfo } from "node:net";
-import { MemoryStore, type LocusState, type Store } from "../store.ts";
+import { MemoryStore, emptyState, type LocusState, type Store } from "../store.ts";
+import { createTopic, makeAsset, importMeasurements } from "../services/app.ts";
+import { archiveSourceVersion, currentSourceRef, sourcePayload, createKnowledgeDataset, reviewKnowledgeDataset } from "../services/knowledge-base.ts";
 import { clearAiConfig, setAiConfig } from "../services/ai.ts";
 import { chatScopeSnapshot } from "../services/analysis.ts";
+
 import { createApp } from "../server.ts";
 
 class GatedStore implements Store {
@@ -25,6 +28,7 @@ class GatedStore implements Store {
     this.saved.push(structuredClone(s));
   }
   release(): void { this.#gates.shift()?.(); }
+  async seed(state: LocusState): Promise<void> { await this.#inner.save(structuredClone(state)); }
   get pending(): number { return this.#gates.length; }
 }
 
@@ -47,7 +51,8 @@ async function boot(store: Store) {
   };
   const get = async (p: string) => (await fetch(base + p)).json() as Promise<Record<string, unknown>>;
   const close = () => new Promise<void>((r) => app.close(() => r()));
-  return { post, get, close };
+  const raw = (p2: string) => fetch(base + p2);
+  return { post, get, raw, base, close };
 }
 
 /** 拦截模型调用：挂起直到 release()，返回 context_chat 合法应答。 */
@@ -874,10 +879,10 @@ test("E3 路由：新壳定位修订→条件审核→分项确认→整壳解�
     const itemIds = shell.knowledgeItemIds!;
     assert.equal(shell.audit, "unreviewed", "全待审 → 派生 unreviewed");
 
-    // §8.1 指定版本读取：revision 必填；快照读取留待 E5；课题归属校验
+    // §8.1 指定版本读取：revision 必填；E5 起快照读取已实装（不存在的快照 → 404）
     assert.equal((await get(`/api/knowledge/items/${itemIds[0]}`)).code, "revision_required");
     assert.equal((await get(`/api/knowledge/items/${itemIds[0]}?revision=1&topicId=tp_absent`)).code, "topic_mismatch");
-    assert.equal((await get(`/api/knowledge/items/${itemIds[0]}?revision=1&snapshotId=ks_x`)).code, "snapshot_read_unavailable");
+    assert.equal((await get(`/api/knowledge/items/${itemIds[0]}?revision=1&snapshotId=ks_x`)).code, "snapshot_missing");
     const v1 = await get(`/api/knowledge/items/${itemIds[0]}?revision=1&topicId=${encodeURIComponent(topicId)}`);
     assert.equal(v1.revision, 1);
     const payload = v1.payload as { evidenceRefs: { ref: { id: string } }[]; contextRefs: { id: string }[] };
@@ -1048,6 +1053,108 @@ test("E4 路由：/api/knowledge/view 作用域校验与比较 409 view_stale �
     assert.equal(ok.body.decision, "blocked", "读不到固定版本的操作数不给结论");
     assert.ok((ok.body.reasonCodes as string[]).includes("source_unresolvable"));
     assert.equal(ok.body.computedValue, null);
+  } finally {
+    await close();
+  }
+});
+/** E5 种子：用服务函数构建真实 state（sourceRef/hash 一律按服务端口径生成）。 */
+function seedKnowledgeState() {
+  const t = createTopic(emptyState(), { name: "合成课题甲", researchQuestion: "Q" });
+  const topicId = t.topic.id;
+  let s: LocusState = t.state;
+  const asset = makeAsset("literature", "exp.md", "合成对象A在 1 d 与 24 h 下培养。", topicId);
+  s = { ...s, assets: [...s.assets, asset] };
+  const srcRef = currentSourceRef(s, "asset", asset.id)!;
+  s = { ...s, knowledge: archiveSourceVersion(s.knowledge, srcRef, sourcePayload(s, "asset", asset.id)) };
+  s = importMeasurements(s, { name: "t.csv", csv: "时间,批注\n24,第一轮\n24,重复\n48,延长\n", topicId }).state;
+  const tableId = s.tables[0].id;
+  const tableRef = currentSourceRef(s, "table", tableId)!;
+  s = { ...s, knowledge: archiveSourceVersion(s.knowledge, tableRef, sourcePayload(s, "table", tableId)) };
+  const ds = createKnowledgeDataset(s, {
+    topicId, sourceRef: tableRef, selection: { rowIndices: [0, 1, 2], columnIndices: [0] },
+    columns: [{ index: 0, originalName: "时间", standardId: "m", type: "scalar", unit: "h" }],
+    rowBindings: [{ rowIndex: 0 }, { rowIndex: 1 }, { rowIndex: 2 }],
+  });
+  s = reviewKnowledgeDataset(ds.state, ds.dataset.id, { baseRevision: 1, columnIndices: [0], decision: "confirmed", basis: "核对列含义" }).state;
+  const datasetRevision = s.knowledge.datasets.find((d) => d.id === ds.dataset.id)!.revision;
+  return { state: s, topicId, datasetId: ds.dataset.id, datasetRevision, tableRef, srcRef };
+}
+
+// ── T35：首次 freeze 保存失败 → 不返回 ready，旧快照仍可读（§7.3）──────────
+test("T35 冻结保存失败不返回 ready；旧快照仍可读且内容不变", async () => {
+  const seed = seedKnowledgeState();
+  const store = new GatedStore();
+  await store.seed(seed.state);
+  const { post, get, close } = await boot(store);
+  try {
+    const view = await get(`/api/knowledge/view?source=current&topicId=${seed.topicId}`);
+
+    store.failNext = true;
+    const failed = await post("/api/knowledge/snapshots", { topicId: seed.topicId, viewId: view.viewId as string });
+    assert.equal(failed.status, 500, JSON.stringify(failed.body));
+    assert.notEqual(failed.body.dataReady, true, "保存失败不得返回 ready");
+    const afterFail = await get("/api/state");
+    assert.equal((afterFail.knowledge as { snapshots: unknown[] }).snapshots.length, 0, "失败不发布任何快照");
+
+    const ok = await post("/api/knowledge/snapshots", { topicId: seed.topicId, viewId: view.viewId as string });
+    assert.equal(ok.status, 200, JSON.stringify(ok.body));
+    const snapId = ok.body.snapshotId as string;
+    const read1 = await get(`/api/knowledge/snapshots/${snapId}`);
+    assert.equal((read1.snapshot as { contentHash: string }).contentHash, ok.body.contentHash, "冻结返回 hash 与读取一致");
+
+    const view2 = await get(`/api/knowledge/view?source=current&topicId=${seed.topicId}`);
+    store.failNext = true;
+    const failed2 = await post("/api/knowledge/snapshots", { topicId: seed.topicId, viewId: view2.viewId as string });
+    assert.equal(failed2.status, 500);
+    const read2 = await get(`/api/knowledge/snapshots/${snapId}`);
+    assert.equal((read2.snapshot as { contentHash: string }).contentHash, ok.body.contentHash, "旧快照内容不变、仍可读");
+  } finally {
+    await close();
+  }
+});
+
+// ── E5 路由往返：导出（json/csv/zip）、token 引用、§7.5 先验许可 ────────────
+test("E5 路由：快照导出与 token 引用按 §7.5 先验许可", async () => {
+  const seed = seedKnowledgeState();
+  const store = new GatedStore();
+  await store.seed(seed.state);
+  const { post, get, raw, close } = await boot(store);
+  try {
+    const view = await get(`/api/knowledge/view?source=current&topicId=${seed.topicId}`);
+    const ok = await post("/api/knowledge/snapshots", { topicId: seed.topicId, viewId: view.viewId as string });
+    assert.equal(ok.status, 200, JSON.stringify(ok.body));
+    const snapId = ok.body.snapshotId as string;
+    const snapRead = await get(`/api/knowledge/snapshots/${snapId}`);
+    const content = (snapRead.snapshot as { content: { datasetRows: { datasetRef: { id: string; revision: number } }[]; referenceMap: Record<string, unknown> } }).content;
+    assert.equal(content.datasetRows.length, 1, "快照含数据集实际行列");
+    assert.equal(content.datasetRows[0].rows.length, 3, "3 行均在快照内");
+
+    const before = await raw(`/api/knowledge/snapshots/${snapId}/export?format=json`);
+    assert.equal(before.status, 403, "默认不允许导出（本机所有者模式 export 默认关闭）");
+    assert.equal(((await before.json()) as { code?: string }).code, "source_access_denied");
+
+    for (const r of (snapRead.snapshot as { sourceVersionRefs: { kind: string; id: string }[] }).sourceVersionRefs) {
+      const pol = await post("/api/knowledge/source-policies", { sourceKind: r.kind, sourceId: r.id, allowLocalRead: true, allowExport: true, allowAiSend: false, reason: "本次带出" });
+      assert.equal(pol.status, 200, JSON.stringify(pol.body));
+    }
+    const jsonRes = await raw(`/api/knowledge/snapshots/${snapId}/export?format=json`);
+    assert.equal(jsonRes.status, 200);
+    assert.ok((await jsonRes.text()).includes("contentHash"), "JSON 导出含快照事实");
+    const csvRes = await raw(`/api/knowledge/snapshots/${snapId}/export?format=csv&datasetId=${seed.datasetId}`);
+    assert.equal(csvRes.status, 200);
+    assert.ok((await csvRes.text()).startsWith("operand_type,"), "CSV 导出列固定");
+    const zipRes = await raw(`/api/knowledge/snapshots/${snapId}/export?format=zip`);
+    const zipBuf = Buffer.from(await zipRes.arrayBuffer());
+    assert.equal(zipRes.status, 200);
+    assert.equal(zipBuf.subarray(0, 2).toString("latin1"), "PK", "ZIP 导出为合法压缩包");
+    const csvBoth = await raw(`/api/knowledge/snapshots/${snapId}/export?format=csv`);
+    assert.equal(csvBoth.status, 422, "CSV 必须指定 datasetId 或 comparisonId");
+
+    const tok = Object.keys(content.referenceMap)[0];
+    const ref = await get(`/api/knowledge/references/${tok}?snapshotId=${snapId}`);
+    assert.ok(ref.ok, "token 可解析");
+    const noSnap = await get(`/api/knowledge/references/${tok}`);
+    assert.equal((noSnap as { code?: string }).code, "snapshot_required");
   } finally {
     await close();
   }

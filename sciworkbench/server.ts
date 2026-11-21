@@ -79,15 +79,18 @@ import {
   type BuiltBatch, type KnowledgeRunInput, type SearchSpace, type StructBatch,
 } from "./services/knowledge.ts";
 import { extractKnowledgeStructChunk, knowledgeStructInput } from "./services/ai.ts";
-import { ensureArchived } from "./services/knowledge-base.ts";
+import { ensureArchived, resolveSourceVersion } from "./services/knowledge-base.ts";
 import {
   createKnowledgeDataset, createKnowledgeComparison, createKnowledgeMapping, createKnowledgeStatement,
   createKnowledgeTheme, readDatasetRows, readKnowledge, readKnowledgeVersion, resolveKnowledgeEvidence,
   reviewKnowledgeContext, reviewKnowledgeDataset, reviewKnowledgeItem, reviewKnowledgeMapping,
   structureLegacyCard, updateKnowledgeContext, updateKnowledgeDataset, updateKnowledgeItem,
   updateKnowledgeMapping, updateKnowledgeTheme,
+  assertKnowledgeAccess, freezeKnowledge, knowledgeAccess, readSnapshotKnowledge, readSnapshotDatasetRows,
+  resolveSnapshotToken, upsertSourcePolicy,
 } from "./services/knowledge-base.ts";
-import type { ExtractionRunRecord, ExtractionRunStatus, SourceKind } from "./domain/knowledge.ts";
+import { exportKnowledge, buildKnowledgePackage } from "./services/knowledge-export.ts";
+import type { ExtractionRunRecord, ExtractionRunStatus, SourceKind, SourceRef } from "./domain/knowledge.ts";
 
 const HERE = fileURLToPath(new URL(".", import.meta.url));
 const PUBLIC_DIR = join(HERE, "public");
@@ -563,7 +566,16 @@ export async function createApp(store: Store, opts: { aiConfigPath?: string } = 
         const env = state.knowledge.items.find((x) => x.id === id);
         if (!env) { send(res, 404, { error: `知识项不存在：${id}` }); return; }
         if (url.searchParams.get("snapshotId")) {
-          send(res, 422, { error: "快照版本读取随 E5（快照与知识包）开放；当前只支持按 revision 读取最新库。", code: "snapshot_read_unavailable" });
+          const snapId = url.searchParams.get("snapshotId")!;
+          const snap = state.knowledge.snapshots.find((s) => s.snapshotId === snapId);
+          if (!snap) { send(res, 404, { error: `快照不存在：${snapId}`, code: "snapshot_missing" }); return; }
+          if (raw === null || raw === "") { send(res, 422, { error: "读取知识项必须指定 revision（版本）。", code: "revision_required" }); return; }
+          const revision = Number(raw);
+          if (!Number.isInteger(revision) || revision < 1) { send(res, 422, { error: `revision 不合法：${raw}`, code: "revision_required" }); return; }
+          const payload = readSnapshotKnowledge(snap, { kind: "item", id, revision });
+          if (payload === null) { send(res, 404, { error: `快照 ${snapId} 内没有 ${id} 第 ${revision} 版（不退回当前库）。`, code: "revision_unavailable" }); return; }
+          assertKnowledgeAccess(state, "localRead", (payload as { sourceRefs?: SourceRef[] }).sourceRefs ?? []);
+          send(res, 200, { ok: true, snapshotId: snapId, id, revision, payload });
           return;
         }
         if (raw === null || raw === "") { send(res, 422, { error: "读取知识项必须指定 revision（版本）。", code: "revision_required" }); return; }
@@ -598,6 +610,7 @@ export async function createApp(store: Store, opts: { aiConfigPath?: string } = 
           cursor: num("cursor"),
           pageSize: num("pageSize"),
         });
+        assertKnowledgeAccess(state, "localRead", view.items.flatMap((i) => (i.payload as { sourceRefs?: SourceRef[] }).sourceRefs ?? []));
         send(res, 200, { ok: true, ...view });
         return;
       }
@@ -608,6 +621,15 @@ export async function createApp(store: Store, opts: { aiConfigPath?: string } = 
         if (raw === null || raw === "") { send(res, 422, { error: "读取数据集行必须指定 revision（版本）。", code: "revision_required" }); return; }
         const revision = Number(raw);
         if (!Number.isInteger(revision) || revision < 1) { send(res, 422, { error: `revision 不合法：${raw}`, code: "revision_required" }); return; }
+        const snapId = url.searchParams.get("snapshotId");
+        if (snapId) {
+          const snap = state.knowledge.snapshots.find((s) => s.snapshotId === snapId);
+          if (!snap) { send(res, 404, { error: `快照不存在：${snapId}`, code: "snapshot_missing" }); return; }
+          const out = readSnapshotDatasetRows(snap, decodeURIComponent(kdsRows[1]), revision);
+          assertKnowledgeAccess(state, "localRead", [out.sourceRef]);
+          send(res, 200, { ok: true, snapshotId: snapId, ...out, hasMore: false, nextCursor: null, totalKnown: out.rows.length });
+          return;
+        }
         const parseIdx = (k: string): number[] | undefined => {
           const v = url.searchParams.get(k);
           return v === null || v === "" ? undefined : v.split(",").filter((s) => s.trim() !== "").map((s) => Number(s));
@@ -617,6 +639,54 @@ export async function createApp(store: Store, opts: { aiConfigPath?: string } = 
           cursor: Number(url.searchParams.get("cursor") ?? 0) || 0, pageSize: Number(url.searchParams.get("pageSize") ?? 0) || undefined,
         });
         send(res, 200, { ok: true, ...out });
+        return;
+      }
+      // §8.1 快照：GET 返回 manifest 与固定内容（不重新生成）；export 由同一快照导出并复检 §7.5。
+      const ksnapGet = path.match(/^\/api\/knowledge\/snapshots\/([^/]+)$/);
+      if (method === "GET" && ksnapGet) {
+        const snap = state.knowledge.snapshots.find((s) => s.snapshotId === decodeURIComponent(ksnapGet[1]));
+        if (!snap) { send(res, 404, { error: `快照不存在：${ksnapGet[1]}`, code: "snapshot_missing" }); return; }
+        assertKnowledgeAccess(state, "localRead", snap.sourceVersionRefs);
+        send(res, 200, { ok: true, snapshot: { snapshotId: snap.snapshotId, createdAt: snap.createdAt, schemaVersion: snap.schemaVersion, projectionVersion: snap.projectionVersion, mode: snap.mode, scope: snap.scope, contentHash: snap.contentHash, coverage: snap.coverage, excluded: snap.excluded, sourceVersionRefs: snap.sourceVersionRefs, mappingRefs: snap.mappingRefs, content: snap.content } });
+        return;
+      }
+      const ksnapExport = path.match(/^\/api\/knowledge\/snapshots\/([^/]+)\/export$/);
+      if (method === "GET" && ksnapExport) {
+        const snap = state.knowledge.snapshots.find((s) => s.snapshotId === decodeURIComponent(ksnapExport[1]));
+        if (!snap) { send(res, 404, { error: `快照不存在：${ksnapExport[1]}`, code: "snapshot_missing" }); return; }
+        assertKnowledgeAccess(state, "export", snap.sourceVersionRefs);
+        const format = (url.searchParams.get("format") ?? "zip") as "zip" | "json" | "wiki" | "csv";
+        if (!["zip", "json", "wiki", "csv"].includes(format)) { send(res, 422, { error: `不支持的导出格式：${format}`, code: "format_invalid" }); return; }
+        const datasetId = url.searchParams.get("datasetId") ?? undefined;
+        const comparisonId = url.searchParams.get("comparisonId") ?? undefined;
+        if (format === "csv" && (!!datasetId === !!comparisonId)) { send(res, 422, { error: "CSV 导出须在 datasetId 与 comparisonId 中二选一。", code: "csv_target_required" }); return; }
+        const variant = url.searchParams.get("variant") === "sheet-safe" ? "sheet-safe" : "machine";
+        const out = exportKnowledge(snap, { format, datasetId, comparisonId, variant });
+        const buf = Buffer.isBuffer(out.data) ? out.data : Buffer.from(out.data, "utf8");
+        sendBinary(res, 200, buf, out.filename, out.contentType);
+        return;
+      }
+      const kRefToken = path.match(/^\/api\/knowledge\/references\/([^/]+)$/);
+      if (method === "GET" && kRefToken) {
+        const snapId = url.searchParams.get("snapshotId");
+        if (!snapId) { send(res, 422, { error: "读取快照引用必须指定 snapshotId。", code: "snapshot_required" }); return; }
+        const snap = state.knowledge.snapshots.find((s) => s.snapshotId === snapId);
+        if (!snap) { send(res, 404, { error: `快照不存在：${snapId}`, code: "snapshot_missing" }); return; }
+        const hit = resolveSnapshotToken(snap, decodeURIComponent(kRefToken[1]));
+        if (!hit) { send(res, 404, { error: `快照内没有该 token：${kRefToken[1]}`, code: "token_missing" }); return; }
+        if (hit.kind === "source") {
+          const ref = hit.ref as SourceRef;
+          assertKnowledgeAccess(state, "localRead", [ref]);
+          const resv = resolveSourceVersion(state, state.knowledge, ref);
+          if (resv.status !== "ok") { send(res, 410, { error: `该来源版本不可用：${resv.status}`, code: resv.status, token: kRefToken[1], ref }); return; }
+          send(res, 200, { ok: true, snapshotId: snapId, token: kRefToken[1], kind: hit.kind, ref, label: hit.label, payload: resv.payload });
+          return;
+        }
+        const ref = hit.ref as import("./domain/knowledge.ts").KnowledgeRef;
+        const payload = readSnapshotKnowledge(snap, ref);
+        assertKnowledgeAccess(state, "localRead", payload ? ((payload as { sourceRefs?: SourceRef[] }).sourceRefs ?? []) : []);
+        if (payload === null) { send(res, 410, { error: "该 token 指向的快照对象不可读。", code: "history_unavailable", token: kRefToken[1], ref }); return; }
+        send(res, 200, { ok: true, snapshotId: snapId, token: kRefToken[1], kind: hit.kind, ref, label: hit.label, payload });
         return;
       }
       if (method === "DELETE" && path === "/api/ai/config") {
@@ -891,6 +961,18 @@ export async function createApp(store: Store, opts: { aiConfigPath?: string } = 
             decision: r.decision, reasonCodes: r.reasonCodes,
             computedValue: r.comparison.payload.computedValue, formatting: r.comparison.payload.formatting,
           });
+          return;
+        }
+        if (path === "/api/knowledge/snapshots") {
+          const r = freezeKnowledge(state, body);
+          await store.save(r.state); state = r.state;
+          send(res, 200, { ok: true, snapshotId: r.snapshot.snapshotId, contentHash: r.snapshot.contentHash, mode: r.snapshot.mode, coverage: r.snapshot.coverage, excluded: r.snapshot.excluded.length, dataReady: true });
+          return;
+        }
+        if (path === "/api/knowledge/source-policies") {
+          const r = upsertSourcePolicy(state, body);
+          await store.save(r.state); state = r.state;
+          send(res, 200, { ok: true, policyId: r.policy.id, revision: r.policy.revision, allowLocalRead: r.policy.allowLocalRead, allowExport: r.policy.allowExport, allowAiSend: r.policy.allowAiSend });
           return;
         }
         if (path === "/api/knowledge/themes") {
