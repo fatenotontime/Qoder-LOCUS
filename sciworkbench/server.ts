@@ -81,9 +81,11 @@ import {
 import { extractKnowledgeStructChunk, knowledgeStructInput } from "./services/ai.ts";
 import { ensureArchived } from "./services/knowledge-base.ts";
 import {
-  createKnowledgeStatement, createKnowledgeTheme, readKnowledgeVersion, resolveKnowledgeEvidence,
-  reviewKnowledgeContext, reviewKnowledgeItem, structureLegacyCard, updateKnowledgeContext,
-  updateKnowledgeItem, updateKnowledgeTheme,
+  createKnowledgeDataset, createKnowledgeComparison, createKnowledgeMapping, createKnowledgeStatement,
+  createKnowledgeTheme, readDatasetRows, readKnowledge, readKnowledgeVersion, resolveKnowledgeEvidence,
+  reviewKnowledgeContext, reviewKnowledgeDataset, reviewKnowledgeItem, reviewKnowledgeMapping,
+  structureLegacyCard, updateKnowledgeContext, updateKnowledgeDataset, updateKnowledgeItem,
+  updateKnowledgeMapping, updateKnowledgeTheme,
 } from "./services/knowledge-base.ts";
 import type { ExtractionRunRecord, ExtractionRunStatus, SourceKind } from "./domain/knowledge.ts";
 
@@ -575,13 +577,54 @@ export async function createApp(store: Store, opts: { aiConfigPath?: string } = 
         send(res, 200, { ok: true, id, revision, payload, availableRevisions: [env.revision, ...env.history.map((h) => h.revision)].sort((a, b) => a - b) });
         return;
       }
+      // §8.1 统一读取（§7.1）：current 必须 topicId；不写 state；viewId = 内容 hash；筛选/分页。
+      if (method === "GET" && path === "/api/knowledge/view") {
+        const source = url.searchParams.get("source") === "snapshot" ? "snapshot" : "current";
+        const num = (k: string) => { const v = url.searchParams.get(k); return v === null || v === "" ? undefined : Number(v); };
+        const view = readKnowledge(state, {
+          source,
+          topicId: url.searchParams.get("topicId") ?? undefined,
+          snapshotId: url.searchParams.get("snapshotId") ?? undefined,
+          themeId: url.searchParams.get("themeId") ?? undefined,
+          subquestionId: url.searchParams.get("subquestionId") ?? undefined,
+          text: url.searchParams.get("text") ?? undefined,
+          contentType: url.searchParams.get("contentType") ?? undefined,
+          nature: url.searchParams.get("nature") ?? undefined,
+          sourceClass: url.searchParams.get("sourceClass") ?? undefined,
+          metricId: url.searchParams.get("metricId") ?? undefined,
+          condition: url.searchParams.get("condition") ?? undefined,
+          status: url.searchParams.get("status") ?? undefined,
+          mode: url.searchParams.get("mode") === "explore" ? "explore" : "formal",
+          cursor: num("cursor"),
+          pageSize: num("pageSize"),
+        });
+        send(res, 200, { ok: true, ...view });
+        return;
+      }
+      // §8.1 数据集行读取：按固定表版本返回选定行列 + typed metadata；范围越界即拒（不用前 30 行摘要代替）。
+      const kdsRows = path.match(/^\/api\/knowledge\/datasets\/([^/]+)\/rows$/);
+      if (method === "GET" && kdsRows) {
+        const raw = url.searchParams.get("revision");
+        if (raw === null || raw === "") { send(res, 422, { error: "读取数据集行必须指定 revision（版本）。", code: "revision_required" }); return; }
+        const revision = Number(raw);
+        if (!Number.isInteger(revision) || revision < 1) { send(res, 422, { error: `revision 不合法：${raw}`, code: "revision_required" }); return; }
+        const parseIdx = (k: string): number[] | undefined => {
+          const v = url.searchParams.get(k);
+          return v === null || v === "" ? undefined : v.split(",").filter((s) => s.trim() !== "").map((s) => Number(s));
+        };
+        const out = readDatasetRows(state, decodeURIComponent(kdsRows[1]), {
+          revision, rowIndices: parseIdx("rowIndices"), columnIndices: parseIdx("columnIndices"),
+          cursor: Number(url.searchParams.get("cursor") ?? 0) || 0, pageSize: Number(url.searchParams.get("pageSize") ?? 0) || undefined,
+        });
+        send(res, 200, { ok: true, ...out });
+        return;
+      }
       if (method === "DELETE" && path === "/api/ai/config") {
         clearAiConfig();
         if (aiConfigPath) removeAiConfigFile(aiConfigPath);
         send(res, 200, describeConfig(getAiConfig()));
         return;
-      }
-      if (method === "GET" && path.startsWith("/api/source/")) {
+      }      if (method === "GET" && path.startsWith("/api/source/")) {
         send(res, 200, sourceView(state, decodeURIComponent(path.slice("/api/source/".length))));
         return;
       }
@@ -797,6 +840,57 @@ export async function createApp(store: Store, opts: { aiConfigPath?: string } = 
           const r = structureLegacyCard(state, decodeURIComponent(kStructure[1]), body);
           await store.save(r.state); state = r.state;
           send(res, 200, { ok: true, cardId: r.card.id, cardRevision: r.card.revision, audit: r.card.audit, itemIds: r.itemIds, contextIds: r.contextIds, evidenceIds: r.evidenceIds });
+          return;
+        }
+        // ── E4 数据集／映射／比较（§8.1）：只编辑含义与绑定，不改原表数值；固定版本引用 ──
+        if (path === "/api/knowledge/datasets") {
+          const r = createKnowledgeDataset(state, body);
+          await store.save(r.state); state = r.state;
+          send(res, 200, { ok: true, datasetId: r.dataset.id, revision: r.dataset.revision });
+          return;
+        }
+        const kdsUpdate = path.match(/^\/api\/knowledge\/datasets\/([^/]+)\/update$/);
+        if (kdsUpdate) {
+          const r = updateKnowledgeDataset(state, decodeURIComponent(kdsUpdate[1]), body);
+          await store.save(r.state); state = r.state;
+          send(res, 200, { ok: true, datasetId: r.dataset.id, revision: r.dataset.revision });
+          return;
+        }
+        const kdsReview = path.match(/^\/api\/knowledge\/datasets\/([^/]+)\/review$/);
+        if (kdsReview) {
+          const r = reviewKnowledgeDataset(state, decodeURIComponent(kdsReview[1]), body);
+          await store.save(r.state); state = r.state;
+          send(res, 200, { ok: true, datasetId: r.dataset.id, revision: r.dataset.revision, review: r.dataset.payload.review.status });
+          return;
+        }
+        if (path === "/api/knowledge/mappings") {
+          const r = createKnowledgeMapping(state, body);
+          await store.save(r.state); state = r.state;
+          send(res, 200, { ok: true, mappingId: r.mapping.id, revision: r.mapping.revision, review: r.mapping.payload.review.status });
+          return;
+        }
+        const kmUpdate = path.match(/^\/api\/knowledge\/mappings\/([^/]+)\/update$/);
+        if (kmUpdate) {
+          const r = updateKnowledgeMapping(state, decodeURIComponent(kmUpdate[1]), body);
+          await store.save(r.state); state = r.state;
+          send(res, 200, { ok: true, mappingId: r.mapping.id, revision: r.mapping.revision, review: r.mapping.payload.review.status });
+          return;
+        }
+        const kmReview = path.match(/^\/api\/knowledge\/mappings\/([^/]+)\/review$/);
+        if (kmReview) {
+          const r = reviewKnowledgeMapping(state, decodeURIComponent(kmReview[1]), body);
+          await store.save(r.state); state = r.state;
+          send(res, 200, { ok: true, mappingId: r.mapping.id, revision: r.mapping.revision, review: r.mapping.payload.review.status });
+          return;
+        }
+        if (path === "/api/knowledge/comparisons") {
+          const r = createKnowledgeComparison(state, body);
+          await store.save(r.state); state = r.state;
+          send(res, 200, {
+            ok: true, comparisonId: r.comparison.id, revision: r.comparison.revision,
+            decision: r.decision, reasonCodes: r.reasonCodes,
+            computedValue: r.comparison.payload.computedValue, formatting: r.comparison.payload.formatting,
+          });
           return;
         }
         if (path === "/api/knowledge/themes") {

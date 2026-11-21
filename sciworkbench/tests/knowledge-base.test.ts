@@ -12,7 +12,7 @@ import {
   emptyKnowledge, KNOWLEDGE_SCHEMA_VERSION, canonicalHash, refKey, sameRef,
   sourceRef as makeSourceRef, knowledgeRef as makeKnowledgeRef, assertKnowledgeShape,
 } from "../domain/knowledge.ts";
-import { importMeasurements, reviewTable, createTopic, makeAsset, addManualCard, reviewCard, AppError } from "../services/app.ts";
+import { importMeasurements, reviewTable, createTopic, makeAsset, addManualCard, reviewCard, createComparison, AppError } from "../services/app.ts";
 import { chatScopeSnapshot, createAnalysisTask, createChat, resolveFragment } from "../services/analysis.ts";
 import { buildWholeLibraryPackage, inspectLibraryJson, sha256 } from "../services/export.ts";
 import {
@@ -20,6 +20,9 @@ import {
   createKnowledgeStatement, createKnowledgeTheme, describeValue, readKnowledgeVersion,
   resolveKnowledgeEvidence, reviewKnowledgeContext, reviewKnowledgeItem, structureLegacyCard,
   syncShellAudit, updateKnowledgeContext, updateKnowledgeItem, updateKnowledgeTheme,
+  readKnowledge, currentViewId, createKnowledgeDataset, reviewKnowledgeDataset, readDatasetRows,
+  createKnowledgeMapping, updateKnowledgeMapping, reviewKnowledgeMapping, createKnowledgeComparison, legacyComparisonViews,
+  effectiveCurrentJudgments,
 } from "../services/knowledge-base.ts";
 import type { LocationStatus } from "../domain/knowledge.ts";
 import type { LocusState } from "../store.ts";
@@ -625,4 +628,279 @@ test("E3 主题成员/当前认识：未确认不能当当前认识，跨课题�
   assert.equal(code(cross), "cross_topic_confirmation_required");
   const allowed = createKnowledgeTheme(other.state, { topicId: other.topic.id, name: "对照", members: [{ kind: "item", id: b.itemIds[0], revision: 2 }], allowCrossTopic: true });
   assert.equal(allowed.theme.payload.members.length, 1);
+});
+
+// ══ E4 数据集／查询／比较（合同 §7.1/§7.2；判据 T17–T19、T26–T28）═════════
+
+const itemOp = (id: string, revision = 1) => ({ type: "item" as const, ref: { kind: "item" as const, id, revision } });
+const cellOp = (datasetId: string, rowIndex: number, columnIndex = 0, revision = 1) => ({ type: "cell" as const, datasetRef: { kind: "dataset" as const, id: datasetId, revision }, rowIndex, columnIndex });
+const scalarOf = (raw: string, value: string, unit: string | null) => ({ kind: "scalar" as const, raw, value, unit });
+const viewIdOf = (s: LocusState, topicId: string) => currentViewId(s, topicId);
+
+/** E4 夹具（§11.1 合成 oracle）：培养时间 1 d/24 h/48 h、>90 下界、定性「立即下沉」、汇总值、同名另义、单位未知。 */
+function seedE4() {
+  const t = createTopic(emptyState(), { name: "合成课题甲", researchQuestion: "培养时间与萌发" });
+  const topicId = t.topic.id;
+  const asset = makeAsset("literature", "exp.md", "合成对象A在 1 d 与 24 h 下培养；>90 d 视为上限；立即下沉为定性描述。", topicId);
+  let s: LocusState = { ...t.state, assets: [...t.state.assets, asset] };
+  const srcRef = currentSourceRef(s, "asset", asset.id)!;
+  s = { ...s, knowledge: archiveSourceVersion(s.knowledge, srcRef, sourcePayload(s, "asset", asset.id)) };
+  s = importMeasurements(s, { name: "t.csv", csv: "时间,批注\n24,第一轮\n24,重复\n48,延长\n", topicId }).state;
+  const tableId = s.tables[0].id;
+  const tableRef = currentSourceRef(s, "table", tableId)!;
+  s = { ...s, knowledge: archiveSourceVersion(s.knowledge, tableRef, sourcePayload(s, "table", tableId)) };
+
+  const mkItem = (id: string, text: string, value: unknown, metricId: string, extra: Record<string, unknown> = {}) => envOf(id, {
+    contentType: "observation", nature: "observation", text,
+    subject: { raw: "合成对象A" }, predicate: { raw: "培养时间", metricId }, value,
+    contextRefs: [], evidenceRefs: [], sourceRefs: [srcRef],
+    origin: { sourceClass: "literature_report", createdBy: "model", secondaryCitation: false },
+    scopeText: "", unknowns: [], topicIds: [topicId], subquestionIds: [], review: { status: "confirmed" }, ...extra,
+  });
+  const mkCtx = (id: string, tempRaw: string | null, tempValue: string | null) => envOf(id, {
+    researchUnitId: id, subject: "合成对象A", groupLabel: "G1", stage: "培养", methodRefs: [],
+    conditions: tempRaw === null ? [] : [{ id: `${id}_c1`, field: { raw: "温度" }, value: scalarOf(tempRaw, tempValue!, "°C"), appliesTo: { subject: "合成对象A", stage: "培养" }, evidenceRefs: [], obtainedBy: "human_record", review: { status: "confirmed" } }],
+    unknowns: [], topicIds: [topicId], subquestionIds: [], review: { status: "confirmed" },
+  });
+
+  let k = s.knowledge;
+  k = {
+    ...k, items: [...k.items,
+      mkItem("ki_A", "培养 1 d", scalarOf("1 d", "1", "d"), "time_germ"),
+      mkItem("ki_B", "培养 24 h", scalarOf("24 h", "24", "h"), "time_germ"),
+      mkItem("ki_C", "培养 48 h", scalarOf("48 h", "48", "h"), "time_germ"),
+      mkItem("ki_bound", "培养上限 >90 d", { kind: "bound", raw: ">90 d", operator: "gt", value: "90", unit: "d" }, "time_germ"),
+      mkItem("ki_cat", "立即下沉", { kind: "category", raw: "立即下沉", label: "立即下沉" }, "time_germ"),
+      mkItem("ki_sum", "培养 24 h（均值）", { kind: "summary", raw: "24±2 h", statistic: "均值", value: "24", unit: "h" }, "time_germ"),
+      mkItem("ki_alt", "培养 24 h（另一定义）", scalarOf("24 h", "24", "h"), "time_germ_alt"),
+      mkItem("ki_nounit", "培养 24（单位未知）", scalarOf("24", "24", null), "time_germ"),
+      mkItem("ki_T25", "25 °C 培养 24 h", scalarOf("24 h", "24", "h"), "time_germ", { contextRefs: [{ kind: "context", id: "kctx_25", revision: 1 }] }),
+      mkItem("ki_T60", "60 °C 培养 24 h", scalarOf("24 h", "24", "h"), "time_germ", { contextRefs: [{ kind: "context", id: "kctx_60", revision: 1 }] }),
+      mkItem("ki_noctx", "培养 24 h（未记温度）", scalarOf("24 h", "24", "h"), "time_germ"),
+    ],
+    contexts: [...k.contexts, mkCtx("kctx_25", "25 °C", "25"), mkCtx("kctx_60", "60 °C", "60")],
+  };
+  let state: LocusState = { ...s, knowledge: k };
+
+  const ds = createKnowledgeDataset(state, {
+    topicId, sourceRef: tableRef, selection: { rowIndices: [0, 1, 2], columnIndices: [0] },
+    columns: [{ index: 0, originalName: "时间", standardId: "time_germ", type: "scalar", unit: "h" }],
+    rowBindings: [{ rowIndex: 0 }, { rowIndex: 1 }, { rowIndex: 2 }],
+  });
+  state = reviewKnowledgeDataset(ds.state, ds.dataset.id, { baseRevision: 1, columnIndices: [0], decision: "confirmed", basis: "合成数据列核对" }).state;
+
+  const mp = createKnowledgeMapping(state, { topicId, metricId: "time_germ", definition: "培养到萌发所需时间", aliases: ["培养时间"], valueKind: "scalar", targetUnit: "h", conversion: { kind: "scaleOffset", factor: "24", offset: "0", fromUnit: "d", toUnit: "h" }, basis: "1 d = 24 h" });
+  state = reviewKnowledgeMapping(mp.state, mp.mapping.id, { baseRevision: 1, decision: "confirmed", basis: "换算依据核对" }).state;
+
+  return { state, topicId, srcRef, tableRef, datasetId: ds.dataset.id, datasetRevision: (state.knowledge.datasets.find((d) => d.id === ds.dataset.id)!.revision), mappingId: mp.mapping.id, itemsBefore: state.knowledge.items.length };
+}
+
+// ── T17：1 d vs 24 h / 48 h，规范到 h；item 与 dataset 单元格两路 ──────────
+test("T17 培养时间规范到 h：item 与同 dataset 两行单元格，差 0/24、比 1/2（独立 oracle）", () => {
+  const f = seedE4();
+  let s = f.state;
+
+  const a = createKnowledgeComparison(s, { topicId: f.topicId, viewId: viewIdOf(s, f.topicId), question: "1 d 与 24 h 之差", metricId: "time_germ", inputRefs: [itemOp("ki_A"), itemOp("ki_B")], varyingFields: [], requiredEqualFields: [], operation: "difference", baselineRef: itemOp("ki_A") });
+  assert.equal(a.decision, "computable");
+  assert.equal(a.comparison.payload.computedValue?.value, "0", "规范值 24/24 → 差 0");
+  const na = a.comparison.payload.normalizedInputs;
+  assert.equal((na[0].rawValue as { raw: string }).raw, "1 d", "原值可回查");
+  assert.equal((na[0].normalizedValue as { value: string }).value, "24", "1 d 规范为 24 h");
+  assert.equal((na[0].normalizedValue as { unit: string }).unit, "h");
+  assert.ok(na[0].mappingRefs.length === 1 && readKnowledgeVersion(a.state.knowledge, na[0].mappingRefs[0]) !== null, "所用映射规则可回查");
+  assert.ok(a.comparison.payload.formatting.includes("12 位有效数字"));
+  s = a.state;
+
+  const b = createKnowledgeComparison(s, { topicId: f.topicId, viewId: viewIdOf(s, f.topicId), question: "1 d 与 24 h 之比", metricId: "time_germ", inputRefs: [itemOp("ki_A"), itemOp("ki_B")], varyingFields: [], requiredEqualFields: [], operation: "ratio", baselineRef: itemOp("ki_A") });
+  assert.equal(b.decision, "computable");
+  assert.equal(b.comparison.payload.computedValue?.value, "1");
+  s = b.state;
+
+  const c = createKnowledgeComparison(s, { topicId: f.topicId, viewId: viewIdOf(s, f.topicId), question: "1 d 与 48 h 之差", metricId: "time_germ", inputRefs: [itemOp("ki_A"), itemOp("ki_C")], varyingFields: [], requiredEqualFields: [], operation: "difference", baselineRef: itemOp("ki_A") });
+  assert.equal(c.decision, "computable");
+  assert.equal(c.comparison.payload.computedValue?.value, "24", "48−24=24 h");
+  s = c.state;
+  const d = createKnowledgeComparison(s, { topicId: f.topicId, viewId: viewIdOf(s, f.topicId), question: "1 d 与 48 h 之比", metricId: "time_germ", inputRefs: [itemOp("ki_A"), itemOp("ki_C")], varyingFields: [], requiredEqualFields: [], operation: "ratio", baselineRef: itemOp("ki_A") });
+  assert.equal(d.comparison.payload.computedValue?.value, "2");
+  s = d.state;
+
+  const e1 = createKnowledgeComparison(s, { topicId: f.topicId, viewId: viewIdOf(s, f.topicId), question: "表内 24 与 24", metricId: "time_germ", inputRefs: [cellOp(f.datasetId, 0, 0, f.datasetRevision), cellOp(f.datasetId, 1, 0, f.datasetRevision)], varyingFields: [], requiredEqualFields: [], operation: "difference", baselineRef: cellOp(f.datasetId, 0, 0, f.datasetRevision) });
+  assert.equal(e1.decision, "computable");
+  assert.equal(e1.comparison.payload.computedValue?.value, "0");
+  s = e1.state;
+  const e2 = createKnowledgeComparison(s, { topicId: f.topicId, viewId: viewIdOf(s, f.topicId), question: "表内 24 与 48", metricId: "time_germ", inputRefs: [cellOp(f.datasetId, 0, 0, f.datasetRevision), cellOp(f.datasetId, 2, 0, f.datasetRevision)], varyingFields: [], requiredEqualFields: [], operation: "ratio", baselineRef: cellOp(f.datasetId, 0, 0, f.datasetRevision) });
+  assert.equal(e2.decision, "computable");
+  assert.equal(e2.comparison.payload.computedValue?.value, "2");
+  s = e2.state;
+
+  const rowsUsed = e2.comparison.payload.inputRefs.map((o) => (o as { rowIndex: number }).rowIndex);
+  assert.equal(new Set(rowsUsed).size, 2, "两操作数取自不同行");
+  const outOfRange = expectErr(() => createKnowledgeComparison(s, { topicId: f.topicId, viewId: viewIdOf(s, f.topicId), question: "越界", inputRefs: [cellOp(f.datasetId, 0, 0, f.datasetRevision), cellOp(f.datasetId, 9, 0, f.datasetRevision)], varyingFields: [], requiredEqualFields: [], operation: "difference", baselineRef: cellOp(f.datasetId, 0, 0, f.datasetRevision) }));
+  assert.equal(outOfRange.status, 422);
+  assert.equal(code(outOfRange), "row_out_of_selection");
+  const baselineNotIn = expectErr(() => createKnowledgeComparison(s, { topicId: f.topicId, viewId: viewIdOf(s, f.topicId), question: "基线不在输入", inputRefs: [itemOp("ki_A"), itemOp("ki_B")], varyingFields: [], requiredEqualFields: [], operation: "difference", baselineRef: itemOp("ki_C") }));
+  assert.equal(code(baselineNotIn), "baseline_not_in_inputs");
+  assert.equal(s.knowledge.items.length, f.itemsBefore, "比较不为单元格生成虚构知识项");
+
+  const rows = readDatasetRows(s, f.datasetId, { revision: 1 });
+  assert.deepEqual(rows.rows.map((r) => r.cells[0].raw), ["24", "24", "48"]);
+  assert.equal(rows.columns[0].unit, "h");
+});
+
+// ── T18：同名不同定义 / 单位未知 / summary 混用 → 不进差比，理由明确 ──────
+test("T18 同名不同定义、单位未知、summary 与 scalar 混用不进入差/比，给明确理由", () => {
+  const f = seedE4();
+  const s = f.state;
+  const run = (inputRefs: unknown[], op: "difference" | "ratio" | "display", baseline: unknown) =>
+    createKnowledgeComparison(s, { topicId: f.topicId, viewId: viewIdOf(s, f.topicId), question: "q", metricId: "time_germ", inputRefs, varyingFields: [], requiredEqualFields: [], operation: op, baselineRef: baseline });
+
+  const mismatch = run([itemOp("ki_A"), itemOp("ki_alt")], "difference", itemOp("ki_A"));
+  assert.equal(mismatch.decision, "blocked");
+  assert.ok(mismatch.reasonCodes.includes("metric_definition_mismatch"), "同名不同定义不取第一项");
+
+  const nounit = run([itemOp("ki_B"), itemOp("ki_nounit")], "difference", itemOp("ki_B"));
+  assert.equal(nounit.decision, "blocked");
+  assert.ok(nounit.reasonCodes.includes("unit_unknown"));
+
+  const mixed = run([itemOp("ki_B"), itemOp("ki_sum")], "difference", itemOp("ki_B"));
+  assert.equal(mixed.decision, "blocked");
+  assert.ok(mixed.reasonCodes.includes("value_kind_unsupported"), "summary 不参与 diff/ratio");
+
+  const display = run([itemOp("ki_B"), itemOp("ki_sum")], "display", null);
+  assert.equal(display.decision, "display_only");
+  assert.ok(display.reasonCodes.includes("operation_display"));
+  assert.equal(display.comparison.payload.computedValue, null, "display 不产生统计结论");
+});
+
+// ── T19：ratio 基线 0 阻断；bound/定性不参与差比 ──────────────────────────
+test("T19 ratio 基线为 0 阻断；界限与定性不变 scalar 参与运算", () => {
+  const f = seedE4();
+  let s: LocusState = { ...f.state, knowledge: { ...f.state.knowledge, items: [...f.state.knowledge.items, envOf("ki_zero", {
+    contentType: "observation", nature: "observation", text: "基线 0 h", subject: { raw: "合成对象A" }, predicate: { raw: "培养时间", metricId: "time_germ" },
+    value: scalarOf("0 h", "0", "h"), contextRefs: [], evidenceRefs: [], sourceRefs: [f.srcRef],
+    origin: { sourceClass: "literature_report", createdBy: "model", secondaryCitation: false },
+    scopeText: "", unknowns: [], topicIds: [f.topicId], subquestionIds: [], review: { status: "confirmed" },
+  })] } };
+  const run = (inputRefs: unknown[], op: "difference" | "ratio", baseline: unknown) =>
+    createKnowledgeComparison(s, { topicId: f.topicId, viewId: viewIdOf(s, f.topicId), question: "q", metricId: "time_germ", inputRefs, varyingFields: [], requiredEqualFields: [], operation: op, baselineRef: baseline });
+
+  const ratio0 = run([itemOp("ki_zero"), itemOp("ki_B")], "ratio", itemOp("ki_zero"));
+  assert.equal(ratio0.decision, "blocked");
+  assert.ok(ratio0.reasonCodes.includes("baseline_zero"), "分母 0 阻断比值");
+
+  const bound = run([itemOp("ki_bound"), itemOp("ki_B")], "difference", itemOp("ki_bound"));
+  assert.equal(bound.decision, "blocked");
+  assert.ok(bound.reasonCodes.includes("value_kind_unsupported"));
+  assert.equal((s.knowledge.items.find((i) => i.id === "ki_bound")!.payload as { value: { kind: string } }).value.kind, "bound", "界限原值不变");
+
+  const cat = run([itemOp("ki_cat"), itemOp("ki_B")], "difference", itemOp("ki_cat"));
+  assert.equal(cat.decision, "blocked");
+  assert.ok(cat.reasonCodes.includes("value_kind_unsupported"), "定性不参与差比");
+});
+
+// ── T26：两课题共享来源不外溢 ───────────────────────────────────────────
+test("T26 两课题共享同来源：当前课题读取与比较不越界、不沿来源扩散私人判断", () => {
+  const f = seedE4();
+  const other = createTopic(f.state, { name: "合成课题乙", researchQuestion: "Q乙" });
+  const topicB = other.topic.id;
+  let s = other.state;
+  const mkB = (id: string, text: string) => envOf(id, {
+    contentType: "observation", nature: "human_judgment", text, subject: { raw: "合成对象A" }, predicate: { raw: "私有判断" },
+    value: null, contextRefs: [{ kind: "context", id: "kctx_B", revision: 1 }], evidenceRefs: [], sourceRefs: [f.srcRef],
+    origin: { sourceClass: "human_statement", createdBy: "human", secondaryCitation: false },
+    scopeText: "", unknowns: [], topicIds: [topicB], subquestionIds: [], review: { status: "confirmed" },
+  });
+  s = {
+    ...s, knowledge: {
+      ...s.knowledge,
+      items: [...s.knowledge.items, mkB("ki_B1", "乙的私有判断"), mkB("ki_B2", "乙的第二条判断")],
+      contexts: [...s.knowledge.contexts, envOf("kctx_B", { researchUnitId: "uB", subject: "合成对象A", groupLabel: "GB", stage: "培养", methodRefs: [], conditions: [], unknowns: [], topicIds: [topicB], subquestionIds: [], review: { status: "confirmed" } })],
+      relations: [...s.knowledge.relations, envOf("krel_B", { from: { kind: "item", id: "ki_B1", revision: 1 }, to: { kind: "item", id: "ki_B2", revision: 1 }, relationType: "supports", basis: "乙内部", evidenceRefs: [], establishedBy: "human", review: { status: "pending" } })],
+    },
+  };
+  const dsB = createKnowledgeDataset(s, { topicId: topicB, sourceRef: f.tableRef, selection: { rowIndices: [0, 2], columnIndices: [0] }, columns: [{ index: 0, originalName: "时间", standardId: "time_germ", type: "scalar", unit: "h" }], rowBindings: [{ rowIndex: 0 }, { rowIndex: 2 }] });
+  s = dsB.state;
+
+  const viewA = readKnowledge(s, { source: "current", topicId: f.topicId });
+  const idsA = viewA.items.map((i) => i.id);
+  assert.ok(!idsA.includes("ki_B1") && !idsA.includes("ki_B2"), "甲读取不含乙的私人判断（共享来源不扩散）");
+  assert.ok(!viewA.contexts.some((c) => c.id === "kctx_B"), "甲不包含乙的条件上下文");
+  assert.ok(!viewA.relations.some((r) => r.id === "krel_B"), "甲不沿共享来源带回乙的关系");
+  assert.ok(idsA.includes("ki_A"));
+
+  const viewB = readKnowledge(s, { source: "current", topicId: topicB });
+  assert.ok(viewB.items.map((i) => i.id).includes("ki_B1"));
+  assert.ok(!viewB.items.map((i) => i.id).includes("ki_A"), "乙读取不含甲的对象");
+
+  const cross = expectErr(() => createKnowledgeComparison(s, { topicId: f.topicId, viewId: viewIdOf(s, f.topicId), question: "跨课题取乙的单元格", inputRefs: [itemOp("ki_A"), cellOp(dsB.dataset.id, 0)], varyingFields: [], requiredEqualFields: [], operation: "difference", baselineRef: itemOp("ki_A") }));
+  assert.equal(cross.status, 422);
+  assert.equal(code(cross), "cross_topic_scope", "比较不取其他课题的数据集");
+});
+
+// ── T27：温度 varying 可比；requiredEqual 缺/冲突阻断 ─────────────────────
+test("T27 温度作 varying 可按契约比较；作 requiredEqual 缺或冲突时阻断计算", () => {
+  const f = seedE4();
+  const s = f.state;
+  const run = (inputRefs: unknown[], varyingFields: string[], requiredEqualFields: string[]) =>
+    createKnowledgeComparison(s, { topicId: f.topicId, viewId: viewIdOf(s, f.topicId), question: "温度影响", metricId: "time_germ", inputRefs, varyingFields, requiredEqualFields, operation: "difference", baselineRef: itemOp("ki_T25") });
+
+  const varying = run([itemOp("ki_T25"), itemOp("ki_T60")], ["温度"], []);
+  assert.equal(varying.decision, "computable", "明确按 varying 契约可比");
+  assert.ok(varying.comparison.payload.warnings.some((w) => w.includes("温度")));
+
+  const conflict = run([itemOp("ki_T25"), itemOp("ki_T60")], [], ["温度"]);
+  assert.equal(conflict.decision, "blocked");
+  assert.ok(conflict.reasonCodes.includes("requirement_conflict"));
+
+  const missing = run([itemOp("ki_T25"), itemOp("ki_noctx")], [], ["温度"]);
+  assert.equal(missing.decision, "blocked");
+  assert.ok(missing.reasonCodes.includes("requirement_missing"));
+
+  const overlap = expectErr(() => createKnowledgeComparison(s, { topicId: f.topicId, viewId: viewIdOf(s, f.topicId), question: "重叠", inputRefs: [itemOp("ki_T25"), itemOp("ki_T60")], varyingFields: ["温度"], requiredEqualFields: ["温度"], operation: "difference", baselineRef: itemOp("ki_T25") }));
+  assert.equal(code(overlap), "field_sets_overlap");
+});
+
+// ── T28：多映射命中取冲突；旧比较保留旧规则 ──────────────────────────────
+test("T28 两条映射都命中不取第一条；旧比较记录与快照保留旧规则", () => {
+  const f = seedE4();
+  let s = f.state;
+  const mp2 = createKnowledgeMapping(s, { topicId: f.topicId, metricId: "time_germ", definition: "另一口径的培养时间", valueKind: "scalar", targetUnit: "h", conversion: { kind: "scaleOffset", factor: "24", offset: "0", fromUnit: "d", toUnit: "h" }, basis: "合成第二规则" });
+  s = reviewKnowledgeMapping(mp2.state, mp2.mapping.id, { baseRevision: 1, decision: "confirmed", basis: "核对" }).state;
+  const conflicted = createKnowledgeComparison(s, { topicId: f.topicId, viewId: viewIdOf(s, f.topicId), question: "两条映射", metricId: "time_germ", inputRefs: [itemOp("ki_A"), itemOp("ki_B")], varyingFields: [], requiredEqualFields: [], operation: "difference", baselineRef: itemOp("ki_A") });
+  assert.equal(conflicted.decision, "blocked");
+  assert.ok(conflicted.reasonCodes.includes("mapping_conflict"), "命中多条不取第一条");
+
+  const t = createTopic(emptyState(), { name: "课题丙", researchQuestion: "Q丙" });
+  const asset = makeAsset("literature", "lit.md", "合成对象A在 25 °C 下培养 1 d。", t.topic.id);
+  let s2: LocusState = { ...t.state, assets: [...t.state.assets, asset] };
+  const card = addManualCard(s2, { assetId: asset.id, rawText: "合成对象A在 25 °C 下培养 1 d。" });
+  s2 = reviewCard(card.state, card.card.id, { audit: "confirm" });
+  const cmp = createComparison(s2, { topicId: t.topic.id, cardIds: [card.card.id] });
+  s2 = cmp.state;
+  const before = JSON.stringify(s2.comparisons);
+  assert.ok(cmp.comparison.groups.length >= 1);
+
+  const mp3 = createKnowledgeMapping(s2, { topicId: t.topic.id, metricId: "时间", definition: "培养时间", valueKind: "scalar", targetUnit: "h", conversion: { kind: "scaleOffset", factor: "24", offset: "0", fromUnit: "d", toUnit: "h" }, basis: "新规则" });
+  s2 = updateKnowledgeMapping(mp3.state, mp3.mapping.id, { baseRevision: 1, patch: { basis: "改后的依据" }, reason: "修订" }).state;
+  assert.equal(JSON.stringify(s2.comparisons), before, "旧比较记录与快照不随新映射改变");
+
+  const legacy = legacyComparisonViews(s2, t.topic.id);
+  assert.equal(legacy[0].decision, "display_only");
+  assert.ok(legacy[0].reasonCodes.includes("legacy_no_computation"));
+  assert.ok(legacy[0].reasonCodes.includes("legacy_unbound_fields"), "未绑定单位的旧条目明确标出");
+});
+
+// ── E3 遗留（E4 读取侧复检）：当前认识只取现在仍确认有效的项 ──────────────
+test("E3遗留(E4) 读取侧复检：级联回退后当前认识不并入，历史引用保留", () => {
+  const f = seedE4();
+  const th = createKnowledgeTheme(f.state, { topicId: f.topicId, name: "培养时间主题", members: [{ kind: "item", id: "ki_A", revision: 1 }], currentJudgmentRefs: [{ kind: "item", id: "ki_A", revision: 1 }] });
+  let s = th.state;
+  assert.equal(effectiveCurrentJudgments(s, th.theme).length, 1);
+  assert.ok(!readKnowledge(s, { source: "current", topicId: f.topicId }).warnings.some((w) => w.code === "judgment_not_live"));
+
+  s = reviewKnowledgeItem(s, "ki_A", { baseRevision: 1, decision: "needs_info", basis: "复核条件" }).state;
+  const themeNow = s.knowledge.themes.find((t) => t.id === th.theme.id)!;
+  assert.equal(effectiveCurrentJudgments(s, themeNow).length, 0, "回退后不再作为当前认识（读取侧复检）");
+  assert.equal((themeNow.payload as { currentJudgmentRefs: unknown[] }).currentJudgmentRefs.length, 1, "历史引用保留，不静默改写");
+  assert.ok(readKnowledge(s, { source: "current", topicId: f.topicId }).warnings.some((w) => w.code === "judgment_not_live"), "读取侧给出动态提醒");
 });

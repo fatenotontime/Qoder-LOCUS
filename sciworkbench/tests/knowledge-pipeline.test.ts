@@ -1014,3 +1014,41 @@ test("E3 路由：旧卡显式结构化后走分项审阅；主题当前认识�
     await close();
   }
 });
+
+// ── E4 路由（§7.1/§8.1）：统一读取只读＋viewId 过期 409、比较决策往返 ──
+test("E4 路由：/api/knowledge/view 作用域校验与比较 409 view_stale 往返", async () => {
+  const store = new GatedStore();
+  const { post, get, close } = await boot(store);
+  try {
+    const noTopic = await get("/api/knowledge/view?source=current");
+    assert.equal(noTopic.code, "topic_required", "current 读取必须带 topicId");
+
+    const topic = await post("/api/topics", { name: "合成课题甲", researchQuestion: "Q" });
+    const topicId = topic.body.topicId as string;
+    const view = await get(`/api/knowledge/view?source=current&topicId=${topicId}`);
+    assert.equal(view.ok, true);
+    assert.equal(typeof view.viewId, "string");
+    assert.deepEqual(view.items, []);
+    assert.equal((view.coverage as { totalAvailable: number }).totalAvailable, 0);
+
+    const stale = await post("/api/knowledge/comparisons", {
+      topicId, viewId: "bogus-view", question: "过期视图", metricId: null,
+      inputRefs: [{ type: "item", ref: { kind: "item", id: "ki_missing", revision: 1 } }],
+      varyingFields: [], requiredEqualFields: [], operation: "display",
+    });
+    assert.equal(stale.status, 409, JSON.stringify(stale.body));
+    assert.equal(stale.body.code, "view_stale");
+
+    const ok = await post("/api/knowledge/comparisons", {
+      topicId, viewId: view.viewId as string, question: "取消选择的项应被阻断", metricId: null,
+      inputRefs: [{ type: "item", ref: { kind: "item", id: "ki_missing", revision: 1 } }],
+      varyingFields: [], requiredEqualFields: [], operation: "display",
+    });
+    assert.equal(ok.status, 200, JSON.stringify(ok.body));
+    assert.equal(ok.body.decision, "blocked", "读不到固定版本的操作数不给结论");
+    assert.ok((ok.body.reasonCodes as string[]).includes("source_unresolvable"));
+    assert.equal(ok.body.computedValue, null);
+  } finally {
+    await close();
+  }
+});

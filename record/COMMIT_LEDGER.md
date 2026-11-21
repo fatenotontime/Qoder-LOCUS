@@ -217,6 +217,16 @@
 | --- | --- | --- | --- | --- |
 | S05-T5 | feat/s05-e3-item-review → docs/s05-e3-handoff | `26f7d65`、`22f677b`、`c065bb2` | 2026-11-21 15:17 / 15:18 / 15:25 | E3 分项审阅服务＋门槛＋级联、引文锚定原件与改绑、卡片归属修复、审阅 UI、294/294、§12.3 浏览器验收通过（隔离 5217）；PR #8 以 merge commit 合入 main（`410ea85` · 15:22，本轮回填）；`c065bb2` 补 E3 交接文档 [HANDOFF_E3.md](HANDOFF_E3.md) ＋ E0–E8 总交接的 E3 段落（PR #9，本条 merge hash 下轮回填）；[会话记录](sessions/2026-11-21_session-05.md#s05-t5) |
 
+### 会话 S05（续）· E4 数据集/查询/比较
+
+| # | 分支 `feat/s05-e4-datasets-comparison` | 分支 `<其他>` | 关联轮次 | 说明 |
+| --- | --- | --- | --- | --- |
+| 87 | `9b20c1a` · 2026-11-21 16:10、`1bb626b` · 16:14（记录提交随后；PR #10 merge hash 下轮回填） | — | S05-T6 | **E4 数据集/查询/比较**（判据 T17–T19、T26–T28）：`readKnowledge`（§7.1）current/snapshot 同型视图、scope 闭包不跨课题（T26）、formal/explore、筛选＋分页＋coverage＋warnings＋referenceMap、`viewId=内容 hash`（过期 → 409 `view_stale`）；**数据集** create/update/review 只编辑含义与绑定（选定未绑定列记 unknown、不从位置猜）、`readDatasetRows` 读固定表版本（不可用 410、越界 422）；**映射** create/update/review（换算仅 `scaleOffset`、审核与编辑分离）；**比较** item/cell 操作数、固定判断顺序、difference/ratio（分母 0 阻断）、多映射命中 `mapping_conflict`（不取第一条）、≤12 位有效数字＋formatting；旧比较**读取侧**标 `display_only`（不改写既有快照）；E3 遗留读取侧复检 `effectiveCurrentJudgments`＋`judgment_not_live` 告警；§8.1 九条路由接入。测试 **T17–T19/T26–T28＋E4 路由往返**，**302/302**；出 [E4 交接](HANDOFF_E4.md)；[会话记录](sessions/2026-11-21_session-05.md#s05-t6) |
+
+| 轮次 | 分支 | 提交 | 提交时间 | 本轮产出 |
+| --- | --- | --- | --- | --- |
+| S05-T6 | feat/s05-e4-datasets-comparison | `9b20c1a`、`1bb626b` | 2026-11-21 16:10 / 16:14 | E4 统一读取＋数据集/映射/比较服务与路由、旧比较读取适配、E3 遗留读取侧复检、T17–T19/T26–T28＋路由测试（302/302）；PR #10 审计后合入（merge hash 下轮回填）；[会话记录](sessions/2026-11-21_session-05.md#s05-t6) |
+
 ## 独立提示词维护记录 S02-T1
 
 | # | 分支 `main` | 分支 `<其他>` | 关联轮次 | 说明 |

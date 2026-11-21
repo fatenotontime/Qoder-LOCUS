@@ -13,7 +13,7 @@
  *   归属/标签更改 → 新 revision 保留审核；引用固定 revision，旧版从 history 读，不用 latest 兜底。
  */
 import { randomUUID } from "node:crypto";
-import type { LitCardRecord, LocusState } from "../store.ts";
+import type { ComparisonRecord, LitCardRecord, LocusState, MeasurementTableRecord } from "../store.ts";
 import { contentHash } from "../store.ts";
 import {
   ITEM_CONTENT_TYPES, ITEM_NATURES, KNOWLEDGE_KINDS, LOCATION_STATUSES, NONDIMENSIONAL_UNIT,
@@ -22,11 +22,14 @@ import {
   canonicalHash, isKnowledgeRef, isSourceRef, knowledgeRef as makeKnowledgeRef,
   pendingReview, refKey,
   sourceRef as makeSourceRef,
-  type ConditionEntry, type ContextPayload, type EvidencePayload, type ItemContentType,
-  type ItemNature, type ItemPayload, type KnowledgeContext, type KnowledgeEnvelope,
-  type KnowledgeEvidence, type KnowledgeItem, type KnowledgeKind, type KnowledgeRef, type KnowledgeTheme,
-  type KnowledgeState, type LocationStatus, type Locator, type ObtainedBy, type Origin,
-  type RelationPayload, type Review, type ReviewStatus, type SourceClass, type SourceKind,
+  type ColumnBinding, type ComparisonDecision, type ComparisonOperand, type ComparisonOperation,
+  type ComparisonPayload, type ConditionEntry, type ContextPayload, type ConversionRule, type DatasetPayload,
+  type EvidencePayload, type ItemContentType, type ItemNature, type ItemPayload, type KnowledgeComparison,
+  type KnowledgeContext, type KnowledgeDataset, type KnowledgeEnvelope, type KnowledgeEvidence,
+  type KnowledgeItem, type KnowledgeKind, type KnowledgeMapping, type KnowledgeRef, type KnowledgeTheme,
+  type KnowledgeState, type LocationStatus, type Locator, type MappingPayload, type NormalizedInput,
+  type ObtainedBy, type Origin, type RelationPayload, type Review, type ReviewStatus, type RowBinding,
+  type SnapshotCoverage, type SnapshotReferenceTokenMap, type SourceClass, type SourceKind,
   type SourceRef, type SourceVersionRecord, type ThemePayload, type TypedValue, type Unknown,
   type UnknownReasonCode, type ValueKind,
 } from "../domain/knowledge.ts";
@@ -1238,4 +1241,836 @@ export function createKnowledgeStatement(state: LocusState, input: unknown): { s
   const id = `ki_${uuid()}`;
   const item = newEnv("item", id, payload) as unknown as KnowledgeItem;
   return { state: { ...state, knowledge: appendEnv(k, "item", item) }, item };
+}
+
+// ══ E4 统一读取／数据集／映射／比较（合同 §7.1 查询、§7.2 比较、§4.4、§8.1）═══
+//
+// - readKnowledge 是所有总览/wiki/比较/AI 读取的共同入口（current/snapshot 同型视图）。
+// - 数据集只编辑「含义与绑定」，不改原表数值；读行一律走固定表版本（resolveSourceVersion）。
+// - 比较输入固定 item 或 dataset 单元格；决策 computable/display_only/blocked 附逐项 reasonCodes。
+// - 数值只有 scalar 同口径可做差/比；换算只用已确认的 scaleOffset，不执行任意表达式。
+
+export const COMPARISON_REASON_CODES = [
+  "metric_definition_mismatch", "value_kind_unsupported", "cell_not_numeric", "unit_unknown",
+  "unit_incompatible", "requirement_missing", "requirement_conflict", "not_confirmed",
+  "dataset_not_confirmed", "column_unbound", "row_unbound", "mapping_conflict",
+  "mapping_not_confirmed", "mapping_conversion_missing", "baseline_required", "baseline_zero",
+  "source_unresolvable", "operation_display",
+] as const;
+
+export interface KnowledgeQuery {
+  readonly source: "current" | "snapshot";
+  readonly topicId?: string;
+  readonly snapshotId?: string;
+  readonly themeId?: string;
+  readonly subquestionId?: string;
+  readonly text?: string;
+  readonly contentType?: string;
+  readonly nature?: string;
+  readonly sourceClass?: string;
+  readonly metricId?: string;
+  readonly condition?: string;
+  readonly status?: string;
+  readonly mode?: "formal" | "explore";
+  readonly cursor?: number;
+  readonly pageSize?: number;
+}
+
+export interface KnowledgeWarning { readonly code: string; readonly detail: string; readonly ref?: KnowledgeRef | SourceRef }
+
+export interface KnowledgeView {
+  readonly viewId: string;
+  readonly scope: {
+    readonly source: "current" | "snapshot"; readonly topicId: string; readonly snapshotId?: string;
+    readonly mode: "formal" | "explore"; readonly themeId?: string; readonly subquestionId?: string;
+    readonly filters: Record<string, string>;
+  };
+  readonly items: KnowledgeItem[];
+  readonly contexts: KnowledgeContext[];
+  readonly evidence: KnowledgeEvidence[];
+  readonly relations: KnowledgeRelation[];
+  readonly datasets: KnowledgeDataset[];
+  readonly themes: KnowledgeTheme[];
+  readonly mappings: KnowledgeMapping[];
+  readonly comparisons: KnowledgeComparison[];
+  readonly referenceMap: SnapshotReferenceTokenMap;
+  readonly warnings: KnowledgeWarning[];
+  readonly coverage: SnapshotCoverage;
+  readonly hasMore: boolean;
+  readonly nextCursor: number | null;
+  readonly totalKnown: number;
+}
+
+const norm = (s: string) => s.normalize("NFKC").toLowerCase();
+const PAGE_DEFAULT = 50;
+const PAGE_MAX = 200;
+
+function topicOfItem(p: ItemPayload): string[] { return p.topicIds ?? []; }
+
+/** 结构已确认（formal 门槛 §4.7）：固定版本可读且现在仍 confirmed。 */
+function itemFormalUsable(k: KnowledgeState, env: KnowledgeItem): boolean {
+  const live = k.items.find((x) => x.id === env.id);
+  return !!live && (live.payload as ItemPayload).review.status === "confirmed";
+}
+
+/** 统一读取（§7.1）：current 必须带 topicId；不返回其他课题；快照模式只读冻结内容 + 当前告警。 */
+export function readKnowledge(state: LocusState, query: KnowledgeQuery): KnowledgeView {
+  const mode: "formal" | "explore" = query.mode === "explore" ? "explore" : "formal";
+  const filters: Record<string, string> = {};
+  for (const key of ["themeId", "subquestionId", "text", "contentType", "nature", "sourceClass", "metricId", "condition", "status"] as const) {
+    const v = query[key];
+    if (typeof v === "string" && v.trim()) filters[key] = v.trim();
+  }
+  const pageSize = Math.min(Math.max(Number(query.pageSize ?? PAGE_DEFAULT) || PAGE_DEFAULT, 1), PAGE_MAX);
+  const cursor = Math.max(Number(query.cursor ?? 0) || 0, 0);
+
+  let topicId: string;
+  let snapshotId: string | undefined;
+  let pool: KnowledgeItem[];
+  let contextsAll: KnowledgeContext[];
+  let evidenceAll: KnowledgeEvidence[];
+  let relationsAll: KnowledgeRelation[];
+  let datasets: KnowledgeDataset[];
+  let themes: KnowledgeTheme[];
+  let mappings: KnowledgeMapping[];
+  let comparisons: KnowledgeComparison[];
+  let totalAvailable: number;
+  let coverage: SnapshotCoverage;
+
+  if (query.source === "snapshot") {
+    const snap = state.knowledge.snapshots.find((s) => s.snapshotId === query.snapshotId);
+    if (!snap) throw new AppError(404, `快照不存在：${query.snapshotId ?? "（缺 snapshotId）"}`, { code: "snapshot_missing" });
+    topicId = snap.scope.topicId;
+    snapshotId = snap.snapshotId;
+    pool = snap.content.items;
+    contextsAll = snap.content.contexts;
+    evidenceAll = snap.content.evidence;
+    relationsAll = snap.content.relations;
+    datasets = snap.content.datasets;
+    themes = snap.content.themes;
+    mappings = snap.content.mappings;
+    comparisons = snap.content.comparisons;
+    totalAvailable = snap.content.items.length;
+    coverage = snap.coverage;
+  } else {
+    if (!query.topicId) throw new AppError(422, "读取当前知识须指定 topicId（不返回全库，也不默认某课题）。", { code: "topic_required" });
+    topicId = query.topicId;
+    if (!state.topics.some((t) => t.id === topicId)) throw new AppError(404, `课题不存在：${topicId}`);
+    const k = state.knowledge;
+    // 作用域：只含本课题归属的对象（§4.4 末：不反向返回用同来源的其他课题内容）。
+    pool = k.items.filter((e) => topicOfItem(e.payload as ItemPayload).includes(topicId));
+    const itemIds = new Set(pool.map((e) => e.id));
+    const ctxIds = new Set<string>();
+    const evIds = new Set<string>();
+    for (const e of pool) {
+      const p = e.payload as ItemPayload;
+      for (const r of p.contextRefs) if (r.kind === "context") ctxIds.add(r.id);
+      for (const b of p.evidenceRefs) if (b.ref.kind === "evidence") evIds.add(b.ref.id);
+    }
+    contextsAll = k.contexts.filter((e) => ctxIds.has(e.id));
+    // 条件闭包再补一层条件引用的引文，保证证据抽屉不缺（不越过课题）
+    for (const e of contextsAll) {
+      const cp = e.payload as ContextPayload;
+      for (const c of cp.conditions) for (const r of c.evidenceRefs) if (r.kind === "evidence") evIds.add(r.id);
+    }
+    evidenceAll = k.evidence.filter((e) => evIds.has(e.id));
+    const relationEndpoint = (r: RelationPayload) => [r.from, r.to].filter((x) => "kind" in x && "revision" in x) as KnowledgeRef[];
+    relationsAll = k.relations.filter((e) => {
+      const rp = e.payload as RelationPayload;
+      return relationEndpoint(rp).every((r) => itemIds.has(r.id) || ctxIds.has(r.id) || evIds.has(r.id))
+        && relationEndpoint(rp).some((r) => itemIds.has(r.id) || ctxIds.has(r.id));
+    });
+    datasets = k.datasets.filter((e) => ((e.payload as DatasetPayload).topicIds ?? []).includes(topicId));
+    themes = k.themes.filter((e) => (e.payload as ThemePayload).topicId === topicId);
+    mappings = k.mappings.filter((e) => (e.payload as MappingPayload).topicId === topicId);
+    comparisons = k.comparisons.filter((e) => (e.payload as ComparisonPayload).topicId === topicId);
+    totalAvailable = pool.length;
+    coverage = { selected: pool.length, totalAvailable, processed: pool.length, omittedReasons: [] };
+  }
+
+  // 主题筛选：只保留主题成员（按固定成员引用）
+  if (filters.themeId) {
+    const theme = themes.find((t) => t.id === filters.themeId);
+    if (!theme) throw new AppError(404, `主题不存在：${filters.themeId}`);
+    const memberIds = new Set((theme.payload as ThemePayload).members.map((r) => r.id));
+    pool = pool.filter((e) => memberIds.has(e.id));
+  }
+
+  // formal 门槛：只保留已确认且未撤回的项；explore 保留全部（前端另行标注）
+  const formalFiltered = mode === "formal" ? pool.filter((e) => itemFormalUsable(state.knowledge, e)) : pool;
+  const ctxById = new Map(contextsAll.map((c) => [c.id, c]));
+  const contextOf = (e: KnowledgeItem): ContextPayload[] =>
+    (e.payload as ItemPayload).contextRefs.map((r) => ctxById.get(r.id)?.payload as ContextPayload).filter((x): x is ContextPayload => !!x);
+
+  const filtered = formalFiltered.filter((e) => {
+    const p = e.payload as ItemPayload;
+    if (filters.contentType && p.contentType !== filters.contentType) return false;
+    if (filters.nature && p.nature !== filters.nature) return false;
+    if (filters.sourceClass && p.origin.sourceClass !== filters.sourceClass) return false;
+    if (filters.metricId && p.predicate.raw !== filters.metricId && p.predicate.metricId !== filters.metricId) return false;
+    if (filters.subquestionId && !(p.subquestionIds ?? []).includes(filters.subquestionId)) return false;
+    if (filters.status && p.review.status !== filters.status) return false;
+    if (filters.condition) {
+      const hit = contextOf(e).some((cp) => cp.conditions.some((c) => norm(c.field.raw).includes(norm(filters.condition))));
+      if (!hit) return false;
+    }
+    if (filters.text) {
+      const needle = norm(filters.text);
+      const hay = [p.text, p.subject.raw, p.predicate.raw, p.scopeText].map(norm).join("\n");
+      const condHay = contextOf(e).map((cp) => cp.conditions.map((c) => norm(c.field.raw)).join("\n")).join("\n");
+      if (!hay.includes(needle) && !condHay.includes(needle)) return false;
+    }
+    return true;
+  }).sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+
+  const totalKnown = filtered.length;
+  const page = filtered.slice(cursor, cursor + pageSize);
+  const hasMore = cursor + pageSize < totalKnown;
+
+  // 闭包：只带本页项所需条件/引文（避免把整个课题塞进一页）
+  const pageItemIds = new Set(page.map((e) => e.id));
+  const pageCtxIds = new Set<string>();
+  const pageEvIds = new Set<string>();
+  for (const e of page) {
+    const p = e.payload as ItemPayload;
+    for (const r of p.contextRefs) if (r.kind === "context") pageCtxIds.add(r.id);
+    for (const b of p.evidenceRefs) if (b.ref.kind === "evidence") pageEvIds.add(b.ref.id);
+  }
+  const pageContexts = contextsAll.filter((c) => pageCtxIds.has(c.id));
+  for (const c of pageContexts) for (const cond of (c.payload as ContextPayload).conditions) for (const r of cond.evidenceRefs) if (r.kind === "evidence") pageEvIds.add(r.id);
+  const pageEvidence = evidenceAll.filter((e) => pageEvIds.has(e.id));
+  const pageRelations = relationsAll.filter((e) => {
+    const rp = e.payload as RelationPayload;
+    return [rp.from, rp.to].some((r) => "kind" in r && "revision" in r && (pageItemIds.has(r.id) || pageCtxIds.has(r.id) || pageEvIds.has(r.id)));
+  });
+
+  // 当前告警（不写回内容）：固定引用落后当前版本 / 现在已撤回
+  const warnings: KnowledgeWarning[] = [];
+  for (const e of page) {
+    const p = e.payload as ItemPayload;
+    const live = state.knowledge.items.find((x) => x.id === e.id);
+    if (live && live.revision > e.revision) warnings.push({ code: "newer_revision", detail: `知识项 ${e.id} 已有第 ${live.revision} 版（当前视图为第 ${e.revision} 版）`, ref: makeKnowledgeRef("item", e.id, e.revision) });
+    if (live && (live.payload as ItemPayload).review.status === "withdrawn") warnings.push({ code: "withdrawn", detail: `知识项 ${e.id} 已撤回，仅供历史阅读`, ref: makeKnowledgeRef("item", e.id, live.revision) });
+  }
+  for (const t of themes) {
+    for (const r of (t.payload as ThemePayload).members) {
+      const live = findEnv(state.knowledge, "item", r.id);
+      if (live && live.revision > r.revision) warnings.push({ code: "theme_member_outdated", detail: `主题「${(t.payload as ThemePayload).name}」成员 ${r.id} 已有新版（成员钉在第 ${r.revision} 版）`, ref: r });
+    }
+  }
+  warnings.push(...judgmentWarnings(state, themes));
+
+  // referenceMap：稳定 token（预览态；冻结后以快照 token 为准）
+  const refMap: SnapshotReferenceTokenMap = {};
+  const tokenEntries: { key: string; kind: "knowledge" | "source"; ref: KnowledgeRef | SourceRef; label: string }[] = [
+    ...page.map((e) => ({ key: `item:${e.id}@${e.revision}`, kind: "knowledge" as const, ref: makeKnowledgeRef("item", e.id, e.revision), label: describeItem(state, e.payload as ItemPayload, e.revision).slice(0, 60) })),
+    ...pageContexts.map((e) => ({ key: `context:${e.id}@${e.revision}`, kind: "knowledge" as const, ref: makeKnowledgeRef("context", e.id, e.revision), label: describeContext(e.payload as ContextPayload).slice(0, 60) })),
+    ...pageEvidence.map((e) => ({ key: `evidence:${e.id}@${e.revision}`, kind: "knowledge" as const, ref: makeKnowledgeRef("evidence", e.id, e.revision), label: (e.payload as EvidencePayload).quote.slice(0, 60) })),
+    ...datasets.map((e) => ({ key: `dataset:${e.id}@${e.revision}`, kind: "knowledge" as const, ref: makeKnowledgeRef("dataset", e.id, e.revision), label: (e.payload as DatasetPayload).sourceRef.id })),
+    ...mappings.map((e) => ({ key: `mapping:${e.id}@${e.revision}`, kind: "knowledge" as const, ref: makeKnowledgeRef("mapping", e.id, e.revision), label: (e.payload as MappingPayload).metricId })),
+    ...comparisons.map((e) => ({ key: `comparison:${e.id}@${e.revision}`, kind: "knowledge" as const, ref: makeKnowledgeRef("comparison", e.id, e.revision), label: (e.payload as ComparisonPayload).question.slice(0, 60) })),
+  ].sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
+  tokenEntries.forEach((t, i) => { refMap[`R${i + 1}`] = { kind: t.kind, ref: t.ref, label: t.label }; });
+
+  const scope = {
+    source: query.source, topicId, ...(snapshotId ? { snapshotId } : {}), mode,
+    ...(filters.themeId ? { themeId: filters.themeId } : {}), ...(filters.subquestionId ? { subquestionId: filters.subquestionId } : {}),
+    filters,
+  };
+  const body = {
+    scope, items: page, contexts: pageContexts, evidence: pageEvidence, relations: pageRelations,
+    datasets, themes, mappings, comparisons, warnings,
+  };
+  const viewId = canonicalHash(body);
+  return {
+    viewId, scope,
+    items: page, contexts: pageContexts, evidence: pageEvidence, relations: pageRelations,
+    datasets, themes, mappings, comparisons, referenceMap: refMap, warnings, coverage,
+    hasMore, nextCursor: hasMore ? cursor + pageSize : null, totalKnown,
+  };
+}
+
+/** 仅取视图 id（供 viewId 校验；不返回内容）。 */
+export function currentViewId(state: LocusState, topicId: string): string {
+  return readKnowledge(state, { source: "current", topicId }).viewId;
+}
+
+/**
+ * 读取侧复检（E3 遗留，§4.7/§7.4）：主题「当前认识」只算现在仍 confirmed 且固定版本可读的 item。
+ * 写入侧门槛（assertJudgmentsConfirmed）只管建立当刻；条件级联回退后旧判断引用不得继续冒充当前认识。
+ */
+export function effectiveCurrentJudgments(state: LocusState, theme: KnowledgeTheme): KnowledgeRef[] {
+  const tp = theme.payload as ThemePayload;
+  return tp.currentJudgmentRefs.filter((r) => {
+    const env = findEnv(state.knowledge, "item", r.id);
+    if (!env || readKnowledgeVersion(state.knowledge, r) === null) return false;
+    const live = env.payload as ItemPayload;
+    return live.review.status === "confirmed" && (live.topicIds ?? []).includes(tp.topicId);
+  });
+}
+
+function judgmentWarnings(state: LocusState, themes: KnowledgeTheme[]): KnowledgeWarning[] {
+  const out: KnowledgeWarning[] = [];
+  for (const t of themes) {
+    const tp = t.payload as ThemePayload;
+    const effective = new Set(effectiveCurrentJudgments(state, t).map((r) => refKey(r)));
+    for (const r of tp.currentJudgmentRefs) {
+      if (effective.has(refKey(r))) continue;
+      const env = findEnv(state.knowledge, "item", r.id);
+      const live = env ? (env.payload as ItemPayload).review.status : "已删除";
+      out.push({ code: "judgment_not_live", detail: `主题「${tp.name}」的当前认识引用 ${r.id} 现在为「${live}」，不并入当前认识（历史内容不变）`, ref: r });
+    }
+  }
+  return out;
+}
+
+// ── 数据集（§4.4 dataset、§8.1 datasets 族）─────────────────────────────
+
+function intIndices(v: unknown, field: string, max: number): number[] {
+  if (!Array.isArray(v) || v.length === 0) throw new AppError(422, `${field}须为非空索引数组。`);
+  if (v.length > 500) throw new AppError(422, `${field}数量过多（上限 500）。`);
+  const out: number[] = [];
+  for (const [i, x] of v.entries()) {
+    const n = typeof x === "number" ? x : Number(reqText(x, `${field}[${i}]`, 8));
+    if (!Number.isInteger(n) || n < 0) throw new AppError(422, `${field}[${i}] 须为非负整数索引。`);
+    if (!out.includes(n)) out.push(n);
+  }
+  return out;
+}
+
+/** 固定表版本读取：来源不可用一律 410（不读 latest 冒充，不退回空表）。 */
+function fixedTable(state: LocusState, ref: SourceRef): MeasurementTableRecord {
+  const res = resolveSourceVersion(state, state.knowledge, ref);
+  if (res.status !== "ok") {
+    throw new AppError(410, `数据表来源不可用（${res.status}）：${ref.kind} ${ref.id} ${ref.version}。不退回最新版。`, { code: res.status, ref });
+  }
+  const t = res.payload as MeasurementTableRecord;
+  if (!t || !Array.isArray(t.rows) || !Array.isArray(t.columns)) throw new AppError(410, `固定表版本内容不可读：${ref.id} ${ref.version}`, { code: "source_unreadable" });
+  return t;
+}
+
+function assertTableInRange(t: MeasurementTableRecord, rowIndices: number[], columnIndices: number[]): void {
+  for (const r of rowIndices) if (r >= t.rows.length) throw new AppError(422, `行索引越界：${r}（表共 ${t.rows.length} 行）。`, { code: "row_out_of_range" });
+  for (const c of columnIndices) if (c >= t.columns.length) throw new AppError(422, `列索引越界：${c}（表共 ${t.columns.length} 列）。`, { code: "column_out_of_range" });
+}
+
+interface DatasetDraft {
+  topicId: string; sourceRef: SourceRef;
+  selection: { rowIndices: number[]; columnIndices: number[] };
+  columns: ColumnBinding[]; rowBindings: RowBinding[]; unknowns: Unknown[]; subquestionIds: string[];
+}
+
+function buildDatasetPayload(state: LocusState, draft: DatasetDraft): DatasetPayload {
+  checkTopics(state, [draft.topicId], "topicIds");
+  checkSubquestions(state, draft.subquestionIds, [draft.topicId], "subquestionIds");
+  return {
+    topicIds: [draft.topicId], subquestionIds: draft.subquestionIds, topicId: draft.topicId,
+    sourceRef: draft.sourceRef, selection: draft.selection, columns: draft.columns,
+    rowBindings: draft.rowBindings, unknowns: draft.unknowns, review: pendingReview(),
+  };
+}
+
+function strictDatasetDraft(state: LocusState, topicId: string, sourceRefRaw: unknown, selectionRaw: unknown, columnsRaw: unknown, rowBindingsRaw: unknown, unknownsRaw: unknown, subquestionIdsRaw: unknown): DatasetDraft {
+  const ref = record(sourceRefRaw, "sourceRef");
+  if (!isSourceRef(ref)) throw new AppError(422, "sourceRef 须为 {kind,id,version,contentHash}。");
+  if (ref.kind !== "table") throw new AppError(422, `数据集来源须为表格（table），收到 ${ref.kind}。`, { code: "source_kind_invalid" });
+  const t = fixedTable(state, { kind: "table", id: ref.id, version: ref.version, contentHash: ref.contentHash });
+  const sel = record(selectionRaw, "selection");
+  assertKeys(sel, ["rowIndices", "columnIndices"], "selection");
+  const rowIndices = intIndices(sel.rowIndices, "selection.rowIndices", 500);
+  const columnIndices = intIndices(sel.columnIndices, "selection.columnIndices", 500);
+  assertTableInRange(t, rowIndices, columnIndices);
+  if (!Array.isArray(columnsRaw)) throw new AppError(422, "columns 须为数组。");
+  const columns: ColumnBinding[] = columnsRaw.map((c, i) => {
+    const o = record(c, `columns[${i}]`);
+    assertKeys(o, ["index", "originalName", "standardId", "type", "unit"], `columns[${i}]`);
+    const index = typeof o.index === "number" ? o.index : Number(reqText(o.index, `columns[${i}].index`, 8));
+    if (!Number.isInteger(index) || !columnIndices.includes(index)) throw new AppError(422, `columns[${i}].index ${index} 不在 selection.columnIndices 内。`, { code: "column_out_of_selection" });
+    return {
+      index,
+      originalName: o.originalName === undefined || o.originalName === null ? t.columns[index] : reqText(o.originalName, `columns[${i}].originalName`, 200),
+      ...(o.standardId === undefined || o.standardId === null ? {} : { standardId: reqText(o.standardId, `columns[${i}].standardId`, 120) }),
+      type: enumOf(o.type, `columns[${i}].type`, VALUE_KINDS) as ValueKind,
+      unit: unitOf(o.unit, `columns[${i}]`),
+      review: pendingReview(),
+    };
+  });
+  const boundCols = new Set(columns.map((c) => c.index));
+  const unknowns = strictUnknowns(unknownsRaw, "unknowns");
+  for (const idx of columnIndices) {
+    if (!boundCols.has(idx)) unknowns.push({ id: `unk_${uuid()}`, fieldPath: `column:${idx}`, reasonCode: "not_reported_in_checked_scope", detail: `列 ${idx}（${t.columns[idx]}）尚未绑定含义/类型`, scopeRefs: [makeSourceRef("table", ref.id, ref.version, ref.contentHash)], evidenceRefs: [] });
+  }
+  if (!Array.isArray(rowBindingsRaw)) throw new AppError(422, "rowBindings 须为数组。");
+  const rowBindings: RowBinding[] = rowBindingsRaw.map((b, i) => {
+    const o = record(b, `rowBindings[${i}]`);
+    assertKeys(o, ["rowIndex", "contextRef", "sampleStateRef", "group", "time", "replicate"], `rowBindings[${i}]`);
+    const rowIndex = typeof o.rowIndex === "number" ? o.rowIndex : Number(reqText(o.rowIndex, `rowBindings[${i}].rowIndex`, 8));
+    if (!Number.isInteger(rowIndex) || !rowIndices.includes(rowIndex)) throw new AppError(422, `rowBindings[${i}].rowIndex ${rowIndex} 不在 selection.rowIndices 内。`, { code: "row_out_of_selection" });
+    const out: RowBinding = { rowIndex };
+    if (o.contextRef !== undefined && o.contextRef !== null) {
+      const cr = record(o.contextRef, `rowBindings[${i}].contextRef`);
+      if (!isKnowledgeRef(cr) || cr.kind !== "context") throw new AppError(422, `rowBindings[${i}].contextRef 须为 context 知识引用。`);
+      assertVersionResolvable(state.knowledge, cr, `rowBindings[${i}].contextRef`);
+      (out as { contextRef?: KnowledgeRef }).contextRef = { kind: "context", id: cr.id, revision: cr.revision };
+    }
+    if (o.sampleStateRef !== undefined && o.sampleStateRef !== null) {
+      const sr = record(o.sampleStateRef, `rowBindings[${i}].sampleStateRef`);
+      if (!isSourceRef(sr)) throw new AppError(422, `rowBindings[${i}].sampleStateRef 须为来源引用。`);
+      (out as { sampleStateRef?: SourceRef }).sampleStateRef = { kind: sr.kind, id: sr.id, version: sr.version, contentHash: sr.contentHash };
+    }
+    return {
+      ...out,
+      ...(o.group === undefined || o.group === null ? {} : { group: reqText(o.group, `rowBindings[${i}].group`, 120) }),
+      ...(o.time === undefined || o.time === null ? {} : { time: reqText(o.time, `rowBindings[${i}].time`, 120) }),
+      ...(o.replicate === undefined || o.replicate === null ? {} : { replicate: strictReplicate(o.replicate, `rowBindings[${i}].replicate`) }),
+    };
+  });
+  return {
+    topicId, sourceRef: { kind: "table", id: ref.id, version: ref.version, contentHash: ref.contentHash },
+    selection: { rowIndices, columnIndices }, columns, rowBindings, unknowns,
+    subquestionIds: idArray(subquestionIdsRaw ?? [], "subquestionIds", 20),
+  };
+}
+
+function strictReplicate(v: unknown, field: string): { label: string; type: "technical" | "biological" | "unknown" } {
+  const o = record(v, field);
+  assertKeys(o, ["label", "type"], field);
+  return { label: reqText(o.label, `${field}.label`, 60), type: enumOf(o.type, `${field}.type`, ["technical", "biological", "unknown"]) as "technical" };
+}
+
+export function createKnowledgeDataset(state: LocusState, input: unknown): { state: LocusState; dataset: KnowledgeDataset } {
+  const body = record(input, "body");
+  assertKeys(body, ["topicId", "sourceRef", "selection", "columns", "rowBindings", "unknowns", "subquestionIds"], "body");
+  const topicId = reqText(body.topicId, "topicId", 60);
+  if (!state.topics.some((t) => t.id === topicId)) throw new AppError(404, `课题不存在：${topicId}`);
+  const draft = strictDatasetDraft(state, topicId, body.sourceRef, body.selection, body.columns, body.rowBindings, body.unknowns, body.subquestionIds);
+  const payload = buildDatasetPayload(state, draft);
+  const dataset = newEnv("dataset", `ds_${uuid()}`, payload) as unknown as KnowledgeDataset;
+  return { state: { ...state, knowledge: appendEnv(state.knowledge, "dataset", dataset) }, dataset };
+}
+
+export function updateKnowledgeDataset(state: LocusState, id: string, input: unknown): { state: LocusState; dataset: KnowledgeDataset } {
+  const body = record(input, "body");
+  assertKeys(body, ["baseRevision", "patch", "reason"], "body");
+  const env = findEnv(state.knowledge, "dataset", id);
+  if (!env) throw new AppError(404, `数据集不存在：${id}`);
+  requireBaseRevision(body.baseRevision, env, "数据集");
+  const reason = reqText(body.reason, "reason", 200);
+  const patch = record(body.patch, "patch");
+  assertKeys(patch, ["selection", "columns", "rowBindings", "unknowns"], "patch");
+  const cur = env.payload as DatasetPayload;
+  const draft = strictDatasetDraft(
+    state, cur.topicId, cur.sourceRef,
+    patch.selection ?? cur.selection, patch.columns ?? cur.columns,
+    patch.rowBindings ?? cur.rowBindings, patch.unknowns ?? cur.unknowns, cur.subquestionIds,
+  );
+  const next = buildDatasetPayload(state, draft);
+  const dataset = bumpEnv(env as KnowledgeEnvelope<DatasetPayload>, next, reason) as unknown as KnowledgeDataset;
+  return { state: { ...state, knowledge: replaceEnv(state.knowledge, "dataset", dataset) }, dataset };
+}
+
+export function reviewKnowledgeDataset(state: LocusState, id: string, input: unknown): { state: LocusState; dataset: KnowledgeDataset } {
+  const body = record(input, "body");
+  assertKeys(body, ["baseRevision", "columnIndices", "decision", "basis"], "body");
+  const env = findEnv(state.knowledge, "dataset", id);
+  if (!env) throw new AppError(404, `数据集不存在：${id}`);
+  requireBaseRevision(body.baseRevision, env, "数据集");
+  const decision = enumOf(body.decision, "decision", REVIEW_DECISIONS) as ReviewStatus;
+  const basis = reqText(body.basis, "basis", 400);
+  const cur = env.payload as DatasetPayload;
+  const cols = Array.isArray(body.columnIndices) && body.columnIndices.length ? idArray(body.columnIndices, "columnIndices", 200).map((x) => Number(x)) : cur.columns.map((c) => c.index);
+  for (const idx of cols) if (!cur.columns.some((c) => c.index === idx)) throw new AppError(422, `列索引不在数据集列绑定内：${idx}`, { code: "column_not_bound" });
+  const at = now();
+  const review: Review = { status: decision, reviewedAt: at, basis };
+  const next: DatasetPayload = { ...cur, columns: cur.columns.map((c) => (cols.includes(c.index) ? { ...c, review } : c)), review };
+  const dataset = bumpEnv(env as KnowledgeEnvelope<DatasetPayload>, next, `列审核（${describeReview(decision)}）：${basis}`) as unknown as KnowledgeDataset;
+  return { state: { ...state, knowledge: replaceEnv(state.knowledge, "dataset", dataset) }, dataset };
+}
+
+export interface DatasetRowsQuery { readonly revision: number; readonly rowIndices?: number[]; readonly columnIndices?: number[]; readonly cursor?: number; readonly pageSize?: number }
+
+/** 读固定表版本的行列（返回准确选定范围，不用摘要/前 N 行代替；范围越界即拒）。 */
+export function readDatasetRows(state: LocusState, id: string, query: DatasetRowsQuery) {
+  const payload = readKnowledgeVersion(state.knowledge, makeKnowledgeRef("dataset", id, query.revision)) as DatasetPayload | null;
+  if (!payload) throw new AppError(422, `数据集版本不存在：dataset ${id} 第 ${query.revision} 版（不退回最新版）。`, { code: "ref_unresolvable" });
+  const t = fixedTable(state, payload.sourceRef);
+  const rowIndices = query.rowIndices === undefined ? payload.selection.rowIndices : intIndices(query.rowIndices, "rowIndices", 500);
+  const columnIndices = query.columnIndices === undefined ? payload.selection.columnIndices : intIndices(query.columnIndices, "columnIndices", 500);
+  for (const r of rowIndices) if (!payload.selection.rowIndices.includes(r)) throw new AppError(422, `行 ${r} 不在该数据集选定范围内。`, { code: "row_out_of_selection" });
+  for (const c of columnIndices) if (!payload.selection.columnIndices.includes(c)) throw new AppError(422, `列 ${c} 不在该数据集选定范围内。`, { code: "column_out_of_selection" });
+  assertTableInRange(t, rowIndices, columnIndices);
+  const pageSize = Math.min(Math.max(Number(query.pageSize ?? PAGE_DEFAULT) || PAGE_DEFAULT, 1), PAGE_MAX);
+  const cursor = Math.max(Number(query.cursor ?? 0) || 0, 0);
+  const sorted = [...rowIndices].sort((a, b) => a - b);
+  const page = sorted.slice(cursor, cursor + pageSize);
+  const columns = payload.columns.filter((c) => columnIndices.includes(c.index)).map((c) => ({ index: c.index, originalName: c.originalName, standardId: c.standardId ?? null, type: c.type, unit: c.unit, review: c.review }));
+  const rows = page.map((rowIndex) => ({
+    rowIndex,
+    cells: [...columnIndices].sort((a, b) => a - b).map((columnIndex) => ({ columnIndex, raw: t.rows[rowIndex]?.[columnIndex] ?? null, type: payload.columns.find((c) => c.index === columnIndex)?.type ?? null, unit: payload.columns.find((c) => c.index === columnIndex)?.unit ?? null })),
+    binding: payload.rowBindings.find((b) => b.rowIndex === rowIndex) ?? null,
+  }));
+  const hasMore = cursor + pageSize < sorted.length;
+  return {
+    datasetId: id, revision: query.revision, sourceRef: payload.sourceRef, columns, rows,
+    unknowns: payload.unknowns, review: payload.review,
+    hasMore, nextCursor: hasMore ? cursor + pageSize : null, totalKnown: sorted.length,
+  };
+}
+
+// ── 映射（§4.4 mapping、§8.1 mappings 族）───────────────────────────────
+
+function strictConversion(v: unknown, field: string): ConversionRule {
+  const o = record(v, field);
+  assertKeys(o, ["kind", "factor", "offset", "fromUnit", "toUnit"], field);
+  if (o.kind !== "scaleOffset") throw new AppError(422, `${field}.kind 只支持 scaleOffset（不执行任意表达式）。`, { code: "conversion_unsupported" });
+  return { kind: "scaleOffset", factor: numeric(o.factor, `${field}.factor`), offset: numeric(o.offset, `${field}.offset`), fromUnit: reqText(o.fromUnit, `${field}.fromUnit`, 40), toUnit: reqText(o.toUnit, `${field}.toUnit`, 40) };
+}
+
+function strictMappingPayload(state: LocusState, topicId: string, body: Record<string, unknown>): MappingPayload {
+  checkTopics(state, [topicId], "topicId");
+  const metricId = reqText(body.metricId, "metricId", 120);
+  const definition = reqText(body.definition, "definition", 1000);
+  const basis = reqText(body.basis, "basis", 400);
+  return {
+    topicId, metricId, definition,
+    aliases: idArray(body.aliases ?? [], "aliases", 20),
+    applicability: body.applicability === undefined || body.applicability === null || String(body.applicability).trim() === "" ? "" : reqText(body.applicability, "applicability", 400),
+    valueKind: enumOf(body.valueKind, "valueKind", VALUE_KINDS) as ValueKind,
+    targetUnit: unitOf(body.targetUnit, "targetUnit"),
+    conversion: body.conversion === undefined || body.conversion === null ? null : strictConversion(body.conversion, "conversion"),
+    basis,
+    evidenceRefs: strictKnowledgeRefs(body.evidenceRefs, ["evidence"], "evidenceRefs"),
+    review: pendingReview(),
+  };
+}
+
+export function createKnowledgeMapping(state: LocusState, input: unknown): { state: LocusState; mapping: KnowledgeMapping } {
+  const body = record(input, "body");
+  assertKeys(body, ["topicId", "metricId", "definition", "aliases", "applicability", "valueKind", "targetUnit", "conversion", "basis", "evidenceRefs"], "body");
+  const topicId = reqText(body.topicId, "topicId", 60);
+  if (!state.topics.some((t) => t.id === topicId)) throw new AppError(404, `课题不存在：${topicId}`);
+  const payload = strictMappingPayload(state, topicId, body);
+  const mapping = newEnv("mapping", `km_${uuid()}`, payload) as unknown as KnowledgeMapping;
+  return { state: { ...state, knowledge: appendEnv(state.knowledge, "mapping", mapping) }, mapping };
+}
+
+export function updateKnowledgeMapping(state: LocusState, id: string, input: unknown): { state: LocusState; mapping: KnowledgeMapping } {
+  const body = record(input, "body");
+  assertKeys(body, ["baseRevision", "patch", "reason"], "body");
+  const env = findEnv(state.knowledge, "mapping", id);
+  if (!env) throw new AppError(404, `映射不存在：${id}`);
+  requireBaseRevision(body.baseRevision, env, "映射");
+  const reason = reqText(body.reason, "reason", 200);
+  const patch = record(body.patch, "patch");
+  assertKeys(patch, ["metricId", "definition", "aliases", "applicability", "valueKind", "targetUnit", "conversion", "basis", "evidenceRefs"], "patch");
+  const cur = env.payload as MappingPayload;
+  const merged = { ...cur, ...patch, topicId: cur.topicId };
+  const next = strictMappingPayload(state, cur.topicId, merged as unknown as Record<string, unknown>);
+  const mapping = bumpEnv(env as KnowledgeEnvelope<MappingPayload>, next, reason) as unknown as KnowledgeMapping;
+  return { state: { ...state, knowledge: replaceEnv(state.knowledge, "mapping", mapping) }, mapping };
+}
+
+export function reviewKnowledgeMapping(state: LocusState, id: string, input: unknown): { state: LocusState; mapping: KnowledgeMapping } {
+  const body = record(input, "body");
+  assertKeys(body, ["baseRevision", "decision", "basis"], "body");
+  const env = findEnv(state.knowledge, "mapping", id);
+  if (!env) throw new AppError(404, `映射不存在：${id}`);
+  requireBaseRevision(body.baseRevision, env, "映射");
+  const decision = enumOf(body.decision, "decision", REVIEW_DECISIONS) as ReviewStatus;
+  const basis = reqText(body.basis, "basis", 400);
+  const cur = env.payload as MappingPayload;
+  const next: MappingPayload = { ...cur, review: { status: decision, reviewedAt: now(), basis } };
+  const mapping = bumpEnv(env as KnowledgeEnvelope<MappingPayload>, next, `映射审核（${describeReview(decision)}）：${basis}`) as unknown as KnowledgeMapping;
+  return { state: { ...state, knowledge: replaceEnv(state.knowledge, "mapping", mapping) }, mapping };
+}
+
+// ── 比较（§7.2、§8.1 POST /api/knowledge/comparisons）────────────────────
+//
+// 固定判断顺序：同指标定义 → 对象/阶段 → 数值类型/统计口径 → 单位换算 → 必需条件 → review/来源 → 操作要求。
+// difference = 非基线 − 基线；ratio = 非基线 ÷ 基线（分母 0 阻断）。两项、只收 scalar 同口径。
+
+/** 12 位有效数字定点文本（不用指数形式外泄）。 */
+function roundSig12(x: number): string {
+  if (!Number.isFinite(x)) throw new AppError(422, "比较计算结果非有限数。");
+  if (x === 0) return "0";
+  let s = Number(x).toPrecision(12);
+  if (/[eE]/.test(s)) s = Number(s).toFixed(12);
+  if (s.includes(".")) s = s.replace(/0+$/, "").replace(/\.$/, "");
+  return s;
+}
+
+function strictOperand(v: unknown, field: string): ComparisonOperand {
+  const o = record(v, field);
+  if (o.type === "item") {
+    assertKeys(o, ["type", "ref"], field);
+    const r = record(o.ref, `${field}.ref`);
+    if (!isKnowledgeRef(r) || r.kind !== "item") throw new AppError(422, `${field}.ref 须为 item 知识引用（不允许整卡/整个数据集）。`, { code: "operand_kind_invalid" });
+    return { type: "item", ref: { kind: "item", id: r.id, revision: r.revision } };
+  }
+  if (o.type === "cell") {
+    assertKeys(o, ["type", "datasetRef", "rowIndex", "columnIndex"], field);
+    const d = record(o.datasetRef, `${field}.datasetRef`);
+    if (!isKnowledgeRef(d) || d.kind !== "dataset") throw new AppError(422, `${field}.datasetRef 须为 dataset 知识引用。`, { code: "operand_kind_invalid" });
+    const ri = typeof o.rowIndex === "number" ? o.rowIndex : Number(reqText(o.rowIndex, `${field}.rowIndex`, 8));
+    const ci = typeof o.columnIndex === "number" ? o.columnIndex : Number(reqText(o.columnIndex, `${field}.columnIndex`, 8));
+    if (!Number.isInteger(ri) || ri < 0 || !Number.isInteger(ci) || ci < 0) throw new AppError(422, `${field} 的 rowIndex/columnIndex 须为非负整数。`);
+    return { type: "cell", datasetRef: { kind: "dataset", id: d.id, revision: d.revision }, rowIndex: ri, columnIndex: ci };
+  }
+  throw new AppError(422, `${field}.type 须为 item 或 cell。`, { code: "operand_kind_invalid" });
+}
+
+const sameOperand = (a: ComparisonOperand, b: ComparisonOperand): boolean =>
+  a.type === "item" && b.type === "item" ? refKey(a.ref) === refKey(b.ref)
+    : a.type === "cell" && b.type === "cell" ? refKey(a.datasetRef) === refKey(b.datasetRef) && a.rowIndex === b.rowIndex && a.columnIndex === b.columnIndex
+    : false;
+
+interface OperandFact {
+  operand: ComparisonOperand;
+  raw: TypedValue | null;
+  unit: string | null;
+  metricKey: string | null;
+  subject: string;
+  stage: string;
+  conditions: Record<string, string>;
+  reasons: string[];
+}
+
+function conditionsOfContext(state: LocusState, cp: ContextPayload): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const c of cp.conditions) out[c.field.raw] = describeValue(c.value);
+  return out;
+}
+
+function resolveItemFact(state: LocusState, ref: KnowledgeRef): OperandFact {
+  const reasons: string[] = [];
+  const payload = readKnowledgeVersion(state.knowledge, ref) as ItemPayload | null;
+  if (!payload) return { operand: { type: "item", ref }, raw: null, unit: null, metricKey: null, subject: "", stage: "", conditions: {}, reasons: ["source_unresolvable"] };
+  if (knowledgeItemLiveStatus(state, ref) !== "confirmed") reasons.push("not_confirmed");
+  let subject = payload.subject.raw, stage = "";
+  const conditions: Record<string, string> = {};
+  for (const cr of payload.contextRefs) {
+    const cp = readKnowledgeVersion(state.knowledge, cr) as ContextPayload | null;
+    if (!cp) { reasons.push("source_unresolvable"); continue; }
+    Object.assign(conditions, conditionsOfContext(state, cp));
+    if (!stage && cp.stage) stage = cp.stage;
+  }
+  const unit = payload.value && "unit" in payload.value ? (payload.value.unit ?? null) : null;
+  return { operand: { type: "item", ref }, raw: payload.value, unit, metricKey: payload.predicate.metricId ?? payload.predicate.raw, subject, stage, conditions, reasons };
+}
+
+function resolveCellFact(state: LocusState, topicId: string, operand: ComparisonOperand & { type: "cell" }): OperandFact {
+  const reasons: string[] = [];
+  const base: OperandFact = { operand, raw: null, unit: null, metricKey: null, subject: "", stage: "", conditions: {}, reasons };
+  const payload = readKnowledgeVersion(state.knowledge, operand.datasetRef) as DatasetPayload | null;
+  if (!payload) { reasons.push("source_unresolvable"); return base; }
+  if (!(payload.topicIds ?? []).includes(topicId)) throw new AppError(422, `数据集 ${operand.datasetRef.id} 不属于本课题，不能跨课题比较。`, { code: "cross_topic_scope" });
+  if (!payload.selection.rowIndices.includes(operand.rowIndex)) throw new AppError(422, `行 ${operand.rowIndex} 不在数据集选定范围内。`, { code: "row_out_of_selection" });
+  if (!payload.selection.columnIndices.includes(operand.columnIndex)) throw new AppError(422, `列 ${operand.columnIndex} 不在数据集选定范围内。`, { code: "column_out_of_selection" });
+  const column = payload.columns.find((c) => c.index === operand.columnIndex);
+  const binding = payload.rowBindings.find((b) => b.rowIndex === operand.rowIndex);
+  let cellRaw: string | null = null;
+  try {
+    const t = fixedTable(state, payload.sourceRef);
+    cellRaw = t.rows[operand.rowIndex]?.[operand.columnIndex] ?? null;
+  } catch { reasons.push("source_unresolvable"); }
+  if (binding?.contextRef) {
+    const cp = readKnowledgeVersion(state.knowledge, binding.contextRef) as ContextPayload | null;
+    if (cp) { Object.assign(base.conditions, conditionsOfContext(state, cp)); base.subject = cp.subject; base.stage = cp.stage; }
+  }
+  base.unit = column?.unit ?? null;
+  base.metricKey = column ? (column.standardId ?? column.originalName) : null;
+  if (!column) reasons.push("column_unbound");
+  else if (column.review.status !== "confirmed") reasons.push("dataset_not_confirmed");
+  if (!binding) reasons.push("row_unbound");
+  if (column && cellRaw !== null) {
+    if (column.type !== "scalar") reasons.push("value_kind_unsupported");
+    else if (!NUMERIC.test(cellRaw.trim())) reasons.push("cell_not_numeric");
+    else base.raw = { kind: "scalar", raw: cellRaw.trim(), value: cellRaw.trim(), unit: column.unit };
+  } else if (column && cellRaw === null) reasons.push("cell_not_numeric");
+  if (!base.unit) reasons.push("unit_unknown");
+  return base;
+}
+
+function resolveOperandFact(state: LocusState, topicId: string, operand: ComparisonOperand): OperandFact {
+  return operand.type === "item" ? resolveItemFact(state, operand.ref) : resolveCellFact(state, topicId, operand);
+}
+
+/** 取值计划：确认映射的唯一换算规则；命中多条即冲突（不取第一条）。 */
+interface UnitPlan { canonical: string; mappingRef?: KnowledgeRef; convert: (unit: string | null, value: string) => { ok: true; value: string } | { ok: false; code: string } }
+
+function unitPlan(state: LocusState, topicId: string, metricKey: string | null, units: (string | null)[]): { plan?: UnitPlan; code?: string } {
+  const distinct = [...new Set(units.filter((u): u is string => !!u))];
+  const candidates = metricKey
+    ? state.knowledge.mappings.filter((m) => (m.payload as MappingPayload).topicId === topicId && ((m.payload as MappingPayload).metricId === metricKey || (m.payload as MappingPayload).aliases.includes(metricKey)))
+    : [];
+  if (candidates.length > 1) return { code: "mapping_conflict" };
+  const only = candidates[0];
+  if (only) {
+    const mp = only.payload as MappingPayload;
+    if (mp.review.status !== "confirmed") return { code: "mapping_not_confirmed" };
+    if (mp.conversion) {
+      const { factor, offset, fromUnit, toUnit } = mp.conversion;
+      const canonical = mp.targetUnit ?? toUnit;
+      const f = Number(factor), off = Number(offset);
+      return {
+        plan: {
+          canonical, mappingRef: makeKnowledgeRef("mapping", only.id, only.revision),
+          convert: (unit, value) => {
+            if (unit === toUnit || unit === canonical) return { ok: true, value };
+            if (unit !== fromUnit) return { ok: false, code: "unit_incompatible" };
+            return { ok: true, value: roundSig12(Number(value) * f + off) };
+          },
+        },
+      };
+    }
+    if (distinct.length > 1) return { code: "unit_incompatible" };
+    return { plan: { canonical: mp.targetUnit ?? distinct[0], mappingRef: makeKnowledgeRef("mapping", only.id, only.revision), convert: (_u, value) => ({ ok: true, value }) } };
+  }
+  if (distinct.length > 1) return { code: "unit_incompatible" };
+  if (distinct.length === 0) return { code: "unit_unknown" };
+  return { plan: { canonical: distinct[0], convert: (_u, value) => ({ ok: true, value }) } };
+}
+
+const RESERVED_FIELDS = ["unit", "metric", "subject", "stage", "valueKind", "statistic"];
+
+function fieldValue(f: OperandFact, field: string): string | undefined {
+  if (field === "unit") return f.unit ?? undefined;
+  if (field === "metric") return f.metricKey ?? undefined;
+  if (field === "subject") return f.subject || undefined;
+  if (field === "stage") return f.stage || undefined;
+  if (field === "valueKind") return f.raw?.kind ?? undefined;
+  if (field === "statistic") return f.raw && f.raw.kind === "summary" ? f.raw.statistic : undefined;
+  if (RESERVED_FIELDS.includes(field)) return undefined;
+  return f.conditions[field];
+}
+
+export function createKnowledgeComparison(state: LocusState, input: unknown): { state: LocusState; comparison: KnowledgeComparison; decision: ComparisonDecision; reasonCodes: string[] } {
+  const body = record(input, "body");
+  assertKeys(body, ["topicId", "viewId", "question", "metricId", "inputRefs", "varyingFields", "requiredEqualFields", "operation", "baselineRef", "mappingRefs", "exclusions"], "body");
+  const topicId = reqText(body.topicId, "topicId", 60);
+  if (!state.topics.some((t) => t.id === topicId)) throw new AppError(404, `课题不存在：${topicId}`);
+  const viewId = reqText(body.viewId, "viewId", 80);
+  const expected = currentViewId(state, topicId);
+  if (viewId !== expected) throw new AppError(409, "知识视图已变化（viewId 过期）。请刷新后重做比较，本页两次读取不混用。", { code: "view_stale", currentViewId: expected });
+  const question = reqText(body.question, "question", 1000);
+  const operation = enumOf(body.operation, "operation", ["display", "difference", "ratio"]) as ComparisonOperation;
+  if (!Array.isArray(body.inputRefs) || body.inputRefs.length === 0) throw new AppError(422, "inputRefs 须为非空操作数数组。");
+  if (body.inputRefs.length > 12) throw new AppError(422, "inputRefs 数量过多（上限 12）。");
+  const varyingFields = idArray(body.varyingFields ?? [], "varyingFields", 20);
+  const requiredEqualFields = idArray(body.requiredEqualFields ?? [], "requiredEqualFields", 20);
+  const overlap = varyingFields.filter((f) => requiredEqualFields.includes(f));
+  if (overlap.length) throw new AppError(422, `varyingFields 与 requiredEqualFields 不得重叠：${overlap.join("、")}`, { code: "field_sets_overlap" });
+  const operands: ComparisonOperand[] = body.inputRefs.map((o, i) => strictOperand(o, `inputRefs[${i}]`));
+  const baselineRef = body.baselineRef === undefined || body.baselineRef === null ? null : strictOperand(body.baselineRef, "baselineRef");
+  const explicitMetricId = body.metricId === undefined || body.metricId === null ? null : reqText(body.metricId, "metricId", 120);
+  const exclusions = idArray(body.exclusions ?? [], "exclusions", 20);
+  const explicitMappingRefs = strictKnowledgeRefs(body.mappingRefs, ["mapping"], "mappingRefs");
+
+  const reasons = new Set<string>();
+  const facts = operands.map((o) => resolveOperandFact(state, topicId, o));
+  for (const f of facts) for (const r of f.reasons) reasons.add(r);
+
+  let plan: UnitPlan | undefined;
+  let baselineIndex = -1;
+  let computedValue: TypedValue | null = null;
+  const normalized: NormalizedInput[] = facts.map((f) => ({ operand: f.operand, rawValue: f.raw, normalizedValue: null, mappingRefs: [] }));
+
+  if (operation !== "display") {
+    if (operands.length !== 2) throw new AppError(422, "difference/ratio 首版只支持两个操作数（非基线 − / ÷ 基线）。", { code: "operand_count_invalid" });
+    if (!baselineRef) throw new AppError(422, "difference/ratio 必须选择基线操作数（baselineRef）。", { code: "baseline_required" });
+    const bi = operands.findIndex((o) => sameOperand(o, baselineRef));
+    if (bi === -1) throw new AppError(422, "baselineRef 必须逐字段等于 inputRefs 中的一项。", { code: "baseline_not_in_inputs" });
+    baselineIndex = bi;
+    // 同指标定义：所有操作数 metricKey 一致
+    const keys = facts.map((f) => f.metricKey);
+    if (keys.some((k) => !k) || new Set(keys).size > 1) reasons.add("metric_definition_mismatch");
+    // 数值类型：只收 scalar 同口径
+    for (const f of facts) if (!f.raw || f.raw.kind !== "scalar" || f.raw.value === null) reasons.add("value_kind_unsupported");
+    // 单位：缺单位（未知）不得进入换算/差比
+    if (facts.some((f) => !f.unit)) reasons.add("unit_unknown");
+    // 单位换算
+    const up = unitPlan(state, topicId, keys[0] ?? explicitMetricId, facts.map((f) => f.unit));
+    if (up.code) reasons.add(up.code); else plan = up.plan;
+    if (plan) {
+      normalized.forEach((n, idx) => {
+        const f = facts[idx]!;
+        if (!f.raw || f.raw.kind !== "scalar" || f.raw.value === null) return;
+        const conv = plan!.convert(f.unit, f.raw.value);
+        if (!conv.ok) { reasons.add(conv.code); n.normalizedValue = null; return; }
+        n.normalizedValue = { kind: "scalar", raw: f.raw.raw, value: conv.value, unit: plan!.canonical };
+        n.mappingRefs = plan!.mappingRef ? [plan!.mappingRef] : [];
+      });
+      // ratio 分母（基线规范值）为 0 → 阻断
+      const baseNorm = normalized[baselineIndex]?.normalizedValue;
+      if (operation === "ratio" && baseNorm && baseNorm.kind === "scalar" && Number(baseNorm.value) === 0) reasons.add("baseline_zero");
+    }
+    // 必需条件
+    for (const field of requiredEqualFields) {
+      const vals = facts.map((f) => fieldValue(f, field));
+      if (vals.some((v) => v === undefined || v === null)) reasons.add("requirement_missing");
+      else if (new Set(vals).size > 1) reasons.add("requirement_conflict");
+    }
+  }
+
+  const blocking = [...reasons].filter((c) => c !== "operation_display");
+  let decision: ComparisonDecision;
+  const warnings: string[] = [];
+  if (blocking.length) decision = "blocked";
+  else if (operation === "display") { decision = "display_only"; reasons.add("operation_display"); }
+  else decision = "computable";
+
+  if (decision === "computable" && plan) {
+    const bi = baselineIndex, oi = normalized.length === 2 ? (bi === 0 ? 1 : 0) : -1;
+    const bv = normalized[bi]?.normalizedValue, ov = normalized[oi]?.normalizedValue;
+    if (bv && ov && bv.kind === "scalar" && ov.kind === "scalar") {
+      const b = Number(bv.value), o = Number(ov.value);
+      const val = operation === "difference" ? roundSig12(o - b) : roundSig12(o / b);
+      computedValue = { kind: "scalar", raw: val, value: val, unit: plan.canonical };
+      warnings.push(`按「非基线${operation === "difference" ? " − " : " ÷ "}基线」计算；规范单位 ${plan.canonical}；最多 12 位有效数字。`);
+    }
+  }
+  for (const field of varyingFields) {
+    const vals = facts.map((f) => fieldValue(f, field)).filter((v): v is string => !!v);
+    if (new Set(vals).size > 1) warnings.push(`「${field}」按 varyingFields 允许不同：${[...new Set(vals)].join(" / ")}`);
+  }
+  const mappingRefs = [...explicitMappingRefs, ...normalized.flatMap((n) => n.mappingRefs)];
+  const formatting = `十进制输入校验；最多 12 位有效数字；${operation === "display" ? "仅并列展示" : `规范单位 ${plan?.canonical ?? "（未定）"}；difference=非基线−基线，ratio=非基线÷基线`}`;
+
+  const payload: ComparisonPayload = {
+    topicId, question, inputRefs: operands,
+    metricId: explicitMetricId ?? facts[0]?.metricKey ?? null,
+    varyingFields, requiredEqualFields, operation,
+    baselineRef, mappingRefs: mappingRefs.filter((r, i, arr) => arr.findIndex((x) => refKey(x) === refKey(r)) === i),
+    exclusions, decision, reasonCodes: [...reasons].sort(),
+    normalizedInputs: normalized, computedValue, formatting, warnings, createdFromViewId: viewId,
+  };
+  const comparison = newEnv("comparison", `kcm_${uuid()}`, payload) as unknown as KnowledgeComparison;
+  return { state: { ...state, knowledge: appendEnv(state.knowledge, "comparison", comparison) }, comparison, decision, reasonCodes: payload.reasonCodes };
+}
+
+// ── 旧比较读取适配（§7.2 末：旧 ComparisonRecord 只读可用，不重写既有快照）──
+
+export interface LegacyComparisonView {
+  readonly id: string; readonly topicId: string; readonly subquestionId?: string; readonly createdAt: string;
+  readonly decision: "display_only";
+  readonly reasonCodes: string[];
+  readonly record: ComparisonRecord;
+}
+
+/**
+ * 旧 createComparison 产物是「按名分组并列」的展示型比较，从不产生数值结论；
+ * 读取侧统一标 display_only，未绑定单位的条目另附 reasons，避免被当成已算出的结论。
+ */
+export function legacyComparisonViews(state: LocusState, topicId?: string): LegacyComparisonView[] {
+  return state.comparisons
+    .filter((c) => !topicId || c.topicId === topicId)
+    .map((c) => {
+      const unbound = c.groups.flatMap((g) => g.entries).filter((e) => !e.unit);
+      return {
+        id: c.id, topicId: c.topicId, ...(c.subquestionId ? { subquestionId: c.subquestionId } : {}), createdAt: c.createdAt,
+        decision: "display_only" as const,
+        reasonCodes: [...(unbound.length ? ["legacy_unbound_fields"] : []), "legacy_no_computation"].sort(),
+        record: c,
+      };
+    });
 }
