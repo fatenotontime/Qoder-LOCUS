@@ -301,11 +301,11 @@
 
 | # | 分支 `feat/s05-e7-ai-input` | 分支 `<其他>` | 关联轮次 | 说明 |
 | --- | --- | --- | --- | --- |
-| 94 | `a3a27dc` · 2026-11-21 23:28（记录提交随后；PR merge hash 下轮回填） | — | S05-T10 | **E7-A 内置 AI 统一输入与引用校验（服务层＋模拟）**（判据 T41–T45）：`buildKnowledgeAiInput`（核心/可选一律来自 `readKnowledge`；核心=选中且过正式门槛的固定版本；待审仅 explore 进核心并显式标记；冻结 `snapshotHash`；超预算 `requiresShrink` 且**不静默截断**；`actualPayload` 可复查；兼容外部文件结构 `externalFile`）；`validateAiReferences`（不在快照内即 invalid）；`adoptAiProposal`（只落**待审** statement，无效引用 422 `ai_reference_invalid`）；`exportSelectedPackage`（复用 E5 冻结＋导出）。**327/327**；未调真实模型（模拟验证）；E7-B/UI 与真实模型/外部工具待前端与 S03；出 [E7 交接](HANDOFF_E7.md)；[会话记录](sessions/2026-11-21_session-05.md#s05-t10) |
+| 97 | `a3a27dc` · 2026-11-21 23:28、`7d632f3` · 23:29（记录）｜PR #18 merge `9908c9a` · 23:31（本轮回填）｜编号避让 S04-T12–T14（#94–#96） | — | S05-T10 | **E7-A 内置 AI 统一输入与引用校验（服务层＋模拟）**（判据 T41–T45）：`buildKnowledgeAiInput`（核心/可选一律来自 `readKnowledge`；核心=选中且过正式门槛的固定版本；待审仅 explore 进核心并显式标记；冻结 `snapshotHash`；超预算 `requiresShrink` 且**不静默截断**；`actualPayload` 可复查；兼容外部文件结构 `externalFile`）；`validateAiReferences`（不在快照内即 invalid）；`adoptAiProposal`（只落**待审** statement，无效引用 422 `ai_reference_invalid`）；`exportSelectedPackage`（复用 E5 冻结＋导出）。**327/327**；未调真实模型（模拟验证）；E7-B/UI 与真实模型/外部工具待前端与 S03；出 [E7 交接](HANDOFF_E7.md)；[会话记录](sessions/2026-11-21_session-05.md#s05-t10) |
 
 | 轮次 | 分支 | 提交 | 提交时间 | 本轮产出 |
 | --- | --- | --- | --- | --- |
-| S05-T10 | feat/s05-e7-ai-input | `a3a27dc` | 2026-11-21 23:28 | E7-A 服务层（T41–T45＋选定包，327/327）；E7-B/真实模型待前端与 S03；[会话记录](sessions/2026-11-21_session-05.md#s05-t10) |
+| S05-T10 | feat/s05-e7-ai-input | `a3a27dc`、`7d632f3` | 2026-11-21 23:28 / 23:29 | E7-A 服务层（T41–T45＋选定包，327/327）；E7-B/真实模型待前端与 S03；[会话记录](sessions/2026-11-21_session-05.md#s05-t10) |
 
 ### 会话 S05（续）· E8-A 逐类来源适配
 
