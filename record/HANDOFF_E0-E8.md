@@ -2,7 +2,7 @@
 
 > 用途：交给下一个执行会话/协作者，零上下文接手知识库防偏移执行合同的推进。
 > **唯一执行依据**：[知识库防偏移执行合同 v1.0](../docs/architecture/KNOWLEDGE_BASE_EXECUTION_SPEC.md)（下称「合同」）。本文与合同冲突时以合同为准；本文与仓库实际状态冲突时以 `git log` / `record/COMMIT_LEDGER.md` 为准。
-> 本文只保留最终版。撰写时点：2026-11-21 16:20；具体 HEAD 以 `git log` 为准；E0–E4 全部 passed（E4 见 §三·六），下一步 E5。
+> 本文只保留最终版。撰写时点：2026-11-21 17:05；具体 HEAD 以 `git log` 为准；E0–E5 全部 passed（E4 见 §三·六、E5 见 §三·七），下一步 E6（**阻塞：等前端页面**）。
 
 ---
 
@@ -122,6 +122,15 @@
 - E3 遗留已收口：读取侧复检 `effectiveCurrentJudgments`（「当前认识」只取现在仍 confirmed 且固定版本可读的项）＋ `judgment_not_live` 动态提醒，不改写历史引用。
 - 全量：**302/302 绿**（E3 后基线 294，本轮 +8）。PR **#10** 审计通过后以 **merge commit `a40f7bb`（16:18）** 合入 main（台账 #87 已回填）。E4 无浏览器项（页面在 E6），本轮不启动实例、不截图。
 
+## 三·七 E5 — 快照、wiki 与知识包：**passed（S05-T7，代码 `e3a148c` 17:00；详见 [HANDOFF_E5.md](HANDOFF_E5.md)）**
+
+合同 §10 E5：freeze／export／本地读取路由、备份完整性与 tests；判据 **T29–T35**。
+
+- 落地要点：`freezeKnowledge`（§7.3）viewId 校验 → 选中闭包 → `contentHash`（不含 createdAt/snapshotId）→ 稳定 token（K/S）；数据集内冻结**实际行列**（31 行不截断，T31）；来源历史与快照同笔，保存失败不返回 ready（T35）；`services/knowledge-export.ts`（§7.4）统一 JSON/CSV/wiki/ZIP：机器 CSV 缺失值留空（不写 0）、sheet-safe 变体转义公式样式、wiki 六页模板＋相对链接＋受限 Markdown、manifest 列每文件 sha256/schema/许可/排除附件＋NOTICE、默认不带附件、包内路径安全；`sourcePolicies`＋`assertKnowledgeAccess`（§7.5）缺策略默认仅 localRead、含派生判断上游来源与人工无来源陈述、含被拒来源整包 403、撤权不改写既有快照（T34）。
+- 修正：`stableStringify` 按 JSON 语义处理 `undefined`（对象键略去／数组项 null）。原实现写出 `"key":undefined`，与 JSON 落盘不一致，导致**归档来源重启后 hash 失配**（`content_mismatch`，E5 快照会丢数据集）。影响仅限此前归档/快照数据（现仅测试与合成验收）。
+- 全量：**313/313 绿**（E4 后基线 302，本轮 +11）；新增 `tests/knowledge-view.test.ts`（纯渲染＋API 往返结构，**不替代浏览器**）。PR 审计通过后以 merge commit 合入（merge hash 下轮回填台账 #88）。
+- 未做（如实）：§12.2 全负载容量复测（S08 工程停点）；§12.3 第 6–7 步浏览器冻结/导出（属 E6）。
+
 ## 四、E3–E8 与 B1 计划（一律引用合同，不另造路线）
 
 各阶段完整范围/步骤/禁止项见合同 **§10**（457–542 行）；测试判据见 **§11**（548–596 行）；每阶段输出按 **§13** 模板（实际文件、测试、未完成项，不得只说「已按设计完成」）。以下仅列判据与关键提醒：
@@ -130,9 +139,9 @@
 | --- | --- | --- | --- |
 | ~~E3 分项人审/主题/守卫~~ **passed（见 §三·五，PR #8）** | §10 E3（483–488 行） | T13–T16、T25 ✅ | 专用 update/review 接口；改 value/条件/来源/nature→新 revision 回 pending＋409 保护过期编辑；重要度/备注不改科学性质；旧卡显式结构化不双编辑 fields；**浏览器实测**新旧卡/人审冲突/刷新恢复/dirty 保护；审阅链必须真实可用，不能把确认按钮留到最后 |
 | ~~E4 数据集/查询/比较~~ **passed（见 §三·六，PR #10）** | §10 E4（490–495 行） | T17–T19、T26–T28 ✅ | T17 独立数值 oracle（1 d vs 24 h→差0比1；1 d vs 48 h→差24 h 比2）；missing/unit/type 正确拒绝；条件作自变量不误拦截；scope 不沿共享论文串课题；禁用摘要/前30行代替选定数据集；**E3 遗留**：级联回退后「当前认识」读取侧复检、分析运行／地图固定用当前有效版（T18/T33 家族） |
-| E5 快照/wiki/知识包 | §10 E5（497–502 行） | T29–T35 | viewId 过期→409；冻结后改数据旧快照不变；tokens/许可排除＋私密哨兵检查（含 ZIP 解包）；机器 CSV 缺失值不写 0；不用真实用户全文做导出测试 |
-| E6 可视化知识总览 | §10 E6（504–509 行） | T36–T40＋§12 浏览器全链 | §9 指定前端文件；四子视图/筛选/证据抽屉/空态错误态/当前快照切换；双主题＋窄屏＋键盘；禁静态稿/假按钮/另起展示站；前端文案硬规则（见本文 §一） |
-| E7 内置 AI 统一输入 | §10 E7（511–517 行） | T41–T45＋既有 review/contract-roundtrip 回归 | readKnowledge 产生核心/可选预览；固定 snapshot＋真实 payload 留痕；AI 引用校验 invalid 不自动写入；**模拟先验，真实模型/外部工具按 S03 另获准**，未获准只能标「代码与模拟调用通过；真实工具待验」；AnalysisTask 仍需执行/测量/表格核心 |
+| ~~E5 快照/wiki/知识包~~ **passed（见 §三·七）** | §10 E5（497–502 行） | T29–T35 ✅ | viewId 过期→409；冻结后改数据旧快照不变；tokens/许可排除＋私密哨兵检查（含 ZIP 解包）；机器 CSV 缺失值不写 0；不用真实用户全文做导出测试 |
+| E6 可视化知识总览 **⛔ 阻塞：等前端页面（用户 2026-11-21 明确）** | §10 E6（504–509 行） | T36–T40＋§12 浏览器全链 | §9 指定前端文件；四子视图/筛选/证据抽屉/空态错误态/当前快照切换；双主题＋窄屏＋键盘；禁静态稿/假按钮/另起展示站；前端文案硬规则（见本文 §一） |
+| E7 内置 AI 统一输入 **（依赖 E6 选择器，E6 未完成前不开工）** | §10 E7（511–517 行） | T41–T45＋既有 review/contract-roundtrip 回归 | readKnowledge 产生核心/可选预览；固定 snapshot＋真实 payload 留痕；AI 引用校验 invalid 不自动写入；**模拟先验，真实模型/外部工具按 S03 另获准**，未获准只能标「代码与模拟调用通过；真实工具待验」；AnalysisTask 仍需执行/测量/表格核心 |
 | E8 其余模块逐类贯通 | §10 E8（519–529 行） | T46 逐类子用例＋既有 origin/reference/report 守卫回归 | 固定顺序：方案模板→执行事件→样品状态→分析结果→报告块→已采纳对话；每类八件事（读取/纳管历史/固定来源/性质继承/更新提示/wiki 入口/AI 选择器/更正回查测试）；方法来源≠执行性质；聊天只纳明确采纳内容 |
 | B1 外部只读接口 | §10 B1（531–542 行） | T47＋用户指定实际客户端读取 | **独立授权（S07）后才执行**；独立 `knowledge-reader.ts`，不暴露主 createApp；仅 127.0.0.1；固定 snapshotId 授权＋一次性 Bearer（内存 hash、重启失效）；30 请求/分、分页≤200、响应≤2MiB；撤权后整包拒下载、策略读不到 fail closed |
 
@@ -140,15 +149,15 @@
 
 ## 五、记录与台账现状
 
-- 台账 [record/COMMIT_LEDGER.md](COMMIT_LEDGER.md)：#84（E1 commitState PR #6，merge `b09029b`）、#85（E2 `7ca563e` 13:01，PR #7 merge `0f361aa` 13:09）、**#86（E3 `26f7d65` 15:17 ＋ 记录 `22f677b` 15:18 ＋ 交接文档 `c065bb2` 15:25，PR #8 merge `410ea85` 15:22、PR #9 merge `57d6d3d` 15:28 均已回填）**、**#87（E4 `9b20c1a` 16:10 ＋ `1bb626b` 16:14 ＋ 记录 `5f70b37` 16:18，PR #10 merge `a40f7bb` 16:18 已回填）**。
-- 叙述记录：[record/sessions/2026-11-21_session-05.md](sessions/2026-11-21_session-05.md)（S05-T1 E0 / T2 基座 / T3 commitState / T4 E2 提取契约 / T5 E3 分项人审＋交接 / **T6 E4 数据集/查询/比较**）。E5 完成后追加 S05-T7。
+- 台账 [record/COMMIT_LEDGER.md](COMMIT_LEDGER.md)：#84（E1 commitState PR #6，merge `b09029b`）、#85（E2 `7ca563e` 13:01，PR #7 merge `0f361aa` 13:09）、**#86（E3 `26f7d65` 15:17 ＋ 记录 `22f677b` 15:18 ＋ 交接文档 `c065bb2` 15:25，PR #8 merge `410ea85` 15:22、PR #9 merge `57d6d3d` 15:28 均已回填）**、**#87（E4 `9b20c1a` 16:10 ＋ `1bb626b` 16:14 ＋ 记录 `5f70b37` 16:18，PR #10 merge `a40f7bb` 16:18 已回填）**、**#88（E5 `e3a148c` 17:00，PR 已建、merge hash 待下一轮回填）**。
+- 叙述记录：[record/sessions/2026-11-21_session-05.md](sessions/2026-11-21_session-05.md)（S05-T1 E0 / T2 基座 / T3 commitState / T4 E2 提取契约 / T5 E3 分项人审＋交接 / T6 E4 数据集/查询/比较 / **T7 E5 快照/wiki/知识包**）。E6 完成后追加 S05-T8。
 - 用户未跟踪/改动材料（`vibe_images/`、`record/screenshots/from-pictures/`、`reference reseach data/…`、session-02.md 的用户改动）：**不删不擅自提交**。
 - 每轮收尾照 AGENTS.md §8 清单：先 git log 取真实 hash/时间 → 台账双线表＋轮次索引 → 会话记录 → trailer → 分支 PR 审计合并。无提交的轮次显式记「本轮无提交」。
 
 ## 六、常用命令
 
 ```bash
-npm --prefix sciworkbench test          # 全量测试（E1 后 269；E2 后 279；E3 后 294；E4 后 302）
+npm --prefix sciworkbench test          # 全量测试（E1 后 269；E2 后 279；E3 后 294；E4 后 302；E5 后 313）
 cd sciworkbench && node server.ts       # 起服务（ PORT/LOCUS_DATA 环境变量隔离数据）
 git -c http.proxy= -c https.proxy= push # 代理 7897 失败时直连推送
 ```

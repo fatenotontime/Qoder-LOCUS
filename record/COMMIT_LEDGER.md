@@ -227,6 +227,16 @@
 | --- | --- | --- | --- | --- |
 | S05-T6 | feat/s05-e4-datasets-comparison | `9b20c1a`、`1bb626b` | 2026-11-21 16:10 / 16:14 | E4 统一读取＋数据集/映射/比较服务与路由、旧比较读取适配、E3 遗留读取侧复检、T17–T19/T26–T28＋路由测试（302/302）；PR #10 审计后以 merge commit 合入 main（`a40f7bb` · 16:18，本轮回填）；[会话记录](sessions/2026-11-21_session-05.md#s05-t6) |
 
+### 会话 S05（续）· E5 快照/wiki/知识包
+
+| # | 分支 `feat/s05-e5-snapshots-export` | 分支 `<其他>` | 关联轮次 | 说明 |
+| --- | --- | --- | --- | --- |
+| 88 | `e3a148c` · 2026-11-21 17:00（记录提交随后；PR merge hash 下轮回填） | — | S05-T7 | **E5 快照、wiki 与知识包**（判据 T29–T35）：`freezeKnowledge`（§7.3 viewId 校验、contentHash 不含 createdAt/snapshotId、稳定 token K/S、数据集**实际行列**不截断、来源历史同笔、formal 复检；explore 标注）；新建 `services/knowledge-export.ts`（§7.4 统一 JSON/CSV/wiki/ZIP＋manifest/NOTICE、默认不带附件、路径安全、机器值保真缺失留空不写 0、sheet-safe 公式转义、受限 Markdown 无 raw HTML/javascript:）；`sourcePolicies`＋`assertKnowledgeAccess`（§7.5 缺策略默认仅 localRead、含派生上游来源、整包 403 不降级、撤权不改写快照）；§8.1 路由（snapshots／export／references/:token／source-policies＋`?snapshotId=` 固定版本读取）；**修正 canonicalHash**（`stableStringify` 按 JSON 语义处理 undefined——原实现致归档来源重启后 hash 失配）。测试 **T29–T34、T34b、T35＋E5 路由往返＋新建 knowledge-view.test.ts**，**313/313**；出 [E5 交接](HANDOFF_E5.md)；[会话记录](sessions/2026-11-21_session-05.md#s05-t7) |
+
+| 轮次 | 分支 | 提交 | 提交时间 | 本轮产出 |
+| --- | --- | --- | --- | --- |
+| S05-T7 | feat/s05-e5-snapshots-export | `e3a148c` | 2026-11-21 17:00 | E5 冻结/导出/策略与访问检查＋快照路由（T29–T35，313/313）；canonicalHash undefined 语义修正；PR 审计后合入（merge hash 下轮回填）；[会话记录](sessions/2026-11-21_session-05.md#s05-t7) |
+
 ## 独立提示词维护记录 S02-T1
 
 | # | 分支 `main` | 分支 `<其他>` | 关联轮次 | 说明 |
