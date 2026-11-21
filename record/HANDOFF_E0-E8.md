@@ -2,7 +2,7 @@
 
 > 用途：交给下一个执行会话/协作者，零上下文接手知识库防偏移执行合同的推进。
 > **唯一执行依据**：[知识库防偏移执行合同 v1.0](../docs/architecture/KNOWLEDGE_BASE_EXECUTION_SPEC.md)（下称「合同」）。本文与合同冲突时以合同为准；本文与仓库实际状态冲突时以 `git log` / `record/COMMIT_LEDGER.md` 为准。
-> 本文只保留最终版。撰写时点：2026-11-21，main HEAD `b09029b`（PR #6 merge，01:35）。
+> 本文只保留最终版。撰写时点：2026-11-21 15:30，main HEAD `410ea85`（PR #8 merge，15:22）；E0–E3 全部 passed，下一步 E4。
 
 ---
 
@@ -102,14 +102,25 @@
 - 提交：分支 `feat/s05-e2-extraction`，代码 `7ca563e`（2026-11-21 13:01，14 files +2204/−367，带 `Turn: S05-T4`/`Agent: qoder-main`）；PR 审计（测试全绿／范围与标题一致／无敏感文件）后 merge commit 合入，merge hash 按 §7.3 在下一轮回填台账 #85。
 - 未做（不在本轮授权内）：B1 只读监听（S07 另批）；真实模型与外部工具验证（S03）；真人课题数据（S02）。活体实例 5184/5187/5191 全程未触碰。
 
+## 三·五 E3 — 分项人审、主题与消费者开放：**passed（S05-T5，代码 `26f7d65` 15:17 ＋ 记录 `22f677b` 15:18；详见 [HANDOFF_E3.md](HANDOFF_E3.md)）**
+
+合同 §10 E3：新增 `services/knowledge-base.ts` 的分项审阅服务与主题（原「待建」）；判据 **T13–T16、T25** ＋ §10 E3 浏览器清单。
+
+- 落地要点：`update`／`review`／`resolve`／`structure`／`themes`／`statements` 端点接入；壳与卡片状态一律由分项派生；**条件改动级联回退已确认项**（`affectedItems`），部分确认→`need_info`＋`pendingConditions`；引文未逐字定位（服务端核对）不放行；`baseRevision` 过期→409；重要度／备注不升版不改科学性质。
+- 关键口径（勿在后续阶段改回）：**确认门槛按钉住的 revision 判定**（§4.6.9）——定位修订后不自动升级，人在界面显式「改绑当前版」，改绑即回待审；旧版可读性走 `knowledgeItemConfirmedAt`，正式使用有效性走 `knowledgeItemLiveStatus`／`shellAllItemsConfirmed`。
+- 全量：**294/294 绿**（E2 后基线 279，本轮 +15）。浏览器验收在隔离实例（`PORT=5217`、`LOCUS_DATA=sciworkbench/data/scratch-e3/`、AI 环境变量全清、Edge）跑完 §12.3 步骤 1–3 与 §10 E3 清单，控制台 0 error／0 warn。
+- 修掉 9 个真实缺陷（详见 HANDOFF_E3 同名小节），其中「知识页显示 0 卡 0 待审」「条件引文不可见造成确认死路」「重抽静默清空人审」三项属会毁结论级。
+- 偏差如实：§12.3 步骤 1「总览」入口沿用现有顶部条路径；`scripts/frontend-text-check.ts` 在本机 headless Edge 取到空 DOM（环境限制），改用同规则在已连线 Edge 内扫描零命中替代；级联回退后「当前认识」读取侧复检留待 E4／E5。
+- PR：**#8**（分支 `feat/s05-e3-item-review`）审计通过——294/294、范围与标题一致、无敏感文件，2026-11-21 15:22 以 **merge commit `410ea85`** 合入 main（台账 #86 已回填）。交接文档另走 `docs/s05-e3-handoff` → **PR #9**（含 `c065bb2` ＋ #86 回填 ＋ 本节更新），其 merge hash 按 §7.3 由下一轮回填。
+
 ## 四、E3–E8 与 B1 计划（一律引用合同，不另造路线）
 
 各阶段完整范围/步骤/禁止项见合同 **§10**（457–542 行）；测试判据见 **§11**（548–596 行）；每阶段输出按 **§13** 模板（实际文件、测试、未完成项，不得只说「已按设计完成」）。以下仅列判据与关键提醒：
 
 | 阶段 | 合同节 | 通过判据（§11 同名测试） | 关键提醒 |
 | --- | --- | --- | --- |
-| E3 分项人审/主题/守卫 | §10 E3（483–488 行） | T13–T16、T25 | 专用 update/review 接口；改 value/条件/来源/nature→新 revision 回 pending＋409 保护过期编辑；重要度/备注不改科学性质；旧卡显式结构化不双编辑 fields；**浏览器实测**新旧卡/人审冲突/刷新恢复/dirty 保护；审阅链必须真实可用，不能把确认按钮留到最后 |
-| E4 数据集/查询/比较 | §10 E4（490–495 行） | T17–T19、T26–T28 | T17 独立数值 oracle（1 d vs 24 h→差0比1；1 d vs 48 h→差24 h 比2）；missing/unit/type 正确拒绝；条件作自变量不误拦截；scope 不沿共享论文串课题；禁用摘要/前30行代替选定数据集 |
+| ~~E3 分项人审/主题/守卫~~ **passed（见 §三·五，PR #8）** | §10 E3（483–488 行） | T13–T16、T25 ✅ | 专用 update/review 接口；改 value/条件/来源/nature→新 revision 回 pending＋409 保护过期编辑；重要度/备注不改科学性质；旧卡显式结构化不双编辑 fields；**浏览器实测**新旧卡/人审冲突/刷新恢复/dirty 保护；审阅链必须真实可用，不能把确认按钮留到最后 |
+| E4 数据集/查询/比较 | §10 E4（490–495 行） | T17–T19、T26–T28 | T17 独立数值 oracle（1 d vs 24 h→差0比1；1 d vs 48 h→差24 h 比2）；missing/unit/type 正确拒绝；条件作自变量不误拦截；scope 不沿共享论文串课题；禁用摘要/前30行代替选定数据集；**E3 遗留**：级联回退后「当前认识」读取侧复检、分析运行／地图固定用当前有效版（T18/T33 家族） |
 | E5 快照/wiki/知识包 | §10 E5（497–502 行） | T29–T35 | viewId 过期→409；冻结后改数据旧快照不变；tokens/许可排除＋私密哨兵检查（含 ZIP 解包）；机器 CSV 缺失值不写 0；不用真实用户全文做导出测试 |
 | E6 可视化知识总览 | §10 E6（504–509 行） | T36–T40＋§12 浏览器全链 | §9 指定前端文件；四子视图/筛选/证据抽屉/空态错误态/当前快照切换；双主题＋窄屏＋键盘；禁静态稿/假按钮/另起展示站；前端文案硬规则（见本文 §一） |
 | E7 内置 AI 统一输入 | §10 E7（511–517 行） | T41–T45＋既有 review/contract-roundtrip 回归 | readKnowledge 产生核心/可选预览；固定 snapshot＋真实 payload 留痕；AI 引用校验 invalid 不自动写入；**模拟先验，真实模型/外部工具按 S03 另获准**，未获准只能标「代码与模拟调用通过；真实工具待验」；AnalysisTask 仍需执行/测量/表格核心 |
@@ -120,18 +131,19 @@
 
 ## 五、记录与台账现状
 
-- 台账 [record/COMMIT_LEDGER.md](COMMIT_LEDGER.md)：#83（E1 基座 PR #5）、#84（E1 commitState PR #6，`e7245c9` 01:32、`1725fae` 01:34、merge `b09029b` 01:35，merge hash 已随本轮回填）、**#85（E2 `7ca563e` 13:01，分支 `feat/s05-e2-extraction`，merge hash 待下一轮回填）**。
-- 叙述记录：[record/sessions/2026-11-21_session-05.md](sessions/2026-11-21_session-05.md)（S05-T1 E0 / T2 基座 / T3 commitState / **T4 E2 提取契约＋交接**）。E3 完成后追加 S05-T5。
+- 台账 [record/COMMIT_LEDGER.md](COMMIT_LEDGER.md)：#84（E1 commitState PR #6，merge `b09029b`）、#85（E2 `7ca563e` 13:01，PR #7 merge `0f361aa` 13:09）、**#86（E3 `26f7d65` 15:17 ＋ 记录 `22f677b` 15:18 ＋ 交接文档 `c065bb2` 15:25，PR #8 merge `410ea85` 15:22 已回填；PR #9 merge hash 待下一轮回填）**。
+- 叙述记录：[record/sessions/2026-11-21_session-05.md](sessions/2026-11-21_session-05.md)（S05-T1 E0 / T2 基座 / T3 commitState / T4 E2 提取契约 / **T5 E3 分项人审＋交接**）。E4 完成后追加 S05-T6。
 - 用户未跟踪/改动材料（`vibe_images/`、`record/screenshots/from-pictures/`、`reference reseach data/…`、session-02.md 的用户改动）：**不删不擅自提交**。
 - 每轮收尾照 AGENTS.md §8 清单：先 git log 取真实 hash/时间 → 台账双线表＋轮次索引 → 会话记录 → trailer → 分支 PR 审计合并。无提交的轮次显式记「本轮无提交」。
 
 ## 六、常用命令
 
 ```bash
-npm --prefix sciworkbench test          # 全量测试（E1 后 main 基线 269/269；E2 合入后 279/279）
+npm --prefix sciworkbench test          # 全量测试（E1 后 269/269；E2 后 279/279；E3 后 294/294）
 cd sciworkbench && node server.ts       # 起服务（ PORT/LOCUS_DATA 环境变量隔离数据）
 git -c http.proxy= -c https.proxy= push # 代理 7897 失败时直连推送
 ```
 
 - 验收隔离数据另起 temp 文件；勿动 5184/5187/5191 现有实例；重启任何实例先备份＋用户确认。
-- 本文档随 E2 分支提交（测试已全绿，满足合并审计条件）；E2 的简要交接见 [HANDOFF_E2.md](HANDOFF_E2.md)。
+- E3 浏览器验收种子：`cd sciworkbench && node scripts/acceptance-knowledge.ts data/scratch-e3/run.json --force`，再 `PORT=<空闲端口> LOCUS_DATA=data/scratch-e3/run.json LOCUS_AI_CONFIG=<隔离配置> node server.ts`（全合成材料、不联网、不需要 Key；同一句引文在正文中出现三次，用于测「多处命中」的 fail-closed 与出现位置全列；卡 A 已结构化、卡 B 留给「按需结构化」入口）。
+- 本文档随 E2 分支提交（测试已全绿，满足合并审计条件）；E2 的简要交接见 [HANDOFF_E2.md](HANDOFF_E2.md)，E3 的见 [HANDOFF_E3.md](HANDOFF_E3.md)。
