@@ -257,11 +257,11 @@
 
 | # | 分支 `feat/s05-e6a-container` | 分支 `<其他>` | 关联轮次 | 说明 |
 | --- | --- | --- | --- | --- |
-| 92 | `5775dcd` · 2026-11-21 19:02（记录提交随后；PR merge hash 下轮回填） | — | S05-T8 | **E6-A 容器/流水线数据接线**（合同 E6.2/E6.3）：`buildKnowledgeContainer`（一条知识=一个可寻址元素（固定 KnowledgeRef）、数据集为聚合元素且知识项数/数据集数分开、外观类别由数据决定、条件随项＋来源 token 回查、匹配/已加载/总量分列、卡壳不另计知识、同源论文单入口、未分主题项单列）；`knowledgePipelineStatus`（只统计已落库回执，失败/取消/重放不重复计数）；只读路由 `GET /api/knowledge/container`、`GET /api/knowledge/pipeline/:runId`。**E6.5② 反例取证**：引用钉旧版 pending＋新版 confirmed 未改绑 → 当前**放行**；钉旧版 confirmed＋新版 pending → 当前**拒绝**；现撤回一致阻断——与 §4.2「核查被引用版本 review＋当前 withdrawn/excluded」不一致，属业务行为变更，**未擅自改门槛，待用户裁决**。E6.5③ 旧比较入口/消费者清单已列（写入 `POST /api/comparisons`；消费者 api.js/app.js；`legacyComparisonViews` 仅测试在用）；容量状态记「未验证」。**E6-B 仍阻塞**（等前端交付＋接入表）。测试 **321/321**；另原样落库 S04-T11 合同 E6 修订与 #89–#91 记录；出 [E6 交接](HANDOFF_E6.md)；[会话记录](sessions/2026-11-21_session-05.md#s05-t8) |
+| 92 | `5775dcd` · 2026-11-21 19:02、`9bdca3c` · 19:04（记录）｜PR #14 merge `b5d63f1` · 19:05（本轮回填） | — | S05-T8 | **E6-A 容器/流水线数据接线**（合同 E6.2/E6.3）：`buildKnowledgeContainer`（一条知识=一个可寻址元素（固定 KnowledgeRef）、数据集为聚合元素且知识项数/数据集数分开、外观类别由数据决定、条件随项＋来源 token 回查、匹配/已加载/总量分列、卡壳不另计知识、同源论文单入口、未分主题项单列）；`knowledgePipelineStatus`（只统计已落库回执，失败/取消/重放不重复计数）；只读路由 `GET /api/knowledge/container`、`GET /api/knowledge/pipeline/:runId`。**E6.5② 反例取证**：引用钉旧版 pending＋新版 confirmed 未改绑 → 当前**放行**；钉旧版 confirmed＋新版 pending → 当前**拒绝**；现撤回一致阻断——与 §4.2「核查被引用版本 review＋当前 withdrawn/excluded」不一致，属业务行为变更，**未擅自改门槛，待用户裁决**。E6.5③ 旧比较入口/消费者清单已列（写入 `POST /api/comparisons`；消费者 api.js/app.js；`legacyComparisonViews` 仅测试在用）；容量状态记「未验证」。**E6-B 仍阻塞**（等前端交付＋接入表）。测试 **321/321**；另原样落库 S04-T11 合同 E6 修订与 #89–#91 记录；出 [E6 交接](HANDOFF_E6.md)；[会话记录](sessions/2026-11-21_session-05.md#s05-t8) |
 
 | 轮次 | 分支 | 提交 | 提交时间 | 本轮产出 |
 | --- | --- | --- | --- | --- |
-| S05-T8 | feat/s05-e6a-container | `5775dcd` | 2026-11-21 19:02 | E6-A 容器/流水线数据接线＋E6.5② 反例取证＋E6.5③ 清单（321/321）；E6-B 阻塞；PR 审计后合入（merge hash 下轮回填）；[会话记录](sessions/2026-11-21_session-05.md#s05-t8) |
+| S05-T8 | feat/s05-e6a-container | `5775dcd` | 2026-11-21 19:02 | E6-A 容器/流水线数据接线＋E6.5② 反例取证＋E6.5③ 清单（321/321）；E6-B 阻塞；PR 审计后以 merge commit 合入 main（`b5d63f1` · 19:05，本轮回填）；[会话记录](sessions/2026-11-21_session-05.md#s05-t8) |
 
 ## 独立提示词维护记录 S02-T1
 
