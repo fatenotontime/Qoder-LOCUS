@@ -33,11 +33,11 @@
 
 ## 待裁决 / 未闭环（接手必读）
 
-1. **E6.5② 固定版本审核口径（待用户裁决，未改门槛）**：反例已跑（`tests/knowledge-base.test.ts` 的 E6.5②a/b/c）——
+1. **E6.5② 固定版本审核口径——已闭环（S05-T9，用户裁决「按 §4.2 修正」）**：反例已跑（`tests/knowledge-base.test.ts` 的 E6.5②a/b/c）——
    - 引用钉**旧版 pending**、当前新版 confirmed、**未显式改绑** → 当前实现**放行**（合同 §4.2 要求核查被引用版本 → 应拒绝直到改绑）；
    - 引用钉**旧版 confirmed**、当前新版回 pending → 当前实现**拒绝**（合同按固定版应放行）；
    - 当前被**撤回** → 一致阻断。
-   根因：消费者门槛（`knowledgeItemConfirmedAt`/`knowledgeItemLiveStatus`、analysis 勾选复检、E4 比较门槛）返回的是**当前** payload 的 review，而非被引用版本。修正属**业务行为变更**（会改变 E3 已验收口径），需用户裁决后单独一轮实施并同步更新 E3 测试与记录。
+   处置：已按 §4.2 修正——新增 `knowledgeItemGate`（**被引用版本 review ＋ 当前非 withdrawn/excluded**），`knowledgeItemConfirmedAt`/`itemFormalUsable`/比较门槛/analysis 勾选与冻结前复检统一改用；受影响测试有意更新（E6.5②a/b 断言合同行为；T13「回 needs_info」改判放行并补撤回断言）；E3 其余用例未改即通过，实现与 HANDOFF_E3 所述口径对齐。见 [S05-T9](sessions/2026-11-21_session-05.md#s05-t9)。
 2. **容量未验证（E6.5⑤.1）**：合同 §12.2 负载为 **10000 行×10 列**＋完整增长负载；E5 交接的「31 行」是防截断样例（已在 HANDOFF_E5 勘误）。未测 → 不能判断是否触发 S08，也不得用 S08 名义免测、不得降负载。
 3. **旧比较适配（E6.5⑤.3）**：写入 `POST /api/comparisons`（`server.ts:1134`）→ `createComparison`（`services/app.ts:598`）→ 旧 `state.comparisons`；前端消费者 `public/lib/api.js:20`、`public/app.js:1094`、`public/app.js:2514`；读取侧 `legacyComparisonViews` 目前**仅测试在用**。合同 §7.2 要求旧入口改「读取适配」；需业务变更时单独报告，不混进页面重构。
 4. 过时边界勘误：总交接旧句「retry-chunk 在队列内等待模型」已不成立（当前 `server.ts` 该路由在队列外）；未复测并发，不声称已改 202 后台化。
