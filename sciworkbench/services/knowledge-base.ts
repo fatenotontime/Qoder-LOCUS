@@ -1033,13 +1033,33 @@ export function shellAllItemsConfirmed(state: LocusState, card: LitCardRecord): 
   return refs.every((r) => knowledgeItemConfirmedAt(state, r));
 }
 
-/** 消费者门槛：某固定版本知识项是否已确认（不存在/未确认 → false）。 */
+export interface KnowledgeItemGate {
+  readonly ok: boolean;
+  readonly reason: "ok" | "unreadable" | "pinned_not_confirmed" | "withdrawn" | "excluded";
+  readonly pinnedStatus: ReviewStatus | null;
+  readonly liveStatus: ReviewStatus | null;
+}
+
 /**
- * 消费者复检（§4.7）：固定版本必须可读，且该知识项**现在**仍为已确认。
- * 只查固定版本会让「后来改回待审/撤回」的项继续混进正式上下文；只查最新版又等于放弃固定版本读取。
+ * 消费者门槛（§4.2 + §4.6.9）：以**被引用版本**的 review 判定，并叠加当前撤回/排除。
+ * - 被引用版本不是 confirmed → 拒绝（即使当前已有已确认新版；须显式改绑，不自动升级）。
+ * - 被引用版本 confirmed、当前版本回 pending/needs_info → 放行（固定版仍是已确认内容）。
+ * - 当前版本被 withdrawn/excluded → 拒绝（现撤回不得借用旧 confirmed 版本做新的正式使用）。
  */
+export function knowledgeItemGate(state: LocusState, ref: KnowledgeRef): KnowledgeItemGate {
+  const payload = readKnowledgeVersion(state.knowledge, ref) as ItemPayload | null;
+  if (!payload) return { ok: false, reason: "unreadable", pinnedStatus: null, liveStatus: knowledgeItemLiveStatus(state, ref) };
+  const pinnedStatus = payload.review.status;
+  const liveStatus = knowledgeItemLiveStatus(state, ref);
+  if (liveStatus === "withdrawn") return { ok: false, reason: "withdrawn", pinnedStatus, liveStatus };
+  if (liveStatus === "excluded") return { ok: false, reason: "excluded", pinnedStatus, liveStatus };
+  if (pinnedStatus !== "confirmed") return { ok: false, reason: "pinned_not_confirmed", pinnedStatus, liveStatus };
+  return { ok: true, reason: "ok", pinnedStatus, liveStatus };
+}
+
+/** 消费者门槛：某固定版本知识项是否可用于正式使用（不存在/被引用版本未确认/现撤回 → false）。 */
 export function knowledgeItemConfirmedAt(state: LocusState, ref: KnowledgeRef): boolean {
-  return knowledgeItemLiveStatus(state, ref) === "confirmed";
+  return knowledgeItemGate(state, ref).ok;
 }
 
 /** 知识项当前版本的审核状态（对象或引用不存在 → null）。 */
@@ -1307,10 +1327,9 @@ const PAGE_MAX = 200;
 
 function topicOfItem(p: ItemPayload): string[] { return p.topicIds ?? []; }
 
-/** 结构已确认（formal 门槛 §4.7）：固定版本可读且现在仍 confirmed。 */
+/** formal 门槛（§4.7）：以该固定引用判定（此处引用即当前版本），现撤回/排除仍阻断。 */
 function itemFormalUsable(k: KnowledgeState, env: KnowledgeItem): boolean {
-  const live = k.items.find((x) => x.id === env.id);
-  return !!live && (live.payload as ItemPayload).review.status === "confirmed";
+  return knowledgeItemGate({ knowledge: k } as LocusState, makeKnowledgeRef("item", env.id, env.revision)).ok;
 }
 
 /** 统一读取（§7.1）：current 必须带 topicId；不返回其他课题；快照模式只读冻结内容 + 当前告警。 */
@@ -1845,7 +1864,7 @@ function resolveItemFact(state: LocusState, ref: KnowledgeRef): OperandFact {
   const reasons: string[] = [];
   const payload = readKnowledgeVersion(state.knowledge, ref) as ItemPayload | null;
   if (!payload) return { operand: { type: "item", ref }, raw: null, unit: null, metricKey: null, subject: "", stage: "", conditions: {}, reasons: ["source_unresolvable"] };
-  if (knowledgeItemLiveStatus(state, ref) !== "confirmed") reasons.push("not_confirmed");
+  if (!knowledgeItemConfirmedAt(state, ref)) reasons.push("not_confirmed");
   let subject = payload.subject.raw, stage = "";
   const conditions: Record<string, string> = {};
   for (const cr of payload.contextRefs) {
