@@ -1,7 +1,7 @@
 # E4 完成交接（简要）
 
 > 范围：知识库防偏移执行合同 **E4 数据集、查询与比较**（§7.1 查询、§7.2 比较、§4.4、§8.1、§9，判据 **T17–T19、T26–T28**）。
-> 状态：**passed**（代码 `9b20c1a` 16:10 ＋ 读取侧复检 `1bb626b` 16:14；PR #10 审计通过后 merge commit 合入 main，merge hash 由下一轮回填台账 #87）。
+> 状态：**passed**（代码 `9b20c1a` 16:10 ＋ 读取侧复检 `1bb626b` 16:14；PR #10 已以 **merge commit `a40f7bb`（2026-11-21 16:18）** 合入 main，台账 #87 已回填）。
 > 执行依据见 [KNOWLEDGE_BASE_EXECUTION_SPEC.md](../docs/architecture/KNOWLEDGE_BASE_EXECUTION_SPEC.md)；完整过程见 [会话记录 S05-T6](sessions/2026-11-21_session-05.md#s05-t6) 与 [提交台账 #87](COMMIT_LEDGER.md)。
 
 ## 一句话结论
@@ -41,7 +41,7 @@
 
 ## Git 现状与下一步：E5（快照／wiki／知识包）
 
-- 分支 `feat/s05-e4-datasets-comparison`（自 main `57d6d3d`）：代码 `9b20c1a`（16:10）、读取侧复检 `1bb626b`（16:14）；记录提交随后。
-- **PR #10**「E4 数据集/查询/比较：统一读取、固定表版本行读取、比较决策契约」审计（302/302、范围与标题一致、无敏感文件）通过后以 merge commit 合入 main。
+- 分支 `feat/s05-e4-datasets-comparison`（自 main `57d6d3d`）：代码 `9b20c1a`（16:10）、读取侧复检 `1bb626b`（16:14）、记录 `5f70b37`（16:18）。
+- **PR #10**「E4 数据集/查询/比较：统一读取、固定表版本行读取、比较决策契约」审计通过（302/302、范围与标题一致、无敏感文件）后已以 **merge commit `a40f7bb`（16:18）** 合入 main；记录提交 `5f70b37`（16:18）。
 - E5 判据 **T29–T35**：`freezeKnowledge` 固定 snapshot（`contentHash` 不含 createdAt/snapshotId、同内容可不同 ID 同 hash）；改数据/映射/主题判断后旧快照不变；`viewId` 过期 409；tokens／许可排除＋私密哨兵（含 ZIP 解包）；机器 CSV 缺失值不写 0。
 - 顺序纪律不变：短命分支 → 全绿 → 由 `git log` 写记录 → PR merge commit → 回填 merge hash；发现无法纳管的旁路按合同 §14 停下报告。
