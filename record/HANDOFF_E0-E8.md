@@ -128,7 +128,7 @@
 
 - 落地要点：`freezeKnowledge`（§7.3）viewId 校验 → 选中闭包 → `contentHash`（不含 createdAt/snapshotId）→ 稳定 token（K/S）；数据集内冻结**实际行列**（31 行不截断，T31）；来源历史与快照同笔，保存失败不返回 ready（T35）；`services/knowledge-export.ts`（§7.4）统一 JSON/CSV/wiki/ZIP：机器 CSV 缺失值留空（不写 0）、sheet-safe 变体转义公式样式、wiki 六页模板＋相对链接＋受限 Markdown、manifest 列每文件 sha256/schema/许可/排除附件＋NOTICE、默认不带附件、包内路径安全；`sourcePolicies`＋`assertKnowledgeAccess`（§7.5）缺策略默认仅 localRead、含派生判断上游来源与人工无来源陈述、含被拒来源整包 403、撤权不改写既有快照（T34）。
 - 修正：`stableStringify` 按 JSON 语义处理 `undefined`（对象键略去／数组项 null）。原实现写出 `"key":undefined`，与 JSON 落盘不一致，导致**归档来源重启后 hash 失配**（`content_mismatch`，E5 快照会丢数据集）。影响仅限此前归档/快照数据（现仅测试与合成验收）。
-- 全量：**313/313 绿**（E4 后基线 302，本轮 +11）；新增 `tests/knowledge-view.test.ts`（纯渲染＋API 往返结构，**不替代浏览器**）。PR 审计通过后以 merge commit 合入（merge hash 下轮回填台账 #88）。
+- 全量：**313/313 绿**（E4 后基线 302，本轮 +11）；新增 `tests/knowledge-view.test.ts`（纯渲染＋API 往返结构，**不替代浏览器**）。PR #12 审计通过后以 **merge commit `42d2f05`（17:03）** 合入 main（台账 #88 已回填）。
 - 未做（如实）：§12.2 全负载容量复测（S08 工程停点）；§12.3 第 6–7 步浏览器冻结/导出（属 E6）。
 
 ## 四、E3–E8 与 B1 计划（一律引用合同，不另造路线）
@@ -149,7 +149,7 @@
 
 ## 五、记录与台账现状
 
-- 台账 [record/COMMIT_LEDGER.md](COMMIT_LEDGER.md)：#84（E1 commitState PR #6，merge `b09029b`）、#85（E2 `7ca563e` 13:01，PR #7 merge `0f361aa` 13:09）、**#86（E3 `26f7d65` 15:17 ＋ 记录 `22f677b` 15:18 ＋ 交接文档 `c065bb2` 15:25，PR #8 merge `410ea85` 15:22、PR #9 merge `57d6d3d` 15:28 均已回填）**、**#87（E4 `9b20c1a` 16:10 ＋ `1bb626b` 16:14 ＋ 记录 `5f70b37` 16:18，PR #10 merge `a40f7bb` 16:18 已回填）**、**#88（E5 `e3a148c` 17:00，PR 已建、merge hash 待下一轮回填）**。
+- 台账 [record/COMMIT_LEDGER.md](COMMIT_LEDGER.md)：#84（E1 commitState PR #6，merge `b09029b`）、#85（E2 `7ca563e` 13:01，PR #7 merge `0f361aa` 13:09）、**#86（E3 `26f7d65` 15:17 ＋ 记录 `22f677b` 15:18 ＋ 交接文档 `c065bb2` 15:25，PR #8 merge `410ea85` 15:22、PR #9 merge `57d6d3d` 15:28 均已回填）**、**#87（E4 `9b20c1a` 16:10 ＋ `1bb626b` 16:14 ＋ 记录 `5f70b37` 16:18，PR #10 merge `a40f7bb` 16:18 已回填）**、**#88（E5 `e3a148c` 17:00 ＋ 记录 `8372371` 17:02，PR #12 merge `42d2f05` 17:03 已回填）**。
 - 叙述记录：[record/sessions/2026-11-21_session-05.md](sessions/2026-11-21_session-05.md)（S05-T1 E0 / T2 基座 / T3 commitState / T4 E2 提取契约 / T5 E3 分项人审＋交接 / T6 E4 数据集/查询/比较 / **T7 E5 快照/wiki/知识包**）。E6 完成后追加 S05-T8。
 - 用户未跟踪/改动材料（`vibe_images/`、`record/screenshots/from-pictures/`、`reference reseach data/…`、session-02.md 的用户改动）：**不删不擅自提交**。
 - 每轮收尾照 AGENTS.md §8 清单：先 git log 取真实 hash/时间 → 台账双线表＋轮次索引 → 会话记录 → trailer → 分支 PR 审计合并。无提交的轮次显式记「本轮无提交」。

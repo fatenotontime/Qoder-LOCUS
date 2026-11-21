@@ -1,7 +1,7 @@
 # E5 完成交接（简要）
 
 > 范围：知识库防偏移执行合同 **E5 快照、wiki 与知识包**（§7.3 快照、§7.4 wiki/CSV/JSON/引用、§7.5 来源策略与出口检查、§8.1 路由，判据 **T29–T35**）。
-> 状态：**passed**（代码 `e3a148c` 17:00；PR 审计通过后 merge commit 合入 main，merge hash 由下一轮回填台账 #88）。
+> 状态：**passed**（代码 `e3a148c` 17:00；PR #12 已以 **merge commit `42d2f05`（2026-11-21 17:03）** 合入 main，台账 #88 已回填）。
 > 依据：[KNOWLEDGE_BASE_EXECUTION_SPEC.md](../docs/architecture/KNOWLEDGE_BASE_EXECUTION_SPEC.md)；过程见 [会话记录 S05-T7](sessions/2026-11-21_session-05.md#s05-t7) 与 [台账 #88](COMMIT_LEDGER.md)。
 
 ## 一句话结论
@@ -45,7 +45,7 @@
 ## Git 现状与下一步：E6（**阻塞：等前端**）
 
 - 分支 `feat/s05-e5-snapshots-export`（自 main `e0bdd01`）：代码 `e3a148c`（17:00）；记录提交随后。
-- **PR** 已建；审计（313/313、范围与标题一致、无敏感文件）通过后以 merge commit 合入 main。
+- **PR #12**「E5 快照/wiki/知识包：冻结、统一导出、来源策略与访问共用检查」审计通过（313/313、范围与标题一致、无敏感文件）后已以 **merge commit `42d2f05`（17:03）** 合入 main；记录提交 `8372371`（17:02）。
 - **E6 阻塞**：用户明确「E6 要等前端开发完成」——§9 指定前端文件 `public/lib/pages/knowledge-base.js`（总览/wiki/比较/证据抽屉渲染与事件）由前端开发交付，且 E6 判据 T36–T40 与 §12 浏览器全链**必须真实浏览器验收**（不能用纯渲染单测替代）。E6 未开工前不得标 passed。
 - **连带**：E7（内置 AI 统一输入）依赖 E6 的选择器；E8 的「wiki/总览入口」项也依赖 E6 页面。数据面（快照/导出/AI 读取源）已在 E5 就绪，E6/E7 接入时直接复用 `readKnowledge`／快照读取／`assertKnowledgeAccess`。
 - 顺序纪律不变：短命分支 → 全绿 → 由 `git log` 写记录 → PR merge commit → 回填 merge hash；发现无法纳管的旁路按合同 §14 停下报告。
