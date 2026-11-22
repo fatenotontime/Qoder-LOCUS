@@ -1,0 +1,259 @@
+/* 迹芽流水线舞台：只表达真实任务状态，不画未到达的进度。 */
+
+.kzstage {
+  --kzstage-tone: var(--accent-2);
+  position: relative;
+  margin: 0 0 14px;
+  padding: 12px 14px 11px;
+  overflow: hidden;
+  border: 1px solid var(--line-soft);
+  border-radius: 12px;
+  background: linear-gradient(110deg, rgba(255, 252, 245, .42), transparent 58%), var(--surface-2);
+  box-shadow: var(--card-shadow);
+}
+
+.kzstage::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 3px;
+  background: linear-gradient(180deg, var(--kzstage-tone), transparent 78%);
+  opacity: .55;
+}
+
+.kzstage-top {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.kzstage-heading {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.kzstage-heading b {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: .08em;
+}
+
+.kzstage-state {
+  padding: 1px 7px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 10.5px;
+  letter-spacing: .06em;
+  white-space: nowrap;
+}
+
+.kzstage[data-state="working"] { border-color: var(--line); }
+.kzstage[data-state="working"] .kzstage-state { color: var(--accent-2); border-color: var(--line-soft); }
+.kzstage[data-state="paused"] { --kzstage-tone: var(--warn); }
+.kzstage[data-state="paused"] .kzstage-state { color: var(--warn); border-color: var(--line-soft); }
+.kzstage[data-state="failed"] { --kzstage-tone: var(--danger); }
+.kzstage[data-state="failed"] .kzstage-state { color: var(--danger); border-color: var(--line-soft); }
+
+.kzstage-progress {
+  position: relative;
+  height: 3px;
+  margin: 9px 0 10px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--line-soft);
+}
+
+.kzstage-progress > span {
+  display: block;
+  width: 0;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--kzstage-tone);
+  transition: width .45s ease;
+}
+
+.kzstage-progress.is-waiting {
+  background: repeating-linear-gradient(90deg, var(--line-soft) 0 10px, transparent 10px 16px);
+  opacity: .6;
+}
+
+.kzstage[data-state="working"] .kzstage-progress > span {
+  animation: kz-stage-breathe 1.9s ease-in-out infinite;
+}
+
+.kzstage-rail {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin: 0;
+  padding: 9px 0 0;
+  list-style: none;
+  border-top: 1px solid var(--line-soft);
+}
+
+.kzstage-step {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  column-gap: 6px;
+  row-gap: 1px;
+  align-items: center;
+  min-width: 0;
+}
+
+.kzstage-link { display: none; }
+
+.kzstage-dot {
+  width: 8px;
+  height: 8px;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  background: var(--surface-3);
+}
+
+.kzstage-label {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 11.5px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.kzstage-value {
+  grid-column: 2;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 10.5px;
+  font-weight: 500;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.kzstage-step.active .kzstage-dot {
+  border-color: var(--kzstage-tone);
+  background: var(--kzstage-tone);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--kzstage-tone) 16%, transparent);
+}
+
+.kzstage-step.active .kzstage-label,
+.kzstage-step.active .kzstage-value { color: var(--fg); }
+
+.kzstage[data-state="working"] .kzstage-step.active .kzstage-dot {
+  animation: kz-stage-glow 2.2s ease-in-out infinite;
+}
+
+.kzstage-note {
+  margin: 9px 0 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.55;
+}
+
+/* ── 迹芽 ── */
+
+.kz-sprout {
+  display: inline-flex;
+  flex: none;
+  width: 26px;
+  height: 26px;
+  color: var(--accent-2);
+}
+
+.kz-sprout svg { width: 100%; height: 100%; overflow: visible; }
+
+.kz-sprout[data-state="paused"] { color: var(--warn); }
+.kz-sprout[data-state="failed"] { color: var(--danger); }
+
+.kz-sprout .sprout-leaf-a,
+.kz-sprout .sprout-leaf-b,
+.kz-sprout .sprout-curl { transform-origin: 12px 8px; }
+
+.kz-sprout[data-state="working"] .sprout-leaf-a { animation: kz-leaf-sway 2.6s ease-in-out infinite; }
+.kz-sprout[data-state="working"] .sprout-leaf-b { animation: kz-leaf-sway 2.6s ease-in-out infinite reverse; }
+.kz-sprout[data-state="paused"] .sprout-leaf-a,
+.kz-sprout[data-state="paused"] .sprout-leaf-b,
+.kz-sprout[data-state="paused"] .sprout-curl { opacity: .55; }
+.kz-sprout[data-state="failed"] .sprout-leaf-a,
+.kz-sprout[data-state="failed"] .sprout-leaf-b { transform: rotate(24deg) translateY(1px); }
+
+/* AI 按钮旁的迹芽：作为可见提示，不替代按钮文字。 */
+.kz-ai-start {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 2px 0 8px;
+}
+
+.kz-ai-start .kz-sprout {
+  width: 20px;
+  height: 20px;
+  opacity: .9;
+}
+
+.kz-ai-start .primary { flex: none; }
+
+/* ── 光卷主题：更硬的轮廓与扫描线 ── */
+
+[data-theme="tech"] .kzstage {
+  border-radius: var(--radius-sm);
+  border-color: var(--line);
+  background:
+    linear-gradient(180deg, rgba(79, 209, 197, .06), transparent 62%),
+    var(--surface-2);
+  box-shadow: inset 0 0 24px rgba(0, 0, 0, .22);
+}
+
+[data-theme="tech"] .kzstage::before {
+  width: 2px;
+  opacity: .8;
+}
+
+[data-theme="tech"] .kzstage-progress { border-radius: 0; }
+[data-theme="tech"] .kzstage-progress > span { border-radius: 0; box-shadow: 0 0 8px var(--kzstage-tone); }
+[data-theme="tech"] .kzstage-dot { border-radius: 1px; }
+[data-theme="tech"] .kzstage-state { border-radius: 2px; }
+[data-theme="tech"] .kzstage-step.active .kzstage-dot {
+  box-shadow: 0 0 0 1px var(--kzstage-tone), 0 0 12px color-mix(in srgb, var(--kzstage-tone) 45%, transparent);
+}
+
+/* ── 窄栏：四步折成两行，不把字挤没 ── */
+
+@media (max-width: 1200px) {
+  .kzstage-rail { grid-template-columns: repeat(2, minmax(0, 1fr)); row-gap: 9px; }
+}
+
+@media (max-width: 520px) {
+  .kzstage { padding: 11px 12px 10px; }
+  .kzstage-heading { gap: 6px; }
+  .kzstage-note { font-size: 11.5px; }
+  .kz-ai-start { align-items: flex-start; }
+  .kz-ai-start .primary { white-space: normal; text-align: left; }
+}
+
+@keyframes kz-stage-breathe {
+  0%, 100% { opacity: .72; }
+  50% { opacity: 1; }
+}
+
+@keyframes kz-stage-glow {
+  0%, 100% { box-shadow: 0 0 0 3px color-mix(in srgb, var(--kzstage-tone) 12%, transparent); }
+  50% { box-shadow: 0 0 0 5px color-mix(in srgb, var(--kzstage-tone) 20%, transparent); }
+}
+
+@keyframes kz-leaf-sway {
+  0%, 100% { transform: rotate(0deg); }
+  50% { transform: rotate(-5deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kzstage-progress > span,
+  .kz-sprout[data-state="working"] .sprout-leaf-a,
+  .kz-sprout[data-state="working"] .sprout-leaf-b,
+  .kzstage[data-state="working"] .kzstage-step.active .kzstage-dot,
+  .kzstage[data-state="working"] .kzstage-progress > span {
+    animation: none;
+    transition: none;
+  }
+}

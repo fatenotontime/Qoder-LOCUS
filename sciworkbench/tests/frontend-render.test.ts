@@ -114,6 +114,9 @@ function allRendered() {
     knowledgeWorkspaceHtml(kzState, { ...ui, nav: "knowledge", kzPanel: "themes" }),
     knowledgeWorkspaceHtml(kzState, { ...ui, nav: "knowledge", topicId: "", kzPanel: "themes" }),
     knowledgeQueueHtml(kzState, { ...ui, nav: "knowledge" }),
+    knowledgeWorkspaceHtml(kzState, { ...ui, nav: "knowledge", kzJob: { status: "running", done: 1, total: 3, created: 2, chunkErrors: [] } }),
+    knowledgeWorkspaceHtml(kzState, { ...ui, nav: "knowledge", kzJob: { status: "paused", done: 1, total: 3, created: 2, chunkErrors: [] } }),
+    knowledgeWorkspaceHtml(kzState, { ...ui, nav: "knowledge", kzJob: { status: "error", done: 1, total: 3, created: 2, chunkErrors: [] } }),
   ];
   return parts.join("\n");
 }

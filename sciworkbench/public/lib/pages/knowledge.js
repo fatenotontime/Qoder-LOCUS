@@ -5,6 +5,7 @@
  */
 import { esc } from "../views.js";
 import { fmtEnum, fmtReview, fmtUnknowns, fmtUncertain, fmtValue, fmtVersion } from "../format.js";
+import { aiSproutHtml, knowledgeStageHtml, kzStageState } from "./knowledge-stage.js";
 
 const ROLE_LABEL = { fulltext: "正文", supplement: "补充材料", other: "其他" };
 
@@ -253,7 +254,7 @@ function kzThemesHtml(state, ui) {
 
 export function knowledgeWorkspaceHtml(state, ui) {
   if (ui.kzPanel === "themes") {
-    return `<div class="kzpick"><button class="kz-panel ${ui.kzPanel === "themes" ? "" : "active"}" data-panel="cards">分项</button><button class="kz-panel active" data-panel="themes">主题</button></div>${kzThemesHtml(state, ui)}`;
+    return `${knowledgeStageHtml(state, ui)}<div class="kzpick"><button class="kz-panel ${ui.kzPanel === "themes" ? "" : "active"}" data-panel="cards">分项</button><button class="kz-panel active" data-panel="themes">主题</button></div>${kzThemesHtml(state, ui)}`;
   }
   const cards = kzCards(state, ui);
   const part = { todo: [], cand: [], skip: [], excl: [] };
@@ -286,7 +287,7 @@ export function knowledgeWorkspaceHtml(state, ui) {
       </div>` : ""}
     </div>`;
   }).join("");
-  return `<div class="kzpick"><button class="kz-panel active" data-panel="cards">分项</button><button class="kz-panel" data-panel="themes">主题</button></div>
+  return `${knowledgeStageHtml(state, ui)}<div class="kzpick"><button class="kz-panel active" data-panel="cards">分项</button><button class="kz-panel" data-panel="themes">主题</button></div>
     <div class="kzpick">文献：<select id="kz-paper">${state.papers.length ? state.papers.map((p) => `<option value="${esc(p.id)}" ${p.id === ui.paperId ? "selected" : ""}>${esc(p.title)}</option>`).join("") : `<option>（暂无文献）</option>`}</select></div>
     <div class="kztabs">${tabHtml}</div>
     <div class="kzlist">${rows || `<p class="hint">此分区暂无卡片。</p>`}</div>
@@ -327,7 +328,7 @@ export function renderKnowledgeForm(box) {
         ${atts.length ? atts.map((a) => `<label class="cmppick"><input type="checkbox" class="k-att" value="${a.id}" checked/> ${esc(state.assets.find((x) => x.id === a.assetId)?.name ?? a.assetId)}（${ROLE_LABEL[a.role]}）</label>`).join("") : `<p class="hint warn">该条目无附件；先到「文献整理」导入。</p>`}
         <textarea id="k-purpose" rows="2" placeholder="研究目的（必填）：围绕哪个研究问题提取？如：比较 pH 对 Km 的影响"></textarea>
         ${subqs.length ? `<select id="k-subq"><option value="">（不挂子问题）</option>${subqs.map((q) => `<option value="${q.id}">${esc(q.question)}</option>`).join("")}</select>` : ""}
-        <button class="primary" id="k-start" ${atts.length ? "" : "disabled"}>发起语义提取（独立 AI 任务）</button>
+        <div class="kz-ai-start">${aiSproutHtml(kzStageState(ui), "kz-ai-sprout")}<button class="primary" id="k-start" ${atts.length ? "" : "disabled"}>发起语义提取（独立 AI 任务）</button></div>
         <p class="hint">抽取单位是研究意义（数据＋条件/方法、结论＋依据、思路），不是逐行拆文本；结果进右栏待审区，须人工核对。等待期间可继续编辑，不会被覆盖。</p>`
       : `<p class="hint">先在下方选择文献条目（或到「文献整理」新建）。</p>`}
     </details>
