@@ -8,8 +8,8 @@
  * - 用户内容视为不可信文本：只输出受限 Markdown，禁 raw HTML 与 javascript: 协议。
  */
 import { createHash } from "node:crypto";
-import type { KnowledgeItem, KnowledgeSnapshot, SnapshotDatasetRows, ItemPayload, ComparisonPayload } from "../domain/knowledge.ts";
-import { refKey } from "../domain/knowledge.ts";
+import type { KnowledgeItem, KnowledgeSnapshot, SnapshotDatasetRows, ItemPayload, ComparisonPayload, KnowledgeRef, SourceRef } from "../domain/knowledge.ts";
+import { refKey, isSourceRef } from "../domain/knowledge.ts";
 import { zip, type ZipEntry } from "./export.ts";
 import { AppError } from "./app.ts";
 import { describeValue, describeReview, describeNature, describeContentType, describeUnknownReason } from "./knowledge-base.ts";
@@ -57,9 +57,15 @@ function sheetSafeCell(v: string): string {
   return risky ? `'${v}` : v;
 }
 
+/** 来源引用按自身口径渲染（kind:id@version，取 SourceRef.version）；不复用只认 revision 的知识 refKey。 */
+function sourceRefKey(r: SourceRef): string { return `${r.kind}:${r.id}@${r.version}`; }
+
+/** 按引用种类分派渲染：知识引用用 refKey（@r{revision}），来源引用用 sourceRefKey（@version）。 */
+function renderRef(r: KnowledgeRef | SourceRef): string { return isSourceRef(r) ? sourceRefKey(r) : refKey(r); }
+
 function tokenOfRef(snapshot: KnowledgeSnapshot, key: string): string {
   for (const [token, entry] of Object.entries(snapshot.content.referenceMap)) {
-    if (refKey(entry.ref as never) === key) return token;
+    if (renderRef(entry.ref) === key) return token;
   }
   return "";
 }
@@ -174,7 +180,7 @@ export function snapshotWiki(snapshot: KnowledgeSnapshot): { pages: { file: stri
     : "（本快照无比较）";
 
   const sourceBody = header("来源与引用 token") + Object.entries(snapshot.content.referenceMap)
-    .map(([token, e]) => `- \`${token}\` ${e.kind === "knowledge" ? "知识" : "来源"}：${safeText(e.label)} → \`${safeText(refKey(e.ref as never))}\``).join("\n") + "\n";
+    .map(([token, e]) => `- \`${token}\` ${e.kind === "knowledge" ? "知识" : "来源"}：${safeText(e.label)} → \`${safeText(renderRef(e.ref))}\``).join("\n") + "\n";
 
   const gaps = header("缺口与未决") + [
     `### 未知项`,
@@ -182,7 +188,7 @@ export function snapshotWiki(snapshot: KnowledgeSnapshot): { pages: { file: stri
     ...(items.every((i) => (i.payload as ItemPayload).unknowns.length === 0) ? ["（无记录在案的未知项）"] : []),
     "",
     "### 未纳入本次快照（前 20 条）",
-    ...snapshot.excluded.slice(0, 20).map((x) => `- ${safeText(refKey(x.ref as never))}：${safeText(x.reason)}`),
+    ...snapshot.excluded.slice(0, 20).map((x) => `- ${safeText(renderRef(x.ref))}：${safeText(x.reason)}`),
     ...(snapshot.excluded.length === 0 ? ["（无排除项）"] : []),
     "",
     `### 覆盖：选中 ${snapshot.coverage.selected} / 可用 ${snapshot.coverage.totalAvailable}（processed ${snapshot.coverage.processed}）`,
@@ -265,7 +271,7 @@ export function buildKnowledgePackage(snapshot: KnowledgeSnapshot, opts: { sheet
     ...snapshot.sourceVersionRefs.filter((r) => r.kind === "attachment" || r.kind === "asset").map((r) => ({ ref: r, reason: "默认不带附件原件；如需带走请在许可允许后单独导出" })),
     ...snapshot.excluded.filter((x) => "kind" in x.ref && (x.ref.kind === "attachment" || x.ref.kind === "asset")).map((x) => ({ ref: x.ref, reason: x.reason })),
   ];
-  const sourcePermissions = snapshot.sourceVersionRefs.map((r) => ({ token: tokenOfRef(snapshot, refKey(r)), sourceKind: r.kind, sourceId: r.id, version: r.version }));
+  const sourcePermissions = snapshot.sourceVersionRefs.map((r) => ({ token: tokenOfRef(snapshot, renderRef(r)), sourceKind: r.kind, sourceId: r.id, version: r.version }));
   const notice = [
     "LOCUS 知识包 NOTICE",
     `快照：${snapshot.snapshotId}（内容 hash ${snapshot.contentHash}）`,
@@ -276,7 +282,7 @@ export function buildKnowledgePackage(snapshot: KnowledgeSnapshot, opts: { sheet
     `CSV 文件数：${csvCount * 2}（机器／sheet-safe 成对）。sheet-safe 对公式样式与制表/回车开头的值前置单引号。`,
     "",
     "默认不含附件原件。以下来源未随包（含原因）：",
-    ...(excludedAttachments.length ? excludedAttachments.map((x) => `- ${refKey(x.ref as never)}：${x.reason}`) : ["- （无）"]),
+    ...(excludedAttachments.length ? excludedAttachments.map((x) => `- ${renderRef(x.ref)}：${x.reason}`) : ["- （无）"]),
     "",
     "本包内 token 是快照内 opaque ID，不是访问凭据；包内链接为相对路径。",
   ].join("\n");
