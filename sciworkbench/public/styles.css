@@ -2070,6 +2070,12 @@ button.curtopic.none { color: var(--muted); }
   background: var(--bg); border-top: 1px solid var(--line);
 }
 .chat-inputbar textarea { flex: 1; }
+.chat-jump {
+  position: sticky; bottom: 62px; z-index: 5; display: block; margin: 0 auto var(--space-2);
+  padding: 5px 14px; border: 1px solid var(--accent); border-radius: 999px;
+  background: var(--accent); color: var(--accent-fg); font-size: var(--text-sm); cursor: pointer;
+  box-shadow: 0 4px 12px rgba(0,0,0,.16);
+}
 
 /* ── F2 知识：骨架总览（占位） ── */
 .kz-overview { max-width: 900px; }

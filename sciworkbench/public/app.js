@@ -45,15 +45,23 @@ function setDirty(value) {
   }
 }
 
+// 列表滚动位置记忆（按「课题＋模块」区分，避免串页）：详情页打开置顶/置底，返回列表时恢复。
+const viewScroll = new Map();
+let lastListKey = null;
+// 聊天：会话草稿（按会话保存，重绘/刷新不丢）、滚动定位与「有新消息」提示。
+const chatDrafts = new Map();
+let chatScrollSaved = 0;
+let chatScrollBottomPending = false;
+let lastWasChatDetail = false;
+
 // A2 分区报错：只在触发它的面板内显示（left/mid/right），可关闭、带重试。
-const errors = { left: null, mid: null, right: null };
-const PANEL_OF = (el) => { const p = el?.closest?.(".pane"); return p ? (p.classList.contains("left") ? "left" : p.classList.contains("right") ? "right" : "mid") : "mid"; };
+const errors = { left: null, mid: null, right: null };const PANEL_OF = (el) => { const p = el?.closest?.(".pane"); return p ? (p.classList.contains("left") ? "left" : p.classList.contains("right") ? "right" : "mid") : "mid"; };
 
 // 选择态持久（仅非敏感 UI 选择：页签/课题/材料/表块），刷新后归属正确。
 const UI_KEY = "locus.ui.v2"; // 阶段5 重构：七入口导航，旧选择态作废，默认落课题首页
 let uiRestored = false;
 function saveUi() {
-  try { localStorage.setItem(UI_KEY, JSON.stringify({ nav: ui.nav, topicId: ui.topicId, assetId: ui.assetId, paperId: ui.paperId, tableId: ui.tableId, cardFilter: ui.cardFilter, protocolId: ui.protocolId, executionId: ui.executionId, taskId: ui.taskId, chatId: ui.chatId, reportId: ui.reportId, navCollapsed: ui.navCollapsed, kzTab: ui.kzTab, kzPanel: ui.kzPanel, cardOpen: ui.cardOpen, topicPane: ui.topicPane, subqId: ui.subqId, paperView: ui.paperView, paperQuery: ui.paperQuery, protocolView: ui.protocolView, protoQuery: ui.protoQuery, recordView: ui.recordView, chatView: ui.chatView, knowledgeView: ui.knowledgeView })); } catch {}
+  try { localStorage.setItem(UI_KEY, JSON.stringify({ nav: ui.nav, topicId: ui.topicId, assetId: ui.assetId, paperId: ui.paperId, tableId: ui.tableId, cardFilter: ui.cardFilter, protocolId: ui.protocolId, executionId: ui.executionId, taskId: ui.taskId, chatId: ui.chatId, reportId: ui.reportId, navCollapsed: ui.navCollapsed, kzTab: ui.kzTab, kzPanel: ui.kzPanel, cardOpen: ui.cardOpen, topicPane: ui.topicPane, subqId: ui.subqId, paperView: ui.paperView, paperQuery: ui.paperQuery, paperFilter: ui.paperFilter, protocolView: ui.protocolView, protoQuery: ui.protoQuery, recordView: ui.recordView, chatView: ui.chatView, knowledgeView: ui.knowledgeView })); } catch {}
 }
 function restoreUi() {
   if (uiRestored) return;
@@ -79,6 +87,7 @@ function restoreUi() {
     if (s.topicPane === "subq" && state.subquestions.some((q) => q.id === s.subqId)) { ui.topicPane = "subq"; ui.subqId = s.subqId; }
     if (s.paperView === "read" || s.paperView === "manage") ui.paperView = s.paperView;
     if (typeof s.paperQuery === "string") ui.paperQuery = s.paperQuery;
+    if (s.paperFilter === "has" || s.paperFilter === "none" || s.paperFilter === "all") ui.paperFilter = s.paperFilter;
     if (s.protocolView === "detail" || s.protocolView === "manage") ui.protocolView = s.protocolView;
     if (typeof s.protoQuery === "string") ui.protoQuery = s.protoQuery;
     if (s.recordView === "detail" || s.recordView === "overview") ui.recordView = s.recordView;
@@ -766,8 +775,6 @@ function openSubq(id) {
   if (!guardLeave()) return;
   ui.topicPane = "subq"; ui.subqId = id;
   renderAll();
-  const c = $("#mid-content");
-  if (c) c.scrollTop = 0;
 }
 function backFromSubq() {
   if (!guardLeave()) return;
@@ -781,8 +788,6 @@ function openPaperRead(id) {
   if (!guardLeave()) return;
   ui.paperId = id; ui.attId = null; ui.paperView = "read";
   renderAll();
-  const c = $("#mid-content");
-  if (c) c.scrollTop = 0;
 }
 function backToPaperManage() {
   if (!guardLeave()) return;
@@ -796,7 +801,6 @@ function openProtocolDetail(id) {
   if (!guardLeave()) return;
   ui.protocolId = id; ui.protocolView = "detail"; ui.protocolEdit = false; ui.viewRev = null; ui.stepSel = null;
   renderAll();
-  const c = $("#mid-content"); if (c) c.scrollTop = 0;
 }
 function backToProtocolManage() {
   if (!guardLeave()) return;
@@ -810,7 +814,6 @@ function openExecutionDetail(id) {
   if (!guardLeave()) return;
   ui.executionId = id; ui.recordView = "detail"; ui.assetId = null; ui.editEventId = null; ui.pauseSuggest = null; ui.prepExtra = 0;
   renderAll();
-  const c = $("#mid-content"); if (c) c.scrollTop = 0;
 }
 function backToRecordOverview() {
   if (!guardLeave()) return;
@@ -823,8 +826,8 @@ function openChatDetail(id) {
   if (!id) return;
   if (!guardLeave()) return;
   ui.chatId = id; ui.chatView = "chat";
+  chatScrollBottomPending = true; // 打开会话定位到最新消息
   renderAll();
-  const c = $("#mid-content"); if (c) c.scrollTop = 0;
 }
 function backToChatManage() {
   if (!guardLeave()) return;
@@ -863,6 +866,7 @@ function renderKnowledgeOverview(content, note) {
 // ── 浏览器返回保护（§5.1：历史栈集成，不引入路由库）──
 let historyReady = false;
 let suppressHistory = false;
+let suppressPop = false;
 let lastPushedKey = "";
 function pageState() { return { nav: ui.nav, topicId: ui.topicId, topicPane: ui.topicPane, subqId: ui.subqId, paperView: ui.paperView, paperId: ui.paperId, protocolView: ui.protocolView, protocolId: ui.protocolId, recordView: ui.recordView, executionId: ui.executionId, chatView: ui.chatView, chatId: ui.chatId, knowledgeView: ui.knowledgeView }; }
 /** 页面状态变化时写入一条历史；首次替换、后台刷新/主题/动画不入历史。 */
@@ -889,18 +893,19 @@ function applyPageState(st) {
   ui.chatId = state.chats.some((c) => c.id === st.chatId) ? st.chatId : null;
   ui.chatView = st.chatView === "chat" && ui.chatId ? "chat" : "manage";
   ui.knowledgeView = st.knowledgeView === "review" ? "review" : "overview";
+  if (ui.nav === "chat" && ui.chatView === "chat") chatScrollBottomPending = true; // 后退进聊天：定位到最新
   ui.highlight = null; ui.cell = null; ui.groupSel.clear(); ui.batch = null; ui.ack = false;
   ui.stepSel = null; ui.viewRev = null; ui.editEventId = null; ui.pauseSuggest = null; ui.prepExtra = 0;
   renderAll();
 }
 window.addEventListener("popstate", (ev) => {
+  if (suppressPop) { suppressPop = false; lastPushedKey = JSON.stringify(pageState()); return; } // 取消离开后 go(1) 回到本页，忽略这一次
   const st = ev.state;
   if (!st || typeof st !== "object" || !st.nav) return; // 越过应用首条历史 → 交回浏览器，仍受 beforeunload 保护
   if (!guardLeave()) {
-    suppressHistory = true;
-    try { history.pushState(pageState(), ""); } catch {}
-    suppressHistory = false;
-    lastPushedKey = JSON.stringify(pageState());
+    // 取消离开：用 go(1) 恢复历史位置（不截断前进历史）
+    suppressPop = true;
+    try { history.go(1); } catch {}
     return;
   }
   suppressHistory = true;
@@ -962,11 +967,35 @@ async function activateNav(kind) {
 
 function renderAll() {
   if (["连接中…", "读取卷宗…"].includes($("#status").textContent)) setStatus("就绪");
+  const mid = midScroller();
+  if (lastListKey !== null && mid) viewScroll.set(lastListKey, mid.scrollTop); // 离开前记住列表滚动
+  if (lastWasChatDetail && mid && !chatScrollBottomPending) chatScrollSaved = mid.scrollTop; // 记住聊天阅读位置
   renderShell();
   renderMiddle(); renderRight();
+  const m2 = midScroller();
+  if (m2) {
+    if (isListView()) m2.scrollTop = viewScroll.get(listKey()) ?? 0;
+    else if (ui.nav === "chat" && ui.chatView === "chat") { m2.scrollTop = chatScrollBottomPending ? m2.scrollHeight : chatScrollSaved; chatScrollBottomPending = false; }
+    else m2.scrollTop = 0; // 其余详情页从顶部开始
+  }
+  lastListKey = isListView() ? listKey() : null;
+  lastWasChatDetail = ui.nav === "chat" && ui.chatView === "chat";
   saveUi();
   syncHistory();
 }
+/** 中栏滚动容器：实际滚动的是 .pane.mid（#mid-content 是内容层）。 */
+function midScroller() { return document.querySelector(".pane.mid"); }
+/** 列表页（有可恢复的滚动/筛选）：六个模块的管理/总览态。 */
+function isListView() {
+  return (ui.nav === "topic" && ui.topicPane !== "subq")
+    || (ui.nav === "papers" && ui.paperView !== "read")
+    || (ui.nav === "protocol" && ui.protocolView !== "detail")
+    || (ui.nav === "record" && ui.recordView !== "detail")
+    || (ui.nav === "chat" && ui.chatView !== "chat")
+    || (ui.nav === "knowledge" && ui.knowledgeView !== "review");
+}
+function listKey() { return `${ui.nav}|${ui.topicId}`; }
+function isNearBottomMid() { const el = midScroller(); return Boolean(el) && (el.scrollHeight - el.scrollTop - el.clientHeight < 48); }
 
 /** 外壳：页头当前课题、侧栏（导航＋本页列表）、中间「＋新建」区、分区报错。 */
 function renderShell() {
@@ -1582,7 +1611,7 @@ function protocolListHtml() {
   return ps.map((p) => {
     const latest = p.revisions[p.revisions.length - 1];
     const steps = latest?.steps.length ?? 0;
-    return `<article class="paper-item" data-protorow="${p.id}">
+    return `<article class="paper-item ${p.id === ui.protocolId ? "active" : ""}" data-protorow="${p.id}">
       <div class="pi-main">
         <div class="pi-title">${esc(p.name)}</div>
         <div class="pi-meta">${fmtEnum(p.sourceKind)} · ${fmtVersion(p.revision)} · ${steps} 步${latest?.purpose ? ` · ${esc(latest.purpose.slice(0, 40))}` : ""}</div>
@@ -1925,7 +1954,7 @@ function recordOverviewHtml() {
     const p = state.protocols.find((x) => x.id === e.protocolId);
     const prep = (e.phase ?? "recording") === "preparing";
     const badge = prep ? "准备稿" : fmtEnum(e.status);
-    return `<article class="paper-item" data-exrow="${e.id}">
+    return `<article class="paper-item ${e.id === ui.executionId ? "active" : ""}" data-exrow="${e.id}">
       <div class="pi-main">
         <div class="pi-title">${esc(p?.name ?? "执行")}${e.origin === "reconstructed" ? ` <span class="badge warn">文献重构</span>` : ""}</div>
         <div class="pi-meta"><span class="badge ${e.status === "paused" ? "warn" : e.status === "active" ? "confirm" : ""}">${badge}</span> · ${prep ? `${e.preparation?.adjustments.length ?? 0} 条差异待确认` : `${e.events.length} 条记录`} · 固定 ${fmtVersion(e.protocolRevision)}</div>
@@ -2080,7 +2109,7 @@ function chatListHtml() {
   return cs.map((c) => {
     const q = state.subquestions.find((x) => x.id === c.subquestionId);
     const running = c.messages.some((m) => m.status === "running");
-    return `<article class="paper-item" data-chatrow="${c.id}">
+    return `<article class="paper-item ${c.id === ui.chatId ? "active" : ""}" data-chatrow="${c.id}">
       <div class="pi-main">
         <div class="pi-title">${esc(q ? q.question : topicName(c.topicId) ?? "课题对话")}${running ? ` <span class="badge warn">进行中</span>` : ""}</div>
         <div class="pi-meta">${c.scope.length} 个对象 · ${c.messages.length} 条消息 · 最近 ${esc(fmtTime(c.updatedAt))}</div>
@@ -2118,7 +2147,8 @@ function chatHtml(c) {
   }).join("");
   const running = c.messages.some((m) => m.status === "running");
   return `<div class="chatlog">${msgs || `<p class="hint">还没有消息。输入问题开始讨论（范围与采纳见右栏）。</p>`}</div>
-    <div class="chat-inputbar"><textarea id="chat-text" rows="2" placeholder="围绕本课题/子问题与已选对象提问…"></textarea>
+    ${ui.chatNew ? `<button class="chat-jump" id="chat-jump" type="button">有新消息 ↓</button>` : ""}
+    <div class="chat-inputbar"><textarea id="chat-text" rows="2" placeholder="围绕本课题/子问题与已选对象提问…">${esc(chatDrafts.get(c.id) ?? "")}</textarea>
     <button class="primary" id="chat-send" ${running ? "disabled" : ""}>${running ? "回答运行中…" : "发送"}</button></div>`;
 }
 
@@ -2268,15 +2298,16 @@ $("#topic-switcher").addEventListener("input", (ev) => { if (ev.target.id === "t
   const pick = ev.target.closest("[data-topicpick]");
   if (pick) { switchTopic(pick.dataset.topicpick); return; }
   if (ev.target.id === "ts-new-create") {
+    if (!guardLeave()) return; // 有未保存内容时先确认；取消则不创建，表单内容保留
     runBusy(ev.target, "创建课题", async () => {
       const name = $("#ts-new-name").value.trim();
       if (!name) { notify("mid", "课题名称不能为空"); return; }
       const r = await api.createTopic(name, $("#ts-new-q").value);
-      setDirty(false);
       const creating = ui.nav !== "topic";
       ui.topicId = r.topicId; ui.topicPane = "overview"; ui.subqId = null;
       if (creating) ui.nav = "topic";
       closeTopicSwitcher();
+      setDirty(false); // 创建成功后才清 dirty
       await refresh(); setStatus("课题已创建");
     });
   }
@@ -2327,7 +2358,7 @@ document.addEventListener("click", (ev) => {
   if (ev.target.closest("[data-proto-back]")) { backToProtocolManage(); return; }
   if (ev.target.closest("[data-proto-clear]")) { ui.protoQuery = ""; renderAll(); return; }
   if (ev.target.closest("[data-proto-edit]")) { ui.protocolEdit = true; ui.stepSel = null; renderMiddle(); renderRight(); return; }
-  if (ev.target.id === "proto-edit-done") { ui.protocolEdit = false; ui.stepSel = null; setDirty(false); renderMiddle(); renderRight(); return; }
+  if (ev.target.id === "proto-edit-done") { if (!guardLeave()) return; ui.protocolEdit = false; ui.stepSel = null; renderMiddle(); renderRight(); return; }
   if (ev.target.id === "proto-upload") { runJob(ev.target, "上传并解析方案", async () => {
     if (!ui.topicId) throw new Error("请先选择/创建课题");
     const file = $("#proto-up-file").files?.[0];
@@ -2655,14 +2686,17 @@ $("#mid-content").addEventListener("click", async (ev) => {
   if (ev.target.classList.contains("tbl-open")) { openTableMax(ev.target.dataset.tid); return; }
   if (ev.target.id === "chat-send") {
     const c = currentChat(); if (!c) return;
-    const text = $("#chat-text").value.trim();
+    const text = ($("#chat-text")?.value ?? chatDrafts.get(c.id) ?? "").trim();
     if (!text) { setStatus("请输入讨论内容"); return; }
+    const wasAtBottom = isNearBottomMid();
     await runJob(ev.target, "上下文讨论", async () => {
       const r = await api.sendChat(c.id, text);
-      $("#chat-text").value = "";
+      chatDrafts.delete(c.id);
       setDirty(false);
       await refresh();
       await pollJob(r.jobId, "上下文讨论");
+      chatScrollBottomPending = wasAtBottom; // 本来在底部才滚到最新
+      ui.chatNew = !wasAtBottom;             // 上翻时用「有新消息」提示，不强拉
       await refreshAfterJob(); setStatus("讨论完成（建议采纳见右栏）");
     }); return;
   }
@@ -2684,10 +2718,28 @@ $("#mid-content").addEventListener("click", async (ev) => {
   }
 });
 $("#mid-content").addEventListener("input", (ev) => {
+  if (ev.target.id === "chat-text") {
+    const c = currentChat(); if (!c) return;
+    chatDrafts.set(c.id, ev.target.value);
+    setDirty(ev.target.value.trim() !== ""); // 非空草稿计入未保存保护
+    return;
+  }
   if (ev.target.id !== "paper-search") return;
   ui.paperQuery = ev.target.value;
   const list = $("#paper-list");
   if (list) list.innerHTML = paperListHtml();
+});
+const sendMidScroller = midScroller();
+sendMidScroller?.addEventListener("scroll", () => {
+  if (!ui.chatNew) return;
+  if (isNearBottomMid()) { ui.chatNew = false; const b = $("#chat-jump"); if (b) b.hidden = true; }
+});
+document.addEventListener("click", (ev) => {
+  const b = ev.target.closest("#chat-jump");
+  if (!b) return;
+  const m = midScroller();
+  if (m) m.scrollTop = m.scrollHeight;
+  ui.chatNew = false; b.hidden = true;
 });
 $("#mid-content").addEventListener("change", (ev) => {
   if (ev.target.id !== "paper-filter") return;
@@ -2725,7 +2777,7 @@ $("#right-content").addEventListener("input", (ev) => { if (ev.target.closest(".
 function trackMidDirty(ev) {
   const el = ev.target;
   if (!el.closest?.("#mid-content")) return;
-  if (el.matches(".kz-note, .kz-imp, #kz-paper, #proto-rev")) return;
+  if (el.matches(".kz-note, .kz-imp, #kz-paper, #proto-rev, #chat-text")) return; // 聊天草稿单独管理 dirty
   if (el.closest(".lit-manage-head") || el.id === "paper-search" || el.id === "paper-filter") return; // 搜索/筛选/创建表单不算未保存编辑
   if (el.matches('input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="range"]), textarea, select')) setDirty(true);
 }
