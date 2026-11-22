@@ -6,14 +6,26 @@ import { computeLanes, timeLabel, durationSourceOf } from "./lib/lanes.js";
 import { fmtTime, fmtEnum, fmtVersion, fmtNameOnce, fmtKind } from "./lib/format.js";
 import { refLabel, reconTag, missingTag, topicObjects } from "./lib/refs.js";
 import {
-  topbarTopicHtml, emptyTopicGuideHtml, navHtml, navChar, panelErrorHtml, sidebarListHtml,
-  topicOverviewHtml, topicFlowHtml, topicTodosHtml, subqBlockHtml, nextStepHtml, NAV_ITEMS,
+  topbarTopicHtml, topicSwitcherListHtml, emptyTopicGuideHtml, navHtml, navChar, panelErrorHtml, sidebarListHtml,
+  topicOverviewHtml, topicFlowHtml, topicTodosHtml, subqBlockHtml, subqDetailHtml, nextStepHtml, NAV_ITEMS,
 } from "./lib/views.js";
 import { knowledgeLeftHtml, knowledgeWorkspaceHtml, knowledgeQueueHtml, renderKnowledgeForm, bindKnowledge } from "./lib/pages/knowledge.js";
 import { renderAnalysisForm, currentTask, contextMapHtml, analysisRightHtml, snapshotHtml, bindAnalysis } from "./lib/pages/analysis.js";
 
 let state = { topics: [], subquestions: [], assets: [], papers: [], attachments: [], cards: [], tables: [], adoptions: [], mappings: [], comparisons: [], protocols: [], templates: [], executions: [], samples: [], measurements: [], impacts: [], ocrs: [], analysisTasks: [], analysisResults: [], reports: [], chats: [] };
-const ui = { nav: "topic", topicId: "", assetId: null, paperId: null, attId: null, tableId: null, highlight: null, cell: null, dirty: false, busy: false, cardFilter: "all", groupSel: new Set(), batch: null, ack: false, protocolId: null, executionId: null, stepSel: null, viewRev: null, editEventId: null, pauseSuggest: null, prepExtra: 0, taskId: null, chatId: null, reportId: null, reportWorking: {}, navCollapsed: false, kzTab: "todo", kzPanel: "cards", cardOpen: null, kzJob: null, kzStruct: null, kiView: null, suppressRecheck: null };
+const ui = { nav: "topic", topicId: "", assetId: null, paperId: null, attId: null, tableId: null, highlight: null, cell: null, dirty: false, busy: false, cardFilter: "all", groupSel: new Set(), batch: null, ack: false, protocolId: null, executionId: null, stepSel: null, viewRev: null, editEventId: null, pauseSuggest: null, prepExtra: 0, taskId: null, chatId: null, reportId: null, reportWorking: {}, navCollapsed: false, kzTab: "todo", kzPanel: "cards", cardOpen: null, kzJob: null, kzStruct: null, kiView: null, suppressRecheck: null, topicPane: "overview", subqId: null, paperView: "manage", paperQuery: "", paperFilter: "all", protocolView: "manage", protocolEdit: false, protoQuery: "", recordView: "overview", chatView: "manage", knowledgeView: "overview" };
+
+// 壳层按页布局能力（§2.1）：每页声明一种布局，壳层据此排布三块区域。
+// aside：主体＋辅助（撤出左栏常驻目录）；single：只留主体（阅读）；review：三栏；canvas：宽画布。
+const LAYOUT = { topic: "aside", papers: "aside", protocol: "aside", chat: "aside" };
+function layoutOf() {
+  if (ui.nav === "papers" && ui.paperView === "read") return "single"; // 阅读页：只留原文
+  if (ui.nav === "protocol" && ui.protocolView === "manage") return "single"; // 方案管理：只留列表
+  if (ui.nav === "record" && ui.recordView !== "detail") return "single"; // 记录总览：只留主体
+  if (ui.nav === "chat" && ui.chatView !== "chat") return "single"; // 会话管理：只留列表
+  if (ui.nav === "knowledge" && ui.knowledgeView !== "review") return "single"; // 知识骨架：只留占位总览
+  return LAYOUT[ui.nav] ?? "review";
+}
 let lastAction = null; // { label, run }
 function setDirty(value) {
   const next = Boolean(value);
@@ -33,15 +45,23 @@ function setDirty(value) {
   }
 }
 
+// 列表滚动位置记忆（按「课题＋模块」区分，避免串页）：详情页打开置顶/置底，返回列表时恢复。
+const viewScroll = new Map();
+let lastListKey = null;
+// 聊天：会话草稿（按会话保存，重绘/刷新不丢）、滚动定位与「有新消息」提示。
+const chatDrafts = new Map();
+let chatScrollSaved = 0;
+let chatScrollBottomPending = false;
+let lastWasChatDetail = false;
+
 // A2 分区报错：只在触发它的面板内显示（left/mid/right），可关闭、带重试。
-const errors = { left: null, mid: null, right: null };
-const PANEL_OF = (el) => { const p = el?.closest?.(".pane"); return p ? (p.classList.contains("left") ? "left" : p.classList.contains("right") ? "right" : "mid") : "mid"; };
+const errors = { left: null, mid: null, right: null };const PANEL_OF = (el) => { const p = el?.closest?.(".pane"); return p ? (p.classList.contains("left") ? "left" : p.classList.contains("right") ? "right" : "mid") : "mid"; };
 
 // 选择态持久（仅非敏感 UI 选择：页签/课题/材料/表块），刷新后归属正确。
 const UI_KEY = "locus.ui.v2"; // 阶段5 重构：七入口导航，旧选择态作废，默认落课题首页
 let uiRestored = false;
 function saveUi() {
-  try { localStorage.setItem(UI_KEY, JSON.stringify({ nav: ui.nav, topicId: ui.topicId, assetId: ui.assetId, paperId: ui.paperId, tableId: ui.tableId, cardFilter: ui.cardFilter, protocolId: ui.protocolId, executionId: ui.executionId, taskId: ui.taskId, chatId: ui.chatId, reportId: ui.reportId, navCollapsed: ui.navCollapsed, kzTab: ui.kzTab, kzPanel: ui.kzPanel, cardOpen: ui.cardOpen })); } catch {}
+  try { localStorage.setItem(UI_KEY, JSON.stringify({ nav: ui.nav, topicId: ui.topicId, assetId: ui.assetId, paperId: ui.paperId, tableId: ui.tableId, cardFilter: ui.cardFilter, protocolId: ui.protocolId, executionId: ui.executionId, taskId: ui.taskId, chatId: ui.chatId, reportId: ui.reportId, navCollapsed: ui.navCollapsed, kzTab: ui.kzTab, kzPanel: ui.kzPanel, cardOpen: ui.cardOpen, topicPane: ui.topicPane, subqId: ui.subqId, paperView: ui.paperView, paperQuery: ui.paperQuery, paperFilter: ui.paperFilter, protocolView: ui.protocolView, protoQuery: ui.protoQuery, recordView: ui.recordView, chatView: ui.chatView, knowledgeView: ui.knowledgeView })); } catch {}
 }
 function restoreUi() {
   if (uiRestored) return;
@@ -64,6 +84,15 @@ function restoreUi() {
     if (["todo", "cand", "skip", "excl"].includes(s.kzTab)) ui.kzTab = s.kzTab;
     if (["cards", "themes"].includes(s.kzPanel)) ui.kzPanel = s.kzPanel;
     if (typeof s.cardOpen === "string" || s.cardOpen === null) ui.cardOpen = s.cardOpen;
+    if (s.topicPane === "subq" && state.subquestions.some((q) => q.id === s.subqId)) { ui.topicPane = "subq"; ui.subqId = s.subqId; }
+    if (s.paperView === "read" || s.paperView === "manage") ui.paperView = s.paperView;
+    if (typeof s.paperQuery === "string") ui.paperQuery = s.paperQuery;
+    if (s.paperFilter === "has" || s.paperFilter === "none" || s.paperFilter === "all") ui.paperFilter = s.paperFilter;
+    if (s.protocolView === "detail" || s.protocolView === "manage") ui.protocolView = s.protocolView;
+    if (typeof s.protoQuery === "string") ui.protoQuery = s.protoQuery;
+    if (s.recordView === "detail" || s.recordView === "overview") ui.recordView = s.recordView;
+    if (s.chatView === "chat" || s.chatView === "manage") ui.chatView = s.chatView;
+    if (s.knowledgeView === "review" || s.knowledgeView === "overview") ui.knowledgeView = s.knowledgeView;
   } catch {}
 }
 
@@ -740,6 +769,151 @@ async function runJob(btn, label, fn) {
 
 function currentAsset() { return state.assets.find((a) => a.id === ui.assetId) ?? null; }
 
+// ── 课题子页（总览 ⇄ 子问题详情）与返回 ──
+function openSubq(id) {
+  if (!id || id === ui.subqId) return;
+  if (!guardLeave()) return;
+  ui.topicPane = "subq"; ui.subqId = id;
+  renderAll();
+}
+function backFromSubq() {
+  if (!guardLeave()) return;
+  ui.topicPane = "overview"; ui.subqId = null;
+  renderAll();
+}
+
+// ── 文献：管理页 ⇄ 阅读页（相互独立）──
+function openPaperRead(id) {
+  if (!id) return;
+  if (!guardLeave()) return;
+  ui.paperId = id; ui.attId = null; ui.paperView = "read";
+  renderAll();
+}
+function backToPaperManage() {
+  if (!guardLeave()) return;
+  ui.paperView = "manage";
+  renderAll();
+}
+
+// ── 方案：管理页 ⇄ 详情页（实验图）──
+function openProtocolDetail(id) {
+  if (!id) return;
+  if (!guardLeave()) return;
+  ui.protocolId = id; ui.protocolView = "detail"; ui.protocolEdit = false; ui.viewRev = null; ui.stepSel = null;
+  renderAll();
+}
+function backToProtocolManage() {
+  if (!guardLeave()) return;
+  ui.protocolView = "manage"; ui.protocolEdit = false;
+  renderAll();
+}
+
+// ── 记录：执行总览 ⇄ 执行详情（数据表复用全屏工作区，样品管理在工具区）──
+function openExecutionDetail(id) {
+  if (!id) return;
+  if (!guardLeave()) return;
+  ui.executionId = id; ui.recordView = "detail"; ui.assetId = null; ui.editEventId = null; ui.pauseSuggest = null; ui.prepExtra = 0;
+  renderAll();
+}
+function backToRecordOverview() {
+  if (!guardLeave()) return;
+  ui.recordView = "overview"; ui.assetId = null;
+  renderAll();
+}
+
+// ── 对话：会话管理 ⇄ 聊天 ──
+function openChatDetail(id) {
+  if (!id) return;
+  if (!guardLeave()) return;
+  ui.chatId = id; ui.chatView = "chat";
+  chatScrollBottomPending = true; // 打开会话定位到最新消息
+  renderAll();
+}
+function backToChatManage() {
+  if (!guardLeave()) return;
+  ui.chatView = "manage";
+  renderAll();
+}
+
+// ── 知识：骨架总览（大容器占位「尚未接入」）⇄ 现有审阅流程 ──
+function renderKnowledgeOverview(content, note) {
+  note.hidden = true;
+  $("#mid-title").textContent = "知识积累";
+  $("#tools-area").innerHTML = "";
+  content.classList.remove("is-empty", "reader");
+  content.classList.add("rich");
+  content.innerHTML = `
+    <div class="kz-overview">
+      <div class="kz-head">
+        <div><div class="detail-title">知识积累</div><div class="detail-sub">当前课题</div></div>
+        <div class="detail-actions">
+          <button class="primary" type="button" data-kz-go="review"${state.papers.length ? "" : ' disabled title="先建立文献条目并导入附件"'}>继续积累 / 审阅</button>
+          <button type="button" disabled title="尚未接入">知识目录</button>
+          <button type="button" disabled title="尚未接入">比较</button>
+          <button type="button" disabled title="尚未接入">快照</button>
+        </div>
+      </div>
+      <div class="kz-container-placeholder">
+        <span class="es-seal" aria-hidden="true">知</span>
+        <h3>大容器尚未接入</h3>
+        <p>知识总览大容器需接入真实数据（E6.4 接入表）后才可用；本轮不显示伪数据与伪计数。</p>
+        <p class="hint">可先用「继续积累 / 审阅」进入现有的卡片审阅流程。</p>
+      </div>
+      <p class="hint">图例与范围说明、知识目录 / 比较 / 快照等容器外目的地：本轮未接入。</p>
+    </div>`;
+}
+
+// ── 浏览器返回保护（§5.1：历史栈集成，不引入路由库）──
+let historyReady = false;
+let suppressHistory = false;
+let suppressPop = false;
+let lastPushedKey = "";
+function pageState() { return { nav: ui.nav, topicId: ui.topicId, topicPane: ui.topicPane, subqId: ui.subqId, paperView: ui.paperView, paperId: ui.paperId, protocolView: ui.protocolView, protocolId: ui.protocolId, recordView: ui.recordView, executionId: ui.executionId, chatView: ui.chatView, chatId: ui.chatId, knowledgeView: ui.knowledgeView }; }
+/** 页面状态变化时写入一条历史；首次替换、后台刷新/主题/动画不入历史。 */
+function syncHistory() {
+  if (suppressHistory) return;
+  const st = pageState();
+  const key = JSON.stringify(st);
+  if (!historyReady) { try { history.replaceState(st, ""); } catch {} historyReady = true; lastPushedKey = key; return; }
+  if (key === lastPushedKey) return;
+  try { history.pushState(st, ""); } catch {}
+  lastPushedKey = key;
+}
+function applyPageState(st) {
+  ui.nav = st.nav; ui.topicId = st.topicId ?? ""; ui.topicPane = st.topicPane ?? "overview";
+  ui.subqId = state.subquestions.some((q) => q.id === st.subqId) ? st.subqId : null;
+  if (ui.topicPane === "subq" && !ui.subqId) ui.topicPane = "overview";
+  ui.paperId = state.papers.some((p) => p.id === st.paperId) ? st.paperId : null;
+  ui.paperView = st.paperView === "read" && ui.paperId ? "read" : "manage";
+  ui.protocolId = state.protocols.some((p) => p.id === st.protocolId) ? st.protocolId : null;
+  ui.protocolView = st.protocolView === "detail" && ui.protocolId ? "detail" : "manage";
+  ui.protocolEdit = false;
+  ui.executionId = state.executions.some((e) => e.id === st.executionId) ? st.executionId : null;
+  ui.recordView = st.recordView === "detail" && ui.executionId ? "detail" : "overview";
+  ui.chatId = state.chats.some((c) => c.id === st.chatId) ? st.chatId : null;
+  ui.chatView = st.chatView === "chat" && ui.chatId ? "chat" : "manage";
+  ui.knowledgeView = st.knowledgeView === "review" ? "review" : "overview";
+  if (ui.nav === "chat" && ui.chatView === "chat") chatScrollBottomPending = true; // 后退进聊天：定位到最新
+  ui.highlight = null; ui.cell = null; ui.groupSel.clear(); ui.batch = null; ui.ack = false;
+  ui.stepSel = null; ui.viewRev = null; ui.editEventId = null; ui.pauseSuggest = null; ui.prepExtra = 0;
+  renderAll();
+}
+window.addEventListener("popstate", (ev) => {
+  if (suppressPop) { suppressPop = false; lastPushedKey = JSON.stringify(pageState()); return; } // 取消离开后 go(1) 回到本页，忽略这一次
+  const st = ev.state;
+  if (!st || typeof st !== "object" || !st.nav) return; // 越过应用首条历史 → 交回浏览器，仍受 beforeunload 保护
+  if (!guardLeave()) {
+    // 取消离开：用 go(1) 恢复历史位置（不截断前进历史）
+    suppressPop = true;
+    try { history.go(1); } catch {}
+    return;
+  }
+  suppressHistory = true;
+  applyPageState(st);
+  suppressHistory = false;
+  lastPushedKey = JSON.stringify(pageState());
+});
+
 /** 切换前脏检查；返回 true 表示可离开。 */
 function guardLeave() {
   if (!ui.dirty) return true;
@@ -777,6 +951,11 @@ async function activateNav(kind) {
   clearAllErrors();
   ui.nav = kind; ui.highlight = null; ui.cell = null; ui.tableId = null; ui.groupSel.clear(); ui.batch = null; ui.ack = false;
   ui.stepSel = null; ui.viewRev = null; ui.editEventId = null; ui.pauseSuggest = null; ui.prepExtra = 0;
+  ui.topicPane = "overview"; ui.subqId = null; ui.paperView = "manage";
+  ui.protocolView = "manage"; ui.protocolEdit = false;
+  ui.recordView = "overview";
+  ui.chatView = "manage";
+  ui.knowledgeView = "overview";
   renderAll();
   restoreNavScroll();
   if (prefersReducedMotion()) return;
@@ -788,15 +967,40 @@ async function activateNav(kind) {
 
 function renderAll() {
   if (["连接中…", "读取卷宗…"].includes($("#status").textContent)) setStatus("就绪");
+  const mid = midScroller();
+  if (lastListKey !== null && mid) viewScroll.set(lastListKey, mid.scrollTop); // 离开前记住列表滚动
+  if (lastWasChatDetail && mid && !chatScrollBottomPending) chatScrollSaved = mid.scrollTop; // 记住聊天阅读位置
   renderShell();
   renderMiddle(); renderRight();
+  const m2 = midScroller();
+  if (m2) {
+    if (isListView()) m2.scrollTop = viewScroll.get(listKey()) ?? 0;
+    else if (ui.nav === "chat" && ui.chatView === "chat") { m2.scrollTop = chatScrollBottomPending ? m2.scrollHeight : chatScrollSaved; chatScrollBottomPending = false; }
+    else m2.scrollTop = 0; // 其余详情页从顶部开始
+  }
+  lastListKey = isListView() ? listKey() : null;
+  lastWasChatDetail = ui.nav === "chat" && ui.chatView === "chat";
   saveUi();
+  syncHistory();
 }
+/** 中栏滚动容器：实际滚动的是 .pane.mid（#mid-content 是内容层）。 */
+function midScroller() { return document.querySelector(".pane.mid"); }
+/** 列表页（有可恢复的滚动/筛选）：六个模块的管理/总览态。 */
+function isListView() {
+  return (ui.nav === "topic" && ui.topicPane !== "subq")
+    || (ui.nav === "papers" && ui.paperView !== "read")
+    || (ui.nav === "protocol" && ui.protocolView !== "detail")
+    || (ui.nav === "record" && ui.recordView !== "detail")
+    || (ui.nav === "chat" && ui.chatView !== "chat")
+    || (ui.nav === "knowledge" && ui.knowledgeView !== "review");
+}
+function listKey() { return `${ui.nav}|${ui.topicId}`; }
+function isNearBottomMid() { const el = midScroller(); return Boolean(el) && (el.scrollHeight - el.scrollTop - el.clientHeight < 48); }
 
 /** 外壳：页头当前课题、侧栏（导航＋本页列表）、中间「＋新建」区、分区报错。 */
 function renderShell() {
   $("#curtopic").innerHTML = topbarTopicHtml(state, ui);
-  const kz = ui.nav === "knowledge";
+  const kz = ui.nav === "knowledge" && ui.knowledgeView === "review";
   if (!kz) ui.kzJob = null;
   if (kz && !ui.paperId && state.papers.length) ui.paperId = state.papers[0].id;
   if (ui.nav === "papers" && !ui.paperId) {
@@ -809,6 +1013,7 @@ function renderShell() {
     if (ts.length) ui.taskId = ts[0].id;
   }
   document.querySelector(".app").classList.toggle("mode-knowledge", kz);
+  document.querySelector(".app").dataset.layout = layoutOf();
   document.querySelector(".app").classList.remove("nav-mini");
   $("#navrail").hidden = true;
   $("#nav").hidden = false;
@@ -826,19 +1031,44 @@ function renderShell() {
 /** 中间「＋新建」区：本页的新建/上传表单与工具（不再放侧栏）。 */
 function renderCreateArea() {
   const box = $("#create-area"), tools = $("#tools-area");
-  if (ui.nav === "topic" || (ui.nav === "knowledge" && !state.papers.length)) { box.innerHTML = ""; tools.innerHTML = ""; return; }
+  if (ui.nav === "record") {
+    box.innerHTML = ""; tools.innerHTML = "";
+    if (ui.recordView === "detail") box.innerHTML = `<div class="detail-bar"><button class="back-btn" type="button" data-rec-back>← 返回记录总览</button><span class="hint">执行详情；数据表与样品在总览与左下列表管理。</span></div>`;
+    else renderRecordImport(box);
+    renderRecordTools(tools);
+    return;
+  }
+  if (ui.nav === "chat") {
+    box.innerHTML = ""; tools.innerHTML = "";
+    if (ui.chatView === "chat") box.innerHTML = `<div class="detail-bar"><button class="back-btn" type="button" data-chat-back>← 返回会话列表</button><span class="hint">范围与建议采纳见右栏。</span></div>`;
+    return;
+  }
+  if (ui.nav === "knowledge") {
+    box.innerHTML = ""; tools.innerHTML = "";
+    if (ui.knowledgeView === "review" && state.papers.length) {
+      const bar = document.createElement("div");
+      bar.innerHTML = `<div class="detail-bar"><button class="back-btn" type="button" data-kz-back>← 返回知识总览</button><span class="hint">继续积累 / 审阅（现有流程）</span></div>`;
+      box.append(bar);
+      const formBox = document.createElement("div"); box.append(formBox);
+      renderKnowledgeForm(formBox);
+      renderLitTools(tools);
+    }
+    return;
+  }
+  // 课题页、文献页（管理/阅读分离，表单移入按需流程）不走通用创建区。
+  if (ui.nav === "topic" || ui.nav === "papers") { box.innerHTML = ""; tools.innerHTML = ""; return; }
   box.innerHTML = ""; tools.innerHTML = "";
   renderImportBox(box);
   renderLitTools(tools);
 }
 
 function renderImportBox(box) {
-  if (ui.nav === "papers") { renderPaperForm(box); return; }
+  if (ui.nav === "papers") { box.innerHTML = ""; return; } // 文献页表单移入管理页按需流程
   if (ui.nav === "knowledge") { renderKnowledgeForm(box); return; }
-  if (ui.nav === "protocol") { renderProtocolImport(box); return; }
+  if (ui.nav === "protocol") { box.innerHTML = ""; return; } // 方案新建/导入移入方案管理页按需流程
   if (ui.nav === "record") { renderRecordImport(box); return; }
   if (ui.nav === "analysis") { renderAnalysisForm(box); return; }
-  if (ui.nav === "chat") { renderChatForm(box); return; }
+  if (ui.nav === "chat") { box.innerHTML = ""; return; } // 会话新建移入会话管理页按需流程
   box.innerHTML = "";
 }
 const EMPTY_META = {
@@ -871,29 +1101,41 @@ function midEmpty(kind, title, desc) {
 function renderMiddle() {
   const note = $("#mid-note"), content = $("#mid-content");
   document.body.dataset.nav = ui.nav;
-  content.classList.remove("is-empty", "rich");
+  content.classList.remove("is-empty", "rich", "reader");
   content.classList.toggle("kzw", ui.nav === "knowledge");
   if (ui.nav === "topic") {
-    $("#mid-title").textContent = "课题";
     note.hidden = true;
-    content.innerHTML = state.topics.length
+    if (!state.topics.length) {
+      $("#mid-title").textContent = "课题";
+      content.innerHTML = emptyTopicGuideHtml();
+      content.classList.add("rich");
+      return;
+    }
+    if (ui.topicPane === "subq") {
+      const s = state.subquestions.find((x) => x.id === ui.subqId);
+      $("#mid-title").textContent = "子问题";
+      content.innerHTML = subqDetailHtml(state, ui);
+      content.classList.add("rich");
+      if (!s) ui.topicPane = "overview";
+      return;
+    }
+    const t = state.topics.find((x) => x.id === ui.topicId);
+    $("#mid-title").textContent = "课题";
+    content.innerHTML = t
       ? topicFlowHtml(state, ui) + topicOverviewHtml(state, ui) + subqBlockHtml(state, ui)
-      : emptyTopicGuideHtml();
+      : `<div class="empty-guide" data-empty="topic-pick"><div class="empty-seal" aria-hidden="true">课</div>
+          <div class="eyebrow">未选课题</div><h2>尚未选择课题</h2>
+          <p class="empty-sub">用顶栏「切换」选一个课题，或新建一个。</p></div>`;
     content.classList.add("rich");
     return;
   }
   if (ui.nav === "papers") {
-    const p = currentPaper();
-    const att = currentAttachment();
-    $("#mid-title").textContent = att ? `文献原文 · ${state.assets.find((a) => a.id === att.assetId)?.name ?? ""}` : "文献原文";
-    if (!p) { note.hidden = true; $("#mid-title").textContent = "文献条目"; midEmpty("papers", state.papers.length ? "还没有选择论文条目" : "还没有论文条目", "在左栏创建条目，或在上方导入题录；附件在右栏管理。"); return; }
-    if (!att) { note.hidden = true; midEmpty("papers", "这个条目还没有附件", "在右栏导入正文或补充材料；导入后这里显示可定位的原文。"); return; }
-    const asset = state.assets.find((a) => a.id === att.assetId);
-    note.hidden = false; note.textContent = `角色：${ROLE_LABEL[att.role]}${att.version ? " · 版本 " + att.version : ""} · 原件 ${asset?.bytes ?? 0}B`;
-    content.innerHTML = esc(asset?.text ?? "");
-    return;
+    if (ui.paperView === "read" && currentPaper()) return renderPaperRead(content, note);
+    ui.paperView = "manage";
+    return renderPaperManage(content, note);
   }
   if (ui.nav === "knowledge") {
+    if (ui.knowledgeView !== "review") return renderKnowledgeOverview(content, note);
     $("#mid-title").textContent = "卡片审阅";
     note.hidden = true;
     if (!state.papers.length) { midEmpty("knowledge", "还没有可审的卡片", "先在文献卷建立条目并导入附件，再回到知识卷发起语义提取。"); return; }
@@ -901,14 +1143,12 @@ function renderMiddle() {
     return;
   }
   if (ui.nav === "protocol") {
-    $("#mid-title").textContent = currentProtocol() ? "实验图" : "实验方案";
-    note.hidden = true;
-    if (!currentProtocol()) { midEmpty("protocol", "还没有实验方案", "在上方新建方案、上传原件解析，或从论文方法重构。"); return; }
-    content.innerHTML = protocolMainHtml();
-    content.classList.add("rich");
-    return;
+    if (ui.protocolView === "detail" && currentProtocol()) return renderProtocolDetail(content, note);
+    ui.protocolView = "manage"; ui.protocolEdit = false;
+    return renderProtocolManage(content, note);
   }
   if (ui.nav === "record") {
+    if (ui.recordView !== "detail") return renderRecordOverview(content, note);
     const a = currentAsset();
     if (a && a.kind === "image") {
       $("#mid-title").textContent = `原始图片 · ${a.name}`;
@@ -917,7 +1157,7 @@ function renderMiddle() {
       return;
     }
     const e = currentExecution();
-    if (!e) { note.hidden = true; $("#mid-title").textContent = "执行记录"; midEmpty("record", "还没有执行记录", "在左侧选择执行，或先创建一次执行；手写图片也可在这里查看。"); return; }
+    if (!e) { ui.recordView = "overview"; return renderRecordOverview(content, note); }
     const p = state.protocols.find((x) => x.id === e.protocolId);
     const snap = e.preparation?.snapshot ?? p?.revisions.find((r) => r.revision === (e.preparation?.baseRevision ?? e.protocolRevision));
     if ((e.phase ?? "recording") === "preparing") {
@@ -946,9 +1186,10 @@ function renderMiddle() {
     return;
   }
   if (ui.nav === "chat") {
+    if (ui.chatView !== "chat") return renderChatManage(content, note);
     const c = currentChat();
-    $("#mid-title").textContent = "上下文对话";
-    if (!c) { note.hidden = true; midEmpty("chat", "还没有对话", "在左侧选择会话，或围绕课题新建对话；范围与采纳入右栏。"); return; }
+    if (!c) { ui.chatView = "manage"; return renderChatManage(content, note); }
+    $("#mid-title").textContent = "聊天";
     note.hidden = false;
     note.textContent = `范围：${c.subquestionId ? "子问题 ＋ " : ""}${c.scope.length} 对象；发送即冻结快照。讨论不改对象；采纳需确认。`;
     content.innerHTML = chatHtml(c);
@@ -961,16 +1202,29 @@ function renderMiddle() {
 }
 function renderRight() {
   if (ui.nav === "topic") { $("#right-title").textContent = "下一步与待办"; $("#right-content").innerHTML = nextStepHtml(state, ui) + topicTodosHtml(state, ui); return; }
-  if (ui.nav === "papers") { $("#right-title").textContent = "条目与附件"; $("#right-content").innerHTML = paperHtml(); return; }
+  if (ui.nav === "papers") {
+    if (ui.paperView === "read") { $("#right-title").textContent = ""; $("#right-content").innerHTML = ""; return; }
+    $("#right-title").textContent = "条目与附件"; $("#right-content").innerHTML = paperHtml(); return;
+  }
   if (ui.nav === "knowledge") {
+    if (ui.knowledgeView !== "review") { $("#right-title").textContent = ""; $("#right-content").innerHTML = ""; return; }
     $("#right-title").textContent = "审阅队列";
     $("#right-content").innerHTML = knowledgeQueueHtml(state, ui);
     return;
   }
-  if (ui.nav === "protocol") { $("#right-title").textContent = "方案信息"; $("#right-content").innerHTML = protocolSideHtml(); return; }
-  if (ui.nav === "record") { $("#right-title").textContent = "实验记录"; $("#right-content").innerHTML = recordHtml(); return; }
+  if (ui.nav === "protocol") {
+    if (ui.protocolView !== "detail") { $("#right-title").textContent = ""; $("#right-content").innerHTML = ""; return; }
+    $("#right-title").textContent = "方案信息"; $("#right-content").innerHTML = protocolSideHtml(); return;
+  }
+  if (ui.nav === "record") {
+    if (ui.recordView !== "detail") { $("#right-title").textContent = ""; $("#right-content").innerHTML = ""; return; }
+    $("#right-title").textContent = "实验记录"; $("#right-content").innerHTML = recordHtml(); return;
+  }
   if (ui.nav === "analysis") { $("#right-title").textContent = "推荐 · 结果 · 分析初稿"; $("#right-content").innerHTML = analysisRightHtml(state, ui); return; }
-  if (ui.nav === "chat") { $("#right-title").textContent = "范围 · 来源 · 采纳"; $("#right-content").innerHTML = chatRightHtml(); return; }
+  if (ui.nav === "chat") {
+    if (ui.chatView !== "chat") { $("#right-title").textContent = ""; $("#right-content").innerHTML = ""; return; }
+    $("#right-title").textContent = "范围 · 来源 · 采纳"; $("#right-content").innerHTML = chatRightHtml(); return;
+  }
   $("#right-title").textContent = "结构化结果";
   $("#right-content").innerHTML = `<p class="hint">在左栏选择工作对象。</p>`;
 }
@@ -993,31 +1247,119 @@ function showLocate(msg, paperId) {
   setError("right", { panel: "right", message: msg, detail: "", retry: paperId ? () => { clearAllErrors(); ui.paperId = paperId; ui.attId = null; renderAll(); } : null });
 }
 
-function renderPaperForm(box) {
-  box.innerHTML = `
-    <details class="mini" ${state.papers.length ? "" : "open"}>
-      <summary>新建论文条目（题名必填）</summary>
-      <input id="pp-title" placeholder="题名（必填）" />
-      <input id="pp-authors" placeholder="作者（and 或分号分隔）" />
-      <div class="row"><input id="pp-year" placeholder="年份" /><input id="pp-doi" placeholder="DOI（可空）" /></div>
-      <input id="pp-source" placeholder="来源（期刊/预印本/网址）" />
-      <input id="pp-license" placeholder="许可（如 CC BY 4.0；未提供留空，不补造）" />
-      <button class="primary" id="pp-create">创建条目</button>
-      <p class="hint">条目是题录身份，不是文件；附件在右栏导入，收藏不触发 AI 解析。</p>
-    </details>`;
-  $("#pp-create").addEventListener("click", (ev) => runBusy(ev.target, "创建论文条目", async () => {
-    try {
-      const r = await api.createPaper({
-        title: $("#pp-title").value, authors: $("#pp-authors").value, year: $("#pp-year").value,
-        doi: $("#pp-doi").value, source: $("#pp-source").value, license: $("#pp-license").value,
-        topicIds: ui.topicId ? [ui.topicId] : [],
-      });
-      ui.paperId = r.paperId; ui.attId = null; await refresh(); setStatus("论文条目已创建（未解析）");
-    } catch (e) {
-      if (e.status === 409 && e.details?.existingPaperId) { showLocate(e.message, e.details.existingPaperId); return; }
-      throw e;
-    }
-  }));
+/** 新建条目表单字段（按需展开，落在文献管理页顶部）。 */
+function paperFormFieldsHtml() {
+  return `
+    <input id="pp-title" placeholder="题名（必填）" />
+    <input id="pp-authors" placeholder="作者（and 或分号分隔）" />
+    <div class="row"><input id="pp-year" placeholder="年份" /><input id="pp-doi" placeholder="DOI（可空）" /></div>
+    <input id="pp-source" placeholder="来源（期刊/预印本/网址）" />
+    <input id="pp-license" placeholder="许可（如 CC BY 4.0；未提供留空，不补造）" />
+    <button class="primary" id="pp-create" type="button">创建条目</button>
+    <p class="hint">条目是题录身份，不是文件；附件在条目详情里导入，收藏不触发 AI 解析。</p>`;
+}
+/** 题录导入表单字段（按需展开，落在文献管理页顶部）。 */
+function bibImportFieldsHtml() {
+  return `
+    <select id="bib-format"><option value="bibtex">BibTeX（.bib）</option><option value="csl-json">CSL-JSON（Zotero 导出）</option></select>
+    <textarea id="bib-text" rows="4" placeholder="粘贴题录内容；同 DOI 已有条目会跳过并给定位"></textarea>
+    <button class="primary" id="bib-import" type="button">导入题录</button>
+    <p class="hint">题录导入（本功能）/ 附件导入（条目详情里上传）/ 实时连接（未实现，不做假入口）。</p>`;
+}
+
+/** 文献管理页列表（搜索/筛选后）。 */
+function paperListHtml() {
+  const scoped = state.papers.filter((p) => !ui.topicId || p.topicIds.includes(ui.topicId) || !p.topicIds.length);
+  if (!scoped.length) return emptyStateHtml("papers", "还没有论文条目", "新建条目或导入题录；条目是题录身份，附件另存、不触发解析。");
+  const q = (ui.paperQuery ?? "").trim().toLowerCase();
+  let ps = scoped;
+  if (q) ps = ps.filter((p) => p.title.toLowerCase().includes(q) || p.authors.join(" ").toLowerCase().includes(q));
+  if (ui.paperFilter === "has") ps = ps.filter((p) => state.attachments.some((a) => a.paperId === p.id));
+  if (ui.paperFilter === "none") ps = ps.filter((p) => !state.attachments.some((a) => a.paperId === p.id));
+  if (!ps.length) {
+    return `<div class="empty-state" data-empty="papers-filter"><span class="es-seal" aria-hidden="true">文</span>
+      <div class="es-eyebrow">无匹配</div><h3>没有匹配的文献</h3><p>清空搜索或调整筛选。</p>
+      <div class="empty-actions"><button class="primary" type="button" data-paper-clear>清除条件</button></div></div>`;
+  }
+  return ps.map((p) => {
+    const nAtt = state.attachments.filter((a) => a.paperId === p.id).length;
+    const nCard = state.cards.filter((c) => c.paperId === p.id).length;
+    const authors = p.authors.join("、");
+    return `<article class="paper-item ${p.id === ui.paperId ? "active" : ""}" data-paperrow="${p.id}">
+      <div class="pi-main">
+        <div class="pi-title">${esc(p.title)}</div>
+        <div class="pi-meta">${p.year ? esc(p.year) + " · " : ""}${esc(authors.length > 40 ? authors.slice(0, 40) + "…" : authors)} · ${nAtt} 附件 · ${nCard} 卡</div>
+      </div>
+      <div class="pi-actions">
+        <button class="mini-act paper-read" type="button" data-paper="${p.id}"${nAtt ? "" : ' disabled title="这个条目还没有附件"'}>阅读</button>
+      </div>
+    </article>`;
+  }).join("");
+}
+
+/** 文献管理页：主体＝可扫描列表；新建/导入按需展开；条目详情在右侧辅助区。 */
+function renderPaperManage(content, note) {
+  note.hidden = true;
+  $("#mid-title").textContent = "文献管理";
+  $("#tools-area").innerHTML = "";
+  content.classList.remove("is-empty");
+  content.classList.add("rich");
+  const paused = ui.paperQuery ? ` · 搜索「${esc(ui.paperQuery)}」` : "";
+  content.innerHTML = `
+    <div class="lit-manage-head">
+      <div class="lm-search"><input id="paper-search" placeholder="搜索题名或作者" value="${esc(ui.paperQuery ?? "")}" aria-label="搜索文献" /></div>
+      <div class="lm-filter">
+        <select id="paper-filter" aria-label="筛选文献">
+          <option value="all"${ui.paperFilter !== "has" && ui.paperFilter !== "none" ? " selected" : ""}>全部</option>
+          <option value="has"${ui.paperFilter === "has" ? " selected" : ""}>有附件</option>
+          <option value="none"${ui.paperFilter === "none" ? " selected" : ""}>无附件</option>
+        </select>
+      </div>
+      <div class="lm-tools">
+        <details class="mini"><summary>新建条目</summary>${paperFormFieldsHtml()}</details>
+        <details class="mini"><summary>导入题录</summary>${bibImportFieldsHtml()}</details>
+      </div>
+    </div>
+    <p class="hint">共 ${state.papers.filter((p) => !ui.topicId || p.topicIds.includes(ui.topicId) || !p.topicIds.length).length} 篇${paused}；点条目在右侧管理题录与附件，「阅读」进入原文。</p>
+    <div id="paper-list" class="paper-list">${paperListHtml()}</div>`;
+}
+
+/** 阅读页工具栏：返回、题名、当前附件，多附件时可切换（阅读行为）。 */
+function paperReadToolbarHtml(p, att) {
+  const atts = state.attachments.filter((a) => a.paperId === p.id);
+  const opts = atts.map((a) => {
+    const asset = state.assets.find((x) => x.id === a.assetId);
+    return `<option value="${a.id}"${a.id === att?.id ? " selected" : ""}>${ROLE_LABEL[a.role]}：${esc(asset?.name ?? a.assetId)}${a.version ? " · " + esc(a.version) : ""}</option>`;
+  }).join("");
+  const asset = att && state.assets.find((x) => x.id === att.assetId);
+  return `<div class="read-bar">
+    <button class="back-btn" type="button" data-paper-back>← 返回文献管理</button>
+    <div class="read-head">
+      <div class="read-title" title="${esc(p.title)}">${esc(p.title)}</div>
+      <div class="read-sub">${att ? `${ROLE_LABEL[att.role]} · ${esc(asset?.name ?? "")}${att.version ? " · " + esc(att.version) : ""}` : "无附件"}</div>
+    </div>
+    ${atts.length > 1 ? `<label class="read-more"><span class="hint">切换附件</span><select id="read-att">${opts}</select></label>` : ""}
+  </div>`;
+}
+
+/** 阅读页：以原文为中心，无导入/列表/附件管理/大块元数据。 */
+function renderPaperRead(content, note) {
+  const p = currentPaper();
+  const att = currentAttachment();
+  note.hidden = true;
+  $("#mid-title").textContent = "文献阅读";
+  $("#tools-area").innerHTML = paperReadToolbarHtml(p, att);
+  content.classList.remove("rich", "is-empty");
+  if (!att) {
+    content.classList.add("is-empty");
+    content.innerHTML = `<div class="empty-state" data-empty="papers-read"><span class="es-seal" aria-hidden="true">文</span>
+      <div class="es-eyebrow">正文尚无</div><h3>这个条目还没有附件</h3><p>回到文献管理，在条目详情里导入正文。</p>
+      <div class="empty-actions"><button class="primary" type="button" data-paper-back>返回文献管理</button></div></div>`;
+    return;
+  }
+  const asset = state.assets.find((a) => a.id === att.assetId);
+  content.classList.add("reader");
+  content.innerHTML = esc(asset?.text ?? "");
 }
 
 /** 右栏：条目元信息（修订留历史）＋附件管理＋课题关联＋去知识提取。 */
@@ -1071,24 +1413,7 @@ function paperHtml() {
 /** 左栏文献工具：命名映射 + 条件比较（仅文献导航显示）。 */
 function renderLitTools(box) {
   if (ui.nav === "record") { renderRecordTools(box); return; }
-  if (ui.nav === "papers") {
-    box.innerHTML = `
-      <details class="mini">
-        <summary>题录导入（Zotero 导出）</summary>
-        <select id="bib-format"><option value="bibtex">BibTeX（.bib）</option><option value="csl-json">CSL-JSON（Zotero 导出）</option></select>
-        <textarea id="bib-text" rows="4" placeholder="粘贴题录内容；同 DOI 已有条目会跳过并给定位"></textarea>
-        <button class="primary" id="bib-import">导入题录</button>
-        <p class="hint">Zotero 三模式如实区分：题录导入（本功能）/ 附件导入（右栏上传）/ 实时连接（未验证、未实现，不做假入口）。</p>
-      </details>`;
-    $("#bib-import").addEventListener("click", (ev) => runBusy(ev.target, "导入题录", async () => {
-      const r = await api.importBibliography($("#bib-format").value, $("#bib-text").value);
-      $("#bib-text").value = "";
-      if (r.created?.length) ui.paperId = r.created[0];
-      await refresh();
-      setStatus(`题录导入：新建 ${r.created?.length ?? 0} 条${r.skipped?.length ? `，跳过同 DOI ${r.skipped.length} 条（已有条目可定位）` : ""}`);
-    }));
-    return;
-  }
+  if (ui.nav === "papers") { box.innerHTML = ""; return; } // 题录导入移入文献管理页
   if (ui.nav !== "knowledge") { box.innerHTML = ""; return; }
   const maps = state.mappings.filter((m) => !ui.topicId || !m.topicId || m.topicId === ui.topicId);
   const cmps = state.comparisons.filter((c) => !ui.topicId || c.topicId === ui.topicId);
@@ -1242,85 +1567,132 @@ async function refreshAfterJob() {
   await refresh();
 }
 
-function renderProtocolImport(box) {
+/** 方案新建/导入字段（按需展开，落在方案管理页顶部）。事件走文档级委托。 */
+function protocolImportHtml() {
   const protos = state.assets.filter((a) => a.kind === "protocol" && (!ui.topicId || a.topicId === ui.topicId || !a.topicId));
   const paperAtts = state.assets.filter((a) => a.kind === "literature" && state.attachments.some((x) => x.assetId === a.id));
-  box.innerHTML = `
-    <details class="mini" ${state.protocols.length ? "" : "open"}>
-      <summary>＋新建方案</summary>
-      <details class="mini" open><summary>① 上传原件并解析</summary>
-        <input id="proto-up-name" placeholder="文件名（如 protocol.md）" />
-        <input id="proto-up-file" type="file" accept=".md,.markdown,.txt,.text,text/markdown,text/plain" />
-        <textarea id="proto-up-text" rows="3" placeholder="或粘贴方案文本（Markdown/纯文本）…"></textarea>
-        <button class="primary" id="proto-upload">上传并解析为方案草稿</button>
-        <p class="hint">原件按方案类归档；草稿标「模型草稿」，须人工编辑确认。AI 未配置时只归档，可稍后解析。</p>
-        ${protos.length ? `<div class="hint">已归档方案原件（${protos.length}）：</div>${protos.map((a) => `<div class="row protoasset" data-aid="${a.id}"><span class="hint">${esc(a.name)} · ${a.bytes}B</span><button class="protoasset-parse">解析为草稿</button></div>`).join("")}` : ""}
-      </details>
-      <details class="mini"><summary>② 从论文重构（非作者原始）</summary>
-        ${paperAtts.length ? `<select id="parse-asset">${paperAtts.map((a) => `<option value="${a.id}">${esc(a.name)}</option>`).join("")}</select>
-        <button id="proto-parse">重构为方案草稿</button>
-        <p class="hint">重构来源仅限论文附件；草稿标「重构」并固定来源原件，不是作者原始方案。</p>` : `<p class="hint">先在「文献整理」为论文条目导入正文/方法附件。</p>`}
-      </details>
-      <details class="mini"><summary>③ 手动新建</summary>
-        <input id="proto-name" placeholder="方案名称" />
-        <select id="proto-src"><option value="user">用户编写</option><option value="reconstructed">公开材料重构（须标来源）</option></select>
-        <input id="proto-purpose" placeholder="目的" />
-        <textarea id="proto-steps" rows="4" placeholder="每行一步：操作 | 时长分钟 | 支路名 | est&#10;例：配缓冲液 | 10 | |&#10;孵育 | 30 | | est&#10;对照 | 60 | 对照支路 |"></textarea>
-        <input id="proto-criteria" placeholder="完成判据" />
-        <input id="proto-frag" placeholder="来源片段（重构时必填，逗号分隔）" />
-        <button class="primary" id="proto-create">创建方案</button>
-      </details>
+  return `
+    <details class="mini" open><summary>① 上传原件并解析</summary>
+      <input id="proto-up-name" placeholder="文件名（如 protocol.md）" />
+      <input id="proto-up-file" type="file" accept=".md,.markdown,.txt,.text,text/markdown,text/plain" />
+      <textarea id="proto-up-text" rows="3" placeholder="或粘贴方案文本（Markdown/纯文本）…"></textarea>
+      <button class="primary" id="proto-upload" type="button">上传并解析为方案草稿</button>
+      <p class="hint">原件按方案类归档；草稿标「模型草稿」，须人工编辑确认。AI 未配置时只归档，可稍后解析。</p>
+      ${protos.length ? `<div class="hint">已归档方案原件（${protos.length}）：</div>${protos.map((a) => `<div class="row protoasset" data-aid="${a.id}"><span class="hint">${esc(a.name)} · ${a.bytes}B</span><button class="protoasset-parse" type="button">解析为草稿</button></div>`).join("")}` : ""}
+    </details>
+    <details class="mini"><summary>② 从论文重构（非作者原始）</summary>
+      ${paperAtts.length ? `<select id="parse-asset">${paperAtts.map((a) => `<option value="${a.id}">${esc(a.name)}</option>`).join("")}</select>
+      <button id="proto-parse" type="button">重构为方案草稿</button>
+      <p class="hint">重构来源仅限论文附件；草稿标「重构」并固定来源原件，不是作者原始方案。</p>` : `<p class="hint">先在「文献」为论文条目导入正文/方法附件。</p>`}
+    </details>
+    <details class="mini"><summary>③ 手动新建</summary>
+      <input id="proto-name" placeholder="方案名称" />
+      <select id="proto-src"><option value="user">用户编写</option><option value="reconstructed">公开材料重构（须标来源）</option></select>
+      <input id="proto-purpose" placeholder="目的" />
+      <textarea id="proto-steps" rows="4" placeholder="每行一步：操作 | 时长分钟 | 支路名 | est&#10;例：配缓冲液 | 10 | |&#10;孵育 | 30 | | est&#10;对照 | 60 | 对照支路 |"></textarea>
+      <input id="proto-criteria" placeholder="完成判据" />
+      <input id="proto-frag" placeholder="来源片段（重构时必填，逗号分隔）" />
+      <button class="primary" id="proto-create" type="button">创建方案</button>
     </details>`;
-  $("#proto-upload").addEventListener("click", (ev) => runJob(ev.target, "上传并解析方案", async () => {
-    if (!ui.topicId) throw new Error("请先选择/创建课题");
-    const file = $("#proto-up-file").files?.[0];
-    let text = $("#proto-up-text").value, name = $("#proto-up-name").value;
-    if (file) { text = await readTextFile(file); if (!name) name = file.name; }
-    let assetId;
-    try {
-      const up = await api.uploadProtocolSource(name, text, ui.topicId);
-      assetId = up.assetId;
-    } catch (e) {
-      if (e.status === 409 && e.details?.existingAssetId) { assetId = e.details.existingAssetId; setStatus("原件已归档：定位已有原件，继续解析"); }
-      else throw e;
-    }
-    $("#proto-up-text").value = ""; if ($("#proto-up-file")) $("#proto-up-file").value = "";
-    let r;
-    try { r = await api.parseProtocol(assetId, ui.topicId); }
-    catch (e) {
-      if (e.status === 422) { await refresh(); setStatus(`原件已归档。${e.message}`); return; }
-      throw e;
-    }
-    const res = await pollJob(r.jobId, "方案解析");
-    ui.protocolId = res.protocolId; ui.viewRev = null; await refreshAfterJob();
-    setStatus("方案草稿已生成（模型草稿，须人工确认）");
-  }));
-  $$(".protoasset-parse").forEach((b) => b.addEventListener("click", (ev) => runJob(ev.target, "AI 解析方案", async () => {
-    const aid = b.closest(".protoasset").dataset.aid;
-    const r = await api.parseProtocol(aid, ui.topicId);
-    const res = await pollJob(r.jobId, "方案解析");
-    ui.protocolId = res.protocolId; ui.viewRev = null; await refreshAfterJob();
-    setStatus("方案草稿已生成（模型草稿，须人工确认）");
-  })));
-  $("#proto-create").addEventListener("click", (ev) => runBusy(ev.target, "创建方案", async () => {
-    if (!ui.topicId) throw new Error("请先选择/创建课题");
-    const sourceKind = $("#proto-src").value;
-    await api.createProtocol({
-      topicId: ui.topicId, name: $("#proto-name").value, sourceKind,
-      purpose: $("#proto-purpose").value, criteria: $("#proto-criteria").value,
-      steps: parseStepsText($("#proto-steps").value),
-      sourceFragments: splitList($("#proto-frag").value),
-    });
-    await refresh(); setStatus("方案已创建（r1）");
-  }));
-  const parseBtn = $("#proto-parse");
-  if (parseBtn) parseBtn.addEventListener("click", (ev) => runJob(ev.target, "AI 重构方案", async () => {
-    if (!ui.topicId) throw new Error("请先选择/创建课题");
-    const r = await api.parseProtocol($("#parse-asset").value, ui.topicId, undefined, "reconstructed");
-    const res = await pollJob(r.jobId, "方案重构");
-    ui.protocolId = res.protocolId; ui.viewRev = null; await refreshAfterJob();
-    setStatus("重构草稿已生成（重构：非作者原始方案，须人工确认）");
-  }));
+}
+
+/** 方案管理页列表。 */
+function protocolListHtml() {
+  const scoped = state.protocols.filter((p) => !ui.topicId || p.topicId === ui.topicId);
+  if (!scoped.length) return emptyStateHtml("protocol", "还没有实验方案", "新建方案、上传原件解析，或从论文方法重构。");
+  const q = (ui.protoQuery ?? "").trim().toLowerCase();
+  let ps = scoped;
+  if (q) ps = ps.filter((p) => p.name.toLowerCase().includes(q) || (p.revisions[p.revisions.length - 1]?.purpose ?? "").toLowerCase().includes(q));
+  if (!ps.length) {
+    return `<div class="empty-state" data-empty="protocol-filter"><span class="es-seal" aria-hidden="true">案</span>
+      <div class="es-eyebrow">无匹配</div><h3>没有匹配的方案</h3><p>清空搜索。</p>
+      <div class="empty-actions"><button class="primary" type="button" data-proto-clear>清除条件</button></div></div>`;
+  }
+  return ps.map((p) => {
+    const latest = p.revisions[p.revisions.length - 1];
+    const steps = latest?.steps.length ?? 0;
+    return `<article class="paper-item ${p.id === ui.protocolId ? "active" : ""}" data-protorow="${p.id}">
+      <div class="pi-main">
+        <div class="pi-title">${esc(p.name)}</div>
+        <div class="pi-meta">${fmtEnum(p.sourceKind)} · ${fmtVersion(p.revision)} · ${steps} 步${latest?.purpose ? ` · ${esc(latest.purpose.slice(0, 40))}` : ""}</div>
+      </div>
+      <div class="pi-actions"><button class="mini-act proto-read" type="button" data-proto="${p.id}">打开</button></div>
+    </article>`;
+  }).join("");
+}
+
+/** 方案管理页：主体＝方案列表；新建/导入按需展开。 */
+function renderProtocolManage(content, note) {
+  note.hidden = true;
+  $("#mid-title").textContent = "实验方案";
+  $("#tools-area").innerHTML = "";
+  content.classList.remove("is-empty", "reader");
+  content.classList.add("rich");
+  const scoped = state.protocols.filter((p) => !ui.topicId || p.topicId === ui.topicId);
+  content.innerHTML = `
+    <div class="proto-manage-head">
+      <input id="proto-search" placeholder="搜索方案名称或目的" value="${esc(ui.protoQuery ?? "")}" aria-label="搜索方案" />
+      <details class="mini lm-tools-details"><summary>＋新建 / 导入方案</summary>${protocolImportHtml()}</details>
+    </div>
+    <p class="hint">共 ${scoped.length} 份${ui.protoQuery ? ` · 搜索「${esc(ui.protoQuery)}」` : ""}；点方案进入实验图。</p>
+    <div id="proto-list" class="paper-list">${protocolListHtml()}</div>`;
+}
+
+/** 步骤只读详情（非编辑态：点节点看详情）。 */
+function stepDetailHtml(p, snap) {
+  const s = snap.steps.find((x) => x.id === ui.stepSel);
+  if (!s) return `<div class="stepeditor readonly"><p class="hint">点击图中节点查看步骤详情；要修改就点「编辑当前方案」。</p></div>`;
+  const src = durationSourceOf(s);
+  const srcLabel = { fixed: "规定", estimated: "估计", computed: "由量·速率计算", unknown: "未知" }[src];
+  const durText = src === "unknown" ? "时长未知（不按 0）" : `${s.durationMin}min${src === "estimated" ? "（估计）" : src === "computed" ? "（由量·速率计算）" : ""}`;
+  const params = Object.entries(s.params ?? {});
+  return `<div class="stepeditor readonly">
+    <div class="meta">步骤详情 · ${esc(s.op)}</div>
+    <div class="hint">时长来源：${srcLabel} · ${durText}</div>
+    ${s.slackMin ? `<div class="hint">等待余量：${s.slackMin}min</div>` : ""}
+    ${s.branch ? `<div class="hint">支路：${esc(s.branch)}</div>` : ""}
+    ${s.observeEnd ? `<div class="hint">观察终点：${esc(s.observeEnd)}</div>` : ""}
+    ${params.length ? `<div class="hint">参数：${params.map(([k, v]) => esc(`${k}=${v}`)).join("、")}</div>` : ""}
+    ${s.note ? `<div class="hint">备注：${esc(s.note)}</div>` : ""}
+  </div>`;
+}
+
+/** 方案详情页：页头（返回/名称/版本/编辑）+ 实验图主体 + 步骤详情/编辑；属性与来源在右栏。 */
+function renderProtocolDetail(content, note) {
+  const p = currentProtocol();
+  const snap = viewSnapshot(p);
+  const viewingOld = snap.revision !== p.revision;
+  note.hidden = true;
+  $("#mid-title").textContent = "方案详情";
+  $("#tools-area").innerHTML = "";
+  content.classList.remove("is-empty", "reader");
+  content.classList.add("rich");
+  content.innerHTML = `
+    <div class="item proto-detail" data-id="${p.id}">
+      <div class="detail-bar">
+        <button class="back-btn" type="button" data-proto-back>← 返回方案</button>
+        <div class="detail-head">
+          <div class="detail-title">${esc(p.name)}</div>
+          <div class="detail-sub">${fmtEnum(p.sourceKind)} · 当前 ${fmtVersion(p.revision)}${viewingOld ? ` · 查看旧版 ${fmtVersion(snap.revision)}（只读）` : ""}</div>
+        </div>
+        <div class="detail-actions">
+          <select id="proto-rev" aria-label="查看版本">${p.revisions.map((r) => `<option value="${r.revision}" ${r.revision === snap.revision ? "selected" : ""}>${fmtVersion(r.revision)} · ${esc(r.reason)}</option>`).join("")}</select>
+          ${!viewingOld && !ui.protocolEdit ? `<button class="primary" type="button" data-proto-edit>编辑当前方案</button>` : ""}
+          ${ui.protocolEdit ? `<button class="primary" type="button" id="proto-edit-done">完成编辑</button>` : ""}
+          <details class="mini more"><summary>更多</summary>
+            <button id="proto-export" type="button">导出 JSON</button>
+            <button id="diagram-html" type="button">导出图 HTML</button>
+            <button id="diagram-png" type="button">导出图 PNG</button>
+            <button class="history-btn" type="button">快照历史(${p.revisions.length})</button>
+          </details>
+        </div>
+      </div>
+      ${viewingOld ? `<p class="hint warn">正在查看旧快照 ${fmtVersion(snap.revision)}（只读）；编辑将基于最新 ${fmtVersion(p.revision)} 追加。</p>` : ""}
+      ${ui.protocolEdit ? `<p class="hint">编辑态：点图中节点改步骤，或点下方「添加步骤」；保存追加新快照，旧版本不动。</p>` : ""}
+      ${diagramHtml(p, snap)}
+      ${!viewingOld && ui.protocolEdit ? stepEditorHtml(p, snap) : stepDetailHtml(p, snap)}
+    </div>
+    ${impactHtml([p.id])}`;
 }
 
 function renderRecordImport(box) {
@@ -1494,27 +1866,6 @@ function impactHtml(entityIds) {
   </div>`;
 }
 
-function protocolMainHtml() {
-  const p = currentProtocol();
-  if (!p) return `<p class="hint">在左栏选择方案，或用中间「＋新建方案」创建。图中节点可点击编辑；保存追加新快照，旧版本与已固定的执行/模板不受影响。</p>`;
-  const snap = viewSnapshot(p);
-  const viewingOld = snap.revision !== p.revision;
-  return `
-    <div class="item" data-id="${p.id}">
-      <div class="meta">${esc(p.name)} · 来源 ${fmtEnum(p.sourceKind)}</div>
-      <div class="row"><label>查看版本</label>
-        <select id="proto-rev">${p.revisions.map((r) => `<option value="${r.revision}" ${r.revision === snap.revision ? "selected" : ""}>${fmtVersion(r.revision)} · ${esc(r.reason)}</option>`).join("")}</select>
-        <button id="proto-export">导出 JSON</button>
-        <button id="diagram-html">导出图 HTML</button>
-        <button id="diagram-png">导出图 PNG</button>
-        <button class="history-btn">快照历史(${p.revisions.length})</button></div>
-      ${viewingOld ? `<p class="hint warn">正在查看旧快照 ${fmtVersion(snap.revision)}（只读）；编辑将基于最新 ${fmtVersion(p.revision)} 追加。</p>` : ""}
-      ${diagramHtml(p, snap)}
-      ${!viewingOld ? stepEditorHtml(p, snap) : ""}
-    </div>
-    ${impactHtml([p.id])}`;
-}
-
 function protocolSideHtml() {
   const p = currentProtocol();
   if (!p) return `<p class="hint">选择方案后显示元信息、来源原件与记录模板。</p>`;
@@ -1592,6 +1943,48 @@ function preparationHtml(e, p, baseSnap) {
       <div class="row"><button id="prep-add">＋添加差异</button><button id="prep-save">保存准备稿</button><button class="primary" id="prep-confirm">确认本次执行快照</button></div>
       <p class="hint">确认＝把「基础快照＋差异」冻结为本次执行的独立快照；有时长差异时自动登记确定性时间传播。确认前草稿不算数。</p>
     </div>`;
+}
+
+/** 记录总览：执行 / 数据表 / 样品三区。 */
+function recordOverviewHtml() {
+  const execs = state.executions.filter((e) => !ui.topicId || e.topicId === ui.topicId);
+  const tables = state.tables.filter((t) => { const a = state.assets.find((x) => x.id === t.assetId); return !ui.topicId || !a?.topicId || a.topicId === ui.topicId; });
+  const samples = state.samples.filter((s) => !ui.topicId || s.topicId === ui.topicId);
+  const execRows = execs.length ? execs.map((e) => {
+    const p = state.protocols.find((x) => x.id === e.protocolId);
+    const prep = (e.phase ?? "recording") === "preparing";
+    const badge = prep ? "准备稿" : fmtEnum(e.status);
+    return `<article class="paper-item ${e.id === ui.executionId ? "active" : ""}" data-exrow="${e.id}">
+      <div class="pi-main">
+        <div class="pi-title">${esc(p?.name ?? "执行")}${e.origin === "reconstructed" ? ` <span class="badge warn">文献重构</span>` : ""}</div>
+        <div class="pi-meta"><span class="badge ${e.status === "paused" ? "warn" : e.status === "active" ? "confirm" : ""}">${badge}</span> · ${prep ? `${e.preparation?.adjustments.length ?? 0} 条差异待确认` : `${e.events.length} 条记录`} · 固定 ${fmtVersion(e.protocolRevision)}</div>
+      </div>
+      <div class="pi-actions"><button class="mini-act rec-exec-open" type="button" data-exec="${e.id}">打开</button></div>
+    </article>`;
+  }).join("") : `<p class="hint">${state.topics.length ? "还没有执行；用上方「创建执行」从方案进入准备稿。" : "先建课题。"}</p>`;
+  const tableRows = tables.length ? tables.map((t) => `<article class="paper-item">
+    <div class="pi-main"><div class="pi-title">${esc(t.name)}</div><div class="pi-meta">${t.rows.length} 行 × ${t.columns.length} 列${t.origin === "reconstructed" ? " · 文献重构" : ""}</div></div>
+    <div class="pi-actions"><button class="mini-act tbl-open" type="button" data-tid="${t.id}">查看表格</button></div>
+  </article>`).join("") : `<p class="hint">还没有数据表；在「数据与分析」导入，或从论文数据重构。</p>`;
+  const sampleRows = samples.length ? samples.map((s) => {
+    const mOfS = state.measurements.filter((m) => m.sampleId === s.id);
+    return `<article class="paper-item">
+      <div class="pi-main"><div class="pi-title">${esc(s.displayName)}${s.shortName !== s.displayName ? ` <span class="hint">编号 ${esc(s.shortName)}</span>` : ""}</div>
+        <div class="pi-meta">${s.states.length} 状态 · 测量 ${mOfS.length}${s.origin === "reconstructed" ? " · 文献重构" : ""}</div></div>
+    </article>`;
+  }).join("") : `<p class="hint">还没有样品；在左上「样品」区新建。</p>`;
+  return `<div class="rec-overview">
+    <section class="rec-sec"><h3>执行（${execs.length}）</h3>${execRows}</section>
+    <section class="rec-sec"><h3>数据表（${tables.length}）</h3>${tableRows}</section>
+    <section class="rec-sec"><h3>样品（${samples.length}）</h3>${sampleRows}<p class="hint">样品的改名、追加状态、新建测量在「样品」工具区操作。</p></section>
+  </div>`;
+}
+function renderRecordOverview(content, note) {
+  note.hidden = true;
+  $("#mid-title").textContent = "实验记录";
+  content.classList.remove("is-empty", "reader");
+  content.classList.add("rich");
+  content.innerHTML = recordOverviewHtml();
 }
 
 function recordHtml() {
@@ -1688,31 +2081,55 @@ function recordHtml() {
 function currentChat() { return state.chats.find((c) => c.id === ui.chatId) ?? null; }
 const collectPicks = (cls) => [...$$(`.${cls}:checked`)].map((cb) => ({ kind: cb.dataset.kind, id: cb.dataset.id }));
 
-function renderChatForm(box) {
-  if (!ui.topicId) { box.innerHTML = `<p class="hint">先在上方选择课题，再创建对话。</p>`; return; }
+/** 新建会话字段（按需展开，落在会话管理页）。事件走文档级委托。会话无「标题/目的」字段。 */
+function chatFormHtml() {
+  if (!ui.topicId) return `<p class="hint">先在上方选择课题，再创建对话。</p>`;
   const { execs, tables, meas, protos, cards } = topicObjects(state, ui);
   const subqs = state.subquestions.filter((s) => s.topicId === ui.topicId);
   const conf = cards.filter((c) => c.audit === "confirm");
   const row = (kind, id, label) => `<label class="ctxpick"><input type="checkbox" class="ch-scope" data-kind="${kind}" data-id="${id}"/> ${esc(label)}</label>`;
-  box.innerHTML = `
-    <details class="mini" open>
-      <summary>＋新建对话</summary>
-      <select id="ch-subq"><option value="">（课题层，不挂子问题）</option>${subqs.map((s) => `<option value="${s.id}">${esc(s.question)}</option>`).join("")}</select>
-      <p class="hint">默认已选（已入候选知识卡，可取消）：</p>
-      ${conf.length ? conf.map((c) => `<label class="ctxpick"><input type="checkbox" class="ch-scope" data-kind="card" data-id="${c.id}" checked/> ${esc(c.scope || c.rawText.slice(0, 24))}</label>`).join("") : `<p class="hint">暂无。</p>`}
-      <details class="mini"><summary>其他可选（折叠：执行/测量/表/方案/其余卡）</summary>
-        ${execs.map((e) => row("execution", e.id, refLabel(state, { kind: "execution", id: e.id }))).join("")}
-        ${meas.map((m) => row("measurement", m.id, refLabel(state, { kind: "measurement", id: m.id }))).join("")}
-        ${tables.map((t) => row("table", t.id, refLabel(state, { kind: "table", id: t.id }))).join("")}
-        ${protos.map((p) => row("protocol", p.id, refLabel(state, { kind: "protocol", id: p.id }))).join("")}
-        ${cards.filter((c) => c.audit !== "confirm").map((c) => row("card", c.id, `知识卡 · ${c.scope || c.rawText.slice(0, 20)}`)).join("")}
-      </details>
-      <button class="primary" id="ch-create">创建会话</button>
-    </details>`;
-  $("#ch-create").addEventListener("click", (ev) => runBusy(ev.target, "创建会话", async () => {
-    const r = await api.createChat({ topicId: ui.topicId, subquestionId: $("#ch-subq").value || undefined, scope: collectPicks("ch-scope") });
-    ui.chatId = r.chatId; await refresh(); setStatus("会话已创建：在中栏开始讨论");
-  }));
+  return `
+    <select id="ch-subq"><option value="">（课题层，不挂子问题）</option>${subqs.map((s) => `<option value="${s.id}">${esc(s.question)}</option>`).join("")}</select>
+    <p class="hint">默认已选（已入候选知识卡，可取消）：</p>
+    ${conf.length ? conf.map((c) => `<label class="ctxpick"><input type="checkbox" class="ch-scope" data-kind="card" data-id="${c.id}" checked/> ${esc(c.scope || c.rawText.slice(0, 24))}</label>`).join("") : `<p class="hint">暂无。</p>`}
+    <details class="mini"><summary>其他可选（折叠：执行/测量/表/方案/其余卡）</summary>
+      ${execs.map((e) => row("execution", e.id, refLabel(state, { kind: "execution", id: e.id }))).join("")}
+      ${meas.map((m) => row("measurement", m.id, refLabel(state, { kind: "measurement", id: m.id }))).join("")}
+      ${tables.map((t) => row("table", t.id, refLabel(state, { kind: "table", id: t.id }))).join("")}
+      ${protos.map((p) => row("protocol", p.id, refLabel(state, { kind: "protocol", id: p.id }))).join("")}
+      ${cards.filter((c) => c.audit !== "confirm").map((c) => row("card", c.id, `知识卡 · ${c.scope || c.rawText.slice(0, 20)}`)).join("")}
+    </details>
+    <button class="primary" id="ch-create" type="button">创建会话</button>`;
+}
+
+/** 会话管理页列表（用所属对象与范围摘要识别；无标题字段）。 */
+function chatListHtml() {
+  const cs = state.chats.filter((c) => !ui.topicId || c.topicId === ui.topicId);
+  if (!cs.length) return emptyStateHtml("chat", "还没有会话", "围绕课题或子问题新建会话，先选范围再讨论。");
+  return cs.map((c) => {
+    const q = state.subquestions.find((x) => x.id === c.subquestionId);
+    const running = c.messages.some((m) => m.status === "running");
+    return `<article class="paper-item ${c.id === ui.chatId ? "active" : ""}" data-chatrow="${c.id}">
+      <div class="pi-main">
+        <div class="pi-title">${esc(q ? q.question : topicName(c.topicId) ?? "课题对话")}${running ? ` <span class="badge warn">进行中</span>` : ""}</div>
+        <div class="pi-meta">${c.scope.length} 个对象 · ${c.messages.length} 条消息 · 最近 ${esc(fmtTime(c.updatedAt))}</div>
+      </div>
+      <div class="pi-actions"><button class="mini-act chat-open" type="button" data-chat="${c.id}">进入</button></div>
+    </article>`;
+  }).join("");
+}
+
+/** 会话管理页：主体＝会话列表；新建会话按需展开。 */
+function renderChatManage(content, note) {
+  note.hidden = true;
+  $("#mid-title").textContent = "对话";
+  content.classList.remove("is-empty", "reader");
+  content.classList.add("rich");
+  const cs = state.chats.filter((c) => !ui.topicId || c.topicId === ui.topicId);
+  content.innerHTML = `
+    <details class="mini chat-new"><summary>＋新建会话</summary>${chatFormHtml()}</details>
+    <p class="hint">共 ${cs.length} 段会话；点「进入」开始讨论。会话无标题字段，按所属对象与范围识别。</p>
+    <div class="chat-list">${chatListHtml()}</div>`;
 }
 
 function chatHtml(c) {
@@ -1730,7 +2147,8 @@ function chatHtml(c) {
   }).join("");
   const running = c.messages.some((m) => m.status === "running");
   return `<div class="chatlog">${msgs || `<p class="hint">还没有消息。输入问题开始讨论（范围与采纳见右栏）。</p>`}</div>
-    <div class="row"><textarea id="chat-text" rows="2" placeholder="围绕本课题/子问题与已选对象提问…"></textarea>
+    ${ui.chatNew ? `<button class="chat-jump" id="chat-jump" type="button">有新消息 ↓</button>` : ""}
+    <div class="chat-inputbar"><textarea id="chat-text" rows="2" placeholder="围绕本课题/子问题与已选对象提问…">${esc(chatDrafts.get(c.id) ?? "")}</textarea>
     <button class="primary" id="chat-send" ${running ? "disabled" : ""}>${running ? "回答运行中…" : "发送"}</button></div>`;
 }
 
@@ -1818,6 +2236,11 @@ document.addEventListener("click", (ev) => {
   if (b.dataset.topic) ui.topicId = b.dataset.topic;
   if (b.dataset.paper) ui.paperId = b.dataset.paper;
   ui.nav = b.dataset.goto; ui.highlight = null; ui.cell = null; ui.groupSel.clear(); ui.batch = null; ui.ack = false;
+  ui.topicPane = "overview"; ui.subqId = null; ui.paperView = "manage";
+  ui.protocolView = "manage"; ui.protocolEdit = false;
+  ui.recordView = "overview";
+  ui.chatView = "manage";
+  ui.knowledgeView = "overview";
   renderAll();
 });
 document.addEventListener("click", (ev) => {
@@ -1836,12 +2259,58 @@ $("#nav").addEventListener("click", (ev) => {
   const b = ev.target.closest(".navitem"); if (!b || b.disabled) return;
   activateNav(b.dataset.nav);
 });
-// 页头「当前课题」（容器 #curtopic 常驻，用委托）
-$("#curtopic").addEventListener("change", (e) => {
-  if (e.target.id !== "topic-select") return;
-  if (!guardLeave()) { renderShell(); return; }
+// 页头「当前课题」（容器 #curtopic 常驻，用委托）：点击打开切换器弹层
+$("#curtopic").addEventListener("click", (ev) => {
+  if (!ev.target.closest("#topic-switch-btn")) return;
+  openTopicSwitcher();
+});
+
+// ── 顶栏课题切换器：可查找、可选、可新建；切换走未保存保护 ──
+function renderTopicSwitcherList() {
+  const q = $("#ts-search")?.value ?? "";
+  $("#ts-list").innerHTML = topicSwitcherListHtml(state, q, ui.topicId);
+}
+function openTopicSwitcher() {
+  renderTopicSwitcherList();
+  const n = $("#ts-new-name"), q = $("#ts-new-q");
+  if (n) n.value = ""; if (q) q.value = "";
+  const det = $("#topic-switcher .ts-newbox");
+  if (det && !state.topics.length) det.open = true;
+  openDialog($("#topic-switcher"), state.topics.length ? "#ts-search" : "#ts-new-name");
+  $("#topic-switch-btn")?.setAttribute("aria-expanded", "true");
+}
+function closeTopicSwitcher() {
+  closeDialog($("#topic-switcher"));
+  $("#topic-switch-btn")?.setAttribute("aria-expanded", "false");
+}
+function switchTopic(id) {
+  if (id === ui.topicId) { closeTopicSwitcher(); return; }
+  if (!guardLeave()) return;
   clearAllErrors();
-  ui.topicId = e.target.value; ui.assetId = null; ui.highlight = null; ui.groupSel.clear(); ui.batch = null; ui.protocolId = null; ui.executionId = null; ui.stepSel = null; ui.viewRev = null; ui.taskId = null; ui.chatId = null; ui.reportId = null; renderAll();
+  ui.topicId = id; ui.topicPane = "overview"; ui.subqId = null;
+  ui.assetId = null; ui.paperId = null; ui.highlight = null; ui.cell = null; ui.groupSel.clear(); ui.batch = null; ui.ack = false;
+  ui.protocolId = null; ui.executionId = null; ui.stepSel = null; ui.viewRev = null; ui.taskId = null; ui.chatId = null; ui.reportId = null;
+  closeTopicSwitcher();
+  renderAll();
+}
+$("#topic-switcher").addEventListener("input", (ev) => { if (ev.target.id === "ts-search") renderTopicSwitcherList(); });$("#topic-switcher").addEventListener("click", (ev) => {
+  if (ev.target.closest("#ts-close")) { closeTopicSwitcher(); return; }
+  const pick = ev.target.closest("[data-topicpick]");
+  if (pick) { switchTopic(pick.dataset.topicpick); return; }
+  if (ev.target.id === "ts-new-create") {
+    if (!guardLeave()) return; // 有未保存内容时先确认；取消则不创建，表单内容保留
+    runBusy(ev.target, "创建课题", async () => {
+      const name = $("#ts-new-name").value.trim();
+      if (!name) { notify("mid", "课题名称不能为空"); return; }
+      const r = await api.createTopic(name, $("#ts-new-q").value);
+      const creating = ui.nav !== "topic";
+      ui.topicId = r.topicId; ui.topicPane = "overview"; ui.subqId = null;
+      if (creating) ui.nav = "topic";
+      closeTopicSwitcher();
+      setDirty(false); // 创建成功后才清 dirty
+      await refresh(); setStatus("课题已创建");
+    });
+  }
 });
 // 创建课题 / 子问题（中间区随渲染重建，用委托）
 document.addEventListener("click", (ev) => {
@@ -1853,6 +2322,112 @@ document.addEventListener("click", (ev) => {
     if (!ui.topicId) { setError("mid", { panel: "mid", message: "请先创建或选择课题。", detail: "", retry: null }); return; }
     await api.createSubquestion(ui.topicId, $("#subq-q").value, $("#subq-kind").value); $("#subq-q").value = ""; setDirty(false); await refresh(); setStatus("子问题已添加");
   }); return; }
+  const subqOpen = ev.target.closest(".subq-open");
+  if (subqOpen) { openSubq(subqOpen.dataset.subq); return; }
+  if (ev.target.closest("[data-subq-back]")) { backFromSubq(); return; }
+  if (ev.target.closest("[data-paper-back]")) { backToPaperManage(); return; }
+  if (ev.target.id === "pp-create") { runBusy(ev.target, "创建论文条目", async () => {
+    try {
+      const r = await api.createPaper({
+        title: $("#pp-title").value, authors: $("#pp-authors").value, year: $("#pp-year").value,
+        doi: $("#pp-doi").value, source: $("#pp-source").value, license: $("#pp-license").value,
+        topicIds: ui.topicId ? [ui.topicId] : [],
+      });
+      ui.paperId = r.paperId; ui.attId = null; ui.paperView = "manage"; await refresh(); setStatus("论文条目已创建（未解析）");
+    } catch (e) {
+      if (e.status === 409 && e.details?.existingPaperId) { showLocate(e.message, e.details.existingPaperId); return; }
+      throw e;
+    }
+  }); return; }
+  if (ev.target.id === "bib-import") { runBusy(ev.target, "导入题录", async () => {
+    const r = await api.importBibliography($("#bib-format").value, $("#bib-text").value);
+    $("#bib-text").value = "";
+    if (r.created?.length) ui.paperId = r.created[0];
+    ui.paperView = "manage";
+    await refresh();
+    setStatus(`题录导入：新建 ${r.created?.length ?? 0} 条${r.skipped?.length ? `，跳过同 DOI ${r.skipped.length} 条（已有条目可定位）` : ""}`);
+  }); return; }
+});
+
+// 方案：管理列表/详情/编辑 + 新建导入（文档级委托，跨 mid/右栏）
+document.addEventListener("click", (ev) => {
+  const readP = ev.target.closest(".proto-read");
+  if (readP) { openProtocolDetail(readP.dataset.proto); return; }
+  const prow = ev.target.closest("[data-protorow]");
+  if (prow) { openProtocolDetail(prow.dataset.protorow); return; }
+  if (ev.target.closest("[data-proto-back]")) { backToProtocolManage(); return; }
+  if (ev.target.closest("[data-proto-clear]")) { ui.protoQuery = ""; renderAll(); return; }
+  if (ev.target.closest("[data-proto-edit]")) { ui.protocolEdit = true; ui.stepSel = null; renderMiddle(); renderRight(); return; }
+  if (ev.target.id === "proto-edit-done") { if (!guardLeave()) return; ui.protocolEdit = false; ui.stepSel = null; renderMiddle(); renderRight(); return; }
+  if (ev.target.id === "proto-upload") { runJob(ev.target, "上传并解析方案", async () => {
+    if (!ui.topicId) throw new Error("请先选择/创建课题");
+    const file = $("#proto-up-file").files?.[0];
+    let text = $("#proto-up-text").value, name = $("#proto-up-name").value;
+    if (file) { text = await readTextFile(file); if (!name) name = file.name; }
+    let assetId;
+    try { const up = await api.uploadProtocolSource(name, text, ui.topicId); assetId = up.assetId; }
+    catch (e) { if (e.status === 409 && e.details?.existingAssetId) { assetId = e.details.existingAssetId; setStatus("原件已归档：定位已有原件，继续解析"); } else throw e; }
+    $("#proto-up-text").value = ""; if ($("#proto-up-file")) $("#proto-up-file").value = "";
+    let r;
+    try { r = await api.parseProtocol(assetId, ui.topicId); }
+    catch (e) { if (e.status === 422) { await refresh(); setStatus(`原件已归档。${e.message}`); return; } throw e; }
+    const res = await pollJob(r.jobId, "方案解析");
+    ui.protocolId = res.protocolId; ui.viewRev = null; ui.protocolView = "detail"; await refreshAfterJob();
+    setStatus("方案草稿已生成（模型草稿，须人工确认）");
+  }); return; }
+  const parseAsset = ev.target.closest(".protoasset-parse");
+  if (parseAsset) { runJob(ev.target, "AI 解析方案", async () => {
+    const aid = parseAsset.closest(".protoasset").dataset.aid;
+    const r = await api.parseProtocol(aid, ui.topicId);
+    const res = await pollJob(r.jobId, "方案解析");
+    ui.protocolId = res.protocolId; ui.viewRev = null; ui.protocolView = "detail"; await refreshAfterJob();
+    setStatus("方案草稿已生成（模型草稿，须人工确认）");
+  }); return; }
+  if (ev.target.id === "proto-create") { runBusy(ev.target, "创建方案", async () => {
+    if (!ui.topicId) throw new Error("请先选择/创建课题");
+    await api.createProtocol({
+      topicId: ui.topicId, name: $("#proto-name").value, sourceKind: $("#proto-src").value,
+      purpose: $("#proto-purpose").value, criteria: $("#proto-criteria").value,
+      steps: parseStepsText($("#proto-steps").value),
+      sourceFragments: splitList($("#proto-frag").value),
+    });
+    await refresh(); setStatus("方案已创建（r1）");
+  }); return; }
+  if (ev.target.id === "proto-parse") { runJob(ev.target, "AI 重构方案", async () => {
+    if (!ui.topicId) throw new Error("请先选择/创建课题");
+    const r = await api.parseProtocol($("#parse-asset").value, ui.topicId, undefined, "reconstructed");
+    const res = await pollJob(r.jobId, "方案重构");
+    ui.protocolId = res.protocolId; ui.viewRev = null; ui.protocolView = "detail"; await refreshAfterJob();
+    setStatus("重构草稿已生成（重构：非作者原始方案，须人工确认）");
+  }); return; }
+});
+document.addEventListener("click", (ev) => {
+  const ro = ev.target.closest(".rec-exec-open");
+  if (ro) { openExecutionDetail(ro.dataset.exec); return; }
+  const exrow = ev.target.closest("[data-exrow]");
+  if (exrow) { openExecutionDetail(exrow.dataset.exrow); return; }
+  if (ev.target.closest("[data-rec-back]")) { backToRecordOverview(); return; }
+  const co = ev.target.closest(".chat-open");
+  if (co) { openChatDetail(co.dataset.chat); return; }
+  const chatrow = ev.target.closest("[data-chatrow]");
+  if (chatrow) { openChatDetail(chatrow.dataset.chatrow); return; }
+  if (ev.target.closest("[data-chat-back]")) { backToChatManage(); return; }
+  if (ev.target.closest("[data-kz-go]")) { if (!guardLeave()) return; ui.knowledgeView = "review"; renderAll(); return; }
+  if (ev.target.closest("[data-kz-back]")) { if (!guardLeave()) return; ui.knowledgeView = "overview"; renderAll(); return; }
+  if (ev.target.id === "ch-create") { runBusy(ev.target, "创建会话", async () => {
+    const r = await api.createChat({ topicId: ui.topicId, subquestionId: $("#ch-subq").value || undefined, scope: collectPicks("ch-scope") });
+    ui.chatId = r.chatId; ui.chatView = "chat"; await refresh(); setStatus("会话已创建：开始讨论");
+  }); return; }
+});
+document.addEventListener("input", (ev) => {
+  if (ev.target.id !== "proto-search") return;
+  ui.protoQuery = ev.target.value;
+  const list = $("#proto-list");
+  if (list) list.innerHTML = protocolListHtml();
+});
+document.addEventListener("change", (ev) => {
+  if (ev.target.id !== "proto-rev") return;
+  ui.viewRev = Number(ev.target.value); ui.stepSel = null; renderMiddle(); renderRight();
 });
 // 分区报错条：关闭 / 详情 / 重试
 document.addEventListener("click", (ev) => {
@@ -1954,7 +2529,7 @@ if (incident && targetOps.length) await api.appendEvent(ui.executionId, { kind: 
 });
 const dialogFocusReturns = new WeakMap();
 const dialogMotionIds = new WeakMap();
-const DIALOG_SELECTORS = ["#ai-drawer", "#drawer", "#navdrawer"];
+const DIALOG_SELECTORS = ["#ai-drawer", "#drawer", "#navdrawer", "#topic-switcher"];
 const isDialogOpen = (el) => Boolean(el && !el.hidden && !el.dataset.closing);
 function syncDialogScrim() {
   const scrim = $("#dialog-scrim");
@@ -2027,12 +2602,13 @@ function closeDialog(el) {
 $("#dialog-scrim").addEventListener("click", () => {
   if (isDialogOpen($("#ai-drawer"))) closeAiDrawer();
   else if (isDialogOpen($("#drawer"))) closeDialog($("#drawer"));
+  else if (isDialogOpen($("#topic-switcher"))) closeTopicSwitcher();
   else if (isDialogOpen($("#navdrawer"))) closeNavDrawer();
 });
 const DIALOG_FOCUSABLE = 'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])';
 document.addEventListener("keydown", (ev) => {
   if (ev.key !== "Tab") return;
-  const dialog = [...document.querySelectorAll("#ai-drawer:not([hidden]):not([data-closing]), #drawer:not([hidden]):not([data-closing]), #navdrawer:not([hidden]):not([data-closing])")].at(-1);
+  const dialog = [...document.querySelectorAll("#ai-drawer:not([hidden]):not([data-closing]), #drawer:not([hidden]):not([data-closing]), #topic-switcher:not([hidden]):not([data-closing]), #navdrawer:not([hidden]):not([data-closing])")].at(-1);
   if (!dialog) return;
   const items = [...dialog.querySelectorAll(DIALOG_FOCUSABLE)].filter((el) => el.getClientRects().length);
   if (!items.length) { ev.preventDefault(); dialog.focus(); return; }
@@ -2069,6 +2645,7 @@ $("#material-list").addEventListener("click", (ev) => {
     clearAllErrors();
     ui.topicId = el.dataset.topicpick; ui.assetId = null; ui.highlight = null; ui.groupSel.clear(); ui.batch = null;
     ui.protocolId = null; ui.executionId = null; ui.stepSel = null; ui.viewRev = null; ui.taskId = null; ui.chatId = null; ui.reportId = null;
+    ui.topicPane = "overview"; ui.subqId = null;
     renderAll(); return;
   }
   if (el.dataset.paperid) {
@@ -2101,17 +2678,25 @@ $("#material-list").addEventListener("click", (ev) => {
   ui.assetId = el.dataset.id; ui.highlight = null; ui.cell = null; ui.tableId = null; ui.groupSel.clear(); ui.batch = null; ui.ack = false; renderAll();
 });
 $("#mid-content").addEventListener("click", async (ev) => {
+  const readBtn = ev.target.closest(".paper-read");
+  if (readBtn) { if (!readBtn.disabled) openPaperRead(readBtn.dataset.paper); return; }
+  if (ev.target.closest("[data-paper-clear]")) { ui.paperQuery = ""; ui.paperFilter = "all"; renderAll(); return; }
+  const prow = ev.target.closest("[data-paperrow]");
+  if (prow) { const id = prow.dataset.paperrow; if (id !== ui.paperId) { ui.paperId = id; ui.attId = null; renderAll(); } return; }
   if (ev.target.classList.contains("tbl-open")) { openTableMax(ev.target.dataset.tid); return; }
   if (ev.target.id === "chat-send") {
     const c = currentChat(); if (!c) return;
-    const text = $("#chat-text").value.trim();
+    const text = ($("#chat-text")?.value ?? chatDrafts.get(c.id) ?? "").trim();
     if (!text) { setStatus("请输入讨论内容"); return; }
+    const wasAtBottom = isNearBottomMid();
     await runJob(ev.target, "上下文讨论", async () => {
       const r = await api.sendChat(c.id, text);
-      $("#chat-text").value = "";
+      chatDrafts.delete(c.id);
       setDirty(false);
       await refresh();
       await pollJob(r.jobId, "上下文讨论");
+      chatScrollBottomPending = wasAtBottom; // 本来在底部才滚到最新
+      ui.chatNew = !wasAtBottom;             // 上翻时用「有新消息」提示，不强拉
       await refreshAfterJob(); setStatus("讨论完成（建议采纳见右栏）");
     }); return;
   }
@@ -2131,6 +2716,40 @@ $("#mid-content").addEventListener("click", async (ev) => {
       await refreshAfterJob(); setStatus("重试完成");
     }); return;
   }
+});
+$("#mid-content").addEventListener("input", (ev) => {
+  if (ev.target.id === "chat-text") {
+    const c = currentChat(); if (!c) return;
+    chatDrafts.set(c.id, ev.target.value);
+    setDirty(ev.target.value.trim() !== ""); // 非空草稿计入未保存保护
+    return;
+  }
+  if (ev.target.id !== "paper-search") return;
+  ui.paperQuery = ev.target.value;
+  const list = $("#paper-list");
+  if (list) list.innerHTML = paperListHtml();
+});
+const sendMidScroller = midScroller();
+sendMidScroller?.addEventListener("scroll", () => {
+  if (!ui.chatNew) return;
+  if (isNearBottomMid()) { ui.chatNew = false; const b = $("#chat-jump"); if (b) b.hidden = true; }
+});
+document.addEventListener("click", (ev) => {
+  const b = ev.target.closest("#chat-jump");
+  if (!b) return;
+  const m = midScroller();
+  if (m) m.scrollTop = m.scrollHeight;
+  ui.chatNew = false; b.hidden = true;
+});
+$("#mid-content").addEventListener("change", (ev) => {
+  if (ev.target.id !== "paper-filter") return;
+  ui.paperFilter = ev.target.value;
+  const list = $("#paper-list");
+  if (list) list.innerHTML = paperListHtml();
+});
+document.addEventListener("change", (ev) => {
+  if (ev.target.id !== "read-att") return;
+  ui.attId = ev.target.value; ui.highlight = null; renderMiddle();
 });
 $("#right-content").addEventListener("change", async (ev) => {
   if (ev.target.classList.contains("paper-topic")) {
@@ -2158,7 +2777,8 @@ $("#right-content").addEventListener("input", (ev) => { if (ev.target.closest(".
 function trackMidDirty(ev) {
   const el = ev.target;
   if (!el.closest?.("#mid-content")) return;
-  if (el.matches(".kz-note, .kz-imp, #kz-paper, #proto-rev")) return;
+  if (el.matches(".kz-note, .kz-imp, #kz-paper, #proto-rev, #chat-text")) return; // 聊天草稿单独管理 dirty
+  if (el.closest(".lit-manage-head") || el.id === "paper-search" || el.id === "paper-filter") return; // 搜索/筛选/创建表单不算未保存编辑
   if (el.matches('input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="range"]), textarea, select')) setDirty(true);
 }
 document.addEventListener("input", trackMidDirty);
@@ -2534,6 +3154,7 @@ document.addEventListener("keydown", (e) => {
   let closed = false;
   if (isDialogOpen($("#drawer"))) { closeDialog($("#drawer")); closed = true; }
   if (isDialogOpen($("#ai-drawer"))) { closeAiDrawer(); closed = true; }
+  if (isDialogOpen($("#topic-switcher"))) { closeTopicSwitcher(); closed = true; }
   if (isDialogOpen($("#navdrawer"))) { closeNavDrawer(); closed = true; }
   const tm = $("#table-max"); if (tm) { tm.remove(); closed = true; }
   if (closed) e.preventDefault();

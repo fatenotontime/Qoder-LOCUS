@@ -37,12 +37,25 @@ export function navIcon(kind, size = 18) {
   return `<svg viewBox="0 0 24 24" width="${size}" height="${size}" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">${body}</svg>`;
 }
 
-/** 页头「当前课题」：单课题显示名称，多课题下拉，无课题显示提示。 */
+/** 页头「当前课题」：常驻显示当前课题名＋「切换」，点击打开切换器；无课题时引导新建。 */
 export function topbarTopicHtml(state, ui) {
-  if (!state.topics.length) return `<span class="curtopic none"><span class="ct-kicker">未开卷</span><span class="ct-empty">先建课题</span></span>`;
-  if (state.topics.length === 1) return `<span class="curtopic"><span class="ct-kicker">当前课题</span><b>${esc(state.topics[0].name)}</b></span>`;
-  return `<label class="curtopic"><span class="ct-kicker">当前课题</span>
-    <select id="topic-select" aria-label="切换课题">${state.topics.map((t) => `<option value="${t.id}" ${t.id === ui.topicId ? "selected" : ""}>${esc(t.name)}</option>`).join("")}</select></label>`;
+  if (!state.topics.length) {
+    return `<button class="curtopic none" id="topic-switch-btn" type="button" aria-haspopup="dialog" aria-expanded="false" title="新建课题">
+      <span class="ct-kicker">未开卷</span><span class="ct-empty">新建课题</span></button>`;
+  }
+  const cur = state.topics.find((t) => t.id === ui.topicId) ?? state.topics[0];
+  return `<button class="curtopic" id="topic-switch-btn" type="button" aria-haspopup="dialog" aria-expanded="false" title="切换课题（当前：${esc(cur.name)}）">
+    <span class="ct-kicker">当前课题</span><b>${esc(cur.name)}</b><span class="ct-switch">切换</span></button>`;
+}
+
+/** 课题切换器列表：按关键词过滤课题（名称/研究问题），供弹层动态渲染。 */
+export function topicSwitcherListHtml(state, query, currentId) {
+  const q = String(query ?? "").trim().toLowerCase();
+  const rows = state.topics.filter((t) => !q || t.name.toLowerCase().includes(q) || (t.researchQuestion ?? "").toLowerCase().includes(q));
+  if (!rows.length) return `<p class="hint">没有匹配的课题。</p>`;
+  return rows.map((t) => `<button class="ts-item ${t.id === currentId ? "active" : ""}" type="button" data-topicpick="${t.id}">
+    <span class="ts-name">${esc(t.name)}</span>
+    <span class="ts-q">${esc(t.researchQuestion || "研究问题待补")}</span></button>`).join("");
 }
 
 /** 无课题时中间区引导：只留「创建课题（名称＋研究问题）」。 */
@@ -206,16 +219,44 @@ export function topicTodosHtml(state, ui) {
   return rows.join("");
 }
 
-/** 课题首页的子问题块（列表＋新建）。 */
+/** 课题首页的子问题块：可点进入详情；新增表单按需展开（不再常驻）。 */
 export function subqBlockHtml(state, ui) {
   const list = state.subquestions.filter((s) => !ui.topicId || s.topicId === ui.topicId);
-  return `<details class="mini subqbox" open><summary>子问题（${list.length}）</summary>
+  return `<section class="subqbox">
+    <div class="subq-head"><h3>子问题（${list.length}）</h3><p class="hint">点开一个子问题看它的内容与相关对象。</p></div>
     <ul class="subq">${list.length
-      ? list.map((s) => `<li class="${s.kind}">${esc(s.question)} <span class="hint">${fmtEnum(s.kind)}</span></li>`).join("")
+      ? list.map((s) => `<li class="${s.kind}"><button class="subq-open" type="button" data-subq="${s.id}">
+          <span class="subq-txt">${esc(s.question)}</span><span class="badge">${fmtEnum(s.kind)}</span></button></li>`).join("")
       : `<li class="hint">暂无子问题</li>`}</ul>
-    <input id="subq-q" placeholder="子问题" />
-    <select id="subq-kind"><option value="declared">已定</option><option value="exploratory">探索中</option></select>
-    <button id="subq-create">添加子问题</button></details>`;
+    <details class="subq-add"><summary>新增子问题</summary>
+      <div class="subq-form">
+        <input id="subq-q" placeholder="子问题" />
+        <select id="subq-kind"><option value="declared">已定</option><option value="exploratory">探索中</option></select>
+        <button id="subq-create">添加子问题</button>
+      </div>
+    </details></section>`;
+}
+
+/** 子问题详情：问题本身＋真实关联的对象（对话、已采纳知识），带返回入口。 */
+export function subqDetailHtml(state, ui) {
+  const s = state.subquestions.find((x) => x.id === ui.subqId);
+  if (!s) return `<div class="subq-detail"><button class="back-btn" type="button" data-subq-back>← 返回课题</button>
+    <p class="hint">这个子问题已不存在，已回到课题总览。</p></div>`;
+  const chats = state.chats.filter((c) => c.subquestionId === s.id);
+  const adopted = state.adoptions.filter((a) => a.subquestionId === s.id && a.decision === "adopt");
+  const cards = adopted.map((a) => state.cards.find((c) => c.id === a.cardId)).filter(Boolean);
+  const chatRows = chats.length
+    ? `<ul class="subq-rel">${chats.map((c) => `<li><button class="subq-rel-open" type="button" data-rel-chat="${c.id}">${esc(c.messages[0]?.text?.slice(0, 20) || "会话")} <span class="hint">${c.messages.length} 条消息</span></button></li>`).join("")}</ul>`
+    : `<p class="hint">还没有围绕它的对话。</p>`;
+  const cardRows = cards.length
+    ? `<ul class="subq-rel">${cards.map((c) => `<li><span>${esc(c.scope || c.rawText?.slice(0, 24) || c.id)}</span></li>`).join("")}</ul>`
+    : `<p class="hint">还没有采纳到这个子问题的知识卡。</p>`;
+  return `<div class="subq-detail">
+    <button class="back-btn" type="button" data-subq-back>← 返回课题</button>
+    <div class="subq-detail-head"><h2>${esc(s.question)}</h2><span class="badge">${fmtEnum(s.kind)}</span></div>
+    <section class="subq-sec"><h4>相关对话（${chats.length}）</h4>${chatRows}</section>
+    <section class="subq-sec"><h4>已采纳知识（${cards.length}）</h4>${cardRows}</section>
+  </div>`;
 }
 
 /** 首页「下一步」：只给一条建议（按当前进度）。 */
