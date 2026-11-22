@@ -13,6 +13,7 @@ import { createTopic, makeAsset, importMeasurements } from "../services/app.ts";
 import { archiveSourceVersion, currentSourceRef, currentViewId, sourcePayload, createKnowledgeDataset, reviewKnowledgeDataset, createKnowledgeMapping, reviewKnowledgeMapping, freezeKnowledge } from "../services/knowledge-base.ts";
 import { snapshotWiki, snapshotCsv, snapshotSchemaFiles, exportKnowledge, buildKnowledgePackage, safeFileName, safeText } from "../services/knowledge-export.ts";
 import { createApp } from "../server.ts";
+import type { SourceRef } from "../domain/knowledge.ts";
 
 const tmp = (n: string) => join(tmpdir(), `locus-kview-${n}-${Date.now()}-${Math.random().toString(36).slice(2)}.json`);
 
@@ -67,6 +68,26 @@ test("E5-V 纯渲染：wiki 六页固定页型与相对链接；CSV 列固定；
   assert.ok(JSON.parse(dictionary).valueKinds.includes("scalar"));
   assert.equal(safeText("<b>x</b>"), "&lt;b&gt;x&lt;/b&gt;");
   assert.equal(expectCode(() => safeFileName("../x")), "unsafe_filename");
+});
+
+// ── 回归：来源引用按 SourceRef 自身口径渲染（kind:id@version），不退化为 @rundefined ──
+test("E5-V 回归：04-sources.md 的来源引用按 SourceRef.version 渲染，无 rundefined", () => {
+  const { snapshot } = seed();
+  const wiki = snapshotWiki(snapshot);
+  const sources = wiki.pages.find((p) => p.file === "04-sources.md")!;
+  assert.ok(sources.markdown.length > 0);
+  assert.ok(!sources.markdown.includes("rundefined"), "来源引用不得渲染为 @rundefined");
+
+  const sourceEntries = Object.entries(snapshot.content.referenceMap).filter(([, e]) => e.kind === "source");
+  assert.ok(sourceEntries.length >= 1, "快照应含至少一个来源引用 token");
+  for (const [token, e] of sourceEntries) {
+    const r = e.ref as SourceRef;
+    assert.ok(typeof r.version === "string" && r.version.length > 0, `来源 ${token} 应有版本`);
+    assert.ok(
+      sources.markdown.includes(`${r.kind}:${r.id}@${r.version}`),
+      `来源 ${token} 应按 kind:id@version 渲染（${r.kind}:${r.id}@${r.version}）`,
+    );
+  }
 });
 
 // ── API 往返：view → freeze → snapshot 读 → export → references（形状）────
