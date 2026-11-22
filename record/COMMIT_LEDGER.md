@@ -417,6 +417,7 @@
 | --- | --- | --- | --- | --- |
 | S05-T21 | fix/s05-f7-review | `ba204d5`、`bb87583` | 2026-11-22 14:16 | F1–F6 评审返工四项必修＋可重复检查＋视觉验收种子；4 文件 +394/−23；346/346＋f7-review-check 通过＋逐页 7/7；[会话记录](sessions/2026-11-21_session-05.md#s05-t21) |
 > 修订（S05-T21 追加提交 `bb87583`）：修复切换器「关闭」关不掉——`.topic-switcher.drawer{display:flex}` 压过 `[hidden]`；同修 `.chat-jump`；f7-review-check 增计算样式断言。
+> 续（S05-T21）：已 **合并 `origin/main`(46cfe5d) 进本分支**（merge commit `d2594e5`，未 rebase/未强推）；记录双冲突按「保留两边」合并，F 系列编号 T15–T21 未改。分支已 **推送** `origin/fix/s05-f7-review`；**开 PR 待授权**（环境守卫按上一轮「不开 PR」拦截，未开）。
 
 
 
