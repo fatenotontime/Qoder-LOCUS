@@ -2336,10 +2336,13 @@ export function freezeKnowledge(state: LocusState, input: unknown): { state: Loc
     selected = refs.map((r) => {
       const env = findEnv(k, "item", r.id);
       if (!env) throw new AppError(422, `selectedRefs 里的知识项不存在：${r.id}`, { code: "ref_unresolvable", ref: r });
-      const p = env.payload as ItemPayload;
+      const payload = readKnowledgeVersion(k, r);
+      if (payload === null) throw new AppError(422, `selectedRefs 里的知识项版本不存在：${refKey(r)}（不退回最新版，请重新选择）。`, { code: "ref_unresolvable", ref: r });
+      const p = payload as ItemPayload;
       if (!(p.topicIds ?? []).includes(topicId)) throw new AppError(422, `selectedRefs 里的知识项不属于该课题：${r.id}`, { code: "cross_topic_scope", ref: r });
-      if (mode === "formal" && !itemFormalUsable(k, env)) throw new AppError(422, `selectedRefs 含未确认或已撤回的知识项（formal 门槛）：${r.id}`, { code: "item_not_confirmed", ref: r });
-      return env as KnowledgeItem;
+      const item = { ...env, revision: r.revision, payload: p, history: env.history.filter((h) => h.revision < r.revision) } as KnowledgeItem;
+      if (mode === "formal" && !itemFormalUsable(k, item)) throw new AppError(422, `selectedRefs 含未确认或已撤回的知识项（formal 门槛）：${refKey(r)}`, { code: "item_not_confirmed", ref: r });
+      return item;
     });
   } else {
     selected = all.items;
