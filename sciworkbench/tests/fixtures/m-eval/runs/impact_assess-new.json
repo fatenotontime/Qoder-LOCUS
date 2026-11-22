@@ -16,11 +16,6 @@
     "processorVersion": "input/v1",
     "params": {}
   },
-  "sampleInputHashes": {
-    "ia-normal": "40aa757c78479318e4516d081399acc54dbd9536add6a8db1e3515447207de7f",
-    "ia-missing": "e5486e1afd90fb04672784360a9ac47f80d4519c11ecce3035178195681ffdf1",
-    "ia-holdout": "8df85ff3f680265771c1462e41250c90618e8c3724f6ccdf8127a18f4625cfea"
-  },
   "runs": [
     {
       "sampleId": "ia-normal",
@@ -42,7 +37,8 @@
           }
         ]
       },
-      "parseError": null
+      "parseError": null,
+      "processedInputHash": "40aa757c78479318e4516d081399acc54dbd9536add6a8db1e3515447207de7f"
     },
     {
       "sampleId": "ia-missing",
@@ -66,7 +62,8 @@
           }
         ]
       },
-      "parseError": null
+      "parseError": null,
+      "processedInputHash": "e5486e1afd90fb04672784360a9ac47f80d4519c11ecce3035178195681ffdf1"
     },
     {
       "sampleId": "ia-holdout",
@@ -88,7 +85,8 @@
           }
         ]
       },
-      "parseError": null
+      "parseError": null,
+      "processedInputHash": "8df85ff3f680265771c1462e41250c90618e8c3724f6ccdf8127a18f4625cfea"
     }
   ]
 }

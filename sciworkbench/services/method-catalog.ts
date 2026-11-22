@@ -59,6 +59,7 @@ export type FactKey =
   | "groups"
   | "independence"
   | "pairing"
+  | "pairingKey"
   | "batch"
   | "errorMeaning"
   | "xAxis"
@@ -180,6 +181,7 @@ function buildCatalog(): Record<MethodId, CatalogEntry> {
         { key: "yAxis", label: "纵轴含义与单位", question: "纵轴代表什么量、单位是什么？" },
         { key: "units", label: "单位状态", question: "两轴的单位是否已知？" },
         { key: "order", label: "顺序", question: "是否按横轴升序排列后再连线？" },
+        { key: "groups", label: "分组/序列", question: "不同样品或序列如何分组？分组未知时不能连线（应先确认分组或改描述统计）。" },
       ],
       reject: [
         { key: "xAxis", whenValue: FACT_VALUES.xAxis.unordered, reason: "横轴为无序分类，连线会制造并不存在的趋势；应改用描述统计或分类比较" },
@@ -192,11 +194,11 @@ function buildCatalog(): Record<MethodId, CatalogEntry> {
         },
       ],
       steps: [
-        "读取数据并确认横纵轴列、单位、分组列（若有）",
+        "读取数据并确认横纵轴列、单位与分组列",
         "按横轴升序排序：idx = numpy.argsort(x)；保留原始行号映射",
-        "若已确认分组：每组各画一条线 ax.plot；否则单序列连线",
+        "每组各画一条线 ax.plot（分组已确认）；分组未知则不得连线",
         "设置轴标签与单位 ax.set_xlabel/set_ylabel",
-        "保存图 figure.savefig(out) 并附行→点映射表",
+        "保存图 figure.savefig(out) 并导出行→点映射表",
       ],
       paramsToFill: ["输入数据文件路径", "横轴列", "纵轴列", "分组列（可选）", "排序方向"],
       artifacts: ["趋势图（PNG）", "行→点映射表（原始行号、x、y、分组）"],
@@ -220,6 +222,8 @@ function buildCatalog(): Record<MethodId, CatalogEntry> {
         { key: "xValues", label: "x 是否变化", question: "x 在观测中是否变化？（常量 x 无法拟合）" },
         { key: "fitRange", label: "拟合范围", question: "拟合并解释的范围是什么？不要外推。" },
         { key: "independence", label: "观测独立性", question: "各观测是否相互独立？（重复测量会改变误差结构）" },
+        { key: "calibrationUse", label: "校准方向/用途", question: "是否为校准？校准方向（x→y 还是 y→x）与用途是什么？未知不得外推。" },
+        { key: "errorMeaning", label: "误差含义", question: "报告的误差指什么（斜率 SE / 预测 SE / 残差 SD）？" },
       ],
       reject: [
         { key: "xValues", whenValue: FACT_VALUES.xValues.constant, reason: "x 无变化，无法估计斜率；请改换自变量或说明" },
@@ -259,6 +263,7 @@ function buildCatalog(): Record<MethodId, CatalogEntry> {
         { key: "columns", label: "响应变量列", question: "响应变量是哪一列？" },
         { key: "independence", label: "独立性", question: "两组观测是否相互独立？（技术重复不能当独立 n）" },
         { key: "batch", label: "重复/批次", question: "是否存在批次或重复结构？实验单位是什么？" },
+        { key: "distribution", label: "分布/样本条件", question: "响应分布与每组样本量是否满足检验前提（偏态/离群/极小样本需说明）？" },
       ],
       reject: [
         { key: "independence", whenValue: FACT_VALUES.independence.dependent, reason: "两组非独立（存在配对或重复结构），应改用配对前后比较" },
@@ -293,9 +298,11 @@ function buildCatalog(): Record<MethodId, CatalogEntry> {
       inputRequirements: ["配对标识", "前后（pre/post）定义", "重复 ID / 缺对处理", "差值尺度", "差值分布前提"],
       required: [
         { key: "purpose", label: "研究目的", question: "要比较同一单位的哪两次观测？" },
-        { key: "pairing", label: "配对标识", question: "用什么键把前后两行判为同一单位？（不得按行顺序自动配对）" },
+        { key: "pairing", label: "配对标识", question: "是否成对？（不得按行顺序自动配对）" },
+        { key: "pairingKey", label: "实际配对键", question: "用哪一列作为配对键？（只写“成对”不足，须给出具体列）" },
         { key: "columns", label: "pre/post 列", question: "哪列是前测、哪列是后测？" },
         { key: "units", label: "单位", question: "pre/post 的单位是什么？" },
+        { key: "distribution", label: "差值分布前提", question: "差值的分布是否已检查（正态/离群）？前提不满足时应提问，不悄悄换检验。" },
       ],
       reject: [
         { key: "pairing", whenValue: FACT_VALUES.pairing.unpaired, reason: "无配对键，不按行顺序自动配对；应改用独立两组比较" },
@@ -346,6 +353,10 @@ export function sha256(text: string): string {
   return createHash("sha256").update(text, "utf8").digest("hex");
 }
 
+/** 深拷贝：快照不得引用可变对象（facts/条目/步骤），否则后续编辑会漂移旧快照。 */
+const deepCopy = <T>(v: T): T => structuredClone(v);
+export { deepCopy };
+
 /** 单条目录内容的 hash（只覆盖该条内容，改动其他条目不使其漂移）。 */
 export function entryHash(entry: CatalogEntry): string {
   return sha256(stableStringify(entry));
@@ -353,10 +364,17 @@ export function entryHash(entry: CatalogEntry): string {
 
 // ── 目录快照 ────────────────────────────────────────────────
 
+export interface CatalogSnapshotEntry {
+  readonly id: MethodId;
+  readonly version: string;
+  readonly hash: string;
+  /** 该条目的完整正文深拷贝（快照自带内容，不引用可变目录对象）。 */
+  readonly entry: CatalogEntry;
+}
 export interface CatalogSnapshot {
   readonly catalogId: string;
   readonly catalogVersion: string;
-  readonly entries: readonly { readonly id: MethodId; readonly version: string; readonly hash: string }[];
+  readonly entries: readonly CatalogSnapshotEntry[];
   readonly hash: string;
 }
 
@@ -364,7 +382,10 @@ export const CATALOG_ID = "locus-local-methods";
 export const CATALOG_VERSION = "1";
 
 export function catalogSnapshot(): CatalogSnapshot {
-  const entries = METHOD_IDS.map((id) => ({ id, version: METHOD_CATALOG[id].version, hash: entryHash(METHOD_CATALOG[id]) }));
+  const entries = METHOD_IDS.map((id) => {
+    const entry = deepCopy(METHOD_CATALOG[id]);
+    return { id, version: entry.version, hash: entryHash(entry), entry };
+  });
   return { catalogId: CATALOG_ID, catalogVersion: CATALOG_VERSION, entries, hash: sha256(stableStringify(entries)) };
 }
 
@@ -414,7 +435,7 @@ export function evaluateMethod(id: MethodId, facts: MethodFacts): MethodJudgment
         questions: [],
         notApplicableReason: r.reason,
         executableSteps: null,
-        factsEcho: facts,
+        factsEcho: deepCopy(facts),
       };
     }
   }
@@ -436,8 +457,8 @@ export function evaluateMethod(id: MethodId, facts: MethodFacts): MethodJudgment
     satisfied,
     gaps,
     questions: gaps.map((g) => g.question),
-    executableSteps: status === "ready" ? entry.steps : null,
-    factsEcho: facts,
+    executableSteps: status === "ready" ? deepCopy(entry.steps) : null,
+    factsEcho: deepCopy(facts),
   };
 }
 
@@ -460,11 +481,12 @@ export interface EvaluationSnapshot {
 }
 
 export function evaluateAll(facts: MethodFacts, opts: { profileRef?: ProfileRef | null; at?: string } = {}): EvaluationSnapshot {
-  const judgments = METHOD_IDS.map((id) => evaluateMethod(id, facts));
+  const factsCopy = deepCopy(facts);
+  const judgments = METHOD_IDS.map((id) => evaluateMethod(id, factsCopy));
   const profileRef = opts.profileRef ?? null;
   const snap: EvaluationSnapshot = {
     catalog: catalogSnapshot(),
-    facts,
+    facts: factsCopy,
     judgments,
     profileRef,
     profileMissing: !profileRef,

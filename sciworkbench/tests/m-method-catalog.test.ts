@@ -7,6 +7,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import {
   METHOD_IDS,
+  METHOD_CATALOG,
   getEntry,
   entryHash,
   catalogSnapshot,
@@ -86,6 +87,37 @@ test("M3-B04 局部阻断：独立性未知而整体描述充分 → 描述 read
   const facts = gaps.independence_unknown;
   assert.equal(evaluateMethod("descriptive_stats", facts).status, "ready");
   assert.equal(evaluateMethod("independent_two_group", facts).status, "needs_info");
+});
+
+test("M3-B03 分组未知 → 趋势图 needs_info（且描述统计仍 ready）", () => {
+  const j = evaluateMethod("trend_plot", gaps.grouping_unknown);
+  assert.equal(j.status, "needs_info");
+  assert.ok(j.gaps.some((g) => g.key === "groups"));
+  assert.equal(j.executableSteps, null);
+  assert.equal(evaluateMethod("descriptive_stats", gaps.grouping_unknown).status, "ready");
+});
+
+test("M3-B03 只写 paired、无实际配对键 → 配对 needs_info", () => {
+  const j = evaluateMethod("paired_pre_post", gaps.paired_no_key);
+  assert.equal(j.status, "needs_info");
+  assert.ok(j.gaps.some((g) => g.key === "pairingKey"));
+  assert.equal(j.executableSteps, null);
+});
+
+test("M3-B02 目录/输入变更后旧快照不漂移（深拷贝）", () => {
+  const facts = JSON.parse(JSON.stringify(ready.trend_plot)) as MethodFacts;
+  const snap = evaluateAll(facts);
+  const before = serializeEvaluation(snap);
+  facts.units = { value: "MUTATED", status: "confirmed" }; // 改输入
+  assert.equal(serializeEvaluation(snap), before, "facts 深拷贝：快照不漂移");
+  const entry = METHOD_CATALOG.trend_plot as unknown as { steps: string[] };
+  const origSteps = entry.steps;
+  try {
+    entry.steps = ["MUTATED"]; // 改目录
+    assert.equal(serializeEvaluation(snap), before, "目录深拷贝：快照不漂移（executableSteps 不再引用可变对象）");
+  } finally {
+    entry.steps = origSteps;
+  }
 });
 
 test("M3 快照：M2 画像缺失显式标注，有则原样带上", () => {

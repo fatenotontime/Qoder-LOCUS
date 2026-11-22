@@ -16,11 +16,6 @@
     "processorVersion": "input/v1",
     "params": {}
   },
-  "sampleInputHashes": {
-    "ks-normal": "fe9be443427f8c5919aecfd6ef14a1a906c02b503570cbd1f9489568b39b3ea5",
-    "ks-missing": "3d9f21c43af8e5e42fb483fed04d02b812538ee5be64c7c1954468607224bf98",
-    "ks-holdout": "a629362aa3be788220f92912210d2c1620c0a5aaeab49719e562e33107e07929"
-  },
   "runs": [
     {
       "sampleId": "ks-normal",
@@ -34,7 +29,8 @@
         "cards": [],
         "relations": []
       },
-      "parseError": null
+      "parseError": null,
+      "processedInputHash": "fe9be443427f8c5919aecfd6ef14a1a906c02b503570cbd1f9489568b39b3ea5"
     },
     {
       "sampleId": "ks-missing",
@@ -46,7 +42,8 @@
         "contexts": [],
         "cards": []
       },
-      "parseError": null
+      "parseError": null,
+      "processedInputHash": "3d9f21c43af8e5e42fb483fed04d02b812538ee5be64c7c1954468607224bf98"
     },
     {
       "sampleId": "ks-holdout",
@@ -65,7 +62,8 @@
         "cards": [],
         "relations": []
       },
-      "parseError": null
+      "parseError": null,
+      "processedInputHash": "a629362aa3be788220f92912210d2c1620c0a5aaeab49719e562e33107e07929"
     }
   ]
 }

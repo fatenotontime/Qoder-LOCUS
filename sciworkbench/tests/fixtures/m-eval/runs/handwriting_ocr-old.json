@@ -16,11 +16,6 @@
     "processorVersion": "input/v1",
     "params": {}
   },
-  "sampleInputHashes": {
-    "ocr-normal": "1f762f81ffdb1cc4f7bc153ad1d6b0236932e6d8b52a4f0613ebb101369a27f7",
-    "ocr-missing": "1c3a425a958ed4afc3e70e34b0a8a4329224006aabead48b0e0f27cd57b753a1",
-    "ocr-holdout": "60637f49891b2e4a98d56832534e3e7eaebc97f740e52c14013c2088baa9909f"
-  },
   "runs": [
     {
       "sampleId": "ocr-normal",
@@ -38,42 +33,49 @@
           }
         ]
       },
-      "parseError": null
+      "parseError": null,
+      "processedInputHash": "1f762f81ffdb1cc4f7bc153ad1d6b0236932e6d8b52a4f0613ebb101369a27f7",
+      "imageHash": "f9bc4a65f2fa371d768f630540c56937522023aca26f0172b37bbf506f36a32c"
     },
     {
       "sampleId": "ocr-missing",
       "status": "ok",
-      "rawOutput": "{\"records\":[{\"rawText\":\"? mV\",\"fields\":{\"value\":\"?\",\"unit\":\"\"},\"unknowns\":[\"数值不清\"]}]}",
+      "rawOutput": "{\"records\":[{\"rawText\":\"2? mV\",\"fields\":{\"value\":\"2?\",\"unit\":\"\"},\"unknowns\":[\"第二位数字不清\",\"单位缺失\"]}]}",
       "parsed": {
         "records": [
           {
-            "rawText": "? mV",
+            "rawText": "2? mV",
             "fields": {
-              "value": "?",
+              "value": "2?",
               "unit": ""
             },
             "unknowns": [
-              "数值不清"
+              "第二位数字不清",
+              "单位缺失"
             ]
           }
         ]
       },
-      "parseError": null
+      "parseError": null,
+      "processedInputHash": "51b0ad9d21901a69b71112118ccc205d7da73c5a9c082dcaa8530336b3e46c0c",
+      "imageHash": "ee7d4459cb82ca776cc9d98a7e0366557a9fe4328d3ca39d42523d39b0b59689"
     },
     {
       "sampleId": "ocr-holdout",
       "status": "ok",
-      "rawOutput": "{\"records\":[{\"rawText\":\"1.0,2.0\\n3.0,4.0\\n5.0,6.0\",\"fields\":{},\"unknowns\":[]}]}",
+      "rawOutput": "{\"records\":[{\"rawText\":\"1.0,3.0\\n2.0,4.0\\n5.0,6.0\",\"fields\":{},\"unknowns\":[]}]}",
       "parsed": {
         "records": [
           {
-            "rawText": "1.0,2.0\n3.0,4.0\n5.0,6.0",
+            "rawText": "1.0,3.0\n2.0,4.0\n5.0,6.0",
             "fields": {},
             "unknowns": []
           }
         ]
       },
-      "parseError": null
+      "parseError": null,
+      "processedInputHash": "9f20cc23d7064f0f0119d5ec834e021050f751c33e50182e3322892f65bd7e92",
+      "imageHash": "921caeaae391d4ca2f883de377340fd4bec60186ae50be826ddee507c396069d"
     }
   ]
 }

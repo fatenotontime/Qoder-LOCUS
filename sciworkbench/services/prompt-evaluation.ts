@@ -85,6 +85,8 @@ export interface EvalSample {
   readonly kind: "synthetic" | "real";
   readonly input: string;
   readonly inputHash: string;
+  /** OCR：图像内容 hash（绑定图像，更换图片不能只靠路径文本判同输入）。 */
+  readonly imageHash?: string;
   /** 人工验收点；留出样本的验收答案不得混入发送输入。 */
   readonly acceptancePoints: readonly string[];
 }
@@ -119,11 +121,28 @@ export interface SingleRun {
   readonly rawOutput: string;
   readonly parsed: unknown | null;
   readonly parseError: string | null;
+  /** 该例**实际处理后发送**的输入正文 hash（空串=未记录证据，无法确认同条件）。 */
+  readonly processedInputHash: string;
+  /** OCR：图像内容 hash。 */
+  readonly imageHash?: string;
 }
 
-export function makeSingleRun(taskId: EvalTaskId, sampleId: string, rawOutput: string): SingleRun {
+export function makeSingleRun(
+  taskId: EvalTaskId,
+  sampleId: string,
+  rawOutput: string,
+  processing: { readonly actualInput?: string; readonly imageHash?: string } = {},
+): SingleRun {
   const { parsed, parseError } = autoChecks(taskId, rawOutput);
-  return { sampleId, status: parseError ? "parse_error" : "ok", rawOutput, parsed, parseError };
+  return {
+    sampleId,
+    status: parseError ? "parse_error" : "ok",
+    rawOutput,
+    parsed,
+    parseError,
+    processedInputHash: processing.actualInput !== undefined ? hashText(processing.actualInput) : "",
+    ...(processing.imageHash !== undefined ? { imageHash: processing.imageHash } : {}),
+  };
 }
 
 export interface RunSet {
@@ -136,8 +155,6 @@ export interface RunSet {
   readonly at: string;
   readonly prompt: RunPromptRef;
   readonly processing: { readonly processorVersion: string; readonly params: Readonly<Record<string, string>> };
-  /** 每个样本在该次运行中实际使用的输入 hash（用于发现「样本输入被改」而不可归因改词）。 */
-  readonly sampleInputHashes: Readonly<Record<string, string>>;
   readonly runs: readonly SingleRun[];
 }
 
@@ -261,11 +278,14 @@ export interface JudgmentUpdate {
   readonly failureClass?: string | null;
 }
 
-/** 新增判断并保留旧判断为历史；不改动任何原始输出。 */
+/** 新增判断并保留旧判断为历史；不改动任何原始输出。未知判断项（不在本 run 验收项内）拒绝。 */
 export function registerJudgment(
   prev: JudgmentRecord,
   input: { readonly at: string; readonly note: string; readonly updates: readonly JudgmentUpdate[] },
 ): JudgmentRecord {
+  const known = new Set(prev.items.map((i) => i.checkId));
+  const unknown = input.updates.filter((u) => !known.has(u.checkId)).map((u) => u.checkId);
+  if (unknown.length) throw new Error(`未知判断项（不在本 run 的验收项内）：${unknown.join(",")}`);
   const byId = new Map(input.updates.map((u) => [u.checkId, u]));
   const items = prev.items.map((it) => {
     const u = byId.get(it.checkId);
@@ -297,9 +317,11 @@ export function assessComparability(oldSet: RunSet, newSet: RunSet): Comparabili
   const oldIds = oldSet.runs.map((r) => r.sampleId).sort();
   const newIds = newSet.runs.map((r) => r.sampleId).sort();
   if (JSON.stringify(oldIds) !== JSON.stringify(newIds)) nonPromptDiffs.push("样本集合不同");
-  const allIds = [...new Set([...Object.keys(oldSet.sampleInputHashes), ...Object.keys(newSet.sampleInputHashes)])].sort();
-  const changedInputs = allIds.filter((id) => oldSet.sampleInputHashes[id] !== newSet.sampleInputHashes[id]);
-  if (changedInputs.length) nonPromptDiffs.push(`样本输入 hash 变化：${changedInputs.join(",")}`);
+  // 输入证据接在逐例运行记录上（处理输入正文 hash + OCR 图像 hash），而非仅声称的样本 hash。
+  const evidence = (set: RunSet) => set.runs.map((r) => `${r.sampleId}:${r.processedInputHash}${r.imageHash ? ":" + r.imageHash : ""}`).sort().join("|");
+  const missingEvidence = [...oldSet.runs, ...newSet.runs].some((r) => !r.processedInputHash);
+  if (missingEvidence) nonPromptDiffs.push("缺少逐例处理输入 hash，无法确认同条件");
+  else if (evidence(oldSet) !== evidence(newSet)) nonPromptDiffs.push("逐例处理输入/图像 hash 变化");
 
   const promptChanges: string[] = [];
   if (oldSet.prompt.systemHash !== newSet.prompt.systemHash) promptChanges.push("system");
@@ -334,16 +356,23 @@ export interface ComparisonReport {
   readonly summary: Readonly<Record<CaseCategory, number>>;
 }
 
+function requiredCheckIds(taskId: EvalTaskId): string[] {
+  const { checks } = autoChecks(taskId, "{}");
+  return [...checks.map((c) => `auto:${c.checkId}`), ...manualChecks(taskId).map((_, i) => `manual:${i}`)];
+}
+
 function verdictFrom(judgments: readonly JudgmentRecord[] | undefined, run: SingleRun, taskId: EvalTaskId): Verdict {
+  const { checks } = autoChecks(taskId, run.rawOutput);
+  if (checks.some((c) => !c.ok)) return "fail"; // 结构失败不可被人工 pass 抹去
   const jr = judgments?.find((j) => j.runId === run.sampleId);
-  if (jr) {
+  if (jr && jr.items.length > 0) {
     if (jr.items.some((i) => i.human === "fail")) return "fail";
-    if (jr.items.every((i) => i.human === "pass")) return "pass";
+    const need = requiredCheckIds(taskId);
+    const complete = need.every((id) => jr.items.some((i) => i.checkId === id));
+    if (complete && jr.items.every((i) => i.human === "pass")) return "pass"; // 仅完整判断才算通过
     return "pending";
   }
-  const { checks } = autoChecks(taskId, run.rawOutput);
-  if (checks.some((c) => !c.ok)) return "fail";
-  return "pending"; // 结构通过但未人工审阅 → 不默认为通过
+  return "pending"; // 无判断 / 空判断 → 不默认为通过
 }
 
 function categorize(oldV: Verdict, newV: Verdict): CaseCategory {

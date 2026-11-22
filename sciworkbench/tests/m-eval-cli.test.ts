@@ -72,3 +72,27 @@ test("M5-CLI judge：登记判断并保留历史，不覆盖原判断", () => {
   assert.equal(next.items.find((i: { checkId: string }) => i.checkId === "manual:0").human, "pass");
   assert.equal(r.status, 3); // 其余语义项仍待审
 });
+
+test("M5-CLI 空样本 / 空 runs → 退出码 2（不静默通过）", () => {
+  const out = mkdtempSync(join(tmpdir(), "m-eval-empty-"));
+  const emptySamples = join(out, "empty-samples.json");
+  writeFileSync(emptySamples, JSON.stringify({ samples: [] }));
+  assert.equal(cli(["check", "--samples", emptySamples, "--run", join(FX, "runs", "knowledge_struct-new.json"), "--out", out]).status, 2);
+  const emptyRun = join(out, "empty-run.json");
+  writeFileSync(emptyRun, JSON.stringify({ setId: "x", taskId: "knowledge_struct", modelId: "m", params: {}, mode: "simulated", at: "t", prompt: { versionLabel: "v", systemHash: "a", schemaHash: "b" }, processing: { processorVersion: "input/v1", params: {} }, runs: [] }));
+  assert.equal(cli(["check", "--samples", join(FX, "samples", "samples.json"), "--run", emptyRun, "--out", out]).status, 2);
+  assert.equal(cli(["compare", "--samples", join(FX, "samples", "samples.json"), "--old", emptyRun, "--new", emptyRun, "--out", out]).status, 2);
+});
+
+test("M5-CLI judge：未知判断项 → 退出码 2，不写出结果", () => {
+  const out = mkdtempSync(join(tmpdir(), "m-eval-judgebad-"));
+  const checked = mkdtempSync(join(tmpdir(), "m-eval-check3-"));
+  cli(["check", "--samples", join(FX, "samples", "samples.json"), "--run", join(FX, "runs", "handwriting_ocr-new.json"), "--out", checked]);
+  const jf = join(out, "judgment.json");
+  const uf = join(out, "updates.json");
+  writeFileSync(jf, JSON.stringify(JSON.parse(readFileSync(join(checked, "check.json"), "utf8")).samples[0].judgment));
+  writeFileSync(uf, JSON.stringify({ at: "t", note: "n", updates: [{ checkId: "bogus:9", human: "pass", reason: "" }] }));
+  const next = join(out, "next.json");
+  assert.equal(cli(["judge", "--judgment", jf, "--updates", uf, "--out", next]).status, 2);
+  assert.ok(!existsSync(next));
+});

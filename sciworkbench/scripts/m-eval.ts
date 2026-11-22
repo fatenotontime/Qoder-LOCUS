@@ -136,6 +136,8 @@ function cmdCheck(flags: Record<string, string>): number {
   const out = requireFlag(flags, "out", "check");
 
   if (!run || typeof run !== "object" || !Array.isArray(run.runs)) fail("run 文件不是合法 RunSet");
+  if (samples.length === 0) fail("样本文件为空：无法确认同条件");
+  if (run.runs.length === 0) fail("run 不含任何样本输出");
   if (run.taskId !== undefined && baseline && baseline.taskId !== run.taskId) fail(`任务不一致：run=${run.taskId} baseline=${baseline.taskId}`);
 
   const promptMatch = baseline ? baseline.systemHash === run.prompt.systemHash && baseline.schemaHash === run.prompt.schemaHash : null;
@@ -187,6 +189,8 @@ function cmdCompare(flags: Record<string, string>): number {
   const jn = loadJudgments(flags["judgments-new"]);
 
   if (!Array.isArray(oldSet.runs) || !Array.isArray(newSet.runs)) fail("old/new 不是合法 RunSet");
+  if (samples.length === 0) fail("样本文件为空：无法确认同条件");
+  if (oldSet.runs.length === 0 || newSet.runs.length === 0) fail("old/new 不含任何样本输出");
   const report = compareRuns(oldSet, newSet, samples, { judgments: { old: jo, new: jn } });
 
   writeFile(join(out, "comparison.json"), renderComparisonJson(report));

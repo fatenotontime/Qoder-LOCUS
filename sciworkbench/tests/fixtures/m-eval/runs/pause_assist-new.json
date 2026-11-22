@@ -16,11 +16,6 @@
     "processorVersion": "input/v1",
     "params": {}
   },
-  "sampleInputHashes": {
-    "pa-normal": "751b44e1ad935ce76aefee022bf9eee6d91f398fde235c44ad99a2c5b9c0fe47",
-    "pa-missing": "2f759ed182beb9168da560829ecb8bcf6482069cde87ea7ba20228824bf3a3b6",
-    "pa-holdout": "cc94957d7de98d722c8885e06121984c55a99a25d757edf0399b08241b1a197c"
-  },
   "runs": [
     {
       "sampleId": "pa-normal",
@@ -35,7 +30,8 @@
         ],
         "unknowns": []
       },
-      "parseError": null
+      "parseError": null,
+      "processedInputHash": "751b44e1ad935ce76aefee022bf9eee6d91f398fde235c44ad99a2c5b9c0fe47"
     },
     {
       "sampleId": "pa-missing",
@@ -52,7 +48,8 @@
           "步骤时长"
         ]
       },
-      "parseError": null
+      "parseError": null,
+      "processedInputHash": "2f759ed182beb9168da560829ecb8bcf6482069cde87ea7ba20228824bf3a3b6"
     },
     {
       "sampleId": "pa-holdout",
@@ -67,7 +64,8 @@
         ],
         "unknowns": []
       },
-      "parseError": null
+      "parseError": null,
+      "processedInputHash": "cc94957d7de98d722c8885e06121984c55a99a25d757edf0399b08241b1a197c"
     }
   ]
 }
