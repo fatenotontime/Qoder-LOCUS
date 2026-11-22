@@ -90,6 +90,20 @@ test("角色：任务 core/selected/optional/context 分类；core.selectable=fa
   assert.equal(m.scope.frozen, false);
 });
 
+test("采用前置：adoptable 与 selectable 同口径校验，未确认/缺定位不可采用并给原因", () => {
+  const s = fixture();
+  (s as any).cards.push({ id: "c3", assetId: "as1", rawText: "确认但缺定位卡", locator: { sectionQuote: "" }, extracted: { fields: {}, units: [], conditions: [] }, unknowns: [], secondaryCitation: false, audit: "confirm", importance: null, note: "", reason: "", extraction: "manual", mechanical: false, revision: 1, history: [], createdAt: ISO, updatedAt: ISO });
+  (s as any).analysisTasks = [{ id: "tk1", topicId: "tpA", title: "任务1", core: [], optional: [{ ref: { kind: "card", id: "c1" }, included: true }, { ref: { kind: "card", id: "c3" }, included: true }], resultIds: [], createdAt: ISO, updatedAt: ISO }];
+  const m = buildContextMap(s, { topicId: "tpA", taskId: "tk1" });
+  const by = (k: string) => m.nodes.find((n) => n.key === k)!;
+  assert.equal(by("card:c1").selectable, true);
+  assert.equal(by("card:c1").adoptable, true); // 已确认 + 有定位 → 可正式采用
+  assert.equal(by("card:c3").selectable, true); // 仍可作为候选
+  assert.equal(by("card:c3").adoptable, false); // 但不可正式采用
+  assert.equal(by("card:c3").adoptBlockedReason, "缺原文定位");
+  assert.equal(by("topic:tpA").adoptable, false); // 非知识卡不可采用
+});
+
 test("建任务前：pick 推导为 core；已入候选卡为 selected；其余同课题对象为 optional", () => {
   const s = fixture();
   const m = buildContextMap(s, { topicId: "tpA", pick: [{ kind: "measurement", id: "me1" }] });

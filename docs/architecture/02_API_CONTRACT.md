@@ -55,8 +55,9 @@
 
 ### 上下文地图返回结构（ADR-0027）
 
-`{ ok, scope:{topicId,subquestionId?,taskId?,frozen?}, nodes:[{key,kind,id,label,version?,external?,role,selectable,gaps:[{code,label}]}], edges:[{from,to,edgeKind,establishedBy,note?}], gaps:[{key,code,label}], truncated }`
+`{ ok, scope:{topicId,subquestionId?,taskId?,frozen?}, nodes:[{key,kind,id,label,version?,external?,role,selectable,adoptable,adoptBlockedReason?,gaps:[{code,label}]}], edges:[{from,to,edgeKind,establishedBy,note?}], gaps:[{key,code,label}], truncated }`
 - `role`：`core`（必选，锁定）/`selected`（候选已选）/`optional`（候选未选）/`context`（仅看来源，不可选）；`selectable = role∈{selected,optional}`。
+- `adoptable`：能否对该节点发起「采用（adopt）」；与 `upsertAdoption` 前置同口径（非新壳 + `audit==="confirm"` + 原文定位非空），仅知识卡可能为 `true`。`adoptBlockedReason` 在其为 `false` 时给出如实原因（如「未核对确认」「缺原文定位」）。`selectable` 与 `adoptable` 分离：可选 ≠ 可正式采用。
 - 只读：不写 state、不 save、不调 AI、不起 job；节点上限 300，超出 `truncated:true`；同一 state 结果顺序确定（按 key/边排序）。
 - 错误：`topicId` 缺失/不存在、任务不存在 → 404；`pick` 项不存在/不属本课题/类型不支持 → 422。
 

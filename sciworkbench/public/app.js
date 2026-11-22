@@ -955,12 +955,13 @@ function renderAll() {
 }
 /** 中栏滚动容器：实际滚动的是 .pane.mid（#mid-content 是内容层）。 */
 function midScroller() { return document.querySelector(".pane.mid"); }
-/** 列表页（有可恢复的滚动/筛选）：六个模块的管理/总览态。 */
+/** 列表页（有可恢复的滚动/筛选）：六个模块的管理/总览态（含知识页：返回后保留列表位置）。 */
 function isListView() {
   return (ui.nav === "topic" && ui.topicPane !== "subq")
     || (ui.nav === "papers" && ui.paperView !== "read")
     || (ui.nav === "protocol" && ui.protocolView !== "detail")
     || (ui.nav === "record" && ui.recordView !== "detail")
+    || (ui.nav === "knowledge")
     || (ui.nav === "chat" && ui.chatView !== "chat");
 }
 function listKey() { return `${ui.nav}|${ui.topicId}`; }
@@ -1055,6 +1056,30 @@ function midEmpty(kind, title, desc) {
   c.classList.add("is-empty");
   c.innerHTML = emptyStateHtml(kind, title, desc);
 }
+// ── 分析页上下文地图（只读）：取自 /api/analysis/tasks/:id/map（后端 buildNetwork），前端不补造节点/边。 ──
+let anMapSeq = 0;
+function anMapKey() { const t = currentTask(state, ui); return `${ui.topicId || ""}|${t?.id ?? ""}`; }
+function loadAnalysisMap({ force = false } = {}) {
+  if (ui.nav !== "analysis") return;
+  const t = currentTask(state, ui);
+  if (!t) { ui.anMap = null; return; }
+  const key = anMapKey();
+  const prev = ui.anMap;
+  if (!force && prev && prev.key === key && !prev.dirty) return;
+  const seq = ++anMapSeq;
+  ui.anMap = { status: "loading", key, data: prev?.key === key ? prev.data : null, dirty: false };
+  api.analysisTaskMap(t.id).then((data) => {
+    if (seq !== anMapSeq) return;
+    ui.anMap = { status: "ready", key, data, dirty: false };
+    if (ui.nav === "analysis") renderMiddle();
+  }).catch((e) => {
+    if (seq !== anMapSeq) return;
+    ui.anMap = { status: e?.status === 404 || e?.status === 405 ? "unwired" : "error", key, data: null, dirty: false, message: e?.message };
+    if (ui.nav === "analysis") renderMiddle();
+  });
+}
+function invalidateAnalysisMap() { if (ui.anMap) ui.anMap = { ...ui.anMap, dirty: true }; }
+
 function renderMiddle() {
   const note = $("#mid-note"), content = $("#mid-content");
   document.body.dataset.nav = ui.nav;
@@ -1142,6 +1167,7 @@ function renderMiddle() {
       : "未冻结：推荐时按核心＋候选＋目的冻结发送内容。";
     content.innerHTML = contextMapHtml(state, ui, t);
     content.classList.add("rich");
+    loadAnalysisMap();
     return;
   }
   if (ui.nav === "chat") {
@@ -3205,6 +3231,7 @@ bindKnowledge({
 bindAnalysis({
   getState: () => state, ui, api, $, $$, refresh, refreshAfterJob, renderAll, renderShell, renderMiddle, renderRight,
   setStatus, setError, setDirty, humanError, runBusy, runJob, notify, pollJob, noteChangeHits, clearAllErrors,
+  loadAnalysisMap, invalidateAnalysisMap,
 });
 
 $("#theme-seal").addEventListener("click", (ev) => quickSwitchTheme(ev.currentTarget));
