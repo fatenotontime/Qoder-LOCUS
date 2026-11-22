@@ -39,6 +39,27 @@ test("迹芽舞台：待机不画进度，计数只取当前文献范围", () =>
   assert.deepEqual(stageCounts(state, ui), { attachments: 1, pendingCards: 1, pendingItems: 1, confirmed: 1 });
 });
 
+test("迹芽舞台：库总览传入容器数据后只按当前课题计数", () => {
+  const scoped = {
+    ...state,
+    papers: [{ id: "p1", title: "论文一", topicIds: ["t1"] }, { id: "p2", title: "论文二", topicIds: ["t2"] }],
+  };
+  const data = {
+    elements: [
+      { kind: "item", reviewStatus: "confirmed" },
+      { kind: "item", reviewStatus: "pending" },
+      { kind: "dataset", reviewStatus: "pending" },
+    ],
+    totals: { pending: 1 },
+  };
+  const t = visibleText(knowledgeStageHtml(scoped, { topicId: "t1", paperId: null }, data));
+  assert.ok(t.includes("1 份"), "原文献只数当前课题关联的附件");
+  assert.ok(t.includes("1 卡 / 1 项"), "待审项取容器响应，待审卡按当前课题论文过滤");
+  assert.ok(t.includes("已归入 1 项"), "数据集不混入已归入项");
+  const empty = visibleText(knowledgeStageHtml(scoped, { topicId: "t3", paperId: null }, { elements: [], totals: { pending: 0 } }));
+  assert.ok(empty.includes("0 份") && empty.includes("0 卡 / 0 项") && empty.includes("已归入 0 项"), "空课题不借用别的课题计数");
+});
+
 test("迹芽舞台：加工中按真实回执显示 done/total 与已出张数", () => {
   const job = { status: "running", done: 2, total: 5, created: 3, chunkErrors: [] };
   const html = knowledgeStageHtml(state, { ...ui, kzJob: job });

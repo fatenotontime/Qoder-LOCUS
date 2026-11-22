@@ -13,7 +13,7 @@ import { knowledgeLeftHtml, knowledgeWorkspaceHtml, knowledgeQueueHtml, renderKn
 import { renderAnalysisForm, currentTask, contextMapHtml, analysisRightHtml, snapshotHtml, bindAnalysis } from "./lib/pages/analysis.js";
 
 let state = { topics: [], subquestions: [], assets: [], papers: [], attachments: [], cards: [], tables: [], adoptions: [], mappings: [], comparisons: [], protocols: [], templates: [], executions: [], samples: [], measurements: [], impacts: [], ocrs: [], analysisTasks: [], analysisResults: [], reports: [], chats: [] };
-const ui = { nav: "topic", topicId: "", assetId: null, paperId: null, attId: null, tableId: null, highlight: null, cell: null, dirty: false, busy: false, cardFilter: "all", groupSel: new Set(), batch: null, ack: false, protocolId: null, executionId: null, stepSel: null, viewRev: null, editEventId: null, pauseSuggest: null, prepExtra: 0, taskId: null, chatId: null, reportId: null, reportWorking: {}, navCollapsed: false, kzTab: "todo", kzPanel: "cards", cardOpen: null, kzJob: null, kzStruct: null, kiView: null, suppressRecheck: null };
+const ui = { nav: "topic", topicId: "", assetId: null, paperId: null, attId: null, tableId: null, highlight: null, cell: null, dirty: false, busy: false, cardFilter: "all", groupSel: new Set(), batch: null, ack: false, protocolId: null, executionId: null, stepSel: null, viewRev: null, editEventId: null, pauseSuggest: null, prepExtra: 0, taskId: null, chatId: null, reportId: null, reportWorking: {}, navCollapsed: false, kzTab: "todo", kzPanel: "library", cardOpen: null, kzJob: null, kzStruct: null, kiView: null, suppressRecheck: null };
 let lastAction = null; // { label, run }
 function setDirty(value) {
   const next = Boolean(value);
@@ -62,7 +62,7 @@ function restoreUi() {
     if (state.reports.some((r) => r.id === s.reportId)) ui.reportId = s.reportId;
     if (typeof s.navCollapsed === "boolean") ui.navCollapsed = s.navCollapsed;
     if (["todo", "cand", "skip", "excl"].includes(s.kzTab)) ui.kzTab = s.kzTab;
-    if (["cards", "themes"].includes(s.kzPanel)) ui.kzPanel = s.kzPanel;
+    if (["library", "cards", "themes"].includes(s.kzPanel)) ui.kzPanel = s.kzPanel;
     if (typeof s.cardOpen === "string" || s.cardOpen === null) ui.cardOpen = s.cardOpen;
   } catch {}
 }
@@ -871,6 +871,9 @@ function midEmpty(kind, title, desc) {
 function renderMiddle() {
   const note = $("#mid-note"), content = $("#mid-content");
   document.body.dataset.nav = ui.nav;
+  const kzLibrary = ui.nav === "knowledge" && ui.kzPanel === "library";
+  document.querySelector(".pane.mid").classList.toggle("kz-lib-first", kzLibrary);
+  document.querySelector(".app").classList.toggle("kz-library", kzLibrary);
   content.classList.remove("is-empty", "rich");
   content.classList.toggle("kzw", ui.nav === "knowledge");
   if (ui.nav === "topic") {
@@ -894,9 +897,9 @@ function renderMiddle() {
     return;
   }
   if (ui.nav === "knowledge") {
-    $("#mid-title").textContent = "卡片审阅";
+    $("#mid-title").textContent = ui.kzPanel === "library" ? "知识总览" : ui.kzPanel === "themes" ? "主题" : "卡片审阅";
     note.hidden = true;
-    if (!state.papers.length) { midEmpty("knowledge", "还没有可审的卡片", "先在文献卷建立条目并导入附件，再回到知识卷发起语义提取。"); return; }
+    if (!state.papers.length && ui.kzPanel !== "library") { midEmpty("knowledge", "还没有可审的卡片", "先在文献卷建立条目并导入附件，再回到知识卷发起语义提取。"); return; }
     content.innerHTML = knowledgeWorkspaceHtml(state, ui);
     return;
   }
@@ -2623,7 +2626,7 @@ $("#ai-models-list").addEventListener("click", (ev) => {
 
 // 领域知识积累 / 数据处理与分析 两页的渲染与事件（拆分到 lib/pages/*，行为不变）。
 bindKnowledge({
-  getState: () => state, ui, api, $, $$, refresh, refreshAfterJob, renderAll, renderShell, renderMiddle, renderRight,
+  getState: () => state, ui, api, $, $$, refresh, refreshAfterJob, renderAll, renderShell, renderMiddle, renderRight, navigate: activateNav,
   setStatus, setError, setDirty, humanError, runBusy, runJob, notify, pollJob, noteChangeHits, clearAllErrors,
 });
 bindAnalysis({

@@ -45,6 +45,21 @@ export function stageCounts(state, ui) {
   };
 }
 
+// /api/state 是跨课题的；库总览模式下待审与已归入只认当前课题的容器响应。
+function containerCounts(state, ui, data) {
+  const topicId = ui?.topicId ?? "";
+  const paperIds = new Set((state.papers ?? []).filter((p) => (p.topicIds ?? []).includes(topicId)).map((p) => p.id));
+  const cards = (state.cards ?? []).filter((c) => paperIds.has(cardPaper(state, c)));
+  const items = (data?.elements ?? []).filter((e) => e.kind === "item");
+  const pendingCards = cards.filter((c) => c.extraction === "ai" && !["confirm", "skip", "exclude"].includes(c.audit)).length;
+  return {
+    attachments: (state.attachments ?? []).filter((a) => paperIds.has(a.paperId)).length,
+    pendingCards,
+    pendingItems: data?.totals?.pending ?? items.filter((e) => e.reviewStatus === "pending").length,
+    confirmed: items.filter((e) => e.reviewStatus === "confirmed").length,
+  };
+}
+
 function stageLabel(j, stage) {
   if (stage === "idle" && j?.status === "done") return j.cancelled ? "已取消" : "本轮完成";
   return STAGE_LABEL[stage];
@@ -79,10 +94,10 @@ export function aiSproutHtml(state = "idle", cls = "") {
   return `<span class="kz-sprout ${esc(cls)}" data-state="${esc(state)}" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path class="sprout-seed" d="M12 20.2c-3.1 0-5.1-2.1-5.1-5 0-3.3 2.6-5.4 5.1-5.4s5.1 2.1 5.1 5.4c0 2.9-2 5-5.1 5Z"/><path class="sprout-stem" d="M12 12.4V7.5"/><path class="sprout-leaf-a" d="M12 8.4C9.7 8.2 8.2 6.7 7.9 4.5c2.5.1 4 1.3 4.1 3.9Z"/><path class="sprout-leaf-b" d="M12 9.4c2.3-.2 3.7-1.5 4-3.7-2.4.1-3.8 1.3-4 3.7Z"/><path class="sprout-curl" d="M12 7.5c-1.1-.9-1-2.3.4-3.1"/></svg></span>`;
 }
 
-export function knowledgeStageHtml(state, ui) {
+export function knowledgeStageHtml(state, ui, containerData = null) {
   const stage = kzStageState(ui);
   const j = ui.kzJob;
-  const c = stageCounts(state, ui);
+  const c = containerData ? containerCounts(state, ui, containerData) : stageCounts(state, ui);
   const total = j?.total ?? 0;
   const pct = total > 0 ? Math.max(0, Math.min(100, Math.round(((j.done ?? 0) / total) * 100))) : 0;
   const active = stage === "working" || stage === "paused" || stage === "failed"
