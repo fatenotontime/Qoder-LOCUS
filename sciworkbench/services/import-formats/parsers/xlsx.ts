@@ -13,7 +13,14 @@ import { envelope } from "../envelope.ts";
 
 const T = ExcelJS.ValueType;
 
-function cellToRaw(cell: ExcelJS.Cell, notes: string[], a1: string): RawCell {
+interface RawCtx {
+  /** 无缓存值的公式单元位置。 */
+  formulaNoCache: string[];
+  /** 日期/时间单元位置。 */
+  dates: string[];
+}
+
+function cellToRaw(cell: ExcelJS.Cell, a1: string, ctx: RawCtx): RawCell {
   const numFmt = typeof cell.numFmt === "string" ? cell.numFmt : undefined;
   const v = cell.value;
   switch (cell.type) {
@@ -25,9 +32,9 @@ function cellToRaw(cell: ExcelJS.Cell, notes: string[], a1: string): RawCell {
     case T.Boolean:
       return { value: v as boolean, type: "boolean" };
     case T.Date:
-      // 日期/时间：保留显示文本与 numFmt，**不换算单位、不猜时区**。
-      notes.push(`日期/时间单元 ${a1}：按显示文本与 numFmt 保留，未做时区或单位换算。`);
-      return { value: cell.text, type: "date", text: cell.text, ...(numFmt ? { numFmt } : {}) };
+      // 日期/时间：以 **UTC ISO** 确定性表示（不随本机时区变化），保留 numFmt；不换单位、不猜时区。
+      ctx.dates.push(a1);
+      return { value: v instanceof Date ? v.toISOString() : String(v), type: "date", ...(numFmt ? { numFmt } : {}) };
     case T.Hyperlink: {
       const h = v as { text?: string; hyperlink?: string };
       return { value: h.text ?? "", type: "string" };
@@ -37,7 +44,7 @@ function cellToRaw(cell: ExcelJS.Cell, notes: string[], a1: string): RawCell {
       const f = v as { formula?: string; sharedFormula?: string; result?: unknown };
       const formula = f.formula ?? (f.sharedFormula ? `=SHARED(${f.sharedFormula})` : "=UNKNOWN");
       const hasResult = f.result !== undefined && f.result !== null;
-      if (!hasResult) notes.push(`公式单元 ${a1} 无缓存值：仅保留公式，标记未知（不填 0）。`);
+      if (!hasResult) ctx.formulaNoCache.push(a1);
       const r = f.result as RawCell["value"] | undefined;
       return { value: hasResult ? (r as RawCell["value"]) : null, type: "formula", formula, ...(numFmt ? { numFmt } : {}) };
     }
@@ -52,6 +59,11 @@ function cellToRaw(cell: ExcelJS.Cell, notes: string[], a1: string): RawCell {
     default:
       return { value: cell.text, type: "string" };
   }
+}
+
+/** 是否为合并区域的**非主格**（exceljs 会让其 text/value 复制主格值 → 会伪复制为多次观测）。 */
+function isMergeSlave(cell: ExcelJS.Cell): boolean {
+  return cell.isMerged === true && !!cell.master && cell.master.address !== cell.address;
 }
 
 function sheetInfo(ws: ExcelJS.Worksheet, index: number): SheetInfo {
@@ -139,6 +151,7 @@ export async function parseXlsx(
   const maxChars = options.outputMaxChars ?? DEFAULT_OUTPUT_MAX_CHARS;
 
   const notes: string[] = [];
+  const ctx: RawCtx = { formulaNoCache: [], dates: [] };
   const gridRows: string[][] = [];
   const gridRaw: RawCell[][] = [];
   let totalChars = 0;
@@ -148,14 +161,23 @@ export async function parseXlsx(
     for (let c = 1; c <= cols; c++) {
       const cell = ws.getCell(r, c);
       const a1 = toA1(r, c);
-      const raw = cellToRaw(cell, notes, a1);
-      totalChars += cell.text?.length ?? 0;
+      // 合并非主格：exceljs 复制了主格的 text/value → 视为空，避免单值被伪复制为多次观测。
+      const slave = isMergeSlave(cell);
+      const raw = slave ? ({ value: null, type: "empty" } as RawCell) : cellToRaw(cell, a1, ctx);
+      const disp = slave ? "" : (cell.text ?? "");
+      totalChars += disp.length;
       if (totalChars > maxChars) throw new ImportError("output_too_large", `工作表文本超过上限 ${maxChars} 字符，已拒绝。`);
       rawRow.push(raw);
-      textRow.push(cell.text ?? "");
+      textRow.push(disp);
     }
     gridRows.push(textRow);
     gridRaw.push(rawRow);
+  }
+  if (ctx.formulaNoCache.length) {
+    notes.push(`公式无缓存值（共 ${ctx.formulaNoCache.length} 个，如 ${ctx.formulaNoCache.slice(0, 5).join("、")}）：仅保留公式，标记未知（不填 0）。`);
+  }
+  if (ctx.dates.length) {
+    notes.push(`日期/时间单元（共 ${ctx.dates.length} 个，如 ${ctx.dates.slice(0, 5).join("、")}）：以 UTC ISO 确定性表示（不随本机时区变化），保留 numFmt；未做单位换算。`);
   }
 
   const merges: MergedRange[] = ((ws as unknown as { model?: { merges?: string[] } }).model?.merges ?? []).map((m) => {

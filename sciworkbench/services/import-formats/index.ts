@@ -14,7 +14,7 @@ export { DEFAULT_ORIGINAL_MAX_BYTES, DEFAULT_ARCHIVE_EXPAND_MAX_BYTES, DEFAULT_O
 import { envelope } from "./envelope.ts";
 import { detectFormat } from "./detect.ts";
 import { sha256Hex, zipExpandSize, ImportError, toA1 } from "./util.ts";
-import { DEFAULT_ARCHIVE_EXPAND_MAX_BYTES } from "./limits.ts";
+import { DEFAULT_ARCHIVE_EXPAND_MAX_BYTES, DEFAULT_ORIGINAL_MAX_BYTES } from "./limits.ts";
 import type { ParseOptions, ParseResult, GridTable, SheetInfo, Diagnostic } from "./contracts.ts";
 
 /** 解析真实字节并按格式分发（统一结果协议）。 */
@@ -32,6 +32,18 @@ export async function parseBytes(
     fileName,
     options,
   };
+
+  // 原件上限：默认沿用 2 MiB，可显式覆盖；超限明确失败（不截断）。
+  const maxOriginal = options.originalMaxBytes ?? DEFAULT_ORIGINAL_MAX_BYTES;
+  if (bytes.length > maxOriginal) {
+    return envelope({
+      ...base,
+      format: det.format,
+      parser: { name: det.format, version: "-" },
+      status: "failed",
+      unknowns: [{ code: "original_too_large", message: `原件 ${bytes.length} 字节超过上限 ${maxOriginal} 字节，已拒绝（不截断）。` }],
+    });
+  }
 
   if (det.format === "unsupported") {
     return envelope({

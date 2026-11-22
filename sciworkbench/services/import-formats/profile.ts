@@ -68,31 +68,28 @@ export function profileGrid(grid: GridTable, opts: { headerRows?: 1 | 2 | "auto"
   }
 
   // ── 待答问题（一律 machine_inferred / unknown；**绝不冒充 human_confirmed**）──
+  // 按合同 §6.2：列含义/单位/分组/独立样本/重复/批次/误差量/样品-执行关联 均须可核对。
   const questions: SemanticQuestion[] = [];
   const dataRows = Math.max(1, totalRows - suspectedHeaderRows.length);
   const numericCols = columns.filter((c) => c.observedTypes.number > 0 && c.observedTypes.number >= dataRows * 0.8);
-  if (numericCols.length) {
-    questions.push({
-      topic: "unit",
-      state: "unknown",
-      text: `列 ${numericCols.map((c) => c.label).join("、")} 数值占多数，但单位/量纲未确认（原文是否声明单位？）。`,
-    });
-    questions.push({
-      topic: "independence",
-      state: "unknown",
-      text: "数值列不证明其为连续测量量；分组、重复测量与独立性关系未确认。",
-    });
-  }
+  questions.push({
+    topic: "unit",
+    state: "unknown",
+    text: numericCols.length
+      ? `列 ${numericCols.map((c) => c.label).join("、")} 数值占多数，但单位/量纲未确认（原文是否声明单位？）。`
+      : "各列单位/量纲均未确认（原文是否声明单位？）。",
+  });
+  questions.push({ topic: "grouping", state: "unknown", text: "分组关系（列间分组、组内成员）未确认。" });
+  questions.push({ topic: "independence", state: "unknown", text: "各行独立性未确认；数值列不证明其为连续测量量。" });
   questions.push({
     topic: "sample_size",
     state: "unknown",
     text: `本表 ${totalRows} 行；**行数不等于独立样本量**，n 未确认。`,
   });
-  questions.push({
-    topic: "error_measure",
-    state: "unknown",
-    text: "误差列为 SD 还是 SE 未由列名确认（不得凭列名断定）。",
-  });
+  questions.push({ topic: "replication", state: "unknown", text: "是否存在重复测量及其次数未确认。" });
+  questions.push({ topic: "batch", state: "unknown", text: "是否分批次及其标识未确认。" });
+  questions.push({ topic: "error_measure", state: "unknown", text: "误差列为 SD 还是 SE 未由列名确认（不得凭列名断定）。" });
+  questions.push({ topic: "sample_execution_link", state: "unknown", text: "样品与执行/观测的关联（哪一行对应哪个样品）未确认。" });
   questions.push({
     topic: "missing_value",
     state: "unknown",

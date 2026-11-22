@@ -19,6 +19,13 @@ function cellsOfRow(tr: HTMLElement): HTMLElement[] {
   );
 }
 
+/** 单元格文本：同格多个段落用换行分隔（避免 "10"+"20" 粘成 "1020"）。 */
+function cellText(cell: HTMLElement): string {
+  const ps = cell.querySelectorAll("p");
+  if (ps.length) return ps.map((p) => p.text.trim()).filter((s) => s !== "").join("\n");
+  return cell.text.trim();
+}
+
 export async function parseDocx(
   bytes: Uint8Array,
   fileName: string,
@@ -78,7 +85,7 @@ export async function parseDocx(
         const rowText: string[] = [];
         const rowRaw: RawCell[] = [];
         for (const cell of cells) {
-          const t = cell.text.trim();
+          const t = cellText(cell);
           rowText.push(t);
           rowRaw.push({ value: t === "" ? null : t, type: t === "" ? "empty" : "string" });
         }
@@ -104,7 +111,28 @@ export async function parseDocx(
       continue;
     }
 
-    // 段落及标题/列表等一律按文本块处理（保留文档顺序）
+    // 列表：每个 li 作为一个独立文本块（保留各自位置，避免粘连成一个块）
+    if (tag === "ul" || tag === "ol") {
+      for (const li of el.querySelectorAll("li")) {
+        const t = li.text.trim();
+        if (t === "") {
+          paragraphCount++;
+          continue;
+        }
+        totalChars += t.length;
+        if (totalChars > maxChars) throw new ImportError("output_too_large", `DOCX 提取文本超过上限 ${maxChars} 字符，已拒绝（不截断）。`);
+        textBlocks.push({
+          id: `tb${order}`,
+          orderIndex: order++,
+          origin: { kind: "docx-paragraph", blockIndex: order - 1, paragraphIndex: paragraphCount },
+          text: t,
+        });
+        paragraphCount++;
+      }
+      continue;
+    }
+
+    // 段落及标题等按文本块处理（保留文档顺序）
     const text = el.text.trim();
     if (text === "") {
       // 空段落：仅计数占位（保持块序号稳定，不产出空文本块）

@@ -64,6 +64,52 @@ async function makeDocx(): Promise<Buffer> {
   return Packer.toBuffer(doc);
 }
 
+/** 合并表头 A1:B1（A1=7）——回归：合并非主格不得伪复制主格值。 */
+async function makeMergedXlsx(): Promise<Buffer> {
+  const wb = new ExcelJS.Workbook();
+  const ws = wb.addWorksheet("M");
+  ws.mergeCells("A1:B1");
+  ws.getCell("A1").value = 7;
+  ws.getCell("A2").value = 1;
+  ws.getCell("B2").value = 2;
+  return wb.xlsx.writeBuffer() as unknown as Promise<Buffer>;
+}
+
+/** 日期格——回归：确定性表示（UTC ISO），不得用本机 locale 文本。 */
+async function makeDatesXlsx(): Promise<Buffer> {
+  const wb = new ExcelJS.Workbook();
+  const ws = wb.addWorksheet("D");
+  const c = ws.getCell("A1");
+  c.value = new Date(Date.UTC(2024, 0, 1));
+  c.numFmt = "yyyy-mm-dd";
+  return wb.xlsx.writeBuffer() as unknown as Promise<Buffer>;
+}
+
+/** 同格两段落 + 列表——回归：段落/列表项不得粘连。 */
+async function makeCellMultiDocx(): Promise<Buffer> {
+  const doc = new Document({
+    sections: [
+      {
+        children: [
+          new Table({
+            rows: [
+              new TableRow({
+                children: [
+                  new TableCell({ children: [new Paragraph("10"), new Paragraph("20")] }),
+                  new TableCell({ children: [new Paragraph("x")] }),
+                ],
+              }),
+            ],
+          }),
+          new Paragraph({ text: "alpha", bullet: { level: 0 } }),
+          new Paragraph({ text: "beta", bullet: { level: 0 } }),
+        ],
+      },
+    ],
+  });
+  return Packer.toBuffer(doc);
+}
+
 async function makeXlsx(): Promise<Buffer> {
   const wb = new ExcelJS.Workbook();
   const data = wb.addWorksheet("Data");
@@ -104,6 +150,9 @@ export async function generateAll(): Promise<void> {
   out("mixed.pdf", await makeMixedPdf());
   out("p-t-p.docx", await makeDocx());
   out("multi-sheet.xlsx", await makeXlsx());
+  out("merged.xlsx", await makeMergedXlsx());
+  out("dates.xlsx", await makeDatesXlsx());
+  out("cell-multi.docx", await makeCellMultiDocx());
   for (const [name, content] of textFiles) out(name, Buffer.from(content, "utf8"));
   // 损坏文件（非真 PDF）
   out("corrupt.pdf", Buffer.from("%PDF-1.4 this is not a real pdf body", "latin1"));

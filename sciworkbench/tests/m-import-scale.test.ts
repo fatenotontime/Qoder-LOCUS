@@ -30,10 +30,10 @@ async function makeXlsx(): Promise<Uint8Array> {
   return new Uint8Array((await wb.xlsx.writeBuffer()) as ArrayBuffer);
 }
 
-function timed<T>(label: string, fn: () => T): T {
+async function timed<T>(label: string, fn: () => T | Promise<T>): Promise<T> {
   const h0 = process.hrtime.bigint();
   const m0 = process.memoryUsage().heapUsed;
-  const out = fn();
+  const out = await fn();
   const ms = Number(process.hrtime.bigint() - h0) / 1e6;
   const dm = (process.memoryUsage().heapUsed - m0) / 1024 / 1024;
   console.log(`  [A08] ${label}: ${ms.toFixed(0)} ms, heapUsed Δ ${dm.toFixed(1)} MiB`);
@@ -48,7 +48,7 @@ test("A08 CSV 10000×10：完整解析 + 画像，末行与计数正确", async 
   assert.equal(t.rows.length, ROWS + 1); // 表头 + 数据
   assert.deepEqual(t.rows[0], HEADER);
   assert.equal(t.rows[ROWS][0], `r${ROWS - 1}`); // 末数据行
-  const p = timed("csv profile", () => profileGrid(t));
+  const p = await timed("csv profile", () => profileGrid(t));
   assert.equal(p.totalRows, ROWS + 1);
   assert.equal(p.totalColumns, COLS);
   assert.equal(p.columns[0].nonEmpty, ROWS + 1);
@@ -61,7 +61,7 @@ test("A08 XLSX 10000×10：完整解析 + 画像，末行与计数正确", async
   const t = r.tables[0];
   assert.equal(t.rows.length, ROWS + 1);
   assert.equal(t.rows[ROWS][0], `r${ROWS - 1}`);
-  const p = timed("xlsx profile", () => profileGrid(t));
+  const p = await timed("xlsx profile", () => profileGrid(t));
   assert.equal(p.totalRows, ROWS + 1);
   assert.equal(p.columns[COLS - 1].nonEmpty, ROWS + 1);
 });
