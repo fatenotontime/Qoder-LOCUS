@@ -23,9 +23,10 @@ const MAP = {
   ok: true,
   scope: { topicId: "t1", subquestionId: "q1", taskId: "at1", frozen: false },
   nodes: [
-    { key: "card:c1", kind: "card", id: "c1", label: "卡一", role: "selected", selectable: true, gaps: [] },
-    { key: "card:c2", kind: "card", id: "c2", label: "卡二", role: "optional", selectable: true, gaps: [] },
-    { key: "topic:t1", kind: "topic", id: "t1", label: "课题甲", role: "context", selectable: false, gaps: [] },
+    { key: "card:c1", kind: "card", id: "c1", label: "卡一", role: "selected", selectable: true, adoptable: true, gaps: [] },
+    { key: "card:c2", kind: "card", id: "c2", label: "卡二", role: "optional", selectable: true, adoptable: true, gaps: [] },
+    { key: "card:c3", kind: "card", id: "c3", label: "卡三", role: "optional", selectable: true, adoptable: false, adoptBlockedReason: "缺原文定位", gaps: [] },
+    { key: "topic:t1", kind: "topic", id: "t1", label: "课题甲", role: "context", selectable: false, adoptable: false, gaps: [] },
   ],
   edges: [{ from: "card:c1", to: "topic:t1", edgeKind: "affiliation", establishedBy: "card.paperId" }],
   gaps: [], truncated: false,
@@ -39,6 +40,16 @@ test("item4 地图节点/边只来自后端 map（不补造），采用入口按
   assert.match(html, /card:c1 → topic:t1/); // 唯一那条边来自 map
   assert.match(html, /已采用/); // c2 已在 adoptions 里
   assert.ok((html.match(/>采用</g) ?? []).length >= 1, "c1 未采用 → 给「采用」按钮");
+  assert.match(html, /不可采用：缺原文定位/); // c3 可选但未达采用前置 → 给如实原因，不给假入口
+});
+
+test("item4 采用按钮只对 adoptable 节点：不可采用卡不给「采用」按钮", () => {
+  const html = contextMapHtml(state, { nav: "analysis", taskId: "at1", anMap: readyMap(MAP) }, task);
+  // c3（adoptable:false）那一行不得出现「采用」按钮
+  const c3Row = html.split("card:c3")[1].split("</li>")[0];
+  assert.equal(c3Row.includes(">采用<"), false);
+  assert.equal(c3Row.includes("an-adopt"), false);
+  assert.match(c3Row, /不可采用/);
 });
 
 test("item4 无子问题 → 不渲染采用按钮（采用必须有子问题）", () => {

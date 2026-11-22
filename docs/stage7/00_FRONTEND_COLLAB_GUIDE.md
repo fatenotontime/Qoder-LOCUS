@@ -68,7 +68,7 @@
   - `GET /api/analysis/map?topicId=&subquestionId=&pick=table:ID,measurement:ID`：建任务前，按所选数据推导。
   - `GET /api/analysis/tasks/:id/map`：任务已建，按当前选择。
   - 返回 `{ ok, scope:{ topicId, subquestionId?, taskId?, frozen? }, nodes, edges, gaps, truncated }`。
-  - 节点：`{ key, kind, id, label, version?, external?, role, selectable, gaps:[{code,label}] }`；`role` 取 `core`（必选，锁定）/ `selected`（已选）/ `optional`（可选未选）/ `context`（仅供看清来源，不可选）；`selectable = role∈{selected,optional}`。
+  - 节点：`{ key, kind, id, label, version?, external?, role, selectable, adoptable, adoptBlockedReason?, gaps:[{code,label}] }`；`role` 取 `core`（必选，锁定）/ `selected`（已选）/ `optional`（可选未选）/ `context`（仅供看清来源，不可选）；`selectable = role∈{selected,optional}`。`adoptable` 与后端「采用」前置同口径（非新壳 + 已确认 + 有原文定位），**仅对 `adoptable` 的卡给「采用」按钮**；否则按 `adoptBlockedReason` 如实标注不可用，不给假入口。
   - 边：`{ from, to, edgeKind, establishedBy, note? }`，只来自 `buildNetwork`，**不要在前端自行连线或补边**。
   - `gaps` 汇总为 `[{ key, code, label }]`（label 为中文短词，如「来源缺失」）；`truncated` 为真表示节点被截断（上限 300），界面须提示。
   - 错误：`topicId` 缺失/不存在、任务不存在 → **404**；`pick` 项不存在/不属本课题/类型不支持 → **422**。

@@ -93,7 +93,8 @@ function anMapHtml(state, ui, t) {
     const isExcluded = isCard && !isAdopted && excluded.has(n.id);
     const act = !isCard || !t.subquestionId ? ""
       : isAdopted ? `<button class="an-adopt undo" data-card="${esc(n.id)}" data-subq="${esc(t.subquestionId)}">撤回采用</button>`
-        : n.selectable ? `<button class="an-adopt" data-card="${esc(n.id)}" data-subq="${esc(t.subquestionId)}">采用</button>` : "";
+        : n.adoptable ? `<button class="an-adopt" data-card="${esc(n.id)}" data-subq="${esc(t.subquestionId)}">采用</button>`
+          : n.selectable ? `<span class="hint">不可采用：${esc(n.adoptBlockedReason ?? "未达采用条件")}</span>` : "";
     const gaps = (n.gaps ?? []).length ? ` <span class="hint">${esc((n.gaps ?? []).map((g) => g.label).join("；"))}</span>` : "";
     const tag = isAdopted ? ` <span class="badge">已采用</span>` : isExcluded ? ` <span class="badge warn">已排除</span>` : "";
     return `<li class="anmap-node" data-key="${esc(n.key)}"><span class="badge">${esc(fmtKind(n.kind))}</span> ${esc(n.label)}${n.version ? ` <span class="hint">${esc(humanVer(n.version))}</span>` : ""}${tag}${gaps}${act}</li>`;

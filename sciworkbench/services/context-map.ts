@@ -22,7 +22,12 @@ export interface MapGap { readonly code: string; readonly label: string; }
 export interface MapNode {
   readonly key: string; readonly kind: string; readonly id: string; readonly label: string;
   readonly version?: string; readonly external?: boolean;
-  readonly role: MapRole; readonly selectable: boolean; readonly gaps: MapGap[];
+  readonly role: MapRole; readonly selectable: boolean;
+  /** 能否对该节点发起「采用（adopt）」：与后端 upsertAdoption 前置同口径（非新壳 + audit==="confirm" + 原文定位非空）。 */
+  readonly adoptable: boolean;
+  /** adoptable 为 false 时的如实原因（仅知识卡节点有意义）。 */
+  readonly adoptBlockedReason?: string;
+  readonly gaps: MapGap[];
 }
 export interface MapEdge { readonly from: string; readonly to: string; readonly edgeKind: string; readonly establishedBy: string; readonly note?: string; }
 export interface ContextMap {
@@ -139,11 +144,16 @@ export function buildContextMap(state: LocusState, opts: { topicId: string; subq
   const kept = new Map<string, MapNode>();
   const addNode = (n: NetNode, role: MapRole) => {
     if (kept.has(n.key)) return;
-    const shellCard = n.kind === "card" ? state.cards.find((c) => c.id === n.id) : undefined;
-    const shellLocked = isStructuredShell(shellCard) && !shellAllItemsConfirmed(state, shellCard!);
+    const card = n.kind === "card" ? state.cards.find((c) => c.id === n.id) : undefined;
+    const shellLocked = isStructuredShell(card) && !shellAllItemsConfirmed(state, card!);
+    // 采用前置与 upsertAdoption 同口径：audit==="confirm" 且有原文定位。
+    // （audit==="confirm" 的壳卡可整壳采用；未确认壳已被 assertLegacyCardConsumerUsable 拒，与其一致。）
+    const adoptable = !!card && card.audit === "confirm" && !!card.locator?.sectionQuote;
+    const adoptBlockedReason = adoptable || !card ? undefined : (card.audit !== "confirm" ? "未核对确认" : "缺原文定位");
     kept.set(n.key, {
       key: n.key, kind: n.kind, id: n.id, label: n.label, version: n.version, external: n.external,
       role, selectable: !shellLocked && (role === "selected" || role === "optional"),
+      adoptable, adoptBlockedReason,
       gaps: [...(extraGaps.get(n.key) ?? []), ...pendingGaps(n), ...(shellLocked ? [GAP_STRUCTURED_REQUIRED] : [])],
     });
   };
