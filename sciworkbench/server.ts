@@ -87,7 +87,7 @@ import {
   structureLegacyCard, updateKnowledgeContext, updateKnowledgeDataset, updateKnowledgeItem,
   updateKnowledgeMapping, updateKnowledgeTheme,
   assertKnowledgeAccess, freezeKnowledge, knowledgeAccess, readSnapshotKnowledge, readSnapshotDatasetRows,
-  resolveSnapshotToken, upsertSourcePolicy, buildKnowledgeContainer, knowledgePipelineStatus,
+  resolveSnapshotToken, upsertSourcePolicy, buildKnowledgeContainer, knowledgePipelineStatus, snapshotAccessRefs,
 } from "./services/knowledge-base.ts";
 import { exportKnowledge, buildKnowledgePackage } from "./services/knowledge-export.ts";
 import type { ExtractionRunRecord, ExtractionRunStatus, SourceKind, SourceRef } from "./domain/knowledge.ts";
@@ -610,8 +610,8 @@ export async function createApp(store: Store, opts: { aiConfigPath?: string } = 
           cursor: num("cursor"),
           pageSize: num("pageSize"),
         });
-        const gateRefs = container.elements.filter((e) => e.kind === "item").map((e) => e.ref);
-        assertKnowledgeAccess(state, "localRead", gateRefs.flatMap((r) => (readKnowledgeVersion(state.knowledge, r) as { sourceRefs?: SourceRef[] } | null)?.sourceRefs ?? []));
+        // 闭包检查：无来源项按其稳定 ID 判策略；含派生上游
+        assertKnowledgeAccess(state, "localRead", container.elements.filter((e) => e.kind === "item").map((e) => e.ref));
         send(res, 200, { ok: true, ...container });
         return;
       }
@@ -688,7 +688,7 @@ export async function createApp(store: Store, opts: { aiConfigPath?: string } = 
       if (method === "GET" && ksnapExport) {
         const snap = state.knowledge.snapshots.find((s) => s.snapshotId === decodeURIComponent(ksnapExport[1]));
         if (!snap) { send(res, 404, { error: `快照不存在：${ksnapExport[1]}`, code: "snapshot_missing" }); return; }
-        assertKnowledgeAccess(state, "export", snap.sourceVersionRefs);
+        assertKnowledgeAccess(state, "export", snapshotAccessRefs(snap));
         const format = (url.searchParams.get("format") ?? "zip") as "zip" | "json" | "wiki" | "csv";
         if (!["zip", "json", "wiki", "csv"].includes(format)) { send(res, 422, { error: `不支持的导出格式：${format}`, code: "format_invalid" }); return; }
         const datasetId = url.searchParams.get("datasetId") ?? undefined;

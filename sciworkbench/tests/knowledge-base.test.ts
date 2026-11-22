@@ -8,13 +8,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { writeFileSync, rmSync } from "node:fs";
 import { inflateRawSync } from "node:zlib";
-import { emptyState, JsonFileStore, STATE_VERSION } from "../store.ts";
+import { emptyState, JsonFileStore, STATE_VERSION, contentHash } from "../store.ts";
 import {
   emptyKnowledge, KNOWLEDGE_SCHEMA_VERSION, canonicalHash, refKey, sameRef,
   sourceRef as makeSourceRef, knowledgeRef as makeKnowledgeRef, assertKnowledgeShape,
 } from "../domain/knowledge.ts";
 import { importMeasurements, reviewTable, createTopic, makeAsset, addManualCard, reviewCard, createComparison, AppError } from "../services/app.ts";
-import { chatScopeSnapshot, createAnalysisTask, createChat, resolveFragment } from "../services/analysis.ts";
+import { buildKnowledgeAiInput, validateAiReferences, exportSelectedPackage, chatScopeSnapshot, createAnalysisTask, createChat, resolveFragment } from "../services/analysis.ts";
 import { buildWholeLibraryPackage, inspectLibraryJson, sha256 } from "../services/export.ts";
 import {
   archiveSourceVersion, currentSourceRef, readSourceVersion, resolveSourceVersion, sourcePayload,
@@ -24,7 +24,8 @@ import {
   readKnowledge, currentViewId, createKnowledgeDataset, reviewKnowledgeDataset, readDatasetRows,
   createKnowledgeMapping, updateKnowledgeMapping, reviewKnowledgeMapping, createKnowledgeComparison, legacyComparisonViews,
   effectiveCurrentJudgments, freezeKnowledge, knowledgeAccess, assertKnowledgeAccess, upsertSourcePolicy,
-  buildKnowledgeContainer, knowledgePipelineStatus,
+  buildKnowledgeContainer, knowledgePipelineStatus, knowledgeSourceAdapter, listSourceAdapters, assertSourceUsableForKnowledge,
+  resolvePinnedRefs, knowledgeSourceFragment, adoptChatProposalToKnowledge,
   readSnapshotKnowledge, resolveSnapshotToken, readSnapshotDatasetRows,
 } from "../services/knowledge-base.ts";
 import { exportKnowledge, buildKnowledgePackage, snapshotCsv, snapshotWiki, snapshotSchemaFiles, safeFileName } from "../services/knowledge-export.ts";
@@ -1296,4 +1297,398 @@ test("E6-A④ 流水线状态只统计已落库回执：失败/取消/重放不�
   // 重复查询（等同回执重放/刷新）不改变计数
   assert.deepEqual(knowledgePipelineStatus(s, "kr_x")!.counters, st.counters);
   assert.equal(knowledgePipelineStatus(s, "kr_missing"), null);
+});
+// ══ E8-A 其余模块逐类贯通·数据层（合同 §10 E8；判据 T46 子用例）════════════
+//
+// 每类：当前读取 / 固定来源 / 性质继承 / 更新提示 / 更正后固定版仍可读；
+// 「wiki/总览入口」属 E6-B 页面层，此处只给来源定位（sourceRef）与读取文本。
+
+function seedE8() {
+  const t = createTopic(emptyState(), { name: "合成课题甲", researchQuestion: "Q" });
+  const topicId = t.topic.id;
+  const assetId = "as_rec";
+  let s: LocusState = {
+    ...t.state,
+    assets: [...t.state.assets, { id: assetId, kind: "literature", name: "hist.md", text: "历史文献：23/85 天发芽。", hash: contentHash("历史文献：23/85 天发芽。") } as never],
+    protocols: [
+      { id: "pr_user", topicId, name: "本地方案", sourceKind: "user", revision: 2, revisions: [{ revision: 1, at: "t", purpose: "本地目的", steps: [{ op: "取材", durationMin: 10 }], criteria: "成材" }, { revision: 2, at: "t", purpose: "本地目的", steps: [{ op: "取材", durationMin: 12 }], criteria: "成材" }], createdAt: "t", updatedAt: "t" } as never,
+      { id: "pr_rec", topicId, name: "文献重构方案", sourceKind: "reconstructed", sourceAssetId: assetId, revision: 1, revisions: [{ revision: 1, at: "t", purpose: "按文献复刻", steps: [{ op: "浸泡", durationMin: null }], criteria: "文献判据" }], createdAt: "t", updatedAt: "t" } as never,
+    ],
+    templates: [
+      { id: "tp_draft", protocolId: "pr_user", protocolRevision: 2, fields: ["温度", "时长"], aiDraft: true, humanConfirmed: false, revision: 1, history: [], createdAt: "t" } as never,
+    ],
+    executions: [
+      { id: "ex_user", topicId, protocolId: "pr_user", protocolRevision: 2, status: "done", events: [{ id: "ev1", at: "t", recordedAt: "t", backfilled: false, kind: "step", text: "取材 12min" }], createdAt: "t", updatedAt: "t" } as never,
+      { id: "ex_rec", topicId, protocolId: "pr_rec", protocolRevision: 1, status: "done", origin: "reconstructed", sourceAssetId: assetId, events: [{ id: "ev2", at: "t", recordedAt: "t", backfilled: true, kind: "note", text: "文献载 23 天发芽" }], createdAt: "t", updatedAt: "t" } as never,
+    ],
+    samples: [
+      { id: "sp_pub", topicId, shortName: "S-公开-1", displayName: "公开样品", origin: "public", states: [{ revision: 1, at: "t", amount: { value: "5", unit: "g", estimated: false }, handling: "常温", use: "公开数据对照", note: "" }], createdAt: "t" } as never,
+    ],
+    analysisResults: [
+      { id: "rs1", taskId: "task1", topicId, method: "线性拟合", params: "x=时间,y=值", reason: "看趋势", note: "", assetIds: [], reproducible: true, missing: ["重复次数"], adoptedRecommendation: "", revision: 1, history: [], createdAt: "t", updatedAt: "t" } as never,
+    ],
+    reports: [
+      { id: "rp1", topicId, pinned: { resultIds: ["rs1"] }, revision: 1, proposals: [], sources: [], at: "t", blocks: [{ id: "bk1", order: 1, nature: "interpretation", text: "由拟合推得趋势", refs: [{ kind: "result", id: "rs1", version: "r:1", label: "分析结果" }], draft: false, history: [] }] } as never,
+    ],
+    chats: [
+      { id: "ch1", topicId, scope: [], createdAt: "t", updatedAt: "t", messages: [
+        { id: "m1", role: "assistant", content: "建议记录温度", status: "done", proposals: [{ targetKind: "execution-note", targetId: "pn_unadopted", preview: "补记温度 25 °C", confirmed: false }], sources: [], at: "t" },
+        { id: "m2", role: "assistant", content: "已采纳建议", status: "done", proposals: [{ targetKind: "report-toVerify", targetId: "pn_adopted", preview: "报告加待验证项", confirmed: true, adoptedAt: "t" }], sources: [], at: "t" },
+      ] } as never,
+    ],
+  };
+  return { state: s, topicId };
+}
+
+const pin = (s: LocusState, kind: Parameters<typeof knowledgeSourceAdapter>[1], id: string) => {
+  const a = knowledgeSourceAdapter(s, kind, id)!;
+  const archived = { ...s, knowledge: archiveSourceVersion(s.knowledge, a.sourceRef, sourcePayload(s, a.sourceRef.kind, a.sourceRef.id)) };
+  return { a, archived };
+};
+
+test("T46a 方案/模板：读取＋固定来源＋性质继承（重构≠本地）＋AI 草稿未确认不可进知识", () => {
+  const f = seedE8();
+  const { a: user } = pin(f.state, "protocol", "pr_user");
+  assert.ok(user.readText.includes("本地方案") && user.readText.includes("取材"));
+  assert.equal(user.sourceClass, "human_statement", "用户编写方案 = 人工陈述");
+  assert.equal(user.usable, true);
+  const { a: rec } = pin(f.state, "protocol", "pr_rec");
+  assert.equal(rec.sourceClass, "historical_reconstruction", "文献重构方案不改写成用户方案");
+  assert.ok(rec.sourceRef.version.startsWith("r:"), "方案有业务修订 → r:N");
+  const { a: tpl } = pin(f.state, "template", "tp_draft");
+  assert.equal(tpl.usable, false, "AI 草稿模板未人工确认");
+  assert.equal(expectErr(() => assertSourceUsableForKnowledge(tpl)).details?.code, "source_not_usable");
+  assert.equal(tpl.sourceClass, "model_suggestion");
+});
+
+test("T46b 执行：reconstructed 不得伪装本地实测；更正后固定版仍可读且给出更新提示", () => {
+  const f = seedE8();
+  const { a: ex, archived } = pin(f.state, "execution", "ex_user");
+  assert.equal(ex.sourceClass, "local_observation");
+  assert.ok(ex.readText.includes("取材 12min"));
+  const { a: rec } = pin(f.state, "execution", "ex_rec");
+  assert.equal(rec.sourceClass, "historical_reconstruction", "按文献重构的执行≠本地实测");
+  assert.ok(rec.readText.includes("文献重构，非本地实测"));
+  // 更正：追加事件 → 固定版仍可读，且出现更新提示（不自动升级）
+  const corrected: LocusState = { ...archived, executions: archived.executions.map((x) => (x.id === "ex_user" ? { ...x, events: [...x.events, { id: "ev9", at: "t", recordedAt: "t", backfilled: false, kind: "note", text: "补记湿度" }] } : x)) };
+  assert.equal(resolveSourceVersion(corrected, corrected.knowledge, ex.sourceRef).status, "ok", "固定版仍可读（历史不动）");
+  const after = knowledgeSourceAdapter(corrected, "execution", "ex_user", ex.sourceRef)!;
+  assert.ok(after.staleNote && after.staleNote.includes("已有新版"), "更新提示：来源变更而固定引用未改绑");
+});
+
+test("T46c 样品：公开来源不伪装本地；无本地执行关联仍可作为资料存在", () => {
+  const f = seedE8();
+  const { a } = pin(f.state, "sample", "sp_pub");
+  assert.equal(a.sourceClass, "literature_report", "公开样品不标成本地实测");
+  assert.equal(a.natureHint, "to_verify");
+  assert.ok(a.usableNote.includes("无本地执行关联") && a.usableNote.includes("不创建虚构执行"));
+  assert.ok(a.readText.includes("公开数据"));
+});
+
+test("T46d 分析结果：计算返回不直接等于已确认结论；更正留历史与提示", () => {
+  const f = seedE8();
+  const { a, archived } = pin(f.state, "analysisResults" === "x" ? "result" : "result", "rs1");
+  assert.equal(a.sourceClass, "local_observation");
+  assert.equal(a.natureHint, "to_verify", "计算返回须人工确认后才成结论");
+  assert.ok(a.readText.includes("缺项：重复次数"));
+  const corrected: LocusState = { ...archived, analysisResults: archived.analysisResults.map((x) => (x.id === "rs1" ? { ...x, revision: 2, method: "多项式拟合" } : x)) };
+  assert.equal(resolveSourceVersion(corrected, corrected.knowledge, a.sourceRef).status, "ok");
+  assert.ok(knowledgeSourceAdapter(corrected, "result", "rs1", a.sourceRef)!.staleNote, "结果更正 → 更新提示");
+});
+
+test("T46e 报告块：派生陈述＋解析当时 refs 的固定版本＋草案标记", () => {
+  const f = seedE8();
+  const { a } = pin(f.state, "report_block", "rp1#bk1");
+  assert.equal(a.sourceClass, "human_statement", "报告块是派生陈述，不算新一手来源");
+  assert.equal(a.natureHint, "interpretation", "性质沿用块自身 nature");
+  assert.deepEqual(a.pinnedRefs, [{ kind: "result", id: "rs1", version: "r:1" }], "解析当时 refs 的版本（不用最新）");
+  assert.ok(a.usableNote.includes("派生陈述"));
+});
+
+test("T46f 对话提案：未采纳不得进知识；明确采纳后可用；AI 选择器可读外部对象", () => {
+  const f = seedE8();
+  const { a: un } = pin(f.state, "chat_proposal", "ch1/m1/pn_unadopted");
+  assert.equal(un.usable, false);
+  assert.equal(expectErr(() => assertSourceUsableForKnowledge(un)).details?.code, "source_not_usable");
+  assert.ok(un.readText.includes("未采纳"));
+  const { a: ok } = pin(f.state, "chat_proposal", "ch1/m2/pn_adopted");
+  assert.equal(ok.usable, true, "明确采纳后才可进知识主题");
+  assert.equal(ok.sourceClass, "model_suggestion");
+
+  // AI 选择器读取：既有 resolveFragment 覆盖外部对象类型（执行/方案/测量/表/卡/子问题）
+  const frag = resolveFragment(f.state, { kind: "protocol", id: "pr_user" });
+  assert.ok(frag.excerpt.length > 0 && frag.label.includes("方案"), "AI 选择器可读外部对象（方案）");
+  const list = listSourceAdapters(f.state, { topicId: f.topicId });
+  assert.ok(list.length >= 6, "逐类清单可枚举");
+  assert.ok(list.some((x) => x.kind === "report_block") && list.some((x) => x.kind === "chat_proposal"));
+});
+// ══ E8-A 修复回归（对应用户复现的四条问题）══════════════════════════════
+
+test("T46g 来源更正后再次纳管：新引用可解析（不再 content_mismatch），旧版本仍可读", () => {
+  const f = seedE8();
+  // 首次纳管
+  const ref1 = currentSourceRef(f.state, "execution", "ex_user")!;
+  assert.equal(ref1.version, "k:1", "无业务 revision：首个纳管版本 k:1");
+  let s2: LocusState = { ...f.state, knowledge: archiveSourceVersion(f.state.knowledge, ref1, sourcePayload(f.state, "execution", "ex_user")) };
+  // 更正来源
+  s2 = { ...s2, executions: s2.executions.map((x) => (x.id === "ex_user" ? { ...x, events: [...x.events, { id: "ev9", at: "t", recordedAt: "t", backfilled: false, kind: "note", text: "补记湿度" }] } : x)) };
+  const ref2 = currentSourceRef(s2, "execution", "ex_user")!;
+  assert.equal(ref2.version, "k:2", "内容变化 → 纳管版本递增（不再复用 k:1）");
+  assert.notEqual(ref2.contentHash, ref1.contentHash);
+  // 再次纳管：新引用可解析，不再 content_mismatch
+  s2 = { ...s2, knowledge: archiveSourceVersion(s2.knowledge, ref2, sourcePayload(s2, "execution", "ex_user")) };
+  assert.equal(resolveSourceVersion(s2, s2.knowledge, ref2).status, "ok", "更正后的新引用可解析");
+  assert.equal(resolveSourceVersion(s2, s2.knowledge, ref1).status, "ok", "旧 k:1 归档仍可读（历史不动）");
+  // 内容未变时复用同一版本号，避免重复归档
+  const ref2b = currentSourceRef(s2, "execution", "ex_user")!;
+  assert.equal(ref2b.version, "k:2");
+});
+
+test("T46h 未采纳的对话提案不得进知识（真实入口）；已采纳只落待审并留采纳依据", () => {
+  const f = seedE8();
+  const denied = (() => { try { adoptChatProposalToKnowledge(f.state, { topicId: f.topicId, proposalRef: "ch1/m1/pn_unadopted", text: "补记温度" }); return null; } catch (e) { return e as { status: number; details?: { code?: string } }; } })();
+  assert.ok(denied, "未采纳提案必须被拒");
+  assert.equal(denied!.status, 422);
+  assert.equal(denied!.details?.code, "source_not_usable");
+
+  const ok = adoptChatProposalToKnowledge(f.state, { topicId: f.topicId, proposalRef: "ch1/m2/pn_adopted", text: "报告待验证项：发芽率需复核" });
+  assert.equal(ok.review, "pending", "采纳只落待审，不自动转正式");
+  const item = ok.state.knowledge.items.find((i) => i.id === ok.itemId)!;
+  const p = item.payload as { sourceRefs: { kind: string; id: string; version: string }[]; origin: { sourceClass: string } };
+  assert.ok(p.sourceRefs.some((r) => r.kind === "chat_proposal"), "留采纳事件依据（提案来源引用）");
+  assert.equal(p.origin.sourceClass, "model_suggestion", "AI 产出不冒充人工陈述");
+});
+
+test("T46i 报告块 pinned refs 真解析：读归档当时版本；取不到给明确原因（note/snapshot 特例）", () => {
+  const f = seedE8();
+  const { a, archived } = pin(f.state, "report_block", "rp1#bk1");
+  assert.deepEqual(a.pinnedRefs, [{ kind: "result", id: "rs1", version: "r:1" }]);
+  // 先按当时版本纳管该结果
+  const resRef = currentSourceRef(archived, "result", "rs1")!;
+  let s2: LocusState = { ...archived, knowledge: archiveSourceVersion(archived.knowledge, resRef, sourcePayload(archived, "result", "rs1")) };
+  const resolved = resolvePinnedRefs(s2, a.pinnedRefs);
+  assert.equal(resolved[0].status, "ok", "当时版本已归档 → 可解析");
+  assert.ok((resolved[0].payload as { method: string }).method.includes("线性拟合"), "解析到的是当时版本内容");
+  // 未归档的版本 → 明确不可用（不解析为最新）
+  const miss = resolvePinnedRefs(s2, [{ kind: "measurement", id: "me_x", version: "r:9" }, { kind: "note", id: "n1", version: "-" }, { kind: "snapshot", id: "ks_missing", version: "-" }]);
+  assert.deepEqual(miss.map((x) => x.status), ["unavailable", "unavailable", "unavailable"]);
+  assert.ok(miss[0].reason!.includes("不解析为最新版"));
+  assert.ok(miss[1].reason!.includes("无稳定对象"));
+  assert.ok(miss[2].reason!.includes("快照不在本库"));
+  // 更正结果后再解析旧版本，仍是当时内容
+  const corrected: LocusState = { ...s2, analysisResults: s2.analysisResults.map((x) => (x.id === "rs1" ? { ...x, revision: 2, method: "多项式拟合" } : x)) };
+  assert.ok((resolvePinnedRefs(corrected, a.pinnedRefs)[0].payload as { method: string }).method.includes("线性拟合"), "旧引用解析当时版本，不随更正漂移");
+});
+
+test("T46j AI 读取：E8 各类型对象可进 AI 输入；未采纳提案被拒；引用校验认外部对象", () => {
+  const f = seedE8();
+  // 报告块引用要能解析 → 先把当时版本归档
+  const rsRef = currentSourceRef(f.state, "result", "rs1")!;
+  let st: LocusState = { ...f.state, knowledge: archiveSourceVersion(f.state.knowledge, rsRef, sourcePayload(f.state, "result", "rs1")) };
+  // 显式授权（§7.5：AI 发送默认拒绝）
+  for (const r of ["protocol pr_user", "execution ex_rec", "sample sp_pub", "result rs1", "report_block rp1#bk1"]) {
+    const [k, id] = r.split(" ");
+    const base = k === "report_block" ? "report_block" : k;
+    const ref = currentSourceRef(st, base as never, id)!;
+    st = upsertSourcePolicy(st, { sourceKind: ref.kind, sourceId: ref.id, allowLocalRead: true, allowExport: false, allowAiSend: true, reason: "测试授权" }).state;
+  }
+  const input = buildKnowledgeAiInput(st, {
+    topicId: f.topicId, purpose: "汇总本课题执行与结果",
+    sourceRefs: [
+      { kind: "protocol", id: "pr_user" }, { kind: "execution", id: "ex_rec" }, { kind: "sample", id: "sp_pub" },
+      { kind: "result", id: "rs1" }, { kind: "report_block", id: "rp1#bk1" }, { kind: "chat_proposal", id: "ch1/m1/pn_unadopted" },
+    ],
+  });
+  const kinds = input.sourceEntries.map((x) => x.kind).sort();
+  assert.deepEqual(kinds, ["execution", "protocol", "report_block", "result", "sample"], "五类可读对象进入输入");
+  assert.ok(input.omitted.some((o) => o.ref.includes("chat_proposal") && o.reason.includes("不可用")), "未采纳提案被拒并说明原因");
+  assert.ok(input.actualPayload.includes("[执行"), "类型标记进入 payload");
+  assert.ok(input.actualPayload.includes("外部对象（5 项）"));
+  // 引用校验：外部对象须给 kind+version 且在快照内
+  const ex = input.sourceEntries.find((x) => x.kind === "protocol")!;
+  const checks = validateAiReferences(input, [
+    { kind: "protocol", id: "pr_user", version: ex.sourceRef.version },
+    { kind: "protocol", id: "pr_rec", version: ex.sourceRef.version },
+    { kind: "protocol", id: "pr_user" },
+  ]);
+  assert.deepEqual(checks.map((c) => c.status), ["valid", "invalid", "invalid"]);
+  assert.ok(checks[1].reason.includes("not_in_snapshot"));
+  assert.ok(checks[2].reason.includes("固定版本"));
+  // 片段读取与适配同源
+  const frag = knowledgeSourceFragment(st, "sample", "sp_pub");
+  assert.ok(frag.excerpt.includes("公开数据") && frag.usable);
+});
+
+// ══ E8-A 二次返工回归（对应用户第二轮四条阻断）══════════════════════════
+
+function seedE8b() {
+  const f = seedE8();
+  const srcRef = currentSourceRef(f.state, "asset", "as_rec")!;
+  let st: LocusState = { ...f.state, knowledge: archiveSourceVersion(f.state.knowledge, srcRef, sourcePayload(f.state, "asset", "as_rec")) };
+  return { ...f, state: st, srcRef };
+}
+const grantFor = (state: LocusState, kind: string, id: string, opts: { localRead?: boolean; export?: boolean; aiSend?: boolean } = {}) => {
+  const existing = state.knowledge.sourcePolicies.find((p0) => p0.sourceKind === kind && p0.sourceId === id);
+  return upsertSourcePolicy(state, {
+    sourceKind: kind as never, sourceId: id,
+    ...(existing ? { baseRevision: existing.revision } : {}),
+    allowLocalRead: opts.localRead !== false, allowExport: opts.export === true, allowAiSend: opts.aiSend === true, reason: "测试授权",
+  }).state;
+};
+
+test("T46k 通用创建/确认入口同样封住未采纳提案（旧入口不可绕过）", () => {
+  const f = seedE8b();
+  const propRef = currentSourceRef(f.state, "chat_proposal", "ch1/m1/pn_unadopted")!;
+  // 通用创建入口：带未采纳提案来源 → 拒绝
+  const denied = (() => { try { createKnowledgeStatement(f.state, { topicId: f.topicId, text: "经通用入口写入", nature: "to_verify", createdBy: "model", sourceRefs: [propRef] }); return null; } catch (e) { return e as { status: number; details?: { code?: string } }; } })();
+  assert.ok(denied, "通用创建入口不得放行未采纳提案");
+  assert.equal(denied!.status, 422);
+  assert.equal(denied!.details?.code, "source_not_usable");
+  // 已采纳提案 → 通用入口放行（仍为待审）
+  const adoptedRef = currentSourceRef(f.state, "chat_proposal", "ch1/m2/pn_adopted")!;
+  const ok = createKnowledgeStatement(f.state, { topicId: f.topicId, text: "经通用入口写入（已采纳）", nature: "to_verify", createdBy: "model", sourceRefs: [adoptedRef] });
+  assert.equal(ok.item.payload.review.status, "pending");
+  // 确认入口：来源后来不可用时不得确认（伪造一条含未采纳提案来源的待审项）
+  const forged: LocusState = { ...ok.state, knowledge: { ...ok.state.knowledge, items: ok.state.knowledge.items.map((i) => (i.id === ok.item.id ? { ...i, payload: { ...(i.payload as ItemPayload), sourceRefs: [propRef] } } : i)) } };
+  const confirmDenied = (() => { try { reviewKnowledgeItem(forged, ok.item.id, { baseRevision: 1, decision: "confirmed", basis: "尝试确认" }); return null; } catch (e) { return e as { status: number; details?: { code?: string } }; } })();
+  assert.ok(confirmDenied, "确认入口不得放行不可用来源");
+  assert.equal(confirmDenied!.details?.code, "source_not_usable");
+});
+
+test("T46l 明确禁止读取的来源：不进 AI 输入、导出的整包被拒（不降级为 warning）", () => {
+  const f = seedE8b();
+  // 加一条引用该原件的已确认知识项，作为「被禁来源」的消费者
+  const withItem: LocusState = { ...f.state, knowledge: { ...f.state.knowledge, items: [...f.state.knowledge.items, envOf("ki_asset", {
+    contentType: "observation", nature: "observation", text: "引用被禁原件的知识项",
+    subject: { raw: "合成对象A" }, predicate: { raw: "结论" }, value: null, contextRefs: [], evidenceRefs: [],
+    sourceRefs: [f.srcRef], origin: { sourceClass: "literature_report", createdBy: "model", secondaryCitation: false },
+    scopeText: "", unknowns: [], topicIds: [f.topicId], subquestionIds: [], review: { status: "confirmed" },
+  })] } };
+  const banned = grantFor(withItem, "asset", "as_rec", { localRead: false, export: true, aiSend: true });
+
+  const input = buildKnowledgeAiInput(banned, { topicId: f.topicId, selectedRefs: [{ kind: "item", id: "ki_asset", revision: 1 }], purpose: "P" });
+  assert.equal(input.core.length, 0, "禁读来源的知识项不得进入 AI 输入");
+  assert.ok(input.omitted.some((o) => o.reason.includes("未获本地读取许可")), "给出禁读原因");
+  assert.ok(!input.actualPayload.includes("引用被禁原件的知识项"), "payload 不含被拒内容");
+
+  const exDenied = (() => { try { exportSelectedPackage(banned, { topicId: f.topicId, selectedRefs: [{ kind: "item", id: "ki_asset", revision: 1 }] }); return null; } catch (e) { return e as { status: number; details?: { code?: string } }; } })();
+  assert.ok(exDenied, "含禁读来源的导出必须被拒");
+  assert.equal(exDenied!.status, 403);
+  assert.equal(exDenied!.details?.code, "source_access_denied");
+
+  const cDenied = (() => { try { buildKnowledgeContainer(banned, { source: "current", topicId: f.topicId }); return null; } catch (e) { return e as { status: number }; } })();
+  assert.ok(cDenied && cDenied.status === 403, "容器亦不得含禁读来源");
+});
+
+test("T46m 跨课题未拦截→已拦：课题 A 的输入不得混入课题 B 的对象", () => {
+  const f = seedE8b();
+  const other = createTopic(f.state, { name: "合成课题乙", researchQuestion: "Q2" });
+  let s: LocusState = other.state;
+  s = { ...s, executions: [...s.executions, { id: "exB", topicId: other.topic.id, protocolId: "pr_user", protocolRevision: 1, status: "done", events: [], createdAt: "t", updatedAt: "t" } as never] };
+  s = grantFor(s, "execution", "exB", { aiSend: true });
+  const input = buildKnowledgeAiInput(s, { topicId: f.topicId, purpose: "P", sourceRefs: [{ kind: "execution", id: "exB" }] });
+  assert.equal(input.sourceEntries.length, 0, "跨课题对象不得进入");
+  assert.ok(input.omitted.some((o) => o.reason.includes("不属于本课题")), "给出跨课题原因");
+});
+
+test("T46n 报告引用历史不存在：输入不放行（解析函数发现 → 接线后拒绝）", () => {
+  const f = seedE8();   // 未归档 rs1
+  let s = f.state;
+  for (const r of ["protocol pr_user", "report_block rp1#bk1", "result rs1"]) {
+    const [k, id] = r.split(" ");
+    s = grantFor(s, k, id, { aiSend: true });
+  }
+  const blocked = buildKnowledgeAiInput(s, { topicId: f.topicId, purpose: "P", sourceRefs: [{ kind: "report_block", id: "rp1#bk1" }] });
+  assert.equal(blocked.sourceEntries.length, 0, "引用版本不可解析 → 不放行");
+  assert.ok(blocked.omitted.some((o) => o.reason.includes("引用版本不可解析")), "给出不放行原因");
+  // 归档后可放行
+  const rsRef = currentSourceRef(f.state, "result", "rs1")!;
+  let s2: LocusState = { ...s, knowledge: archiveSourceVersion(s.knowledge, rsRef, sourcePayload(s, "result", "rs1")) };
+  const okInput = buildKnowledgeAiInput(s2, { topicId: f.topicId, purpose: "P", sourceRefs: [{ kind: "report_block", id: "rp1#bk1" }] });
+  assert.equal(okInput.sourceEntries.length, 1, "归档且上游授权后可放行");
+  // 上游（被报告引用的结果）被禁 → 报告不得放行（依赖闭包）
+  const upstreamOff = grantFor(s2, "result", "rs1", { aiSend: false });
+  const blockedUp = buildKnowledgeAiInput(upstreamOff, { topicId: f.topicId, purpose: "P", sourceRefs: [{ kind: "report_block", id: "rp1#bk1" }] });
+  assert.equal(blockedUp.sourceEntries.length, 0, "上游禁用 → 报告不放行");
+  assert.ok(blockedUp.omitted.some((o) => o.reason.includes("未获发送 AI 许可")), "给出上游未授权原因");
+});
+// ══ E8-A 三轮返工回归（对应审计 S04-T18 的四条组合路径）══════════════════
+
+test("T46o 无来源项的自身策略必须生效：未授权不得进 AI，也不得导出（默认拒绝同样成立）", () => {
+  const f = seedE8();
+  // 人工无来源陈述 → 确认
+  const st0 = createKnowledgeStatement(f.state, { topicId: f.topicId, text: "人工无来源结论：培养箱需每日检查", nature: "human_judgment", createdBy: "human" });
+  const confirm = reviewKnowledgeItem(st0.state, st0.item.id, { baseRevision: 1, decision: "confirmed", basis: "人工核对" });
+  const itemId = confirm.item.id;
+  assert.equal(confirm.item.payload.sourceRefs.length, 0, "确为无来源项");
+
+  // 即便未设任何策略：默认 aiSend 拒绝 → 不进 AI 输入
+  const dft = buildKnowledgeAiInput(confirm.state, { topicId: f.topicId, selectedRefs: [{ kind: "item", id: itemId, revision: 2 }], purpose: "P" });
+  assert.equal(dft.core.length, 0, "无策略也不得绕过默认拒绝");
+  assert.ok(dft.omitted.some((o) => o.reason.includes("未获发送 AI 许可")), "按 item 自身策略判并说明");
+
+  // 显式：localRead 允许、aiSend/export 禁止 → 读可以、发送与导出被拒
+  const pol = upsertSourcePolicy(confirm.state, { sourceKind: "knowledge_item", sourceId: itemId, allowLocalRead: true, allowExport: false, allowAiSend: false, reason: "用户禁止外发" }).state;
+  assert.equal(knowledgeAccess(pol, "localRead", [{ kind: "item", id: itemId, revision: 2 }]).ok, true);
+  assert.equal(knowledgeAccess(pol, "aiSend", [{ kind: "item", id: itemId, revision: 2 }]).ok, false, "统一判定按 item 身份拒绝 aiSend");
+  assert.equal(knowledgeAccess(pol, "export", [{ kind: "item", id: itemId, revision: 2 }]).ok, false, "统一判定按 item 身份拒绝 export");
+  const aiInput = buildKnowledgeAiInput(pol, { topicId: f.topicId, selectedRefs: [{ kind: "item", id: itemId, revision: 2 }], purpose: "P" });
+  assert.equal(aiInput.core.length, 0, "AI 输入不得绕过 item 策略");
+  const exDenied = (() => { try { exportSelectedPackage(pol, { topicId: f.topicId, selectedRefs: [{ kind: "item", id: itemId, revision: 2 }] }); return null; } catch (e) { return e as { status: number; details?: { code?: string } }; } })();
+  assert.ok(exDenied && exDenied.status === 403, "导出不得绕过 item 策略");
+  assert.equal(exDenied!.details?.code, "source_access_denied");
+});
+
+test("T46p 被引用版本未采纳不得借新版采纳放行（提案与模板对称）", () => {
+  const f = seedE8();
+  // 提案 k:1（未采纳）先纳管
+  const oldRef = currentSourceRef(f.state, "chat_proposal", "ch1/m1/pn_unadopted")!;
+  assert.equal(oldRef.version, "k:1");
+  let s: LocusState = { ...f.state, knowledge: archiveSourceVersion(f.state.knowledge, oldRef, sourcePayload(f.state, "chat_proposal", "ch1/m1/pn_unadopted")) };
+  // 同一 ID 改为已采纳（文本不同）再纳管 → k:2
+  s = { ...s, chats: s.chats.map((c) => (c.id === "ch1" ? { ...c, messages: c.messages.map((m) => ({ ...m, proposals: m.proposals.map((p0) => (p0.targetId === "pn_unadopted" ? { ...p0, preview: "另一段文本", confirmed: true, adoptedAt: "t2" } : p0)) })) } : c)) };
+  const newRef = currentSourceRef(s, "chat_proposal", "ch1/m1/pn_unadopted")!;
+  assert.equal(newRef.version, "k:2", "新版另立纳管版本");
+
+  const deniedOld = (() => { try { createKnowledgeStatement(s, { topicId: f.topicId, text: "绑定旧版提案", nature: "to_verify", createdBy: "model", sourceRefs: [oldRef] }); return null; } catch (e) { return e as { status: number; details?: { code?: string } }; } })();
+  assert.ok(deniedOld, "被引用版本未采纳必须被拒（不得借新版采纳追授）");
+  assert.equal(deniedOld!.details?.code, "source_not_usable");
+  const okNew = createKnowledgeStatement(s, { topicId: f.topicId, text: "绑定新版提案", nature: "to_verify", createdBy: "model", sourceRefs: [newRef] });
+  assert.equal(okNew.item.payload.review.status, "pending", "被引用版本确为已采纳 → 放行且仍待审");
+
+  // 模板对称：未人工确认的 AI 草稿版本不得进入
+  const tplRef = currentSourceRef(s, "template", "tp_draft")!;
+  const deniedTpl = (() => { try { createKnowledgeStatement(s, { topicId: f.topicId, text: "绑定未确认模板", nature: "to_verify", createdBy: "model", sourceRefs: [tplRef] }); return null; } catch (e) { return e as { status: number; details?: { code?: string } }; } })();
+  assert.ok(deniedTpl && deniedTpl.details?.code === "source_not_usable", "未人工确认的 AI 草稿模板不得进入");
+});
+
+test("T46q 报告派生知识：固定引用不可解析时确认与正式使用均被拦", () => {
+  const f = seedE8();
+  // 造一个引用了不存在版本（r:9）的报告块
+  let s: LocusState = { ...f.state, reports: f.state.reports.map((r) => (r.id === "rp1" ? { ...r, blocks: [{ id: "bk_bad", order: 2, nature: "interpretation", text: "引用缺失历史", refs: [{ kind: "result", id: "rs1", version: "r:9", label: "结果" }], draft: false, history: [] }] } : r)) };
+  const blkRef = currentSourceRef(s, "report_block", "rp1#bk_bad")!;
+  s = { ...s, knowledge: archiveSourceVersion(s.knowledge, blkRef, sourcePayload(s, "report_block", "rp1#bk_bad")) };
+  // 创建派生陈述允许，但**确认**必须被拦
+  const st0 = createKnowledgeStatement(s, { topicId: f.topicId, text: "由报告块派生", nature: "to_verify", createdBy: "model", sourceRefs: [blkRef] });
+  const denied = (() => { try { reviewKnowledgeItem(st0.state, st0.item.id, { baseRevision: 1, decision: "confirmed", basis: "尝试确认" }); return null; } catch (e) { return e as { status: number; details?: { code?: string } }; } })();
+  assert.ok(denied, "派生项的固定引用不可解析时不得确认");
+  assert.equal(denied!.details?.code, "report_refs_unresolvable");
+  // 伪造一条已确认的派生项（绕过确认）→ 正式 AI 使用同样被拦
+  const forged: LocusState = { ...st0.state, knowledge: { ...st0.state.knowledge, items: st0.state.knowledge.items.map((i) => (i.id === st0.item.id ? { ...i, payload: { ...(i.payload as ItemPayload), review: { status: "confirmed" as const } } } : i)) } };
+  // 给报告块授权发送，隔离出「固定引用完整性」这一条（否则会先被权限拦下）
+  const authed = grantFor(forged, "report_block", "rp1#bk_bad", { aiSend: true });
+  const ai = buildKnowledgeAiInput(authed, { topicId: f.topicId, selectedRefs: [{ kind: "item", id: st0.item.id, revision: 1 }], purpose: "P" });
+  assert.equal(ai.core.length, 0, "派生项固定引用不可用 → 不进正式 AI 输入");
+  assert.ok(ai.omitted.some((o) => o.reason.includes("固定引用不可用")), "给出固定引用不可用原因");
+});
+
+test("T46r 报告解析须含 hash 完整性核验：坏归档不得当 ok", () => {
+  const f = seedE8();
+  const rsRef = currentSourceRef(f.state, "result", "rs1")!;
+  let s: LocusState = { ...f.state, knowledge: archiveSourceVersion(f.state.knowledge, rsRef, sourcePayload(f.state, "result", "rs1")) };
+  // 篡改归档 payload（保留记录的 contentHash）
+  s = { ...s, knowledge: { ...s.knowledge, sourceVersions: s.knowledge.sourceVersions.map((v) => (v.sourceRef.kind === "result" && v.sourceRef.id === "rs1" ? { ...v, payload: { ...(v.payload as object), method: "被篡改的方法" } } : v)) } };
+  const res = resolvePinnedRefs(s, [{ kind: "result", id: "rs1", version: rsRef.version }]);
+  assert.equal(res[0].status, "unavailable", "坏归档不得当作 ok");
+  assert.ok(res[0].reason!.includes("content_mismatch"), "给出完整性失败原因");
 });
