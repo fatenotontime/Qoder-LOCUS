@@ -1,0 +1,7 @@
+time,readout,group
+0,0.1,ctrl
+1,0.21,ctrl
+2,0.33,ctrl
+0,0.12,trt
+1,0.3,trt
+2,0.41,trt

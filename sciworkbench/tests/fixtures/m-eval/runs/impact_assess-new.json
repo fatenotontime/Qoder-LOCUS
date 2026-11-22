@@ -1,0 +1,94 @@
+{
+  "setId": "ia-new",
+  "taskId": "impact_assess",
+  "modelId": "simulated-model",
+  "params": {
+    "temperature": "0"
+  },
+  "mode": "simulated",
+  "at": "2026-11-22T00:00:00+08:00",
+  "prompt": {
+    "versionLabel": "未定义版本常量（以正文 hash 冻结）",
+    "systemHash": "b52e7c353e63d737f84da2abcf0d49f7763def42ee2149bd4a3e10e11125ecc2",
+    "schemaHash": "dfec29ae6f2539d88aa04504b8bb72b09c1a4ec7f98e78a447531f34c83dddb9"
+  },
+  "processing": {
+    "processorVersion": "input/v1",
+    "params": {}
+  },
+  "sampleInputHashes": {
+    "ia-normal": "40aa757c78479318e4516d081399acc54dbd9536add6a8db1e3515447207de7f",
+    "ia-missing": "e5486e1afd90fb04672784360a9ac47f80d4519c11ecce3035178195681ffdf1",
+    "ia-holdout": "8df85ff3f680265771c1462e41250c90618e8c3724f6ccdf8127a18f4625cfea"
+  },
+  "runs": [
+    {
+      "sampleId": "ia-normal",
+      "status": "ok",
+      "rawOutput": "{\"summary\":\"总量变更影响执行与测量\",\"assessment\":\"impact\",\"items\":[{\"targetKind\":\"sample\",\"targetId\":\"s1\",\"category\":\"execution\",\"finding\":\"总量变化\",\"reason\":\"直接影响\",\"evidenceRefs\":[],\"unknowns\":[],\"suggestedAction\":\"复核\"}]}",
+      "parsed": {
+        "summary": "总量变更影响执行与测量",
+        "assessment": "impact",
+        "items": [
+          {
+            "targetKind": "sample",
+            "targetId": "s1",
+            "category": "execution",
+            "finding": "总量变化",
+            "reason": "直接影响",
+            "evidenceRefs": [],
+            "unknowns": [],
+            "suggestedAction": "复核"
+          }
+        ]
+      },
+      "parseError": null
+    },
+    {
+      "sampleId": "ia-missing",
+      "status": "ok",
+      "rawOutput": "{\"summary\":\"仅备注变化，未找到科学影响证据\",\"assessment\":\"needs_review\",\"items\":[{\"targetKind\":\"protocol\",\"targetId\":\"p1\",\"category\":\"analysis\",\"finding\":\"备注变化\",\"reason\":\"证据不足\",\"evidenceRefs\":[],\"unknowns\":[\"是否影响分析\"],\"suggestedAction\":\"人工复核\"}]}",
+      "parsed": {
+        "summary": "仅备注变化，未找到科学影响证据",
+        "assessment": "needs_review",
+        "items": [
+          {
+            "targetKind": "protocol",
+            "targetId": "p1",
+            "category": "analysis",
+            "finding": "备注变化",
+            "reason": "证据不足",
+            "evidenceRefs": [],
+            "unknowns": [
+              "是否影响分析"
+            ],
+            "suggestedAction": "人工复核"
+          }
+        ]
+      },
+      "parseError": null
+    },
+    {
+      "sampleId": "ia-holdout",
+      "status": "ok",
+      "rawOutput": "{\"summary\":\"温度变更影响可比性\",\"assessment\":\"impact\",\"items\":[{\"targetKind\":\"measurement\",\"targetId\":\"m1\",\"category\":\"comparability\",\"finding\":\"温度不同\",\"reason\":\"可比性受影响\",\"evidenceRefs\":[],\"unknowns\":[],\"suggestedAction\":\"更换基线\"}]}",
+      "parsed": {
+        "summary": "温度变更影响可比性",
+        "assessment": "impact",
+        "items": [
+          {
+            "targetKind": "measurement",
+            "targetId": "m1",
+            "category": "comparability",
+            "finding": "温度不同",
+            "reason": "可比性受影响",
+            "evidenceRefs": [],
+            "unknowns": [],
+            "suggestedAction": "更换基线"
+          }
+        ]
+      },
+      "parseError": null
+    }
+  ]
+}

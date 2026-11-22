@@ -1,0 +1,36 @@
+{
+  "descriptive_stats": {
+    "purpose": { "value": "了解 value 列分布", "status": "confirmed", "source": "fixtures/m-method/facts/ready.json" },
+    "columns": { "value": "value", "status": "confirmed" },
+    "units": { "value": "无量纲（合成示例）", "status": "confirmed" },
+    "validCounts": { "value": "空字符串=缺失", "status": "confirmed" }
+  },
+  "trend_plot": {
+    "purpose": { "value": "看 readout 随时间变化", "status": "confirmed" },
+    "xAxis": { "value": "time (s)", "status": "confirmed" },
+    "yAxis": { "value": "readout (a.u.)", "status": "confirmed" },
+    "units": { "value": "s / a.u.", "status": "confirmed" },
+    "order": { "value": "按 time 升序", "status": "confirmed" }
+  },
+  "linear_fit": {
+    "purpose": { "value": "在声明范围内做 y~x 校准拟合", "status": "confirmed" },
+    "columns": { "value": "x;y", "status": "confirmed" },
+    "units": { "value": "x: mol/L; y: a.u.", "status": "confirmed" },
+    "xValues": { "value": "varies", "status": "confirmed" },
+    "fitRange": { "value": "x∈[0,10]", "status": "confirmed" },
+    "independence": { "value": "independent", "status": "confirmed" }
+  },
+  "independent_two_group": {
+    "purpose": { "value": "比较两组的 value", "status": "confirmed" },
+    "groups": { "value": "control vs treated", "status": "confirmed" },
+    "columns": { "value": "value", "status": "confirmed" },
+    "independence": { "value": "independent", "status": "confirmed" },
+    "batch": { "value": "无批次结构", "status": "confirmed" }
+  },
+  "paired_pre_post": {
+    "purpose": { "value": "同一样品前后比较", "status": "confirmed" },
+    "pairing": { "value": "paired", "status": "confirmed" },
+    "columns": { "value": "pre;post", "status": "confirmed" },
+    "units": { "value": "a.u.", "status": "confirmed" }
+  }
+}

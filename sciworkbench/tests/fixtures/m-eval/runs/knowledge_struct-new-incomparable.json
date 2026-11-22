@@ -1,0 +1,83 @@
+{
+  "setId": "ks-new-inc",
+  "taskId": "knowledge_struct",
+  "modelId": "simulated-model",
+  "params": {
+    "temperature": "0.7"
+  },
+  "mode": "simulated",
+  "at": "2026-11-22T00:00:00+08:00",
+  "prompt": {
+    "versionLabel": "knowledge_struct/v1（schemaVersion 1）",
+    "systemHash": "0f96efac92b7875c2684317e2dbc0d3e13f6f9ef1ec102af5f4769a60677de30",
+    "schemaHash": "2929c5d4e706dc3af6f3ad4290f24bd375d3eb5e1c39674436ee20ae9847c892"
+  },
+  "processing": {
+    "processorVersion": "input/v1",
+    "params": {}
+  },
+  "sampleInputHashes": {
+    "ks-normal": "fe9be443427f8c5919aecfd6ef14a1a906c02b503570cbd1f9489568b39b3ea5",
+    "ks-missing": "3d9f21c43af8e5e42fb483fed04d02b812538ee5be64c7c1954468607224bf98",
+    "ks-holdout": "a629362aa3be788220f92912210d2c1620c0a5aaeab49719e562e33107e07929"
+  },
+  "runs": [
+    {
+      "sampleId": "ks-normal",
+      "status": "ok",
+      "rawOutput": "{\"schemaVersion\":1,\"evidence\":[{\"localId\":\"e1\",\"sourceBlockId\":\"b1\",\"quote\":\"产率为 60%\"}],\"contexts\":[],\"cards\":[],\"relations\":[]}",
+      "parsed": {
+        "schemaVersion": 1,
+        "evidence": [
+          {
+            "localId": "e1",
+            "sourceBlockId": "b1",
+            "quote": "产率为 60%"
+          }
+        ],
+        "contexts": [],
+        "cards": [],
+        "relations": []
+      },
+      "parseError": null
+    },
+    {
+      "sampleId": "ks-missing",
+      "status": "ok",
+      "rawOutput": "{\"schemaVersion\":1,\"evidence\":[{\"localId\":\"e1\",\"sourceBlockId\":\"b1\",\"quote\":\"产率良好\"}],\"contexts\":[],\"cards\":[],\"relations\":[]}",
+      "parsed": {
+        "schemaVersion": 1,
+        "evidence": [
+          {
+            "localId": "e1",
+            "sourceBlockId": "b1",
+            "quote": "产率良好"
+          }
+        ],
+        "contexts": [],
+        "cards": [],
+        "relations": []
+      },
+      "parseError": null
+    },
+    {
+      "sampleId": "ks-holdout",
+      "status": "ok",
+      "rawOutput": "{\"schemaVersion\":1,\"evidence\":[{\"localId\":\"e1\",\"sourceBlockId\":\"b1\",\"quote\":\"pH 7 为 100%\"}],\"contexts\":[],\"cards\":[],\"relations\":[]}",
+      "parsed": {
+        "schemaVersion": 1,
+        "evidence": [
+          {
+            "localId": "e1",
+            "sourceBlockId": "b1",
+            "quote": "pH 7 为 100%"
+          }
+        ],
+        "contexts": [],
+        "cards": [],
+        "relations": []
+      },
+      "parseError": null
+    }
+  ]
+}

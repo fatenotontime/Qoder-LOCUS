@@ -1,0 +1,17 @@
+{
+  "note": "自制符号/表格图，用于离线评测记录格式演示；明确**不是已验证真实手写样本**。",
+  "files": [
+    {
+      "file": "symbols.png",
+      "sha256": "c8597ee2ec13b9c6e3cf98f8617467c41c5c47e0c16efc81ba35a2f25cf77c90",
+      "width": 32,
+      "height": 32
+    },
+    {
+      "file": "table.png",
+      "sha256": "8689261383b9af475b70f8216d826cdda684889f164a7ded48f3b7336ccda861",
+      "width": 48,
+      "height": 32
+    }
+  ]
+}

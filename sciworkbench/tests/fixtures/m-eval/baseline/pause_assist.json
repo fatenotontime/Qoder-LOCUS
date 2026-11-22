@@ -1,0 +1,10 @@
+{
+  "taskId": "pause_assist",
+  "taskName": "pause_assist",
+  "versionLabel": "未定义版本常量（以正文 hash 冻结）",
+  "systemText": "你是实验暂停辅助助手。根据给定的方案快照与暂停时的执行状态，提示样品/时间相关风险与恢复前检查项；只提建议，不替人做决定；不确定的列入 unknowns。只返回 JSON，键必须用双引号。",
+  "schemaText": "{\"risks\":[\"风险\"],\"resumeChecks\":[\"恢复前检查\"],\"unknowns\":[\"未知项\"]}",
+  "systemHash": "862635ee3f3643873ff313c8034e417959c3400324216297bf2a3011b698ea02",
+  "schemaHash": "e3ebcc96f1c8b8559fb71ec2838151b8f07e5bc3a9c6a731a48ea1449776a27d",
+  "codeBaseline": "a7a57d2"
+}

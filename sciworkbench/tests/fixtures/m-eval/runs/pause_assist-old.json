@@ -1,0 +1,70 @@
+{
+  "setId": "pa-old",
+  "taskId": "pause_assist",
+  "modelId": "simulated-model",
+  "params": {
+    "temperature": "0"
+  },
+  "mode": "simulated",
+  "at": "2026-11-22T00:00:00+08:00",
+  "prompt": {
+    "versionLabel": "未定义版本常量（以正文 hash 冻结）",
+    "systemHash": "862635ee3f3643873ff313c8034e417959c3400324216297bf2a3011b698ea02",
+    "schemaHash": "e3ebcc96f1c8b8559fb71ec2838151b8f07e5bc3a9c6a731a48ea1449776a27d"
+  },
+  "processing": {
+    "processorVersion": "input/v1",
+    "params": {}
+  },
+  "sampleInputHashes": {
+    "pa-normal": "751b44e1ad935ce76aefee022bf9eee6d91f398fde235c44ad99a2c5b9c0fe47",
+    "pa-missing": "2f759ed182beb9168da560829ecb8bcf6482069cde87ea7ba20228824bf3a3b6",
+    "pa-holdout": "cc94957d7de98d722c8885e06121984c55a99a25d757edf0399b08241b1a197c"
+  },
+  "runs": [
+    {
+      "sampleId": "pa-normal",
+      "status": "ok",
+      "rawOutput": "{\"risks\":[\"浸泡超期风险\"],\"unknowns\":[]}",
+      "parsed": {
+        "risks": [
+          "浸泡超期风险"
+        ],
+        "unknowns": []
+      },
+      "parseError": null
+    },
+    {
+      "sampleId": "pa-missing",
+      "status": "ok",
+      "rawOutput": "{\"risks\":[\"时长未知→无法评估超期\"],\"resumeChecks\":[\"补记暂停时执行状态\"],\"unknowns\":[\"步骤时长\"]}",
+      "parsed": {
+        "risks": [
+          "时长未知→无法评估超期"
+        ],
+        "resumeChecks": [
+          "补记暂停时执行状态"
+        ],
+        "unknowns": [
+          "步骤时长"
+        ]
+      },
+      "parseError": null
+    },
+    {
+      "sampleId": "pa-holdout",
+      "status": "ok",
+      "rawOutput": "{\"risks\":[\"浸泡超期风险\"],\"resumeChecks\":[\"检查溶液是否污染\"],\"unknowns\":[]}",
+      "parsed": {
+        "risks": [
+          "浸泡超期风险"
+        ],
+        "resumeChecks": [
+          "检查溶液是否污染"
+        ],
+        "unknowns": []
+      },
+      "parseError": null
+    }
+  ]
+}

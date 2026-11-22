@@ -1,0 +1,79 @@
+{
+  "setId": "ocr-new",
+  "taskId": "handwriting_ocr",
+  "modelId": "simulated-model",
+  "params": {
+    "temperature": "0"
+  },
+  "mode": "simulated",
+  "at": "2026-11-22T00:00:00+08:00",
+  "prompt": {
+    "versionLabel": "未定义版本常量（以正文 hash 冻结）",
+    "systemHash": "01438e6d41c79da8edee00de2f9279b2296aaea5aced1063487cc185dfcf4cc3",
+    "schemaHash": "c24935d20366a183883088264aca1af814fb0aaccac9d3e24920749e08c4e9bf"
+  },
+  "processing": {
+    "processorVersion": "input/v1",
+    "params": {}
+  },
+  "sampleInputHashes": {
+    "ocr-normal": "1f762f81ffdb1cc4f7bc153ad1d6b0236932e6d8b52a4f0613ebb101369a27f7",
+    "ocr-missing": "1c3a425a958ed4afc3e70e34b0a8a4329224006aabead48b0e0f27cd57b753a1",
+    "ocr-holdout": "60637f49891b2e4a98d56832534e3e7eaebc97f740e52c14013c2088baa9909f"
+  },
+  "runs": [
+    {
+      "sampleId": "ocr-normal",
+      "status": "ok",
+      "rawOutput": "{\"records\":[{\"rawText\":\"25 mV\",\"fields\":{\"value\":\"25\",\"unit\":\"mV\"},\"unknowns\":[]}]}",
+      "parsed": {
+        "records": [
+          {
+            "rawText": "25 mV",
+            "fields": {
+              "value": "25",
+              "unit": "mV"
+            },
+            "unknowns": []
+          }
+        ]
+      },
+      "parseError": null
+    },
+    {
+      "sampleId": "ocr-missing",
+      "status": "ok",
+      "rawOutput": "{\"records\":[{\"rawText\":\"? mV\",\"fields\":{\"value\":\"?\",\"unit\":\"\"},\"unknowns\":[\"数值不清\"]}]}",
+      "parsed": {
+        "records": [
+          {
+            "rawText": "? mV",
+            "fields": {
+              "value": "?",
+              "unit": ""
+            },
+            "unknowns": [
+              "数值不清"
+            ]
+          }
+        ]
+      },
+      "parseError": null
+    },
+    {
+      "sampleId": "ocr-holdout",
+      "status": "ok",
+      "rawOutput": "{\"records\":[{\"rawText\":\"1.0,2.0\\n3.0,4.0\\n5.0,6.0\",\"fields\":{},\"unknowns\":[]}]}",
+      "parsed": {
+        "records": [
+          {
+            "rawText": "1.0,2.0\n3.0,4.0\n5.0,6.0",
+            "fields": {},
+            "unknowns": []
+          }
+        ]
+      },
+      "parseError": null
+    }
+  ]
+}
