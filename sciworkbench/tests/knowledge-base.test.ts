@@ -13,6 +13,7 @@ import {
   emptyKnowledge, KNOWLEDGE_SCHEMA_VERSION, canonicalHash, refKey, sameRef,
   sourceRef as makeSourceRef, knowledgeRef as makeKnowledgeRef, assertKnowledgeShape,
 } from "../domain/knowledge.ts";
+import type { KnowledgeRef, ItemPayload } from "../domain/knowledge.ts";
 import { importMeasurements, reviewTable, createTopic, makeAsset, addManualCard, reviewCard, createComparison, AppError } from "../services/app.ts";
 import { buildKnowledgeAiInput, validateAiReferences, exportSelectedPackage, chatScopeSnapshot, createAnalysisTask, createChat, resolveFragment } from "../services/analysis.ts";
 import { buildWholeLibraryPackage, inspectLibraryJson, sha256 } from "../services/export.ts";
@@ -1209,6 +1210,30 @@ test("E6.5②c 与合同一致：当前版本被撤回时，即使固定版曾�
   const err = (() => { try { pickCore(s, f.tableId, 2); return null; } catch (e) { return e as AppError; } })();
   assert.ok(err, "现撤回必须阻断正式使用");
   assert.equal(err!.details?.code, "item_not_confirmed");
+});
+
+// ── 回归：选择性冻结按传入 revision 解析（旧版照取，不静默退回最新版）──────
+test("S06 回归：selectedRefs 指定旧 revision → 冻结引用该旧版；不存在版本 → 明确报错", () => {
+  const f = seedPinned();
+  // 第 1 版（pending，文本原文）→ 复核为第 2 版（confirmed，文本原文）→ 内容修订出第 3 版（文本「（修订）」）
+  let s = reviewKnowledgeItem(f.state, "ki_p", { baseRevision: 1, decision: "confirmed", basis: "核对原文" }).state;
+  s = updateKnowledgeItem(s, "ki_p", { baseRevision: 2, patch: { text: "合成对象A在 1 d 下培养（修订）" }, reason: "内容修订" }).state;
+  const liveRevision = s.knowledge.items.find((i) => i.id === "ki_p")!.revision;
+  assert.equal(liveRevision, 3, "最新版本应为第 3 版");
+
+  // (1) 指定旧版（第 2 版）→ 冻结结果引用该旧版，内容为旧版本而非最新版
+  const fr = freezeKnowledge(s, { topicId: f.topicId, viewId: viewIdOf(s, f.topicId), mode: "explore", selectedRefs: [{ kind: "item", id: "ki_p", revision: 2 }] });
+  assert.equal(fr.snapshot.content.items.length, 1);
+  assert.equal(fr.snapshot.content.items[0].revision, 2, "冻结引用钉在传入的第 2 版，而非最新版");
+  assert.equal((fr.snapshot.content.items[0].payload as ItemPayload).text, "合成对象A在 1 d 下培养", "内容为第 2 版，不偷换为最新版");
+  const kTok = Object.entries(fr.snapshot.content.referenceMap).find(([, e]) => e.kind === "knowledge")!;
+  assert.equal(refKey((kTok[1].ref as KnowledgeRef)), "item:ki_p@r2", "referenceMap 指向第 2 版");
+
+  // (2) 指定不存在/不可读的 revision → 明确报错，不退回最新版
+  const err = expectErr(() => freezeKnowledge(s, { topicId: f.topicId, viewId: viewIdOf(s, f.topicId), mode: "explore", selectedRefs: [{ kind: "item", id: "ki_p", revision: 99 }] }));
+  assert.equal(err.status, 422);
+  assert.equal(err.details?.code, "ref_unresolvable");
+  assert.ok(err.message.includes("r99"), "错误指向缺失的具体版本，而非退回最新版");
 });
 // ══ E6-A 容器/流水线数据接线（合同 E6.2/E6.3、E6.5 子用例 ①–⑤）══════════════
 
