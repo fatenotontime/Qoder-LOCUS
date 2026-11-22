@@ -231,7 +231,8 @@
 
 | # | 分支 `feat/s05-e5-snapshots-export` | 分支 `<其他>` | 关联轮次 | 说明 |
 | --- | --- | --- | --- | --- |
-| 88 | `e3a148c` · 2026-11-21 17:00、`8372371` · 17:02（记录）｜PR #12 merge `42d2f05` · 17:03（本轮回填） | — | S05-T7 | **E5 快照、wiki 与知识包**（判据 T29–T35）：`freezeKnowledge`（§7.3 viewId 校验、contentHash 不含 createdAt/snapshotId、稳定 token K/S、数据集**实际行列**不截断、来源历史同笔、formal 复检；explore 标注）；新建 `services/knowledge-export.ts`（§7.4 统一 JSON/CSV/wiki/ZIP＋manifest/NOTICE、默认不带附件、路径安全、机器值保真缺失留空不写 0、sheet-safe 公式转义、受限 Markdown 无 raw HTML/javascript:）；`sourcePolicies`＋`assertKnowledgeAccess`（§7.5 缺策略默认仅 localRead、含派生上游来源、整包 403 不降级、撤权不改写快照）；§8.1 路由（snapshots／export／references/:token／source-policies＋`?snapshotId=` 固定版本读取）；**修正 canonicalHash**（`stableStringify` 按 JSON 语义处理 undefined——原实现致归档来源重启后 hash 失配）。测试 **T29–T34、T34b、T35＋E5 路由往返＋新建 knowledge-view.test.ts**，**313/313**；出 [E5 交接](HANDOFF_E5.md)；[会话记录](sessions/2026-11-21_session-05.md#s05-t7) |
+| 88 | `e3a148c` · 2026-11-21 17:00、`8372371` · 17:02（记录）｜PR #12 merge `42d2f05` · 17:03（本轮回填） | — | S05-T7 | **E5 快照、wiki 与知识包**（判据 T29–T35）：`freezeKnowledge`（§7.3 viewId 校验、contentHash 不含 createdAt/snapshotId、稳定 token K/S、数据集**实际行列**不截断、来源历史同笔、formal 复检；explore 标注）；新建 `services/knowledge-export.ts`（§7.4 统一 JSON/CSV/wiki/ZIP＋manifest/NOTICE、默认不带附件、路径安全、机器值保真缺失留空不写 0、sheet-safe 公式转义、受限 Markdown 无 raw HTML/javascript:）；`sourcePolicies`＋`assertKnowledgeAccess`（§7.5 缺策略默认仅 localRead、含派生上游来源、整包 403 不降级、撤权不改写快照）；§8.1 路由（snapshots／export／references/:token／source-policies＋`?snapshotId=` 固定版本读取）；**修正 canonicalHash**（`stableStringify` 按 JSON 语义处理 undefined> **修订（S05-T12 前端线 · 合并 main 时）**：main 已占用 **#106–#116**、前端 F 系列行已用 **#117–#123**，故本分支两行**顺延改号（仅改号、内容未改）**：S05-T11（前端线） #107→**#124**、S05-T12（前端线） #108→**#125**。 Turn 名在 main 与本线重名（main 的 S05-T11/T12/T16 属 E6/E8 记录线；本线的 S05-T11/T12（前端线） 属迹芽/库总览），以**分支名+提交 hash** 区分。
+——原实现致归档来源重启后 hash 失配）。测试 **T29–T34、T34b、T35＋E5 路由往返＋新建 knowledge-view.test.ts**，**313/313**；出 [E5 交接](HANDOFF_E5.md)；[会话记录](sessions/2026-11-21_session-05.md#s05-t7) |
 
 | 轮次 | 分支 | 提交 | 提交时间 | 本轮产出 |
 | --- | --- | --- | --- | --- |
@@ -441,6 +442,21 @@
 
 | # | 分支 `docs/s05-e6a4-table` | 分支 `<其他>` | 关联轮次 | 说明 |
 | --- | --- | --- | --- | --- |
+| 124 | `a34bf51` · 2026-11-22 13:51:04 +08:00｜PR **#23** 已合并 `46cfe5d` · 2026-11-22 14:58（合并后回填）｜编号避让 E8 已占用的 #98 | — | S05-T11（前端线） | **知识页迹芽流水线舞台（前端切片）**：新增纯渲染 `knowledge-stage.js`（只消费 `ui.kzJob`/卡/项，不发请求不写状态）；待机/加工中/暂停/失败四态＋完成/取消真实文案；进度仅按后端回执 `done/total`，无回执不画；四步显示原文献/AI 加工/待人审/已归入；AI 提取按钮加迹芽位；独立 `knowledge-stage.css` 适配双主题与 `prefers-reduced-motion`；补舞台测试并入可见文本检查。**未改后端/app.js 状态/styles.css**；E6-B 仍阻塞。`npm test` 333/334（唯一失败＝公开仓库缺私有 `test-packages/darwin-seed-saltwater`，非本次回归）＋逐页文本 7/7＋Edge 双主题/四态/窄栏/减动效 QA；[会话记录](sessions/2026-11-21_session-05.md#s05-t11-frontend) |
+
+| 轮次 | 分支 | 提交 | 提交时间 | 本轮产出 |
+| --- | --- | --- | --- | --- |
+| S05-T11（前端线） | feat/s05-t11-jiya-stage | `a34bf51` | 2026-11-22 13:51:04 +08:00 | 迹芽流水线舞台＋AI 按钮吉祥物位＋测试；PR #23 已合并（merge `46cfe5d`）；记录提交随本轮追加于同分支；[会话记录](sessions/2026-11-21_session-05.md#s05-t11-frontend) |
+
+### 会话 S05（续）· 知识库总览容器
+
+| # | 分支 `feat/s05-t12-kz-overview` | 分支 `<其他>` | 关联轮次 | 说明 |
+| --- | --- | --- | --- | --- |
+| 125 | `a51f926` · 2026-11-22 14:24:27 +08:00｜PR **#24** OPEN（已并入 main `46cfe5d`，暂不合并）｜编号避让 E8 已占用的 #100 | — | S05-T12（前端线） | **知识页库总览容器（前端切片）**：新增纯渲染 `knowledge-container.js`＋独立 `knowledge-container.css`，只消费 `/api/knowledge/container` 同一次响应；已加载/匹配/全库分列，按主题/未分主题/数据集聚簇，点选看值·条件·来源；三视图库总览/分项/主题，库总览收起原文左栏；`mode=explore` 保留待审与非正式项并注明正式分析门槛；库总览舞台按当前课题容器计数，空课题不借别课题；空库按有无文献给「去导入文献」或「去发起语义提取」；键盘选择保留焦点、同源列表展开态不因重绘丢失；补容器与舞台课题计数测试。**未改后端/styles.css/现有实例**。合并前 `npm test` 341/342、合并 `46cfe5d` 后 **360/361**（唯一失败＝公开仓库缺私有测试包，非回归）＋逐页文本 7/7＋Edge 双主题/三档宽度/空课题/键盘/减动效 QA；未 rebase、未强推；[会话记录](sessions/2026-11-21_session-05.md#s05-t12-frontend) |
+
+| 轮次 | 分支 | 提交 | 提交时间 | 本轮产出 |
+| --- | --- | --- | --- | --- |
+| S05-T12（前端线） | feat/s05-t12-kz-overview | `a51f926` | 2026-11-22 14:24:27 +08:00 | 库总览容器＋三视图＋课题范围舞台计数＋空库引导＋测试；PR #24 OPEN，已并入 main `46cfe5d` 但暂不合并；记录提交随本轮追加于同分支；[会话记录](sessions/2026-11-21_session-05.md#s05-t12-frontend) |
 | 116 | 本轮无代码提交（记录提交 `85ac65e`）｜编号避让并行会话已占用的 #115 | — | S05-T16 | **E6.4 接入表填写（文档轮，不接线/不改代码）**：核实基线 `main`=`46cfe5d`（#23 已并入）、**PR #25（E8-A）已并入 main `dcb7b46`**（`/api/knowledge/container`、`/api/knowledge/pipeline/:runId` 在 main 可用）、#24 仍 OPEN；据 `gh pr files`＋直读前端源码，把 [HANDOFF_E6.md](HANDOFF_E6.md) 的接入表改写为**两列分开的核实版**（前端交付=事实；E6 集成职责=我方待办），并列出**「待前端补」清单**（pipeline 未调用、库总览按钮未接线、快照/导出/比较/wiki 未接入、入口冲突待合并、素材占位、定位约定缺）；**修正**给定事实一处：`knowledge.js` **被 #23/#24 修改**（仅插入舞台/入口，审阅流程未重写）；[会话记录](sessions/2026-11-21_session-05.md#s05-t16) |
 
 | 轮次 | 分支 | 提交 | 提交时间 | 本轮产出 |
@@ -499,3 +515,4 @@
 
 - **2026-11-19（S02-T43）**：双线表 #47/#49/#50/#51/#52 及索引 S02-T35 行中的提交时间原为推测值（「00:4x」「00:5x」「01:0x」「01:2x」「02:0x」「00:1x」），违反「禁止推测填写」红线。现按 `git log` 真实时间修订如下，**原条目保留不改**：`0401aba`=00:16、`de52b54`=00:49、`4de1003`=00:54、`f602341`=01:08、`2cf0c35`=01:45（记录提交 `5cc04e1`=01:46）、`2fefb58`=10:10（记录提交 `34ca3b1`=10:11）。同时补齐此前缺失的 S02-T37–T43 轮次索引行。
 - **2026-11-20（S02-T63）**：结构备注——双线表 #66–#73 行因历史轮次追加位置落在「对话轮次索引」区之后（#70 另在文末修订区前），条目内容完整未改；按红线不重排既有条目，仅在此登记实际位置，后续新增行随 #73 就近追加。本轮实质提交＝PR #1/#2 的 merge commit `bfcf927`、`7740601`（20:53），本地 main 已快进与 origin/main 一致（领先 0）。
+

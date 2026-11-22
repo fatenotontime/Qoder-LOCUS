@@ -94,6 +94,12 @@ export const api = {
   async createTheme(input) { return json("/api/knowledge/themes", input); },
   async updateTheme(id, input) { return json(`/api/knowledge/themes/${encodeURIComponent(id)}/update`, input); },
   async createStatement(input) { return json("/api/knowledge/statements", input); },
+  async knowledgeContainer(query = {}) {
+    const q = new URLSearchParams();
+    for (const [k, v] of Object.entries(query)) if (v !== undefined && v !== null && v !== "") q.set(k, String(v));
+    const tail = q.toString();
+    return json(`/api/knowledge/container${tail ? `?${tail}` : ""}`);
+  },
 };
 
 async function json(url, body) {

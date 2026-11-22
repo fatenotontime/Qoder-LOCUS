@@ -13,7 +13,7 @@ import { knowledgeLeftHtml, knowledgeWorkspaceHtml, knowledgeQueueHtml, renderKn
 import { renderAnalysisForm, currentTask, contextMapHtml, analysisRightHtml, snapshotHtml, bindAnalysis } from "./lib/pages/analysis.js";
 
 let state = { topics: [], subquestions: [], assets: [], papers: [], attachments: [], cards: [], tables: [], adoptions: [], mappings: [], comparisons: [], protocols: [], templates: [], executions: [], samples: [], measurements: [], impacts: [], ocrs: [], analysisTasks: [], analysisResults: [], reports: [], chats: [] };
-const ui = { nav: "topic", topicId: "", assetId: null, paperId: null, attId: null, tableId: null, highlight: null, cell: null, dirty: false, busy: false, cardFilter: "all", groupSel: new Set(), batch: null, ack: false, protocolId: null, executionId: null, stepSel: null, viewRev: null, editEventId: null, pauseSuggest: null, prepExtra: 0, taskId: null, chatId: null, reportId: null, reportWorking: {}, navCollapsed: false, kzTab: "todo", kzPanel: "cards", cardOpen: null, kzJob: null, kzStruct: null, kiView: null, suppressRecheck: null, topicPane: "overview", subqId: null, paperView: "manage", paperQuery: "", paperFilter: "all", protocolView: "manage", protocolEdit: false, protoQuery: "", recordView: "overview", chatView: "manage", knowledgeView: "overview" };
+const ui = { nav: "topic", topicId: "", assetId: null, paperId: null, attId: null, tableId: null, highlight: null, cell: null, dirty: false, busy: false, cardFilter: "all", groupSel: new Set(), batch: null, ack: false, protocolId: null, executionId: null, stepSel: null, viewRev: null, editEventId: null, pauseSuggest: null, prepExtra: 0, taskId: null, chatId: null, reportId: null, reportWorking: {}, navCollapsed: false, kzTab: "todo", kzPanel: "library", cardOpen: null, kzJob: null, kzStruct: null, kiView: null, suppressRecheck: null, topicPane: "overview", subqId: null, paperView: "manage", paperQuery: "", paperFilter: "all", protocolView: "manage", protocolEdit: false, protoQuery: "", recordView: "overview", chatView: "manage" };
 
 // 壳层按页布局能力（§2.1）：每页声明一种布局，壳层据此排布三块区域。
 // aside：主体＋辅助（撤出左栏常驻目录）；single：只留主体（阅读）；review：三栏；canvas：宽画布。
@@ -23,7 +23,6 @@ function layoutOf() {
   if (ui.nav === "protocol" && ui.protocolView === "manage") return "single"; // 方案管理：只留列表
   if (ui.nav === "record" && ui.recordView !== "detail") return "single"; // 记录总览：只留主体
   if (ui.nav === "chat" && ui.chatView !== "chat") return "single"; // 会话管理：只留列表
-  if (ui.nav === "knowledge" && ui.knowledgeView !== "review") return "single"; // 知识骨架：只留占位总览
   return LAYOUT[ui.nav] ?? "review";
 }
 let lastAction = null; // { label, run }
@@ -61,7 +60,7 @@ const errors = { left: null, mid: null, right: null };const PANEL_OF = (el) => {
 const UI_KEY = "locus.ui.v2"; // 阶段5 重构：七入口导航，旧选择态作废，默认落课题首页
 let uiRestored = false;
 function saveUi() {
-  try { localStorage.setItem(UI_KEY, JSON.stringify({ nav: ui.nav, topicId: ui.topicId, assetId: ui.assetId, paperId: ui.paperId, tableId: ui.tableId, cardFilter: ui.cardFilter, protocolId: ui.protocolId, executionId: ui.executionId, taskId: ui.taskId, chatId: ui.chatId, reportId: ui.reportId, navCollapsed: ui.navCollapsed, kzTab: ui.kzTab, kzPanel: ui.kzPanel, cardOpen: ui.cardOpen, topicPane: ui.topicPane, subqId: ui.subqId, paperView: ui.paperView, paperQuery: ui.paperQuery, paperFilter: ui.paperFilter, protocolView: ui.protocolView, protoQuery: ui.protoQuery, recordView: ui.recordView, chatView: ui.chatView, knowledgeView: ui.knowledgeView })); } catch {}
+  try { localStorage.setItem(UI_KEY, JSON.stringify({ nav: ui.nav, topicId: ui.topicId, assetId: ui.assetId, paperId: ui.paperId, tableId: ui.tableId, cardFilter: ui.cardFilter, protocolId: ui.protocolId, executionId: ui.executionId, taskId: ui.taskId, chatId: ui.chatId, reportId: ui.reportId, navCollapsed: ui.navCollapsed, kzTab: ui.kzTab, kzPanel: ui.kzPanel, cardOpen: ui.cardOpen, topicPane: ui.topicPane, subqId: ui.subqId, paperView: ui.paperView, paperQuery: ui.paperQuery, paperFilter: ui.paperFilter, protocolView: ui.protocolView, protoQuery: ui.protoQuery, recordView: ui.recordView, chatView: ui.chatView })); } catch {}
 }
 function restoreUi() {
   if (uiRestored) return;
@@ -82,7 +81,7 @@ function restoreUi() {
     if (state.reports.some((r) => r.id === s.reportId)) ui.reportId = s.reportId;
     if (typeof s.navCollapsed === "boolean") ui.navCollapsed = s.navCollapsed;
     if (["todo", "cand", "skip", "excl"].includes(s.kzTab)) ui.kzTab = s.kzTab;
-    if (["cards", "themes"].includes(s.kzPanel)) ui.kzPanel = s.kzPanel;
+    if (["library", "cards", "themes"].includes(s.kzPanel)) ui.kzPanel = s.kzPanel;
     if (typeof s.cardOpen === "string" || s.cardOpen === null) ui.cardOpen = s.cardOpen;
     if (s.topicPane === "subq" && state.subquestions.some((q) => q.id === s.subqId)) { ui.topicPane = "subq"; ui.subqId = s.subqId; }
     if (s.paperView === "read" || s.paperView === "manage") ui.paperView = s.paperView;
@@ -92,7 +91,6 @@ function restoreUi() {
     if (typeof s.protoQuery === "string") ui.protoQuery = s.protoQuery;
     if (s.recordView === "detail" || s.recordView === "overview") ui.recordView = s.recordView;
     if (s.chatView === "chat" || s.chatView === "manage") ui.chatView = s.chatView;
-    if (s.knowledgeView === "review" || s.knowledgeView === "overview") ui.knowledgeView = s.knowledgeView;
   } catch {}
 }
 
@@ -836,39 +834,13 @@ function backToChatManage() {
 }
 
 // ── 知识：骨架总览（大容器占位「尚未接入」）⇄ 现有审阅流程 ──
-function renderKnowledgeOverview(content, note) {
-  note.hidden = true;
-  $("#mid-title").textContent = "知识积累";
-  $("#tools-area").innerHTML = "";
-  content.classList.remove("is-empty", "reader");
-  content.classList.add("rich");
-  content.innerHTML = `
-    <div class="kz-overview">
-      <div class="kz-head">
-        <div><div class="detail-title">知识积累</div><div class="detail-sub">当前课题</div></div>
-        <div class="detail-actions">
-          <button class="primary" type="button" data-kz-go="review"${state.papers.length ? "" : ' disabled title="先建立文献条目并导入附件"'}>继续积累 / 审阅</button>
-          <button type="button" disabled title="尚未接入">知识目录</button>
-          <button type="button" disabled title="尚未接入">比较</button>
-          <button type="button" disabled title="尚未接入">快照</button>
-        </div>
-      </div>
-      <div class="kz-container-placeholder">
-        <span class="es-seal" aria-hidden="true">知</span>
-        <h3>大容器尚未接入</h3>
-        <p>知识总览大容器需接入真实数据（E6.4 接入表）后才可用；本轮不显示伪数据与伪计数。</p>
-        <p class="hint">可先用「继续积累 / 审阅」进入现有的卡片审阅流程。</p>
-      </div>
-      <p class="hint">图例与范围说明、知识目录 / 比较 / 快照等容器外目的地：本轮未接入。</p>
-    </div>`;
-}
 
 // ── 浏览器返回保护（§5.1：历史栈集成，不引入路由库）──
 let historyReady = false;
 let suppressHistory = false;
 let suppressPop = false;
 let lastPushedKey = "";
-function pageState() { return { nav: ui.nav, topicId: ui.topicId, topicPane: ui.topicPane, subqId: ui.subqId, paperView: ui.paperView, paperId: ui.paperId, protocolView: ui.protocolView, protocolId: ui.protocolId, recordView: ui.recordView, executionId: ui.executionId, chatView: ui.chatView, chatId: ui.chatId, knowledgeView: ui.knowledgeView }; }
+function pageState() { return { nav: ui.nav, topicId: ui.topicId, topicPane: ui.topicPane, subqId: ui.subqId, paperView: ui.paperView, paperId: ui.paperId, protocolView: ui.protocolView, protocolId: ui.protocolId, recordView: ui.recordView, executionId: ui.executionId, chatView: ui.chatView, chatId: ui.chatId }; }
 /** 页面状态变化时写入一条历史；首次替换、后台刷新/主题/动画不入历史。 */
 function syncHistory() {
   if (suppressHistory) return;
@@ -892,7 +864,6 @@ function applyPageState(st) {
   ui.recordView = st.recordView === "detail" && ui.executionId ? "detail" : "overview";
   ui.chatId = state.chats.some((c) => c.id === st.chatId) ? st.chatId : null;
   ui.chatView = st.chatView === "chat" && ui.chatId ? "chat" : "manage";
-  ui.knowledgeView = st.knowledgeView === "review" ? "review" : "overview";
   if (ui.nav === "chat" && ui.chatView === "chat") chatScrollBottomPending = true; // 后退进聊天：定位到最新
   ui.highlight = null; ui.cell = null; ui.groupSel.clear(); ui.batch = null; ui.ack = false;
   ui.stepSel = null; ui.viewRev = null; ui.editEventId = null; ui.pauseSuggest = null; ui.prepExtra = 0;
@@ -955,7 +926,6 @@ async function activateNav(kind) {
   ui.protocolView = "manage"; ui.protocolEdit = false;
   ui.recordView = "overview";
   ui.chatView = "manage";
-  ui.knowledgeView = "overview";
   renderAll();
   restoreNavScroll();
   if (prefersReducedMotion()) return;
@@ -991,8 +961,7 @@ function isListView() {
     || (ui.nav === "papers" && ui.paperView !== "read")
     || (ui.nav === "protocol" && ui.protocolView !== "detail")
     || (ui.nav === "record" && ui.recordView !== "detail")
-    || (ui.nav === "chat" && ui.chatView !== "chat")
-    || (ui.nav === "knowledge" && ui.knowledgeView !== "review");
+    || (ui.nav === "chat" && ui.chatView !== "chat");
 }
 function listKey() { return `${ui.nav}|${ui.topicId}`; }
 function isNearBottomMid() { const el = midScroller(); return Boolean(el) && (el.scrollHeight - el.scrollTop - el.clientHeight < 48); }
@@ -1000,7 +969,7 @@ function isNearBottomMid() { const el = midScroller(); return Boolean(el) && (el
 /** 外壳：页头当前课题、侧栏（导航＋本页列表）、中间「＋新建」区、分区报错。 */
 function renderShell() {
   $("#curtopic").innerHTML = topbarTopicHtml(state, ui);
-  const kz = ui.nav === "knowledge" && ui.knowledgeView === "review";
+  const kz = ui.nav === "knowledge";
   if (!kz) ui.kzJob = null;
   if (kz && !ui.paperId && state.papers.length) ui.paperId = state.papers[0].id;
   if (ui.nav === "papers" && !ui.paperId) {
@@ -1043,20 +1012,8 @@ function renderCreateArea() {
     if (ui.chatView === "chat") box.innerHTML = `<div class="detail-bar"><button class="back-btn" type="button" data-chat-back>← 返回会话列表</button><span class="hint">范围与建议采纳见右栏。</span></div>`;
     return;
   }
-  if (ui.nav === "knowledge") {
-    box.innerHTML = ""; tools.innerHTML = "";
-    if (ui.knowledgeView === "review" && state.papers.length) {
-      const bar = document.createElement("div");
-      bar.innerHTML = `<div class="detail-bar"><button class="back-btn" type="button" data-kz-back>← 返回知识总览</button><span class="hint">继续积累 / 审阅（现有流程）</span></div>`;
-      box.append(bar);
-      const formBox = document.createElement("div"); box.append(formBox);
-      renderKnowledgeForm(formBox);
-      renderLitTools(tools);
-    }
-    return;
-  }
   // 课题页、文献页（管理/阅读分离，表单移入按需流程）不走通用创建区。
-  if (ui.nav === "topic" || ui.nav === "papers") { box.innerHTML = ""; tools.innerHTML = ""; return; }
+  if (ui.nav === "topic" || ui.nav === "papers" || (ui.nav === "knowledge" && !state.papers.length)) { box.innerHTML = ""; tools.innerHTML = ""; return; }
   box.innerHTML = ""; tools.innerHTML = "";
   renderImportBox(box);
   renderLitTools(tools);
@@ -1101,6 +1058,9 @@ function midEmpty(kind, title, desc) {
 function renderMiddle() {
   const note = $("#mid-note"), content = $("#mid-content");
   document.body.dataset.nav = ui.nav;
+  const kzLibrary = ui.nav === "knowledge" && ui.kzPanel === "library";
+  document.querySelector(".pane.mid").classList.toggle("kz-lib-first", kzLibrary);
+  document.querySelector(".app").classList.toggle("kz-library", kzLibrary);
   content.classList.remove("is-empty", "rich", "reader");
   content.classList.toggle("kzw", ui.nav === "knowledge");
   if (ui.nav === "topic") {
@@ -1135,10 +1095,9 @@ function renderMiddle() {
     return renderPaperManage(content, note);
   }
   if (ui.nav === "knowledge") {
-    if (ui.knowledgeView !== "review") return renderKnowledgeOverview(content, note);
-    $("#mid-title").textContent = "卡片审阅";
+    $("#mid-title").textContent = ui.kzPanel === "library" ? "知识总览" : ui.kzPanel === "themes" ? "主题" : "卡片审阅";
     note.hidden = true;
-    if (!state.papers.length) { midEmpty("knowledge", "还没有可审的卡片", "先在文献卷建立条目并导入附件，再回到知识卷发起语义提取。"); return; }
+    if (!state.papers.length && ui.kzPanel !== "library") { midEmpty("knowledge", "还没有可审的卡片", "先在文献卷建立条目并导入附件，再回到知识卷发起语义提取。"); return; }
     content.innerHTML = knowledgeWorkspaceHtml(state, ui);
     return;
   }
@@ -1207,7 +1166,6 @@ function renderRight() {
     $("#right-title").textContent = "条目与附件"; $("#right-content").innerHTML = paperHtml(); return;
   }
   if (ui.nav === "knowledge") {
-    if (ui.knowledgeView !== "review") { $("#right-title").textContent = ""; $("#right-content").innerHTML = ""; return; }
     $("#right-title").textContent = "审阅队列";
     $("#right-content").innerHTML = knowledgeQueueHtml(state, ui);
     return;
@@ -2240,7 +2198,6 @@ document.addEventListener("click", (ev) => {
   ui.protocolView = "manage"; ui.protocolEdit = false;
   ui.recordView = "overview";
   ui.chatView = "manage";
-  ui.knowledgeView = "overview";
   renderAll();
 });
 document.addEventListener("click", (ev) => {
@@ -2412,8 +2369,6 @@ document.addEventListener("click", (ev) => {
   const chatrow = ev.target.closest("[data-chatrow]");
   if (chatrow) { openChatDetail(chatrow.dataset.chatrow); return; }
   if (ev.target.closest("[data-chat-back]")) { backToChatManage(); return; }
-  if (ev.target.closest("[data-kz-go]")) { if (!guardLeave()) return; ui.knowledgeView = "review"; renderAll(); return; }
-  if (ev.target.closest("[data-kz-back]")) { if (!guardLeave()) return; ui.knowledgeView = "overview"; renderAll(); return; }
   if (ev.target.id === "ch-create") { runBusy(ev.target, "创建会话", async () => {
     const r = await api.createChat({ topicId: ui.topicId, subquestionId: $("#ch-subq").value || undefined, scope: collectPicks("ch-scope") });
     ui.chatId = r.chatId; ui.chatView = "chat"; await refresh(); setStatus("会话已创建：开始讨论");
@@ -3244,7 +3199,7 @@ $("#ai-models-list").addEventListener("click", (ev) => {
 
 // 领域知识积累 / 数据处理与分析 两页的渲染与事件（拆分到 lib/pages/*，行为不变）。
 bindKnowledge({
-  getState: () => state, ui, api, $, $$, refresh, refreshAfterJob, renderAll, renderShell, renderMiddle, renderRight,
+  getState: () => state, ui, api, $, $$, refresh, refreshAfterJob, renderAll, renderShell, renderMiddle, renderRight, navigate: activateNav,
   setStatus, setError, setDirty, humanError, runBusy, runJob, notify, pollJob, noteChangeHits, clearAllErrors,
 });
 bindAnalysis({

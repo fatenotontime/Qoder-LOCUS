@@ -6,6 +6,7 @@
 import { esc } from "../views.js";
 import { fmtEnum, fmtReview, fmtUnknowns, fmtUncertain, fmtValue, fmtVersion } from "../format.js";
 import { aiSproutHtml, knowledgeStageHtml, kzStageState } from "./knowledge-stage.js";
+import { knowledgeOverviewHtml } from "./knowledge-container.js";
 
 const ROLE_LABEL = { fulltext: "正文", supplement: "补充材料", other: "其他" };
 
@@ -252,9 +253,19 @@ function kzThemesHtml(state, ui) {
   </div>`;
 }
 
+function kzPickHtml(panel) {
+  const btn = (key, label) => `<button class="kz-panel ${panel === key ? "active" : ""}" data-panel="${key}">${label}</button>`;
+  return `<div class="kzpick">${btn("library", "库总览")}${btn("cards", "分项")}${btn("themes", "主题")}</div>`;
+}
+
 export function knowledgeWorkspaceHtml(state, ui) {
+  if (ui.kzPanel === "library") {
+    const lib = ui.kzLib;
+    const stageData = lib?.data && (lib.topicId ?? "") === (ui.topicId || "") ? lib.data : null;
+    return `${knowledgeOverviewHtml(state, ui)}${stageData ? knowledgeStageHtml(state, { ...ui, paperId: null }, stageData) : ""}${kzPickHtml("library")}`;
+  }
   if (ui.kzPanel === "themes") {
-    return `${knowledgeStageHtml(state, ui)}<div class="kzpick"><button class="kz-panel ${ui.kzPanel === "themes" ? "" : "active"}" data-panel="cards">分项</button><button class="kz-panel active" data-panel="themes">主题</button></div>${kzThemesHtml(state, ui)}`;
+    return `${knowledgeStageHtml(state, ui)}${kzPickHtml("themes")}${kzThemesHtml(state, ui)}`;
   }
   const cards = kzCards(state, ui);
   const part = { todo: [], cand: [], skip: [], excl: [] };
@@ -287,7 +298,7 @@ export function knowledgeWorkspaceHtml(state, ui) {
       </div>` : ""}
     </div>`;
   }).join("");
-  return `${knowledgeStageHtml(state, ui)}<div class="kzpick"><button class="kz-panel active" data-panel="cards">分项</button><button class="kz-panel" data-panel="themes">主题</button></div>
+  return `${knowledgeStageHtml(state, ui)}${kzPickHtml("cards")}
     <div class="kzpick">文献：<select id="kz-paper">${state.papers.length ? state.papers.map((p) => `<option value="${esc(p.id)}" ${p.id === ui.paperId ? "selected" : ""}>${esc(p.title)}</option>`).join("") : `<option>（暂无文献）</option>`}</select></div>
     <div class="kztabs">${tabHtml}</div>
     <div class="kzlist">${rows || `<p class="hint">此分区暂无卡片。</p>`}</div>
@@ -363,6 +374,7 @@ export function renderKnowledgeForm(box) {
     ctx.renderRight();
     const job = await pollKnowledgeJob(r.jobId, r.runId);
     await ctx.refreshAfterJob();
+    invalidateKnowledgeLibrary(true);
     if (job.status === "done") { ctx.setStatus(job.message); }
     else { const h = ctx.humanError(job.error ?? ""); ctx.setStatus("知识提取失败，详情见错误面板。"); ctx.setError("right", { panel: "right", message: `知识提取失败：${h.message}`, detail: h.detail, retry: null }); }
   }));
@@ -375,6 +387,7 @@ export function renderKnowledgeForm(box) {
     const scopeText = $("#kstm-scope").value.trim();
     await ctx.api.createStatement({ topicId: ui.topicId, text, nature, createdBy: "human", ...(scopeText ? { scopeText } : {}) });
     await ctx.refresh();
+    invalidateKnowledgeLibrary(true);
     ctx.setStatus("已记为待审知识项：人工确认后才进入当前认识与正式分析");
   }));
   $("#dbg-import").addEventListener("click", (ev) => ctx.runBusy(ev.target, "导入机械草稿", async () => {
@@ -386,7 +399,7 @@ export function renderKnowledgeForm(box) {
 // ── 事件 ────────────────────────────────────────────────────
 
 async function kzAct(fn, msg) {
-  try { const r = await fn(); ctx.setDirty(false); await ctx.refresh(); ctx.setStatus(typeof msg === "function" ? msg(r) : msg); }
+  try { const r = await fn(); ctx.setDirty(false); await ctx.refresh(); invalidateKnowledgeLibrary(true); ctx.setStatus(typeof msg === "function" ? msg(r) : msg); }
   catch (e) { const h = ctx.humanError(e); ctx.setError("mid", { panel: "mid", message: h.message, detail: h.detail, retry: null }); }
 }
 
@@ -401,6 +414,69 @@ async function pollKnowledgeJob(jobId, runId) {
     await new Promise((r) => setTimeout(r, 700));
   }
   return { status: "error", error: "等待超时" };
+}
+
+// ── 库总览：同一次容器响应供簇图、同源列表与详情使用 ─────────
+
+const KZ_LIB_PAGE = 60;
+let kzLibSeq = 0;
+
+function kzLibVisible() {
+  return ctx?.ui?.nav === "knowledge" && ctx.ui.kzPanel === "library";
+}
+
+function kzLibQuery() {
+  return { topicId: ctx.ui.topicId || undefined, mode: "explore", pageSize: KZ_LIB_PAGE };
+}
+
+function paintKnowledgeLibrary() {
+  if (kzLibVisible()) ctx.renderMiddle();
+}
+
+async function loadKnowledgeLibrary({ force = false, quiet = false } = {}) {
+  if (!kzLibVisible()) return;
+  const ui = ctx.ui;
+  const topicId = ui.topicId || "";
+  const prev = ui.kzLib;
+  const sameTopic = prev?.topicId === topicId;
+  if (!force && sameTopic && (prev.refreshing || prev.status === "loading" || (!prev.dirty && ["ready", "empty", "unwired", "error"].includes(prev.status)))) return;
+  const seq = ++kzLibSeq;
+  const keep = quiet && prev?.data ? prev.data : null;
+  ui.kzLib = {
+    status: keep ? prev.status : "loading",
+    selected: keep ? prev.selected : null,
+    topicId, data: keep, refreshing: !!quiet, dirty: false,
+  };
+  paintKnowledgeLibrary();
+  try {
+    const data = await ctx.api.knowledgeContainer(kzLibQuery());
+    if (seq !== kzLibSeq) return;
+    const hasItems = (data.counts?.matched ?? 0) > 0 || (data.totals?.datasets ?? 0) > 0;
+    ui.kzLib = { status: hasItems ? "ready" : "empty", topicId, data, selected: sameTopic ? prev?.selected ?? null : null, refreshing: false, dirty: false, at: Date.now() };
+  } catch (e) {
+    if (seq !== kzLibSeq) return;
+    ui.kzLib = { status: e?.status === 404 || e?.status === 405 ? "unwired" : "error", topicId, data: keep, selected: sameTopic ? prev?.selected ?? null : null, refreshing: false, dirty: false };
+  }
+  paintKnowledgeLibrary();
+}
+
+function invalidateKnowledgeLibrary(reload = false) {
+  if (!ctx?.ui) return;
+  if (ctx.ui.kzLib) ctx.ui.kzLib = { ...ctx.ui.kzLib, dirty: true };
+  if (reload && kzLibVisible()) loadKnowledgeLibrary({ force: true, quiet: true });
+}
+
+function openForLibrary(action) {
+  if (action === "papers") { ctx.navigate?.("papers"); return; }
+  const box = document.querySelector("#create-area");
+  if (!box) return;
+  const details = [...box.querySelectorAll("details")];
+  const target = action === "statement" ? details[1] : details[0];
+  if (target) target.open = true;
+  box.scrollIntoView({ behavior: window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "start" });
+  const input = action === "statement" ? box.querySelector("#kstm-text") : box.querySelector("#k-purpose");
+  input?.focus({ preventScroll: true });
+  ctx.setStatus(action === "statement" ? "写下判断本身：确认后才进入当前认识" : "选择附件并填写研究目的，再发起语义提取");
 }
 
 /** 「温度＝25 °C」拆成名称与值，免得显示成「温度＝温度＝25 °C」。 */
@@ -467,6 +543,38 @@ export function bindKnowledge(c) {
   document.addEventListener("click", (ev) => {
     const t = ev.target;
     const { ui, api, renderMiddle, renderShell } = ctx;
+    const libEl = t.closest?.("[data-kzlib-el]");
+    if (libEl) {
+      const key = libEl.dataset.kzlibEl;
+      const fromSources = !!libEl.closest(".kzlib-sources");
+      const cur = ui.kzLib ?? {};
+      ui.kzLib = { ...cur, selected: cur.selected === key ? null : key };
+      renderMiddle();
+      const host = fromSources ? document.querySelector(".kzlib-sources") : document;
+      [...host.querySelectorAll("[data-kzlib-el]")].find((el) => el.dataset.kzlibEl === key)?.focus({ preventScroll: true });
+      return;
+    }
+    const libSummary = t.closest?.(".kzlib-sources > summary");
+    if (libSummary) {
+      ev.preventDefault();
+      const cur = ui.kzLib ?? {};
+      ui.kzLib = { ...cur, sourcesOpen: !cur.sourcesOpen };
+      renderMiddle();
+      document.querySelector(".kzlib-sources > summary")?.focus({ preventScroll: true });
+      return;
+    }
+    const libReview = t.closest?.(".kzlib-review");
+    if (libReview) {
+      const card = ctx.getState().cards?.find((c) => c.id === libReview.dataset.kzlibCard);
+      if (!card) { ctx.setStatus("这张卡不在当前数据里：先刷新库总览再看。"); return; }
+      ui.kzPanel = "cards"; ui.kzTab = KZ_PART(card); ui.cardOpen = card.id; ui.kiView = null;
+      renderMiddle();
+      return;
+    }
+    const libAct = t.closest?.("[data-kzlib-act]");
+    if (libAct) { openForLibrary(libAct.dataset.kzlibAct); return; }
+    const libReload = t.closest?.(".kzlib-reload");
+    if (libReload) { loadKnowledgeLibrary({ force: true }); return; }
     const tab = t.closest?.(".kztab");
     if (tab) { ui.kzTab = tab.dataset.kztab; ui.cardOpen = null; renderMiddle(); return; }
     const open = t.closest?.(".kz-open");
@@ -520,7 +628,7 @@ export function bindKnowledge(c) {
     }
     // ── E3 分项审阅：面板切换 / 引文定位 / 条件确认 / 分项审核 / 改值 / 旧版回查 / 结构化 / 主题 ──
     const panel = t.closest?.(".kz-panel");
-    if (panel) { if (!kzDropDraft()) return; ui.kzPanel = panel.dataset.panel; ui.cardOpen = null; ui.kiView = null; renderMiddle(); return; }
+    if (panel) { if (!kzDropDraft()) return; ui.kzPanel = panel.dataset.panel; ui.cardOpen = null; ui.kiView = null; renderMiddle(); loadKnowledgeLibrary(); return; }
     const tostruct = t.closest?.(".kz-tostruct");
     if (tostruct) { ui.kzStruct = ui.kzStruct === tostruct.dataset.cid ? null : tostruct.dataset.cid; renderMiddle(); return; }
     const qk = t.closest?.(".kzq-kitem");
@@ -680,6 +788,7 @@ export function bindKnowledge(c) {
   });
   document.addEventListener("change", async (ev) => {
     const { ui } = ctx;
+    if (kzLibVisible() && (ui.kzLib?.topicId ?? "") !== (ui.topicId || "")) loadKnowledgeLibrary();
     if (ev.target.id === "kz-paper") {
       if (!kzDropDraft()) { ctx.renderMiddle(); return; }
       ui.paperId = ev.target.value; ui.assetId = null; ui.cardOpen = null; ui.highlight = null; ui.kzJob = null; ui.kiView = null; ui.kzStruct = null; ctx.clearAllErrors(); ctx.renderAll(); return;
@@ -708,4 +817,8 @@ export function bindKnowledge(c) {
   });
   // E3：审阅草稿（依据/值/主题）只存在于页面上，标记为未保存，避免刷新或后台任务把它冲掉。
   document.addEventListener("input", (ev) => { if (ev.target.matches?.(KZ_DRAFT)) ctx.setDirty(true); });
+  if (typeof MutationObserver !== "undefined" && document.body) {
+    new MutationObserver(() => loadKnowledgeLibrary()).observe(document.body, { attributes: true, attributeFilter: ["data-nav"] });
+  }
+  loadKnowledgeLibrary();
 }

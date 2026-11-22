@@ -91,6 +91,19 @@ const kzState = {
 const detailStripped = (h) => h.replace(/<pre class="perr-detail-body"[\s\S]*?<\/pre>/g, " ");
 const visibleText = (h) => detailStripped(h).replace(/<[^>]*>/g, " ").replace(/&[a-z]+;/g, " ").replace(/\s+/g, " ");
 
+const libRef = { kind: "item", id: "ki1", revision: 2 };
+const libData = {
+  viewId: "v1", scope: { topicId: "t1" }, mode: "formal",
+  elements: [{ ref: libRef, kind: "item", contentType: "claim", nature: "observation", sourceClass: "literature_report", reviewStatus: "confirmed", label: "响应时间 0.8 s", valueText: "0.8 s", unit: "s", unknownCount: 0, themeIds: ["th1"], sourceTokens: ["S1"], conditionTexts: ["温度＝25 °C"] }],
+  totals: { items: 1, datasets: 0, pending: 0, notFormal: 0 },
+  counts: { matched: 1, loaded: 1, totalKnown: 1 },
+  undivided: [], byTheme: [{ themeId: "th1", name: "pH 与响应", memberRefs: [libRef] }],
+  bySource: [{ token: "S1", label: "asset as1 v1", itemRefs: [libRef] }],
+  sources: [{ token: "S1", ref: { kind: "asset", id: "as1", version: "v1", contentHash: "h" }, label: "asset as1 v1" }],
+  cardIndex: [{ cardId: "c1", itemRefs: [libRef] }],
+  dedupNote: "去重以固定引用为准。", warnings: [], hasMore: false, nextCursor: null,
+};
+
 function allRendered() {
   const parts = [
     topbarTopicHtml(state, ui), topbarTopicHtml({ ...state, topics: [] }, ui), topbarTopicHtml({ ...state, topics: [state.topics[0], { id: "t2", name: "课题乙", researchQuestion: "R" }] }, ui),
@@ -117,6 +130,12 @@ function allRendered() {
     knowledgeWorkspaceHtml(kzState, { ...ui, nav: "knowledge", kzJob: { status: "running", done: 1, total: 3, created: 2, chunkErrors: [] } }),
     knowledgeWorkspaceHtml(kzState, { ...ui, nav: "knowledge", kzJob: { status: "paused", done: 1, total: 3, created: 2, chunkErrors: [] } }),
     knowledgeWorkspaceHtml(kzState, { ...ui, nav: "knowledge", kzJob: { status: "error", done: 1, total: 3, created: 2, chunkErrors: [] } }),
+    // E6-B：库总览容器（读到数据／读取中／未接入／空库）与同源列表
+    knowledgeWorkspaceHtml(state, { ...ui, nav: "knowledge", kzPanel: "library", kzLib: { status: "ready", topicId: "t1", data: libData } }),
+    knowledgeWorkspaceHtml(state, { ...ui, nav: "knowledge", kzPanel: "library", kzLib: { status: "ready", topicId: "t1", data: libData, selected: "item:ki1@2" } }),
+    knowledgeWorkspaceHtml(state, { ...ui, nav: "knowledge", kzPanel: "library", kzLib: { status: "loading", topicId: "t1" } }),
+    knowledgeWorkspaceHtml(state, { ...ui, nav: "knowledge", kzPanel: "library", kzLib: { status: "unwired", topicId: "t1" } }),
+    knowledgeWorkspaceHtml(state, { ...ui, nav: "knowledge", kzPanel: "library", kzLib: { status: "empty", topicId: "t1", data: { ...libData, elements: [], byTheme: [], bySource: [], sources: [], undivided: [], cardIndex: [], counts: { matched: 0, loaded: 0, totalKnown: 0 }, totals: { items: 0, datasets: 0, pending: 0, notFormal: 0 } } } }),
   ];
   return parts.join("\n");
 }
