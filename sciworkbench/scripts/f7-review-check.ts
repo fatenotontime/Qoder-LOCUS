@@ -86,7 +86,8 @@ try{localStorage.setItem('locus.ui.v2',JSON.stringify({nav:"chat",topicId:"${top
     pass('T1 取消后切换器仍开', !q('#topic-switcher').hidden);
     pass('T1 取消后表单内容保留', q('#ts-new-name')?.value==='测试新课题X');
     pass('T1 取消后仍为未保存', !q('#dirty-badge').hidden);
-    q('#ts-close')?.click(); await sleep(200);
+    q('#ts-close')?.click(); await sleep(250);
+    pass('T1 切换器「关闭」可关掉（计算样式 display=none）', (()=>{const sw=q('#topic-switcher');return !!sw && getComputedStyle(sw).display==='none';})());
 
     // --- T2 方案详情「完成编辑」：脏数据取消 → 留在编辑态 ---
     try{

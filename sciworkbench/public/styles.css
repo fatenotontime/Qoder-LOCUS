@@ -1931,6 +1931,7 @@ button.curtopic.none { color: var(--muted); }
 
 /* 课题切换器弹层 */
 .topic-switcher.drawer { width: min(460px, 92vw); display: flex; flex-direction: column; }
+.topic-switcher[hidden] { display: none !important; } /* 覆盖上面的 display:flex，确保 [hidden] 生效 */
 .topic-switcher .ts-search {
   width: 100%; margin-bottom: var(--space-3); padding: var(--space-2) var(--space-3);
   border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--bg); color: var(--fg);
@@ -2076,6 +2077,7 @@ button.curtopic.none { color: var(--muted); }
   background: var(--accent); color: var(--accent-fg); font-size: var(--text-sm); cursor: pointer;
   box-shadow: 0 4px 12px rgba(0,0,0,.16);
 }
+.chat-jump[hidden] { display: none !important; }
 
 /* ── F2 知识：骨架总览（占位） ── */
 .kz-overview { max-width: 900px; }
