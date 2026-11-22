@@ -1,0 +1,81 @@
+{
+  "setId": "ocr-new",
+  "taskId": "handwriting_ocr",
+  "modelId": "simulated-model",
+  "params": {
+    "temperature": "0"
+  },
+  "mode": "simulated",
+  "at": "2026-11-22T00:00:00+08:00",
+  "prompt": {
+    "versionLabel": "未定义版本常量（以正文 hash 冻结）",
+    "systemHash": "01438e6d41c79da8edee00de2f9279b2296aaea5aced1063487cc185dfcf4cc3",
+    "schemaHash": "c24935d20366a183883088264aca1af814fb0aaccac9d3e24920749e08c4e9bf"
+  },
+  "processing": {
+    "processorVersion": "input/v1",
+    "params": {}
+  },
+  "runs": [
+    {
+      "sampleId": "ocr-normal",
+      "status": "ok",
+      "rawOutput": "{\"records\":[{\"rawText\":\"25 mV\",\"fields\":{\"value\":\"25\",\"unit\":\"mV\"},\"unknowns\":[]}]}",
+      "parsed": {
+        "records": [
+          {
+            "rawText": "25 mV",
+            "fields": {
+              "value": "25",
+              "unit": "mV"
+            },
+            "unknowns": []
+          }
+        ]
+      },
+      "parseError": null,
+      "processedInputHash": "1f762f81ffdb1cc4f7bc153ad1d6b0236932e6d8b52a4f0613ebb101369a27f7",
+      "imageHash": "f9bc4a65f2fa371d768f630540c56937522023aca26f0172b37bbf506f36a32c"
+    },
+    {
+      "sampleId": "ocr-missing",
+      "status": "ok",
+      "rawOutput": "{\"records\":[{\"rawText\":\"2? mV\",\"fields\":{\"value\":\"2?\",\"unit\":\"\"},\"unknowns\":[\"第二位数字不清\",\"单位缺失\"]}]}",
+      "parsed": {
+        "records": [
+          {
+            "rawText": "2? mV",
+            "fields": {
+              "value": "2?",
+              "unit": ""
+            },
+            "unknowns": [
+              "第二位数字不清",
+              "单位缺失"
+            ]
+          }
+        ]
+      },
+      "parseError": null,
+      "processedInputHash": "51b0ad9d21901a69b71112118ccc205d7da73c5a9c082dcaa8530336b3e46c0c",
+      "imageHash": "ee7d4459cb82ca776cc9d98a7e0366557a9fe4328d3ca39d42523d39b0b59689"
+    },
+    {
+      "sampleId": "ocr-holdout",
+      "status": "ok",
+      "rawOutput": "{\"records\":[{\"rawText\":\"1.0,3.0\\n2.0,4.0\\n5.0,6.0\",\"fields\":{},\"unknowns\":[]}]}",
+      "parsed": {
+        "records": [
+          {
+            "rawText": "1.0,3.0\n2.0,4.0\n5.0,6.0",
+            "fields": {},
+            "unknowns": []
+          }
+        ]
+      },
+      "parseError": null,
+      "processedInputHash": "9f20cc23d7064f0f0119d5ec834e021050f751c33e50182e3322892f65bd7e92",
+      "imageHash": "921caeaae391d4ca2f883de377340fd4bec60186ae50be826ddee507c396069d"
+    }
+  ]
+}

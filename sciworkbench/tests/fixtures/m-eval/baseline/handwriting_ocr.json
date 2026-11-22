@@ -1,0 +1,10 @@
+{
+  "taskId": "handwriting_ocr",
+  "taskName": "handwriting_ocr",
+  "versionLabel": "未定义版本常量（以正文 hash 冻结）",
+  "systemText": "你是手写实验记录识别助手。逐字转录图中的记录，保留单位与数值，辨认不清用 ? 占位；不得猜测数值或单位。只返回 JSON，键必须用双引号。",
+  "schemaText": "{\"records\":[{\"rawText\":\"转录文本\",\"fields\":{\"键\":\"值\"},\"unknowns\":[\"未知项\"]}]}",
+  "systemHash": "01438e6d41c79da8edee00de2f9279b2296aaea5aced1063487cc185dfcf4cc3",
+  "schemaHash": "c24935d20366a183883088264aca1af814fb0aaccac9d3e24920749e08c4e9bf",
+  "codeBaseline": "a7a57d2"
+}

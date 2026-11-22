@@ -1,0 +1,43 @@
+{
+  "taskId": "knowledge_struct",
+  "oldSetId": "ks-old",
+  "newSetId": "ks-new",
+  "oldMode": "simulated",
+  "newMode": "simulated",
+  "comparability": {
+    "comparable": false,
+    "promptChanges": [],
+    "nonPromptDiffs": [],
+    "note": "未检测到提示词变化，无法把差异归因于改词。"
+  },
+  "perCase": [
+    {
+      "sampleId": "ks-normal",
+      "oldVerdict": "fail",
+      "newVerdict": "pending",
+      "category": "needs_review",
+      "note": "tuning · synthetic"
+    },
+    {
+      "sampleId": "ks-missing",
+      "oldVerdict": "fail",
+      "newVerdict": "pending",
+      "category": "needs_review",
+      "note": "tuning · synthetic"
+    },
+    {
+      "sampleId": "ks-holdout",
+      "oldVerdict": "pending",
+      "newVerdict": "pending",
+      "category": "needs_review",
+      "note": "holdout · synthetic"
+    }
+  ],
+  "summary": {
+    "fixed": 0,
+    "new_failure": 0,
+    "still_failing": 0,
+    "needs_review": 3,
+    "unchanged_pass": 0
+  }
+}

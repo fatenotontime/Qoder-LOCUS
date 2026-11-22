@@ -1,0 +1,57 @@
+{
+  "independence_unknown": {
+    "purpose": { "value": "比较两组", "status": "confirmed" },
+    "columns": { "value": "value", "status": "confirmed" },
+    "units": { "value": "a.u.", "status": "confirmed" },
+    "validCounts": { "value": "空=缺失", "status": "confirmed" },
+    "groups": { "value": "A vs B", "status": "confirmed" },
+    "batch": { "value": "无批次", "status": "confirmed" },
+    "independence": { "value": null, "status": "unknown" }
+  },
+  "dependent_groups": {
+    "purpose": { "value": "比较两组", "status": "confirmed" },
+    "columns": { "value": "value", "status": "confirmed" },
+    "units": { "value": "a.u.", "status": "confirmed" },
+    "validCounts": { "value": "空=缺失", "status": "confirmed" },
+    "groups": { "value": "A vs B", "status": "confirmed" },
+    "batch": { "value": "同一单位重复测量", "status": "confirmed" },
+    "independence": { "value": "dependent", "status": "confirmed" }
+  },
+  "unpaired": {
+    "purpose": { "value": "前后比较", "status": "confirmed" },
+    "columns": { "value": "pre;post", "status": "confirmed" },
+    "units": { "value": "a.u.", "status": "confirmed" },
+    "pairing": { "value": "unpaired", "status": "confirmed" }
+  },
+  "constant_x": {
+    "purpose": { "value": "拟合", "status": "confirmed" },
+    "columns": { "value": "x;y", "status": "confirmed" },
+    "units": { "value": "a.u.", "status": "confirmed" },
+    "xValues": { "value": "constant", "status": "confirmed" },
+    "fitRange": { "value": "x=5", "status": "confirmed" },
+    "independence": { "value": "independent", "status": "confirmed" }
+  },
+  "inferred_type": {
+    "purpose": { "value": "描述 value", "status": "confirmed" },
+    "columns": { "value": "value", "status": "confirmed" },
+    "validCounts": { "value": "空=缺失", "status": "confirmed" },
+    "units": { "value": "机器猜测为无量纲", "status": "inferred" }
+  },
+  "grouping_unknown": {
+    "purpose": { "value": "看响应随时间", "status": "confirmed" },
+    "columns": { "value": "readout", "status": "confirmed" },
+    "units": { "value": "s / a.u.", "status": "confirmed" },
+    "validCounts": { "value": "空=缺失", "status": "confirmed" },
+    "xAxis": { "value": "time (s)", "status": "confirmed" },
+    "yAxis": { "value": "readout (a.u.)", "status": "confirmed" },
+    "order": { "value": "按 time 升序", "status": "confirmed" },
+    "groups": { "value": null, "status": "unknown" }
+  },
+  "paired_no_key": {
+    "purpose": { "value": "前后比较", "status": "confirmed" },
+    "columns": { "value": "pre;post", "status": "confirmed" },
+    "units": { "value": "a.u.", "status": "confirmed" },
+    "pairing": { "value": "paired", "status": "confirmed" },
+    "pairingKey": { "value": null, "status": "unknown" }
+  }
+}

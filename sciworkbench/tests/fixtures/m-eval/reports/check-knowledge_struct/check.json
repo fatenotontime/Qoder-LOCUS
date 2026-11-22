@@ -1,0 +1,470 @@
+{
+  "taskId": "knowledge_struct",
+  "setId": "ks-new",
+  "mode": "simulated",
+  "promptMatch": true,
+  "samples": [
+    {
+      "sampleId": "ks-normal",
+      "split": "tuning",
+      "inputHash": "fe9be443427f8c5919aecfd6ef14a1a906c02b503570cbd1f9489568b39b3ea5",
+      "status": "ok",
+      "checks": [
+        {
+          "checkId": "json_parse",
+          "rule": "输出是合法 JSON",
+          "ok": true,
+          "detail": "ok",
+          "kind": "structural"
+        },
+        {
+          "checkId": "field:schemaVersion",
+          "rule": "顶层含 schemaVersion",
+          "ok": true,
+          "detail": "ok",
+          "kind": "structural"
+        },
+        {
+          "checkId": "array:evidence",
+          "rule": "顶层 evidence 为数组",
+          "ok": true,
+          "detail": "ok",
+          "kind": "structural"
+        },
+        {
+          "checkId": "array:contexts",
+          "rule": "顶层 contexts 为数组",
+          "ok": true,
+          "detail": "ok",
+          "kind": "structural"
+        },
+        {
+          "checkId": "array:cards",
+          "rule": "顶层 cards 为数组",
+          "ok": true,
+          "detail": "ok",
+          "kind": "structural"
+        },
+        {
+          "checkId": "array:relations",
+          "rule": "顶层 relations 为数组",
+          "ok": true,
+          "detail": "ok",
+          "kind": "structural"
+        },
+        {
+          "checkId": "forbidden_fields",
+          "rule": "不得出现字段 audit/revision/stableId/history",
+          "ok": true,
+          "detail": "ok",
+          "kind": "structural"
+        }
+      ],
+      "judgment": {
+        "runId": "ks-normal",
+        "items": [
+          {
+            "checkId": "auto:json_parse",
+            "auto": {
+              "rule": "输出是合法 JSON",
+              "ok": true
+            },
+            "human": "pending",
+            "reason": "",
+            "failureClass": null
+          },
+          {
+            "checkId": "auto:field:schemaVersion",
+            "auto": {
+              "rule": "顶层含 schemaVersion",
+              "ok": true
+            },
+            "human": "pending",
+            "reason": "",
+            "failureClass": null
+          },
+          {
+            "checkId": "auto:array:evidence",
+            "auto": {
+              "rule": "顶层 evidence 为数组",
+              "ok": true
+            },
+            "human": "pending",
+            "reason": "",
+            "failureClass": null
+          },
+          {
+            "checkId": "auto:array:contexts",
+            "auto": {
+              "rule": "顶层 contexts 为数组",
+              "ok": true
+            },
+            "human": "pending",
+            "reason": "",
+            "failureClass": null
+          },
+          {
+            "checkId": "auto:array:cards",
+            "auto": {
+              "rule": "顶层 cards 为数组",
+              "ok": true
+            },
+            "human": "pending",
+            "reason": "",
+            "failureClass": null
+          },
+          {
+            "checkId": "auto:array:relations",
+            "auto": {
+              "rule": "顶层 relations 为数组",
+              "ok": true
+            },
+            "human": "pending",
+            "reason": "",
+            "failureClass": null
+          },
+          {
+            "checkId": "auto:forbidden_fields",
+            "auto": {
+              "rule": "不得出现字段 audit/revision/stableId/history",
+              "ok": true
+            },
+            "human": "pending",
+            "reason": "",
+            "failureClass": null
+          },
+          {
+            "checkId": "manual:0",
+            "auto": null,
+            "human": "pending",
+            "reason": "每条 evidence 的 quote 是否在原文逐字存在",
+            "failureClass": null
+          },
+          {
+            "checkId": "manual:1",
+            "auto": null,
+            "human": "pending",
+            "reason": "未知范围/条件是否如实列入 unknowns 而非补造",
+            "failureClass": null
+          },
+          {
+            "checkId": "manual:2",
+            "auto": null,
+            "human": "pending",
+            "reason": "二手转引是否标 secondaryCitation",
+            "failureClass": null
+          }
+        ],
+        "history": []
+      }
+    },
+    {
+      "sampleId": "ks-missing",
+      "split": "tuning",
+      "inputHash": "3d9f21c43af8e5e42fb483fed04d02b812538ee5be64c7c1954468607224bf98",
+      "status": "ok",
+      "checks": [
+        {
+          "checkId": "json_parse",
+          "rule": "输出是合法 JSON",
+          "ok": true,
+          "detail": "ok",
+          "kind": "structural"
+        },
+        {
+          "checkId": "field:schemaVersion",
+          "rule": "顶层含 schemaVersion",
+          "ok": true,
+          "detail": "ok",
+          "kind": "structural"
+        },
+        {
+          "checkId": "array:evidence",
+          "rule": "顶层 evidence 为数组",
+          "ok": true,
+          "detail": "ok",
+          "kind": "structural"
+        },
+        {
+          "checkId": "array:contexts",
+          "rule": "顶层 contexts 为数组",
+          "ok": true,
+          "detail": "ok",
+          "kind": "structural"
+        },
+        {
+          "checkId": "array:cards",
+          "rule": "顶层 cards 为数组",
+          "ok": true,
+          "detail": "ok",
+          "kind": "structural"
+        },
+        {
+          "checkId": "array:relations",
+          "rule": "顶层 relations 为数组",
+          "ok": true,
+          "detail": "ok",
+          "kind": "structural"
+        },
+        {
+          "checkId": "forbidden_fields",
+          "rule": "不得出现字段 audit/revision/stableId/history",
+          "ok": true,
+          "detail": "ok",
+          "kind": "structural"
+        }
+      ],
+      "judgment": {
+        "runId": "ks-missing",
+        "items": [
+          {
+            "checkId": "auto:json_parse",
+            "auto": {
+              "rule": "输出是合法 JSON",
+              "ok": true
+            },
+            "human": "pending",
+            "reason": "",
+            "failureClass": null
+          },
+          {
+            "checkId": "auto:field:schemaVersion",
+            "auto": {
+              "rule": "顶层含 schemaVersion",
+              "ok": true
+            },
+            "human": "pending",
+            "reason": "",
+            "failureClass": null
+          },
+          {
+            "checkId": "auto:array:evidence",
+            "auto": {
+              "rule": "顶层 evidence 为数组",
+              "ok": true
+            },
+            "human": "pending",
+            "reason": "",
+            "failureClass": null
+          },
+          {
+            "checkId": "auto:array:contexts",
+            "auto": {
+              "rule": "顶层 contexts 为数组",
+              "ok": true
+            },
+            "human": "pending",
+            "reason": "",
+            "failureClass": null
+          },
+          {
+            "checkId": "auto:array:cards",
+            "auto": {
+              "rule": "顶层 cards 为数组",
+              "ok": true
+            },
+            "human": "pending",
+            "reason": "",
+            "failureClass": null
+          },
+          {
+            "checkId": "auto:array:relations",
+            "auto": {
+              "rule": "顶层 relations 为数组",
+              "ok": true
+            },
+            "human": "pending",
+            "reason": "",
+            "failureClass": null
+          },
+          {
+            "checkId": "auto:forbidden_fields",
+            "auto": {
+              "rule": "不得出现字段 audit/revision/stableId/history",
+              "ok": true
+            },
+            "human": "pending",
+            "reason": "",
+            "failureClass": null
+          },
+          {
+            "checkId": "manual:0",
+            "auto": null,
+            "human": "pending",
+            "reason": "每条 evidence 的 quote 是否在原文逐字存在",
+            "failureClass": null
+          },
+          {
+            "checkId": "manual:1",
+            "auto": null,
+            "human": "pending",
+            "reason": "未知范围/条件是否如实列入 unknowns 而非补造",
+            "failureClass": null
+          },
+          {
+            "checkId": "manual:2",
+            "auto": null,
+            "human": "pending",
+            "reason": "二手转引是否标 secondaryCitation",
+            "failureClass": null
+          }
+        ],
+        "history": []
+      }
+    },
+    {
+      "sampleId": "ks-holdout",
+      "split": "holdout",
+      "inputHash": "a629362aa3be788220f92912210d2c1620c0a5aaeab49719e562e33107e07929",
+      "status": "ok",
+      "checks": [
+        {
+          "checkId": "json_parse",
+          "rule": "输出是合法 JSON",
+          "ok": true,
+          "detail": "ok",
+          "kind": "structural"
+        },
+        {
+          "checkId": "field:schemaVersion",
+          "rule": "顶层含 schemaVersion",
+          "ok": true,
+          "detail": "ok",
+          "kind": "structural"
+        },
+        {
+          "checkId": "array:evidence",
+          "rule": "顶层 evidence 为数组",
+          "ok": true,
+          "detail": "ok",
+          "kind": "structural"
+        },
+        {
+          "checkId": "array:contexts",
+          "rule": "顶层 contexts 为数组",
+          "ok": true,
+          "detail": "ok",
+          "kind": "structural"
+        },
+        {
+          "checkId": "array:cards",
+          "rule": "顶层 cards 为数组",
+          "ok": true,
+          "detail": "ok",
+          "kind": "structural"
+        },
+        {
+          "checkId": "array:relations",
+          "rule": "顶层 relations 为数组",
+          "ok": true,
+          "detail": "ok",
+          "kind": "structural"
+        },
+        {
+          "checkId": "forbidden_fields",
+          "rule": "不得出现字段 audit/revision/stableId/history",
+          "ok": true,
+          "detail": "ok",
+          "kind": "structural"
+        }
+      ],
+      "judgment": {
+        "runId": "ks-holdout",
+        "items": [
+          {
+            "checkId": "auto:json_parse",
+            "auto": {
+              "rule": "输出是合法 JSON",
+              "ok": true
+            },
+            "human": "pending",
+            "reason": "",
+            "failureClass": null
+          },
+          {
+            "checkId": "auto:field:schemaVersion",
+            "auto": {
+              "rule": "顶层含 schemaVersion",
+              "ok": true
+            },
+            "human": "pending",
+            "reason": "",
+            "failureClass": null
+          },
+          {
+            "checkId": "auto:array:evidence",
+            "auto": {
+              "rule": "顶层 evidence 为数组",
+              "ok": true
+            },
+            "human": "pending",
+            "reason": "",
+            "failureClass": null
+          },
+          {
+            "checkId": "auto:array:contexts",
+            "auto": {
+              "rule": "顶层 contexts 为数组",
+              "ok": true
+            },
+            "human": "pending",
+            "reason": "",
+            "failureClass": null
+          },
+          {
+            "checkId": "auto:array:cards",
+            "auto": {
+              "rule": "顶层 cards 为数组",
+              "ok": true
+            },
+            "human": "pending",
+            "reason": "",
+            "failureClass": null
+          },
+          {
+            "checkId": "auto:array:relations",
+            "auto": {
+              "rule": "顶层 relations 为数组",
+              "ok": true
+            },
+            "human": "pending",
+            "reason": "",
+            "failureClass": null
+          },
+          {
+            "checkId": "auto:forbidden_fields",
+            "auto": {
+              "rule": "不得出现字段 audit/revision/stableId/history",
+              "ok": true
+            },
+            "human": "pending",
+            "reason": "",
+            "failureClass": null
+          },
+          {
+            "checkId": "manual:0",
+            "auto": null,
+            "human": "pending",
+            "reason": "每条 evidence 的 quote 是否在原文逐字存在",
+            "failureClass": null
+          },
+          {
+            "checkId": "manual:1",
+            "auto": null,
+            "human": "pending",
+            "reason": "未知范围/条件是否如实列入 unknowns 而非补造",
+            "failureClass": null
+          },
+          {
+            "checkId": "manual:2",
+            "auto": null,
+            "human": "pending",
+            "reason": "二手转引是否标 secondaryCitation",
+            "failureClass": null
+          }
+        ],
+        "history": []
+      }
+    }
+  ]
+}
