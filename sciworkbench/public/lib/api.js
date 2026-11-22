@@ -100,6 +100,14 @@ export const api = {
     const tail = q.toString();
     return json(`/api/knowledge/container${tail ? `?${tail}` : ""}`);
   },
+  // 分析页上下文地图（只读）：节点/边一律来自后端 buildNetwork，前端不补造。
+  async analysisMap(query = {}) {
+    const q = new URLSearchParams();
+    for (const [k, v] of Object.entries(query)) if (v !== undefined && v !== null && v !== "") q.set(k, String(v));
+    const tail = q.toString();
+    return json(`/api/analysis/map${tail ? `?${tail}` : ""}`);
+  },
+  async analysisTaskMap(taskId) { return json(`/api/analysis/tasks/${encodeURIComponent(taskId)}/map`); },
 };
 
 async function json(url, body) {

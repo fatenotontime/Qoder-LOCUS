@@ -74,6 +74,42 @@ export function snapshotHtml(snap) {
   </details>`;
 }
 
+/** 真实上下文地图（只读）：节点/边来自后端 buildNetwork，前端只呈现不补造；可在此采用候选知识到本子问题。 */
+function anMapHtml(state, ui, t) {
+  const m = ui.anMap;
+  const head = `<div class="anmap"><div class="kv"><b>上下文地图（只读）</b> <button class="anmap-reload">刷新地图</button></div>`;
+  if (!m || m.status === "loading") return `${head}<p class="hint">地图加载中…</p></div>`;
+  if (m.status === "unwired") return `${head}<p class="hint">地图接口未就绪。</p></div>`;
+  if (m.status === "error") return `${head}<p class="hint warn">地图暂不可用${m.message ? `：${esc(m.message)}` : ""}。</p></div>`;
+  const data = m.data ?? {};
+  const nodes = data.nodes ?? [];
+  const edges = data.edges ?? [];
+  const roleLabel = { core: "必选", selected: "已选", optional: "可选", context: "上下文" };
+  const adopted = new Set((state.adoptions ?? []).filter((a) => a.decision === "adopt" && (!t.subquestionId || a.subquestionId === t.subquestionId)).map((a) => a.cardId));
+  const excluded = new Set((state.adoptions ?? []).filter((a) => a.decision === "exclude" && (!t.subquestionId || a.subquestionId === t.subquestionId)).map((a) => a.cardId));
+  const nodeLi = (n) => {
+    const isCard = n.kind === "card";
+    const isAdopted = isCard && adopted.has(n.id);
+    const isExcluded = isCard && !isAdopted && excluded.has(n.id);
+    const act = !isCard || !t.subquestionId ? ""
+      : isAdopted ? `<button class="an-adopt undo" data-card="${esc(n.id)}" data-subq="${esc(t.subquestionId)}">撤回采用</button>`
+        : n.selectable ? `<button class="an-adopt" data-card="${esc(n.id)}" data-subq="${esc(t.subquestionId)}">采用</button>` : "";
+    const gaps = (n.gaps ?? []).length ? ` <span class="hint">${esc((n.gaps ?? []).map((g) => g.label).join("；"))}</span>` : "";
+    const tag = isAdopted ? ` <span class="badge">已采用</span>` : isExcluded ? ` <span class="badge warn">已排除</span>` : "";
+    return `<li class="anmap-node" data-key="${esc(n.key)}"><span class="badge">${esc(fmtKind(n.kind))}</span> ${esc(n.label)}${n.version ? ` <span class="hint">${esc(humanVer(n.version))}</span>` : ""}${tag}${gaps}${act}</li>`;
+  };
+  const groups = ["core", "selected", "optional", "context"].map((role) => {
+    const list = nodes.filter((n) => n.role === role);
+    if (!list.length) return "";
+    return `<details class="mini" ${role === "core" || role === "selected" ? "open" : ""}><summary>${roleLabel[role]}（${list.length}）</summary><ul class="anmap-nodes">${list.map(nodeLi).join("")}</ul></details>`;
+  }).join("");
+  const edgeLi = edges.slice(0, 40).map((e) => `<li>${esc(e.from)} → ${esc(e.to)} <span class="hint">${esc(e.edgeKind)}${e.establishedBy ? ` · ${esc(e.establishedBy)}` : ""}</span></li>`).join("");
+  return `${head}<span class="hint">节点 ${nodes.length} · 关系 ${edges.length}${data.truncated ? "（已截断）" : ""}</span>
+    ${groups || `<p class="hint">本课题暂无可用对象。</p>`}
+    <details class="mini"><summary>关系（${edges.length}）</summary><ul class="anmap-edges">${edgeLi || `<li class="hint">暂无关系。</li>`}</ul></details>
+  </div>`;
+}
+
 export function contextMapHtml(state, ui, t) {
   const q = t.subquestionId ? state.subquestions.find((x) => x.id === t.subquestionId) : null;
   const refOpen = (r) => {
@@ -96,7 +132,8 @@ export function contextMapHtml(state, ui, t) {
     ${inc.length ? `<ul>${inc.map(cand).join("")}</ul>` : `<p class="hint">无。</p>`}
     ${others.length ? `<details class="mini"><summary>其他可选（${others.length}，折叠）</summary><ul>${others.map(cand).join("")}</ul></details>` : ""}
     ${t.optional.length ? `<button id="cand-save">保存候选选择</button>` : `<p class="hint">无候选。</p>`}
-    ${t.snapshot ? snapshotHtml(t.snapshot) : ""}`;
+    ${t.snapshot ? snapshotHtml(t.snapshot) : ""}
+    ${anMapHtml(state, ui, t)}`;
 }
 
 // ── 右栏：推荐 / 结果 / 分析初稿 ────────────────────────────
@@ -278,7 +315,42 @@ export function bindAnalysis(c) {
       await runBusy(ev.target, "保存候选", async () => {
         const optional = [...$$("#mid-content .cand-toggle")].map((cb) => ({ ref: t.optional[Number(cb.dataset.idx)].ref, included: cb.checked }));
         await api.setTaskCandidates(t.id, optional);
-        await refresh(); ctx.setStatus("候选选择已保存（旧快照不受影响）");
+        await refresh(); ctx.invalidateAnalysisMap?.(); ctx.setStatus("候选选择已保存（旧快照不受影响）");
+      }); return;
+    }
+    if (ev.target.classList.contains("anmap-reload")) { ctx.loadAnalysisMap?.({ force: true }); return; }
+    if (ev.target.classList.contains("an-adopt")) {
+      const btn = ev.target;
+      const cardId = btn.dataset.card, subq = btn.dataset.subq;
+      if (!btn.classList.contains("undo")) {
+        await runBusy(btn, "记录采用", async () => {
+          await api.adopt(cardId, subq, "adopt");
+          ctx.setDirty(false); await refresh(); ctx.invalidateAnalysisMap?.();
+          ctx.setStatus("已采用到本子问题（独立于核对）");
+        }); return;
+      }
+      // 撤回采用＝把该卡在本子问题标记为「任务排除」；后端排除语义必填原因，故就地展开原因输入（不代填默认）。
+      const li = btn.closest(".anmap-node");
+      const open = li?.querySelector(".an-unadopt");
+      if (open) { open.querySelector(".an-unadopt-reason").focus(); return; }
+      const wrap = document.createElement("span");
+      wrap.className = "an-unadopt";
+      wrap.dataset.card = cardId; wrap.dataset.subq = subq;
+      wrap.innerHTML = `<input class="an-unadopt-reason" maxlength="80" placeholder="撤回（排除）原因，必填"/><button class="an-unadopt-ok">确认撤回</button><button class="an-unadopt-cancel">取消</button>`;
+      btn.after(wrap);
+      wrap.querySelector(".an-unadopt-reason").focus();
+      return;
+    }
+    if (ev.target.classList.contains("an-unadopt-cancel")) { ev.target.closest(".an-unadopt")?.remove(); return; }
+    if (ev.target.classList.contains("an-unadopt-ok")) {
+      const wrap = ev.target.closest(".an-unadopt");
+      const reason = wrap.querySelector(".an-unadopt-reason").value.trim();
+      if (!reason) { ctx.notify("mid", "撤回采用需填写原因（后端「任务排除」必填）。"); return; }
+      const { card: cardId, subq } = wrap.dataset;
+      await runBusy(ev.target, "撤回采用", async () => {
+        await api.adopt(cardId, subq, "exclude", reason);
+        ctx.setDirty(false); await refresh(); ctx.invalidateAnalysisMap?.();
+        ctx.setStatus("已撤回采用：该卡在本子问题标记为排除（原因已记录）");
       }); return;
     }
   });
