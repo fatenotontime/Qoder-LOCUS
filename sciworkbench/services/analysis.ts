@@ -13,9 +13,12 @@ import type {
 import { contentHash } from "../store.ts";
 import { AppError, MAX_IMPORT_BYTES, makeAsset, assertLegacyCardConsumerUsable, isStructuredShell } from "./app.ts";
 import {
-  createKnowledgeStatement, currentViewId, describeItem, freezeKnowledge, knowledgeItemConfirmedAt,
-  knowledgeItemGate, readKnowledge, readKnowledgeVersion, shellItemRefs,
+  accessClosure, assertFixedRefsIntact, assertKnowledgeAccess, createKnowledgeStatement, currentViewId,
+  describeItem, freezeKnowledge, knowledgeAccess, knowledgeItemConfirmedAt, knowledgeItemGate,
+  knowledgeSourceAdapter, knowledgeSourceFragment, readKnowledge, readKnowledgeVersion, resolvePinnedRefs,
+  shellItemRefs, snapshotAccessRefs,
 } from "./knowledge-base.ts";
+import type { KnowledgeSourceKind } from "./knowledge-base.ts";
 import { exportKnowledge } from "./knowledge-export.ts";
 import { canonicalHash, knowledgeRef as makeKnowledgeRef } from "../domain/knowledge.ts";
 import type { ItemPayload, KnowledgeRef } from "../domain/knowledge.ts";
@@ -74,6 +77,9 @@ function assertSelectable(state: LocusState, ref: ObjectRef): void {
     if (!payload) throw new AppError(422, `知识项版本不存在：item ${ref.id} 第 ${ref.revision ?? 0} 版（不退回最新版）。`, { code: "ref_unresolvable" });
     // 固定版本决定读到的内容；能否进入正式上下文再看该项现在的审核状态（§4.7 分项复检）。
     // §4.2/§4.6.9：门槛以**被引用版本**的审核为准（现撤回/排除仍阻断）。
+    try { assertFixedRefsIntact(state, (payload.sourceRefs ?? [])); } catch (e) {
+      throw new AppError(422, `知识项不能进入正式上下文：${(e as Error).message.slice(0, 120)}`, { code: "report_refs_unresolvable" });
+    }
     const gate = knowledgeItemGate(state, itemRef(ref));
     if (!gate.ok) {
       const why = gate.reason === "pinned_not_confirmed"
@@ -738,11 +744,15 @@ export interface KnowledgeAiInputRequest {
   readonly subquestionId?: string;
   readonly mode?: "formal" | "explore";
   readonly selectedRefs?: { kind: "item"; id: string; revision: number }[];
+  /** E8：其余模块对象（方案/模板/执行/样品/分析结果/报告块/已采纳对话）也可被 AI 选择器读取。 */
+  readonly sourceRefs?: { kind: KnowledgeSourceKind; id: string }[];
   readonly purpose: string;
   readonly model: string;
   readonly promptVersion?: string;
   readonly budgetBytes?: number;
 }
+
+export interface KnowledgeAiSourceEntry { readonly kind: KnowledgeSourceKind; readonly id: string; readonly label: string; readonly marker: string; readonly text: string; readonly sourceRef: { kind: string; id: string; version: string; contentHash: string } }
 
 export interface KnowledgeAiInputEntry { readonly ref: { kind: "item"; id: string; revision: number }; readonly text: string; readonly marker: string }
 
@@ -750,6 +760,7 @@ export interface KnowledgeAiInput {
   readonly snapshotHash: string;
   readonly scope: { topicId: string; subquestionId?: string; mode: "formal" | "explore" };
   readonly core: KnowledgeAiInputEntry[];
+  readonly sourceEntries: KnowledgeAiSourceEntry[];
   readonly optional: { ref: { kind: "item"; id: string; revision: number }; text: string; reason: string }[];
   readonly actualPayload: string;
   readonly omitted: { ref: string; reason: string }[];
@@ -797,6 +808,12 @@ export function buildKnowledgeAiInput(state: LocusState, req: KnowledgeAiInputRe
       omitted.push({ ref: key, reason: "不在当前视图范围（如主题/条件筛选或已加载页外）" });
       continue;
     }
+    // 闭包：无来源项按其稳定 ID 判策略；派生项展开到上游（含报告块固定引用）
+    const readOk = knowledgeAccess(state, "localRead", [fixed]);
+    if (!readOk.ok) { omitted.push({ ref: key, reason: `未获本地读取许可：${readOk.denied[0]?.reason ?? ""}` }); continue; }
+    const sendOk = knowledgeAccess(state, "aiSend", [fixed]);
+    if (!sendOk.ok) { omitted.push({ ref: key, reason: `未获发送 AI 许可：${sendOk.denied[0]?.reason ?? ""}（AI 发送须逐来源显式授权）` }); continue; }
+    try { assertFixedRefsIntact(state, (payload.sourceRefs ?? [])); } catch (e) { omitted.push({ ref: key, reason: `固定引用不可用：${(e as Error).message.slice(0, 90)}` }); continue; }
     core.push({
       ref: fixed, text: describeItem(state, payload, r.revision),
       marker: mode === "explore" && pinnedStatus !== "confirmed" ? `[待审·${pinnedStatus}]` : "",
@@ -809,9 +826,34 @@ export function buildKnowledgeAiInput(state: LocusState, req: KnowledgeAiInputRe
     return { ref: makeKnowledgeRef("item", e.id, e.revision), text: describeItem(state, e.payload as never, e.revision).slice(0, 200), reason: mode === "formal" ? "未选中；选中后经门槛复核才进入核心" : `未选中（当前审核：${p.review.status}）` };
   });
 
+  // E8：其余模块对象（逐条过：存在 → 归属本课题 → 可用 → 权限 → 报告引用可解析）
+  const sourceEntries: KnowledgeAiSourceEntry[] = [];
+  for (const sr of req.sourceRefs ?? []) {
+    const key = `${sr.kind} ${sr.id}`;
+    const adapter = (() => { try { return knowledgeSourceAdapter(state, sr.kind, sr.id); } catch { return null; } })();
+    if (!adapter) { omitted.push({ ref: key, reason: "对象不存在" }); continue; }
+    if (!adapter.topicIds.includes(req.topicId)) { omitted.push({ ref: key, reason: `不属于本课题（归属：${adapter.topicIds.join("、") || "无法验证"}）——跨课题不得混入` }); continue; }
+    if (!adapter.usable) { omitted.push({ ref: key, reason: `不可用：${adapter.usableNote}` }); continue; }
+    // 权限：读 + 发送 两道都要过（默认策略下 aiSend 为否，须用户显式授权）
+    const read = knowledgeAccess(state, "localRead", [adapter.sourceRef]);
+    if (!read.ok) { omitted.push({ ref: key, reason: `未获本地读取许可：${read.denied[0]?.reason ?? ""}` }); continue; }
+    const send = knowledgeAccess(state, "aiSend", [adapter.sourceRef]);
+    if (!send.ok) { omitted.push({ ref: key, reason: `未获发送 AI 许可：${send.denied[0]?.reason ?? ""}` }); continue; }
+    void accessClosure;
+    // 报告块等：当时引用的版本必须能在本库解析（历史不存在即不放行）
+    if (adapter.kind === "report_block" && adapter.pinnedRefs.length) {
+      const res = resolvePinnedRefs(state, adapter.pinnedRefs);
+      const bad = res.filter((x) => x.status !== "ok");
+      if (bad.length) { omitted.push({ ref: key, reason: `${bad.length} 个引用版本不可解析（${bad[0].reason}）——不放行` }); continue; }
+    }
+    const frag = knowledgeSourceFragment(state, sr.kind, sr.id);
+    sourceEntries.push({ kind: sr.kind, id: sr.id, label: frag.label, marker: `[${frag.label}]`, text: frag.excerpt, sourceRef: frag.sourceRef });
+  }
+
   const header = [`研究目的：${purpose}`, `视角：${mode === "formal" ? "正式（只用已确认）" : "探索（含待审，带标记）"}`, `课题：${topic.name}`].join("\n");
   const body = core.map((c) => `${c.marker ? `${c.marker} ` : ""}【${c.ref.id} 第 ${c.ref.revision} 版】\n${c.text}`).join("\n\n");
-  const actualPayload = `${header}\n\n核心（${core.length} 项）：\n${body}`;
+  const srcBody = sourceEntries.map((x) => `${x.marker}【${x.kind} ${x.id} ${x.sourceRef.version}】\n${x.text}`).join("\n\n");
+  const actualPayload = `${header}\n\n核心（${core.length} 项）：\n${body}${sourceEntries.length ? `\n\n外部对象（${sourceEntries.length} 项）：\n${srcBody}` : ""}`;
   const bytes = Buffer.byteLength(actualPayload, "utf8");
   const budgetBytes = req.budgetBytes ?? AI_BUDGET_DEFAULT;
   const requiresShrink = bytes > budgetBytes;
@@ -824,6 +866,7 @@ export function buildKnowledgeAiInput(state: LocusState, req: KnowledgeAiInputRe
   const snapshotHash = canonicalHash({
     scope: { topicId: req.topicId, subquestionId: req.subquestionId ?? null, mode },
     refs: core.map((c) => `${c.ref.id}@${c.ref.revision}`),
+    sourceRefs: sourceEntries.map((x) => `${x.kind}:${x.id}@${x.sourceRef.version}`),
     payload: actualPayload,
     promptVersion: req.promptVersion ?? "knowledge_input/v1",
   });
@@ -831,12 +874,13 @@ export function buildKnowledgeAiInput(state: LocusState, req: KnowledgeAiInputRe
     wrapper: "locus-knowledge-input/v1 (standalone-json)",
     purpose, mode, topic: { id: req.topicId, name: topic.name }, subquestionId: req.subquestionId ?? null,
     items: core.map((c) => ({ ref: { kind: "item", id: c.ref.id, revision: c.ref.revision }, payload: (byId.get(c.ref.id)!.payload) })),
+    sources: sourceEntries.map((x) => ({ ref: x.sourceRef, payload: { kind: x.kind, id: x.id, text: x.text } })),
     snapshotHash, notes,
   };
   return {
     snapshotHash,
     scope: { topicId: req.topicId, ...(req.subquestionId ? { subquestionId: req.subquestionId } : {}), mode },
-    core, optional, actualPayload, omitted, truncated, requiresShrink, notes,
+    core, sourceEntries, optional, actualPayload, omitted, truncated, requiresShrink, notes,
     counts: { coreItems: core.length, bytes, budgetBytes }, externalFile,
   };
 }
@@ -846,11 +890,28 @@ export interface AiReferenceCheck { readonly ref: string; readonly status: "vali
 /** T43：模型返回的引用必须落在本次输入快照内；不在即 invalid（不得自动写入正式报告/知识）。 */
 export function validateAiReferences(input: KnowledgeAiInput, refs: unknown[]): AiReferenceCheck[] {
   const allowed = new Set(input.core.map((c) => `${c.ref.id}@${c.ref.revision}`));
+  const allowedSources = new Set(input.sourceEntries.map((x) => `${x.kind}:${x.id}@${x.sourceRef.version}`));
+  const knownSourceIds = new Map(input.sourceEntries.map((x) => [`${x.kind}:${x.id}`, x.sourceRef.version]));
   return (Array.isArray(refs) ? refs : []).map((r) => {
     const o = (r ?? {}) as Record<string, unknown>;
     const id = typeof o.id === "string" ? o.id : typeof o.localId === "string" ? o.localId : "";
+    const kind = typeof o.kind === "string" ? o.kind : "item";
+    const version = typeof o.version === "string" ? o.version : null;
     const revision = typeof o.revision === "number" ? o.revision : null;
     if (!id) return { ref: "(缺 id)", status: "invalid" as const, reason: "引用缺 id" };
+    // 外部对象（E8 各类型）：必须给 kind+version 且落在本次输入快照内
+    if (kind !== "item") {
+      if (!version) {
+        const expected = knownSourceIds.get(`${kind}:${id}`);
+        return expected
+          ? { ref: `${kind}:${id}（未给版本）`, status: "invalid" as const, reason: "必须给出固定版本（不允许 latest 兜底）" }
+          : { ref: `${kind}:${id}`, status: "invalid" as const, reason: "not_in_snapshot" };
+      }
+      const key = `${kind}:${id}@${version}`;
+      return allowedSources.has(key)
+        ? { ref: key, status: "valid" as const, reason: "在本输入快照内（外部对象）" }
+        : { ref: key, status: "invalid" as const, reason: "not_in_snapshot（不存在或不属本次输入）" };
+    }
     if (revision === null) {
       const ok = input.core.some((c) => c.ref.id === id);
       return ok ? { ref: `${id}（未给版本）`, status: "invalid" as const, reason: "必须给出固定版本（不允许 latest 兜底）" } : { ref: id, status: "invalid" as const, reason: "not_in_snapshot" };
@@ -884,6 +945,8 @@ export function adoptAiProposal(
 /** 手动下载「选定范围」知识包（E5 冻结 + 导出复用；不新建导出实现）。 */
 export function exportSelectedPackage(state: LocusState, input: { topicId: string; selectedRefs: { kind: "item"; id: string; revision: number }[]; mode?: "formal" | "explore"; purpose?: string }): { filename: string; buffer: Buffer } {
   const frozen = freezeKnowledge(state, { topicId: input.topicId, viewId: currentViewId(state, input.topicId), selectedRefs: input.selectedRefs, mode: input.mode ?? "formal" });
+  // §7.5：导出是独立许可——按快照**依赖闭包**检查（含无来源知识项自身的 item 策略）
+  assertKnowledgeAccess(state, "export", snapshotAccessRefs(frozen.snapshot));
   const out = exportKnowledge(frozen.snapshot, { format: "zip" });
   return { filename: out.filename, buffer: out.data as Buffer };
 }
