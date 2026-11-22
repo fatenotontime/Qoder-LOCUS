@@ -21,15 +21,31 @@
 
 流水线（E6.3）：`knowledgePipelineStatus` 只从**已落库** run/chunk/receipt 计数——「请求已发出」不等于候选已保存，回执重放/刷新不重复计数，失败块与被丢弃块可见且不计入正式沉淀。
 
-## E6.4 接入表（E6-A 侧已填；前端交付列**待交付**，不凭旧文件名/旧 DOM/固定四栏推断）
+## E6.4 接入表（S05-T16 核实版：前端交付列=事实，来自 PR/代码；E6 集成职责=我方要做的事）
 
-| 接入项 | 前端交付 | E6 集成职责（当前） |
+> 核实基线：`origin/main` `46cfe5d`（#23 已并入）、`origin/feat/s05-t12-kz-overview`（#24 OPEN）、F 系列分支 `fix/s05-f7-review`；**PR #25（E8-A）已并入 main `dcb7b46`**。下方"前端交付"列只写代码/PR 中可核实的事实，未交付写"待前端补"。
+
+| 接入项 | 前端交付（事实） | E6 集成职责（我方） |
 | --- | --- | --- |
-| 页面骨架与导航 | **待交付**：知识总览/继续积累/wiki/比较入口、返回方式、实际路由与模块路径 | 未接；数据接口就绪（`/api/knowledge/container`，保留 `scope/viewId/snapshotId`） |
-| 大容器 | **待交付**：已确认外形、挂载/卸载方式、尺寸、主题变量、元素/聚合/详情交互（石榴仅候选） | **数据侧就绪**：元素/聚合/计数/图例素材/同源列表；不伪造填充数据 |
-| 审阅与原文 | **待交付**：卡片详情承载方式、阅读页定位接口、附件/版本切换参数 | 未接；人审与 run 接口已在（`items/:id`〔?revision/?snapshotId〕、`pipeline/:runId`） |
-| 共用状态与素材 | **待交付**：当前课题传递、加载/错误规范、迹芽资产与动效规范 | 数据侧就绪（真实状态映射、去重回执）；**减少动态效果**下纯文字状态可用 |
-| 文件归属 | 待协调（前端持骨架/导航/全局样式；记录并行修改文件） | 本轮只改后端服务/路由与两个测试文件，未触碰前端文件 |
+| 页面骨架与导航 | #23（已并入 main）：知识页插入 `knowledge-stage.js` 舞台与 `aiSproutHtml`；#24（OPEN）：知识页新增 `ui.kzPanel ∈ {library,cards,themes}`（默认 `library`）＋`localStorage` 记忆；F 系列另有 `ui.knowledgeView ∈ {overview,review}` → **与 #24 的 `kzPanel` 冲突，需 F 系列与 #24 合入后由前端合并** | 等前端合并定稿后确认知识页入口与返回目标（**当前「待定」**）；不另建导航，保持 `scope/viewId/snapshotId` |
+| 大容器 | #24：`lib/pages/knowledge-container.js`（纯渲染）＋`knowledge-container.css`；数据经 `api.knowledgeContainer()` → `GET /api/knowledge/container`（`{topicId, mode:"explore", pageSize}`，单次响应）；状态 `ui.kzLib`：loading/ready/empty/unwired/error（404/405→`unwired`）；每聚簇展开上限 `DOT_LIMIT=60`，其余从同源列表进入；含 `dedupNote`（分项计数、卡不另计、版本不合并）；外形仅**内联 SVG 发芽图标占位**（非品牌素材，最终形象由用户决定） | 后端已就绪（`/api/knowledge/container` 在 main）；接线时按 E6.3 映射真实 run 状态；**不伪造填充数据**；品牌素材待用户定稿后再接 |
+| 审阅与原文 | 审阅宿主仍是现有 `knowledge.js`（#23/#24 只在其**渲染点插入**舞台/入口，**未重写**审阅流程）；原文定位/返回参数**未见新增约定（待前端补）** | 迁入既有人审操作与 run 状态；验证"正确附件/固定版本"定位与 dirty/冲突保护 |
+| 共用状态与素材 | `app.js` 为**共享文件**（#24 已改）；`ui.kzJob`（任务内存态）、`ui.kzLib`（库数据态）；素材仅内联 SVG 占位 | **把流水线任务恢复与计数改为以 `GET /api/knowledge/pipeline/:runId` 为准**（现舞台只观察内存 `ui.kzJob`，刷新/离开回待机）；减少动态效果下给纯文字状态 |
+| 文件归属 | 前端持有 `knowledge-stage.js`／`knowledge-container.js` 与两份 CSS；`app.js` 共享 | 与前端约定 `app.js` 的修改先后；我方只改 `services/**`、`server.ts`、测试与 record |
+
+### 「待前端补」清单（据代码核实，未交付/未接线）
+
+1. **流水线任务恢复**：`/api/knowledge/pipeline/:runId`（我方已在 main 提供）**前端尚未调用**（`api.js` 无 `pipeline`；舞台只读 `ui.kzJob`）→ 待接线以实现刷新/离开后的任务恢复与真实计数。
+2. **库总览功能入口**：容器仅有「继续积累」两个按钮（`data-kzlib-act="scan"|"statement"`），`app.js` **未见其处理**（未接线）；**快照／导出／比较／wiki 入口未接入**（文件内无对应调用）。
+3. **知识页入口冲突**：F 系列 `ui.knowledgeView` 与 #24 `ui.kzPanel` 需前端合并定稿；**路由与返回目标「待定」**。
+4. **品牌素材**：内联 SVG 发芽图标为占位；最终容器形态与迹芽素材由用户/前端定稿。
+5. **原文定位约定**：审阅/阅读页的定位与返回参数未见交付约定。
+
+### 与给定事实的核对差异（供你核对）
+
+- 「审阅宿主沿用现有 `knowledge.js`，PR 未改」→ **不准确**：`knowledge.js` **被 #23/#24 修改**（仅在渲染点插入舞台/入口，审阅流程未重写）。
+- 其余给定事实**均已核实为真**：`knowledge-container.js`＋CSS、`/api/knowledge/container`（`mode:"explore"`）、`api.knowledgeContainer`、`ui.kzLib` 五态、`DOT_LIMIT=60`、同源列表、`ui.kzPanel="library"`、`knowledge-stage.js` 只读 `ui.kzJob`＋卡片/知识项、内联发芽图标占位。
+- **新增事实**：**PR #25（E8-A）已并入 main（`dcb7b46`）** → `/api/knowledge/container` 与 `/api/knowledge/pipeline/:runId` 在 main 上**均已可用**；**#23 已并入 main（`46cfe5d`）**，`knowledge-stage.js` 已在 main。
 
 ## 待裁决 / 未闭环（接手必读）
 
