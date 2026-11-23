@@ -353,6 +353,7 @@ table.grid .celledit input { width: auto; }
 
 /* E3 分项人审：知识项／条件／引文／结构化／主题 */
 .kzshell { display: grid; gap: 6px; margin-top: 6px; padding-left: 8px; border-left: 2px solid var(--line); }
+.kzstmts { display: grid; gap: var(--space-2); margin-top: var(--space-3); }
 .kitem { border: 1px solid var(--line); border-radius: var(--radius-sm); padding: var(--space-2); display: grid; gap: 4px; }
 .kitem.oldview { border-style: dashed; background: #f7f6f1; }
 .kihead { display: flex; flex-wrap: wrap; gap: 6px; align-items: baseline; }

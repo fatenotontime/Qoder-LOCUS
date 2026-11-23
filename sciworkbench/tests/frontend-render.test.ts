@@ -88,6 +88,20 @@ const kzState = {
   knowledge,
 };
 
+// 人工陈述（缺陷 D）：无 cardId 的 pending 知识项，不得被文献/卡过滤掉，须独立成区可审。
+const STMT_TEXT = "该体系在 pH 7 下响应时间优于 1 s";
+const statementEnv = (revision, status) => ({
+  id: "ki_stm1", kind: "item", revision, history: [],
+  payload: {
+    contentType: "claim", nature: "human_judgment",
+    text: STMT_TEXT, subject: { raw: "课题甲" }, predicate: { raw: "当前认识" },
+    value: null, contextRefs: [], evidenceRefs: [], sourceRefs: [],
+    origin: { sourceClass: "human_statement", createdBy: "human", secondaryCitation: false },
+    scopeText: "", unknowns: [], topicIds: ["t1"], subquestionIds: [], review: { status, basis: "" },
+  },
+});
+const withStatement = (status) => ({ ...kzState, knowledge: { ...knowledge, items: [...knowledge.items, statementEnv(1, status)] } });
+
 const detailStripped = (h) => h.replace(/<pre class="perr-detail-body"[\s\S]*?<\/pre>/g, " ");
 const visibleText = (h) => detailStripped(h).replace(/<[^>]*>/g, " ").replace(/&[a-z]+;/g, " ").replace(/\s+/g, " ");
 
@@ -127,6 +141,10 @@ function allRendered() {
     knowledgeWorkspaceHtml(kzState, { ...ui, nav: "knowledge", kzPanel: "themes" }),
     knowledgeWorkspaceHtml(kzState, { ...ui, nav: "knowledge", topicId: "", kzPanel: "themes" }),
     knowledgeQueueHtml(kzState, { ...ui, nav: "knowledge" }),
+    // 缺陷 D：无卡人工陈述的独立待审区（右栏分区）与中栏独立审阅落点
+    knowledgeQueueHtml(withStatement("pending"), { ...ui, nav: "knowledge" }),
+    knowledgeWorkspaceHtml(withStatement("pending"), { ...ui, nav: "knowledge", kzTab: "todo" }),
+    knowledgeWorkspaceHtml(withStatement("pending"), { ...ui, nav: "knowledge", cardOpen: "c1" }),
     knowledgeWorkspaceHtml(kzState, { ...ui, nav: "knowledge", kzJob: { status: "running", done: 1, total: 3, created: 2, chunkErrors: [] } }),
     knowledgeWorkspaceHtml(kzState, { ...ui, nav: "knowledge", kzJob: { status: "paused", done: 1, total: 3, created: 2, chunkErrors: [] } }),
     knowledgeWorkspaceHtml(kzState, { ...ui, nav: "knowledge", kzJob: { status: "error", done: 1, total: 3, created: 2, chunkErrors: [] } }),
@@ -203,6 +221,30 @@ test("A7 E3 分项审阅渲染：壳→项→条件→引文＋主题面板，�
 
   const todo = mid({ kzTab: "todo" });
   assert.ok(todo.includes("未写归属"), "旧数据卡（无 paperId）按论文附件回查后仍归入所选文献");
+});
+
+test("A7 缺陷 D：无卡人工陈述进入独立待审区、可打开、可确认/改值", () => {
+  const pending = withStatement("pending");
+
+  // 右栏：卡内知识项与人工陈述分区并列；陈述不因无 cardId 被滤掉
+  const queue = knowledgeQueueHtml(pending, { ...ui, nav: "knowledge" });
+  assert.ok(queue.includes("人工陈述待审"), "右栏出现人工陈述待审分区标题");
+  assert.ok(queue.includes("卡内知识项待审"), "卡内知识项与人工陈述分区并列");
+  assert.ok(queue.includes(STMT_TEXT), "人工陈述出现在待审队列");
+  assert.match(queue, /class="kzq-kitem" data-iid="ki_stm1" data-cid=""/, "陈述项无 cardId，走无卡路径");
+
+  // 中栏「分项」：独立审阅落点，复用知识项详情（可确认、可改值、来源标注人工陈述）
+  const mid = knowledgeWorkspaceHtml(pending, { ...ui, nav: "knowledge", kzTab: "todo" });
+  assert.ok(mid.includes("人工陈述待审"), "中栏有独立的人工陈述审阅区");
+  assert.match(mid, /<div class="kitem"[^>]*data-iid="ki_stm1"/, "陈述渲染为可打开的 kitem 详情");
+  assert.ok(mid.includes('class="ki-ok" data-iid="ki_stm1"'), "陈述有确认入口");
+  assert.ok(mid.includes('class="ki-save" data-iid="ki_stm1"'), "陈述有改值入口");
+  assert.ok(mid.includes("人工陈述"), "来源如实标注人工陈述，不冒充证据");
+
+  // 已确认的陈述不再出现在待审区（确认后离开待审 → 可进入主题「当前认识」）
+  const confirmed = knowledgeQueueHtml(withStatement("confirmed"), { ...ui, nav: "knowledge" });
+  assert.ok(!confirmed.includes(STMT_TEXT), "已确认陈述不在待审队列");
+  assert.ok(!knowledgeWorkspaceHtml(withStatement("confirmed"), { ...ui, nav: "knowledge", kzTab: "todo" }).includes("人工陈述待审"), "已确认陈述不在中栏待审区");
 });
 
 test("A7 条件写法拆分：名称与值分开，不出现「温度＝温度＝…」", () => {
