@@ -1818,6 +1818,13 @@ export async function createSessionRouter(opts: {
       res.end(JSON.stringify({ ok: true, isolation: "session" }));
       return;
     }
+    // 凭据检查必须在**任何会话初始化 / 写盘之前**：未授权请求不得创建会话目录或复制样本。
+    const siteToken = process.env.LOCUS_SITE_TOKEN;
+    if (siteToken && url.pathname.startsWith("/api/") && req.headers["x-locus-site-token"] !== siteToken) {
+      res.writeHead(401, { "content-type": "application/json" });
+      res.end(JSON.stringify({ error: "未授权：业务 API 仅限站点代理调用。" }));
+      return;
+    }
     let sid = cookieSid(req);
     if (!sid) sid = randomUUID().replace(/-/g, "");
     // 每次响应回写 cookie：刷新保持同一会话；新请求无 cookie 时开启新会话。
@@ -1834,12 +1841,14 @@ export async function createSessionRouter(opts: {
 // 仅在被直接运行时才监听（被 import 时不产生副作用，便于测试）。
 import { pathToFileURL } from "node:url";
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  // 竞赛模式：缺少站点服务端凭据则**拒绝启动**（不静默降级为无鉴权）。
-  if (process.env.LOCUS_COMPETITION === "1" && !process.env.LOCUS_SITE_TOKEN) {
+  const competition = process.env.LOCUS_COMPETITION === "1";
+  // 竞赛模式：缺少站点服务端凭据则拒绝启动（不静默降级为无鉴权）。
+  if (competition && !process.env.LOCUS_SITE_TOKEN) {
     console.error("竞赛模式（LOCUS_COMPETITION=1）缺少 LOCUS_SITE_TOKEN：拒绝启动。");
     process.exit(1);
   }
-  const isolation = process.env.LOCUS_SESSION_ISOLATION === "1";
+  // 竞赛模式**强制启用**会话隔离（不允许以共享工作区启动）。
+  const isolation = competition || process.env.LOCUS_SESSION_ISOLATION === "1";
   const app = isolation
     ? await createSessionRouter({
         dataRoot: dirname(DATA_PATH),
