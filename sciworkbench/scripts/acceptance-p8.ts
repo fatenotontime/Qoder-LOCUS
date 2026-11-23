@@ -8,7 +8,11 @@
 //   node scripts/acceptance-p8.ts             # 默认 http://127.0.0.1:5185
 //
 // 本脚本经 HTTP 接口驱动（与前端 app.js 调用的同一组端点），逐步打印「操作 → 观察 → 证据」。
-// 达尔文素材取自内部测试包 test-packages/darwin-seed-saltwater（私有，不入仓库）。
+// 本脚本随仓库分发，但依赖私有测试包 test-packages/darwin-seed-saltwater；他人 clone 后需自备该包
+// 方可运行（缺包时脚本 exit(1) 提示）。该包不入仓库（.gitignore 覆盖 test-packages/）。
+//
+// 判定：五步均带可失败断言（见下方 expect / stepVerdict）；任一步不达预期即打印失败步与原因，
+// 最终以非零退出码结束（exit 1）。「退出码 0」= 五步全部达预期。
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import ExcelJS from "exceljs";
@@ -32,6 +36,22 @@ const short = (v: unknown, n = 240) => {
 const banner = (t: string) => console.log(`\n===== ${t} =====`);
 const rec = (...a: unknown[]) => console.log(...a);
 
+// ── 断言与判定（任一步不达 → 非零退出）────────────────────
+type Failure = { step: string; check: string; detail: string };
+const failures: Failure[] = [];
+const ok2xx = (s: number) => s >= 200 && s < 300;
+function expect(step: string, check: string, ok: boolean, detail: unknown = ""): void {
+  if (ok) return;
+  const d = short(detail, 300);
+  failures.push({ step, check, detail: d });
+  console.error(`  [FAIL] ${step} · ${check}${d ? `：${d}` : ""}`);
+}
+function stepVerdict(step: string, label: string): void {
+  const n = failures.filter((f) => f.step === step).length;
+  if (n === 0) console.log(`  ✔ ${step} ${label}：达预期`);
+  else console.error(`  ✘ ${step} ${label}：失败 ${n} 项`);
+}
+
 async function call(method: string, path: string, body?: unknown): Promise<{ status: number; json: Record<string, unknown> }> {
   const res = await fetch(BASE + path, {
     method,
@@ -47,6 +67,7 @@ async function getState(): Promise<Record<string, unknown>> {
   return (await call("GET", "/api/state")).json;
 }
 async function pollJob(jobId: string, tries = 50): Promise<Record<string, unknown>> {
+  if (!jobId || jobId === "undefined" || jobId === "null") return { status: "missing-job-id" };
   for (let i = 0; i < tries; i++) {
     const j = (await call("GET", `/api/jobs/${encodeURIComponent(jobId)}`)).json;
     const status = j.status as string;
@@ -136,6 +157,7 @@ banner("证据·页码/文本块（parseBytes 直接解析真实 PDF）");
 rec(`format=${directParse.format} status=${directParse.status} textBlocks=${directParse.textBlocks.length}`);
 for (const b of directParse.textBlocks) rec(`  block#${b.orderIndex} origin=${JSON.stringify(b.origin)} chars=${b.text.length} lines=${b.lines.length} head="${short(b.lines[0] ?? "", 70)}"`);
 evidence.pageBlocks = directParse.textBlocks.map((b) => ({ order: b.orderIndex, origin: b.origin, chars: b.text.length }));
+expect("步骤①", "parseBytes 直接解析 PDF：status=ok 且 textBlocks>0", directParse.status === "ok" && directParse.format === "pdf" && directParse.textBlocks.length > 0, `status=${directParse.status} format=${directParse.format} blocks=${directParse.textBlocks.length}`);
 
 // ── ⑤ 步 0：建课题与子问题（最小创建）────────────────────────
 banner("步骤0 · 课题与子问题（最小创建）");
@@ -147,11 +169,15 @@ const sq2 = await call("POST", `/api/topics/${topicId}/subquestions`, { question
 rec(`子问题1 → ${sq1.status} ${short(sq1.json)}；子问题2 → ${sq2.status} ${short(sq2.json)}`);
 const subqId = String(sq1.json.subquestionId);
 evidence.topicId = topicId;
+expect("步骤0", "POST /api/topics 2xx 且返回 topicId", ok2xx(topic.status) && Boolean(topic.json.topicId), topic.json);
+expect("步骤0", "子问题创建 2xx 且返回 subquestionId", ok2xx(sq1.status) && ok2xx(sq2.status) && Boolean(sq1.json.subquestionId), `${sq1.status}/${sq2.status}`);
+stepVerdict("步骤0", "课题与子问题");
 
 // ── 步 ①：文献导入（真实 PDF）────────────────────────────────
 banner("步骤① · 文献导入（真实多页 PDF）");
 const paper = await call("POST", "/api/papers", { title: "On the Origin of Species（1859）· 第十一章 地理分布", authors: ["Charles Darwin"], year: "1859", source: "Wikisource 影印（页 371–373）", license: "Public Domain", topicIds: [topicId], note: "原文叙述，非实验记录本；条件多未量化。" });
 rec(`POST /api/papers → ${paper.status} ${short(paper.json)}`);
+expect("步骤①", "POST /api/papers 2xx 且返回 paperId", ok2xx(paper.status) && Boolean(paper.json.paperId), paper.json);
 const paperId = String(paper.json.paperId);
 const imp1 = await call("POST", "/api/import/file", { name: "darwin-1859-p371-373.pdf", dataBase64: b64(pdfBytes), kind: "literature", topicId, paperId });
 rec(`POST /api/import/file(PDF) → ${imp1.status} ${short(imp1.json, 300)}`);
@@ -172,6 +198,13 @@ rec(`文献卡：合计 ${allCards.length}（均由 PDF 文本行派生）；选
 const dup1 = await call("POST", "/api/import/file", { name: "darwin-1859-p371-373.pdf", dataBase64: b64(pdfBytes), kind: "literature", topicId, paperId });
 rec(`再导同字节 PDF → ${dup1.status}（期望 409 不重复入库）${short(dup1.json)}`);
 evidence.step1 = { assetId: litAssetId, cards: litCards.length, confirmed: confirmedCards, dupStatus: dup1.status };
+expect("步骤①", "PDF 导入 2xx 且返回 assetId", ok2xx(imp1.status) && Boolean(imp1.json.assetId), imp1.json);
+expect("步骤①", "文献卡 cards>0（PDF 文本行派生）", allCards.length > 0, `cards=${allCards.length}`);
+expect("步骤①", "选取到实质卡（float/germinat/sea-water）>0", litCards.length > 0, `litCards=${litCards.length}`);
+expect("步骤①", "实质卡全部确认成功", confirmedCards.length === litCards.length, `confirmed=${confirmedCards.length}/${litCards.length}`);
+expect("步骤①", "GET /api/source 2xx 且 points>0", ok2xx(srcView.status) && ((srcView.json.points as unknown[])?.length ?? 0) > 0, `${srcView.status} points=${(srcView.json.points as unknown[])?.length}`);
+expect("步骤①", "再导同字节 PDF → 409 不重复入库", dup1.status === 409, `status=${dup1.status} ${short(dup1.json)}`);
+stepVerdict("步骤①", "文献导入（真实多页 PDF）");
 
 // ── 步 ②：数据库可视化与积累（真实 XLSX/CSV）───────────────────
 banner("步骤② · 数据表导入与画像（真实 XLSX/CSV）");
@@ -194,13 +227,21 @@ const dupX = await call("POST", "/api/import/file", { name: "darwin-flotation.xl
 rec(`再导同字节 XLSX → ${dupX.status}（期望 409 不重复入库）${short(dupX.json)}`);
 const tableId = String(tables[0]?.id ?? "");
 evidence.step2 = { tables: tables.length, tableId, dupStatus: dupX.status };
+expect("步骤②", "XLSX/CSV 三文件导入均 2xx", ok2xx(impX.status) && ok2xx(impF.status) && ok2xx(impD.status), `${impX.status}/${impF.status}/${impD.status}`);
+expect("步骤②", "记录页可见表 tables≥1", tables.length >= 1, `tables=${tables.length}`);
+expect("步骤②", "每张表均有列画像（columns>0 且 totalRows>0）", tables.every((t) => (t.profile?.columns?.length ?? 0) > 0 && (t.profile?.totalRows ?? 0) > 0), tables.map((t) => `${t.name}:cols=${t.profile?.columns?.length ?? 0},rows=${t.profile?.totalRows ?? 0}`).join(" | "));
+expect("步骤②", "取得 tableId", Boolean(tableId), `tableId=${tableId}`);
+expect("步骤②", "再导同字节 XLSX → 409 不重复入库", dupX.status === 409, `status=${dupX.status} ${short(dupX.json)}`);
+stepVerdict("步骤②", "数据表导入与画像（真实 XLSX/CSV）");
 
 // ── 步 ③：方案从历史文献总结（模拟桩，真实模型待授权）───────────
 banner("步骤③ · 由已有文献生成/修订方案【模拟桩·真实模型待授权】");
 const parse = await call("POST", "/api/protocols/parse", { assetId: litAssetId, sourceKind: "reconstructed", topicId, name: "海水浸泡萌发试验（干燥 vs 新鲜）" });
 rec(`POST /api/protocols/parse → ${parse.status} ${short(parse.json)}`);
+expect("步骤③", "POST /api/protocols/parse 2xx 且返回 jobId", ok2xx(parse.status) && Boolean(parse.json.jobId), parse.json);
 const pjob = await pollJob(String(parse.json.jobId));
 rec(`GET /api/jobs/<id> → status=${pjob.status} ${short(pjob.result)}`);
+expect("步骤③", "方案解析 job status=done", pjob.status === "done", `status=${pjob.status} ${short(pjob.result)}`);
 type ProtoRow = { id: string; revision: number; sourceKind: string; sourceAssetId?: string; revisions: { revision: number; steps: { id: string; op: string }[]; unknowns: string[] }[] };
 const protocols = ((await getState()).protocols ?? []) as ProtoRow[];
 const curRev = protocols[0]?.revisions.at(-1);
@@ -213,6 +254,11 @@ const edit = await call("POST", `/api/protocols/${protoId}/edit`, { unknowns: [.
 const protoAfter = ((await getState()).protocols ?? []) as ProtoRow[];
 rec(`POST /api/protocols/<id>/edit（修订）→ ${edit.status} ${short(edit.json)}；方案 revision=${protoAfter[0]?.revision}`);
 evidence.step3 = { protocolId: protoId, sourceKind: protocols[0]?.sourceKind, revision: protoAfter[0]?.revision, steps: curRev?.steps?.length, unknowns: curRev?.unknowns };
+expect("步骤③", "方案已落库且 sourceKind=reconstructed", protocols[0]?.sourceKind === "reconstructed", `sourceKind=${protocols[0]?.sourceKind}`);
+expect("步骤③", "sourceAssetId 非空（回链文献原件）", Boolean(protocols[0]?.sourceAssetId), `sourceAssetId=${protocols[0]?.sourceAssetId}`);
+expect("步骤③", "方案含可执行步骤（steps>0）", (curRev?.steps?.length ?? 0) > 0, `steps=${curRev?.steps?.length}`);
+expect("步骤③", "编辑 2xx 且 revision 递增", ok2xx(edit.status) && (protoAfter[0]?.revision ?? 0) > (protocols[0]?.revision ?? 0), `${edit.status} r${protocols[0]?.revision}→r${protoAfter[0]?.revision}`);
+stepVerdict("步骤③", "方案从历史文献总结（模拟桩）");
 
 // ── 步 ④：执行记录（事件追加、样品状态 revision、测量固定版本）─────
 banner("步骤④ · 执行记录（追加式）");
@@ -241,17 +287,27 @@ const meas = ((st4.measurements ?? []) as { id: string; sampleStateRevision: num
 rec(`核对：执行事件 ${ex?.events.length} 条（追加）；样品状态 revision=${smp?.states.length}（追加式）；测量 ${meas.length} 条，均固定 sampleStateRevision=${meas[0]?.sampleStateRevision}`);
 const measId = String(m1.json.measurementId);
 evidence.step4 = { executionId: execId, sampleId, events: ex?.events.length, sampleRevisions: smp?.states.length, measurements: meas.length };
+expect("步骤④", "建执行 2xx 且返回 executionId", ok2xx(exec.status) && Boolean(exec.json.executionId), exec.json);
+expect("步骤④", "准备稿/确认快照 2xx", ok2xx(prep.status) && ok2xx(conf.status), `${prep.status}/${conf.status}`);
+expect("步骤④", "事件追加 2 条且均 2xx", ok2xx(ev1.status) && ok2xx(ev2.status) && (ex?.events.length ?? 0) >= 2, `status=${ev1.status}/${ev2.status} events=${ex?.events.length}`);
+expect("步骤④", "建样品 2xx 且返回 sampleId", ok2xx(sample.status) && Boolean(sample.json.sampleId), sample.json);
+expect("步骤④", "追加样品状态 2xx 且 revision 递增到 2", ok2xx(srev.status) && (smp?.states.length ?? 0) >= 2 && Number(srev.json.revision) >= 2, `${srev.status} states=${smp?.states.length} revision=${srev.json.revision}`);
+expect("步骤④", "测量 2 条均 2xx", ok2xx(m1.status) && ok2xx(m2.status) && meas.length === 2, `${m1.status}/${m2.status} meas=${meas.length}`);
+expect("步骤④", "测量 sampleStateRevision 固定为 1（不随样品新 revision 漂移）", meas.length === 2 && meas.every((m) => m.sampleStateRevision === 1), meas.map((m) => `r${m.sampleStateRevision}`).join(","));
+stepVerdict("步骤④", "执行记录（追加式）");
 
 // ── 步 ⑤：上下文地图选一次 + 对话（真地图，真实落库）─────────────
 banner("步骤⑤ · 上下文地图选一次 + 对话【模拟桩·真实模型待授权】");
 const task = await call("POST", "/api/analysis/tasks", { topicId, subquestionId: subqId, title: "传播量级与漂浮时长（干燥 vs 新鲜）", core: [{ kind: "table", id: tableId }, { kind: "measurement", id: measId }], optional: confirmedCards.slice(0, 2).map((id) => ({ ref: { kind: "card", id }, included: true })) });
 rec(`POST /api/analysis/tasks → ${task.status} ${short(task.json)}`);
 const taskId = String(task.json.taskId);
+expect("步骤⑤", "POST /api/analysis/tasks 2xx 且返回 taskId", ok2xx(task.status) && Boolean(task.json.taskId), task.json);
 const map = await call("GET", `/api/analysis/tasks/${taskId}/map`);
 const mapNodes = (map.json.nodes ?? []) as { key: string; kind: string; label: string; adoptable?: boolean; role: string }[];
 const mapEdges = (map.json.edges ?? []) as unknown[];
 rec(`GET /api/analysis/tasks/<id>/map → ${map.status} nodes=${mapNodes.length} edges=${mapEdges.length} truncated=${map.json.truncated}`);
 rec(`  节点样例：${short(mapNodes.slice(0, 6).map((n) => `${n.role}:${n.kind}=${n.label}`))}`);
+expect("步骤⑤", "地图 2xx 且 nodes>0 且 edges>0", ok2xx(map.status) && mapNodes.length > 0 && mapEdges.length > 0, `${map.status} nodes=${mapNodes.length} edges=${mapEdges.length}`);
 const adoptable = mapNodes.filter((n) => n.kind === "card" && n.adoptable);
 rec(`  可「采用」的文献卡节点：${adoptable.length}（后端口径：audit=confirm 且有原文定位）`);
 const adopt = await call("POST", "/api/adoptions", { cardId: confirmedCards[0], subquestionId: subqId, decision: "adopt", reason: "已核对原文，纳入证据" });
@@ -260,11 +316,15 @@ rec(`选一次（采用）→ ${adopt.status} ${short(adopt.json)}；选一次�
 const st5 = await getState();
 const adoptions = (st5.adoptions ?? []) as { decision: string }[];
 rec(`落库核对：GET /api/state adoptions=${adoptions.length}（decision=${adoptions.map((a) => a.decision).join(",")}）`);
+expect("步骤⑤", "选一次（采用/排除）均 2xx", ok2xx(adopt.status) && ok2xx(exclude.status), `${adopt.status}/${exclude.status}`);
+expect("步骤⑤", "adoptions 落库 2 条（adopt+exclude）", adoptions.length === 2, `adoptions=${adoptions.length}`);
 const chat = await call("POST", "/api/chats", { topicId, subquestionId: subqId, scope: [{ kind: "table", id: tableId }, { kind: "measurement", id: measId }, { kind: "execution", id: execId }, { kind: "card", id: confirmedCards[0] }] });
 rec(`POST /api/chats（范围接该任务：表+测量+执行+卡）→ ${chat.status} ${short(chat.json)}`);
 const chatId = String(chat.json.chatId);
 const send = await call("POST", `/api/chats/${chatId}/send`, { text: "海浪条件下传播估计是否需要下修？依据上下文证据说明。" });
 rec(`POST /api/chats/<id>/send → ${send.status} ${short(send.json)}`);
+expect("步骤⑤", "POST /api/chats 2xx 且返回 chatId", ok2xx(chat.status) && Boolean(chat.json.chatId), chat.json);
+expect("步骤⑤", "POST /api/chats/<id>/send 2xx", ok2xx(send.status), send.json);
 const cjob = await pollJob(String(send.json.jobId));
 rec(`GET /api/jobs/<id> → status=${cjob.status} ${short(cjob.result)}`);
 const chatRec = ((await getState()).chats ?? []) as { id: string; messages: { role: string; status: string; content: string; sources?: string[]; proposals?: { targetKind: string; targetId: string }[] }[] }[];
@@ -272,7 +332,18 @@ const last = chatRec.find((c) => c.id === chatId)?.messages.filter((m) => m.role
 rec(`对话回复：status=${last?.status} sources=${short(last?.sources)} proposals=${short(last?.proposals)}`);
 rec(`  回答：${short(last?.content, 200)}`);
 evidence.step5 = { taskId, nodes: mapNodes.length, edges: mapEdges.length, adoptable: adoptable.length, adoptions: adoptions.length, chatId, chatStatus: last?.status };
+expect("步骤⑤", "对话 job status=done", cjob.status === "done", `status=${cjob.status} ${short(cjob.result)}`);
+expect("步骤⑤", "末条助手回复 status=done", last?.status === "done", `status=${last?.status}`);
+stepVerdict("步骤⑤", "上下文地图选一次＋对话（模拟桩）");
 
-banner("完成");
+banner("判定");
+evidence.failures = failures;
 writeFileSync(`${OUTDIR}/evidence.json`, JSON.stringify(evidence, null, 2), "utf8");
 rec(`证据摘要已写入 ${OUTDIR}/evidence.json`);
+if (failures.length > 0) {
+  const steps = [...new Set(failures.map((f) => f.step))];
+  console.error(`\n验收未通过：${failures.length} 项失败，涉及 ${steps.join("、")}`);
+  process.exitCode = 1;
+} else {
+  rec("验收通过：五步均达预期（③⑤ 为模拟桩，真实模型待授权）");
+}
