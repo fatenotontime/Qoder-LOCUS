@@ -11,9 +11,10 @@ import {
 } from "./lib/views.js";
 import { knowledgeLeftHtml, knowledgeWorkspaceHtml, knowledgeQueueHtml, renderKnowledgeForm, bindKnowledge, hasPendingStatements } from "./lib/pages/knowledge.js";
 import { renderAnalysisForm, currentTask, contextMapHtml, analysisRightHtml, snapshotHtml, bindAnalysis } from "./lib/pages/analysis.js";
+import { recordOverviewHtml, sampleDetailHtml } from "./lib/pages/record.js";
 
 let state = { topics: [], subquestions: [], assets: [], papers: [], attachments: [], cards: [], tables: [], adoptions: [], mappings: [], comparisons: [], protocols: [], templates: [], executions: [], samples: [], measurements: [], impacts: [], ocrs: [], analysisTasks: [], analysisResults: [], reports: [], chats: [] };
-const ui = { nav: "topic", topicId: "", assetId: null, paperId: null, attId: null, tableId: null, highlight: null, cell: null, dirty: false, busy: false, cardFilter: "all", groupSel: new Set(), batch: null, ack: false, protocolId: null, executionId: null, stepSel: null, viewRev: null, editEventId: null, pauseSuggest: null, prepExtra: 0, taskId: null, chatId: null, reportId: null, reportWorking: {}, navCollapsed: false, kzTab: "todo", kzPanel: "library", cardOpen: null, kzJob: null, kzStruct: null, kiView: null, suppressRecheck: null, topicPane: "overview", subqId: null, paperView: "manage", paperQuery: "", paperFilter: "all", protocolView: "manage", protocolEdit: false, protoQuery: "", recordView: "overview", chatView: "manage" };
+const ui = { nav: "topic", topicId: "", assetId: null, paperId: null, attId: null, tableId: null, highlight: null, cell: null, dirty: false, busy: false, cardFilter: "all", groupSel: new Set(), batch: null, ack: false, protocolId: null, executionId: null, stepSel: null, viewRev: null, editEventId: null, pauseSuggest: null, prepExtra: 0, taskId: null, chatId: null, reportId: null, reportWorking: {}, navCollapsed: false, kzTab: "todo", kzPanel: "library", cardOpen: null, kzJob: null, kzStruct: null, kiView: null, suppressRecheck: null, topicPane: "overview", subqId: null, paperView: "manage", paperQuery: "", paperFilter: "all", protocolView: "manage", protocolEdit: false, protoQuery: "", recordView: "overview", sampleView: "overview", sampleId: null, chatView: "manage" };
 
 // 壳层按页布局能力（§2.1）：每页声明一种布局，壳层据此排布三块区域。
 // aside：主体＋辅助（撤出左栏常驻目录）；single：只留主体（阅读）；review：三栏；canvas：宽画布。
@@ -60,7 +61,7 @@ const errors = { left: null, mid: null, right: null };const PANEL_OF = (el) => {
 const UI_KEY = "locus.ui.v2"; // 阶段5 重构：七入口导航，旧选择态作废，默认落课题首页
 let uiRestored = false;
 function saveUi() {
-  try { localStorage.setItem(UI_KEY, JSON.stringify({ nav: ui.nav, topicId: ui.topicId, assetId: ui.assetId, paperId: ui.paperId, tableId: ui.tableId, cardFilter: ui.cardFilter, protocolId: ui.protocolId, executionId: ui.executionId, taskId: ui.taskId, chatId: ui.chatId, reportId: ui.reportId, navCollapsed: ui.navCollapsed, kzTab: ui.kzTab, kzPanel: ui.kzPanel, cardOpen: ui.cardOpen, topicPane: ui.topicPane, subqId: ui.subqId, paperView: ui.paperView, paperQuery: ui.paperQuery, paperFilter: ui.paperFilter, protocolView: ui.protocolView, protoQuery: ui.protoQuery, recordView: ui.recordView, chatView: ui.chatView })); } catch {}
+  try { localStorage.setItem(UI_KEY, JSON.stringify({ nav: ui.nav, topicId: ui.topicId, assetId: ui.assetId, paperId: ui.paperId, tableId: ui.tableId, cardFilter: ui.cardFilter, protocolId: ui.protocolId, executionId: ui.executionId, taskId: ui.taskId, chatId: ui.chatId, reportId: ui.reportId, navCollapsed: ui.navCollapsed, kzTab: ui.kzTab, kzPanel: ui.kzPanel, cardOpen: ui.cardOpen, topicPane: ui.topicPane, subqId: ui.subqId, paperView: ui.paperView, paperQuery: ui.paperQuery, paperFilter: ui.paperFilter, protocolView: ui.protocolView, protoQuery: ui.protoQuery, recordView: ui.recordView, sampleView: ui.sampleView, sampleId: ui.sampleId, chatView: ui.chatView })); } catch {}
 }
 function restoreUi() {
   if (uiRestored) return;
@@ -90,6 +91,9 @@ function restoreUi() {
     if (s.protocolView === "detail" || s.protocolView === "manage") ui.protocolView = s.protocolView;
     if (typeof s.protoQuery === "string") ui.protoQuery = s.protoQuery;
     if (s.recordView === "detail" || s.recordView === "overview") ui.recordView = s.recordView;
+    if (state.samples.some((x) => x.id === s.sampleId)) ui.sampleId = s.sampleId;
+    if (s.sampleView === "detail" || s.sampleView === "overview") ui.sampleView = s.sampleView;
+    if (ui.recordView === "detail") { ui.sampleView = "overview"; ui.sampleId = null; } // 执行详情与样品详情互斥
     if (s.chatView === "chat" || s.chatView === "manage") ui.chatView = s.chatView;
   } catch {}
 }
@@ -810,12 +814,34 @@ function backToProtocolManage() {
 function openExecutionDetail(id) {
   if (!id) return;
   if (!guardLeave()) return;
-  ui.executionId = id; ui.recordView = "detail"; ui.assetId = null; ui.editEventId = null; ui.pauseSuggest = null; ui.prepExtra = 0;
+  ui.executionId = id; ui.recordView = "detail"; ui.sampleView = "overview"; ui.sampleId = null; ui.assetId = null; ui.editEventId = null; ui.pauseSuggest = null; ui.prepExtra = 0;
   renderAll();
 }
 function backToRecordOverview() {
   if (!guardLeave()) return;
-  ui.recordView = "overview"; ui.assetId = null;
+  ui.recordView = "overview"; ui.sampleView = "overview"; ui.sampleId = null; ui.assetId = null;
+  renderAll();
+}
+
+// ── 记录：样品总览 ⇄ 样品详情子页（记录总览内的二级子页；与执行详情互斥）──
+function openSampleDetail(id) {
+  if (!id) return;
+  if (!guardLeave()) return;
+  ui.recordView = "overview"; ui.executionId = null; ui.sampleId = id; ui.sampleView = "detail";
+  renderAll();
+}
+function backToSampleOverview() {
+  if (!guardLeave()) return;
+  ui.sampleView = "overview"; ui.sampleId = null;
+  renderAll();
+}
+/** 样品详情里的「来源方案」回链：跨卷跳转到方案详情（重置记录/样品子页状态）。 */
+function jumpToProtocolDetail(pid) {
+  if (!pid) return;
+  if (!guardLeave()) return;
+  ui.nav = "protocol"; ui.protocolId = pid; ui.protocolView = "detail"; ui.protocolEdit = false;
+  ui.stepSel = null; ui.viewRev = null;
+  ui.recordView = "overview"; ui.sampleView = "overview"; ui.sampleId = null; ui.executionId = null;
   renderAll();
 }
 
@@ -840,7 +866,7 @@ let historyReady = false;
 let suppressHistory = false;
 let suppressPop = false;
 let lastPushedKey = "";
-function pageState() { return { nav: ui.nav, topicId: ui.topicId, topicPane: ui.topicPane, subqId: ui.subqId, paperView: ui.paperView, paperId: ui.paperId, protocolView: ui.protocolView, protocolId: ui.protocolId, recordView: ui.recordView, executionId: ui.executionId, chatView: ui.chatView, chatId: ui.chatId }; }
+function pageState() { return { nav: ui.nav, topicId: ui.topicId, topicPane: ui.topicPane, subqId: ui.subqId, paperView: ui.paperView, paperId: ui.paperId, protocolView: ui.protocolView, protocolId: ui.protocolId, recordView: ui.recordView, executionId: ui.executionId, sampleView: ui.sampleView, sampleId: ui.sampleId, chatView: ui.chatView, chatId: ui.chatId }; }
 /** 页面状态变化时写入一条历史；首次替换、后台刷新/主题/动画不入历史。 */
 function syncHistory() {
   if (suppressHistory) return;
@@ -862,6 +888,8 @@ function applyPageState(st) {
   ui.protocolEdit = false;
   ui.executionId = state.executions.some((e) => e.id === st.executionId) ? st.executionId : null;
   ui.recordView = st.recordView === "detail" && ui.executionId ? "detail" : "overview";
+  ui.sampleId = state.samples.some((s) => s.id === st.sampleId) ? st.sampleId : null;
+  ui.sampleView = st.sampleView === "detail" && ui.sampleId && ui.recordView !== "detail" ? "detail" : "overview";
   ui.chatId = state.chats.some((c) => c.id === st.chatId) ? st.chatId : null;
   ui.chatView = st.chatView === "chat" && ui.chatId ? "chat" : "manage";
   if (ui.nav === "chat" && ui.chatView === "chat") chatScrollBottomPending = true; // 后退进聊天：定位到最新
@@ -924,7 +952,7 @@ async function activateNav(kind) {
   ui.stepSel = null; ui.viewRev = null; ui.editEventId = null; ui.pauseSuggest = null; ui.prepExtra = 0;
   ui.topicPane = "overview"; ui.subqId = null; ui.paperView = "manage";
   ui.protocolView = "manage"; ui.protocolEdit = false;
-  ui.recordView = "overview";
+  ui.recordView = "overview"; ui.sampleView = "overview"; ui.sampleId = null;
   ui.chatView = "manage";
   renderAll();
   restoreNavScroll();
@@ -960,7 +988,7 @@ function isListView() {
   return (ui.nav === "topic" && ui.topicPane !== "subq")
     || (ui.nav === "papers" && ui.paperView !== "read")
     || (ui.nav === "protocol" && ui.protocolView !== "detail")
-    || (ui.nav === "record" && ui.recordView !== "detail")
+    || (ui.nav === "record" && ui.recordView !== "detail" && ui.sampleView !== "detail")
     || (ui.nav === "knowledge")
     || (ui.nav === "chat" && ui.chatView !== "chat");
 }
@@ -1004,6 +1032,7 @@ function renderCreateArea() {
   if (ui.nav === "record") {
     box.innerHTML = ""; tools.innerHTML = "";
     if (ui.recordView === "detail") box.innerHTML = `<div class="detail-bar"><button class="back-btn" type="button" data-rec-back>← 返回记录总览</button><span class="hint">执行详情；数据表与样品在总览与左下列表管理。</span></div>`;
+    else if (ui.sampleView === "detail") box.innerHTML = `<div class="detail-bar"><button class="back-btn" type="button" data-smp-back>← 返回记录总览</button><span class="hint">样品详情子页；改名、追加状态、新建测量在「样品」工具区操作。</span></div>`;
     else renderRecordImport(box);
     renderRecordTools(tools);
     return;
@@ -1132,7 +1161,18 @@ function renderMiddle() {
     return renderProtocolManage(content, note);
   }
   if (ui.nav === "record") {
-    if (ui.recordView !== "detail") return renderRecordOverview(content, note);
+    if (ui.recordView !== "detail") {
+      if (ui.sampleView === "detail") {
+        if (!currentSample()) { ui.sampleView = "overview"; ui.sampleId = null; return renderRecordOverview(content, note); }
+        $("#mid-title").textContent = "样品详情";
+        note.hidden = true;
+        content.classList.remove("is-empty", "reader");
+        content.classList.add("rich");
+        content.innerHTML = sampleDetailHtml(state, ui);
+        return;
+      }
+      return renderRecordOverview(content, note);
+    }
     const a = currentAsset();
     if (a && a.kind === "image") {
       $("#mid-title").textContent = `原始图片 · ${a.name}`;
@@ -1493,6 +1533,7 @@ function openTableMax(tid) {
 
 function currentProtocol() { return state.protocols.find((p) => p.id === ui.protocolId) ?? null; }
 function currentExecution() { return state.executions.find((e) => e.id === ui.executionId) ?? null; }
+function currentSample() { return state.samples.find((s) => s.id === ui.sampleId) ?? null; }
 function viewSnapshot(p) { return p.revisions.find((r) => r.revision === (ui.viewRev ?? p.revision)) ?? p.revisions[p.revisions.length - 1]; }
 /** 方案本体在、但所固定的那一版不存在 → 缺失版本（与后端缺口节点一致，不画看似正常的历史版本）。 */
 function verMissing(p, rev) { return !!p && !p.revisions.some((r) => r.revision === rev); }
@@ -1929,46 +1970,12 @@ function preparationHtml(e, p, baseSnap) {
     </div>`;
 }
 
-/** 记录总览：执行 / 数据表 / 样品三区。 */
-function recordOverviewHtml() {
-  const execs = state.executions.filter((e) => !ui.topicId || e.topicId === ui.topicId);
-  const tables = state.tables.filter((t) => { const a = state.assets.find((x) => x.id === t.assetId); return !ui.topicId || !a?.topicId || a.topicId === ui.topicId; });
-  const samples = state.samples.filter((s) => !ui.topicId || s.topicId === ui.topicId);
-  const execRows = execs.length ? execs.map((e) => {
-    const p = state.protocols.find((x) => x.id === e.protocolId);
-    const prep = (e.phase ?? "recording") === "preparing";
-    const badge = prep ? "准备稿" : fmtEnum(e.status);
-    return `<article class="paper-item ${e.id === ui.executionId ? "active" : ""}" data-exrow="${e.id}">
-      <div class="pi-main">
-        <div class="pi-title">${esc(p?.name ?? "执行")}${e.origin === "reconstructed" ? ` <span class="badge warn">文献重构</span>` : ""}</div>
-        <div class="pi-meta"><span class="badge ${e.status === "paused" ? "warn" : e.status === "active" ? "confirm" : ""}">${badge}</span> · ${prep ? `${e.preparation?.adjustments.length ?? 0} 条差异待确认` : `${e.events.length} 条记录`} · 固定 ${fmtVersion(e.protocolRevision)}</div>
-      </div>
-      <div class="pi-actions"><button class="mini-act rec-exec-open" type="button" data-exec="${e.id}">打开</button></div>
-    </article>`;
-  }).join("") : `<p class="hint">${state.topics.length ? "还没有执行；用上方「创建执行」从方案进入准备稿。" : "先建课题。"}</p>`;
-  const tableRows = tables.length ? tables.map((t) => `<article class="paper-item">
-    <div class="pi-main"><div class="pi-title">${esc(t.name)}</div><div class="pi-meta">${t.rows.length} 行 × ${t.columns.length} 列${t.origin === "reconstructed" ? " · 文献重构" : ""}</div></div>
-    <div class="pi-actions"><button class="mini-act tbl-open" type="button" data-tid="${t.id}">查看表格</button></div>
-  </article>`).join("") : `<p class="hint">还没有数据表；在「数据与分析」导入，或从论文数据重构。</p>`;
-  const sampleRows = samples.length ? samples.map((s) => {
-    const mOfS = state.measurements.filter((m) => m.sampleId === s.id);
-    return `<article class="paper-item">
-      <div class="pi-main"><div class="pi-title">${esc(s.displayName)}${s.shortName !== s.displayName ? ` <span class="hint">编号 ${esc(s.shortName)}</span>` : ""}</div>
-        <div class="pi-meta">${s.states.length} 状态 · 测量 ${mOfS.length}${s.origin === "reconstructed" ? " · 文献重构" : ""}</div></div>
-    </article>`;
-  }).join("") : `<p class="hint">还没有样品；在左上「样品」区新建。</p>`;
-  return `<div class="rec-overview">
-    <section class="rec-sec"><h3>执行（${execs.length}）</h3>${execRows}</section>
-    <section class="rec-sec"><h3>数据表（${tables.length}）</h3>${tableRows}</section>
-    <section class="rec-sec"><h3>样品（${samples.length}）</h3>${sampleRows}<p class="hint">样品的改名、追加状态、新建测量在「样品」工具区操作。</p></section>
-  </div>`;
-}
 function renderRecordOverview(content, note) {
   note.hidden = true;
   $("#mid-title").textContent = "实验记录";
   content.classList.remove("is-empty", "reader");
   content.classList.add("rich");
-  content.innerHTML = recordOverviewHtml();
+  content.innerHTML = recordOverviewHtml(state, ui);
 }
 
 function recordHtml() {
@@ -2186,7 +2193,7 @@ function renderRecordTools(box) {
     <div class="pane-title">样品（短号稳定，改名不破引用）</div>
     ${samples.map((s) => `<div class="item smp" data-id="${s.id}">
       <div class="meta"><strong>${esc(s.shortName)}</strong> · ${s.states.length} 状态${s.origin === "reconstructed" ? ` · <span class="badge warn">文献重构</span>` : ""}</div>
-      <div class="row"><input data-field="smpName" value="${esc(s.displayName)}" /><button class="smp-rename">改名</button></div>
+      <div class="row"><input data-field="smpName" value="${esc(s.displayName)}" /><button class="smp-rename">改名</button><button class="smp-open" data-smp-open="${s.id}">详情</button></div>
       <details class="mini"><summary>追加状态（分样/处理/用途）</summary>
         <div class="row"><input data-field="stValue" placeholder="用量（必填）" /><input data-field="stUnit" placeholder="单位" />
           <label><input type="checkbox" data-field="stEst" /> 估计</label></div>
@@ -2222,7 +2229,7 @@ document.addEventListener("click", (ev) => {
   ui.nav = b.dataset.goto; ui.highlight = null; ui.cell = null; ui.groupSel.clear(); ui.batch = null; ui.ack = false;
   ui.topicPane = "overview"; ui.subqId = null; ui.paperView = "manage";
   ui.protocolView = "manage"; ui.protocolEdit = false;
-  ui.recordView = "overview";
+  ui.recordView = "overview"; ui.sampleView = "overview"; ui.sampleId = null;
   ui.chatView = "manage";
   renderAll();
 });
@@ -2273,6 +2280,7 @@ function switchTopic(id) {
   ui.topicId = id; ui.topicPane = "overview"; ui.subqId = null;
   ui.assetId = null; ui.paperId = null; ui.highlight = null; ui.cell = null; ui.groupSel.clear(); ui.batch = null; ui.ack = false;
   ui.protocolId = null; ui.executionId = null; ui.stepSel = null; ui.viewRev = null; ui.taskId = null; ui.chatId = null; ui.reportId = null;
+  ui.recordView = "overview"; ui.sampleView = "overview"; ui.sampleId = null;
   closeTopicSwitcher();
   renderAll();
 }
@@ -2390,6 +2398,13 @@ document.addEventListener("click", (ev) => {
   const exrow = ev.target.closest("[data-exrow]");
   if (exrow) { openExecutionDetail(exrow.dataset.exrow); return; }
   if (ev.target.closest("[data-rec-back]")) { backToRecordOverview(); return; }
+  const so = ev.target.closest("[data-smp-open]");
+  if (so) { openSampleDetail(so.dataset.smpOpen); return; }
+  const srow = ev.target.closest("[data-smprow]");
+  if (srow) { openSampleDetail(srow.dataset.smprow); return; }
+  if (ev.target.closest("[data-smp-back]")) { backToSampleOverview(); return; }
+  const po = ev.target.closest("[data-proto-open]");
+  if (po) { jumpToProtocolDetail(po.dataset.protoOpen); return; }
   const co = ev.target.closest(".chat-open");
   if (co) { openChatDetail(co.dataset.chat); return; }
   const chatrow = ev.target.closest("[data-chatrow]");
@@ -2626,6 +2641,7 @@ $("#material-list").addEventListener("click", (ev) => {
     clearAllErrors();
     ui.topicId = el.dataset.topicpick; ui.assetId = null; ui.highlight = null; ui.groupSel.clear(); ui.batch = null;
     ui.protocolId = null; ui.executionId = null; ui.stepSel = null; ui.viewRev = null; ui.taskId = null; ui.chatId = null; ui.reportId = null;
+    ui.recordView = "overview"; ui.sampleView = "overview"; ui.sampleId = null;
     ui.topicPane = "overview"; ui.subqId = null;
     renderAll(); return;
   }
@@ -2642,7 +2658,7 @@ $("#material-list").addEventListener("click", (ev) => {
   if (el.dataset.eid) {
     if (el.dataset.eid === ui.executionId) return;
     if (!guardLeave()) return;
-    ui.executionId = el.dataset.eid; ui.editEventId = null; ui.pauseSuggest = null; ui.prepExtra = 0; ui.assetId = null; renderAll(); return;
+    ui.executionId = el.dataset.eid; ui.editEventId = null; ui.pauseSuggest = null; ui.prepExtra = 0; ui.assetId = null; ui.sampleView = "overview"; ui.sampleId = null; renderAll(); return;
   }
   if (el.dataset.atid) {
     if (el.dataset.atid === ui.taskId) return;

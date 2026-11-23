@@ -483,6 +483,17 @@
 | --- | --- | --- | --- | --- |
 | S08-T05 | feat/s06-context-map | `e535fd9` | 2026-11-23 11:59:21 +08:00 | 真地图为唯一主体、删勾选式旧层、必选推导收进后端；443/443；PR #34 OPEN（base c54d0c8）；[会话记录](sessions/2026-11-23_session-08.md) |
 
+### 会话 S08 · 缺陷 6 记录页「样品详情子页」（`feat/s06-sample-detail`）
+
+| # | 分支 `main` | 分支 `feat/s06-sample-detail` | 关联轮次 | 说明 |
+| --- | --- | --- | --- | --- |
+| 128 | — | `9ea38ee` · 2026-11-23 12:30:35 +08:00、`d6164c0` · 2026-11-23 12:57:58 +08:00｜PR **#35** OPEN（base `main`=d402d8e） | S08-T06 | **缺陷 6**：记录页「样品」区只能看摘要，详情未做成独立子页。改：`recordOverviewHtml` 迁至新模块 `public/lib/pages/record.js`（DOM 无关）＋新增 `sampleDetailHtml`；从总览样品行「查看详情」（工具区样品项亦加「详情」）进入**样品详情子页**并可返回。详情＝身份（显示名/短号/来源性质/当前总量）＋**状态追加历史逐版保留**（旧版不覆盖、当前版标注）＋**来源回链**（来源执行→跳执行详情、来源方案→跳方案详情、由本样品产生的测量含固定状态版本与回链表跳转）。导航：`recordView`（总览↔执行详情，既有）与新增 `sampleView/sampleId`（总览↔样品详情二级子页）**三者互斥**；`ui.sampleView/sampleId` 纳入历史栈（`pageState`/`applyPageState`）与持久化（`saveUi`/`restoreUi`），`isListView` 把样品详情排除出列表态→复用 F7 返回恢复滚动。来源缺失如实标注、**不前端造数据**；不做 PDF 阅读器/附件定位。新增 `tests/frontend-sample-detail.test.ts`（5）；**448/448**；反向验证（去修复则新断言失败）；[会话记录](sessions/2026-11-23_session-08.md) · **更正（S08-T06 返工，`d6164c0`）**：先前「来源执行→跳执行详情」**不实**——该按钮类名写作 `smp-exec-open`，全仓无对应处理器（死链／假入口）；已改回 `rec-exec-open`（`app.js` 委托处理器 `.rec-exec-open` 识别，经 `openExecutionDetail` 置 `ui.executionId`＋`recordView="detail"` 跳执行详情）。经逐条核对，`record.js` 其余交互入口（`data-exrow`/`rec-exec-open`/`tbl-open`/`data-smprow`/`data-smp-open`/`data-smp-back`/`data-proto-open`）均有对应处理器，无误；修正后执行/方案/测量回链均可跳。新增断言（回链按钮须带 `rec-exec-open` 类，反向验证改回则失败）；448/448。详见会话记录 §6.7。 |
+
+| 轮次 | 分支 | 提交 | 提交时间 | 本轮产出 |
+| --- | --- | --- | --- | --- |
+| S08-T06 | feat/s06-sample-detail | `9ea38ee` | 2026-11-23 12:30:35 +08:00 | 样品详情子页（状态追加历史＋来源回链）＋总览入口＋返回恢复列表态；448/448；PR #35 OPEN（base d402d8e）；[会话记录](sessions/2026-11-23_session-08.md) |
+| S08-T06（返工） | feat/s06-sample-detail | `d6164c0` | 2026-11-23 12:57:58 +08:00 | 返工：样品详情「来源执行」回链死链（`smp-exec-open`→`rec-exec-open`）修复＋断言；更正先前不实描述；448/448；PR #35 head 更新；[会话记录](sessions/2026-11-23_session-08.md) §6.7 |
+
 ## 独立提示词维护记录 S02-T1
 
 | # | 分支 `main` | 分支 `<其他>` | 关联轮次 | 说明 |
