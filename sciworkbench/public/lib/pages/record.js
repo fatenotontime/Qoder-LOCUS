@@ -69,7 +69,7 @@ export function sampleDetailHtml(state, ui) {
       </div>`).join("") : `<p class="hint">暂无状态。</p>`}
     </section>
     <section class="subq-sec"><h4>来源回链</h4>
-      ${exec ? `<div class="row"><span class="hint">来源执行：${esc(proto?.name ?? "执行")}${exec.origin === "reconstructed" ? "（文献重构）" : ""} · ${esc(fmtEnum(exec.status))} · 固定 ${fmtVersion(exec.protocolRevision)}</span><button class="mini-act smp-exec-open" type="button" data-exec="${exec.id}">打开执行详情</button></div>` : ""}
+      ${exec ? `<div class="row"><span class="hint">来源执行：${esc(proto?.name ?? "执行")}${exec.origin === "reconstructed" ? "（文献重构）" : ""} · ${esc(fmtEnum(exec.status))} · 固定 ${fmtVersion(exec.protocolRevision)}</span><button class="mini-act rec-exec-open" type="button" data-exec="${exec.id}">打开执行详情</button></div>` : ""}
       ${exec && proto ? `<div class="row"><span class="hint">来源方案：${esc(proto.name)}</span><button class="mini-act smp-proto-open" type="button" data-proto-open="${proto.id}">打开方案</button></div>` : ""}
       ${exec && !proto ? `<div class="hint warn">来源方案缺失（执行无对应方案），来源不可溯。</div>` : ""}
       ${execMissing ? `<div class="hint warn">来源执行缺失（${esc(s.executionId)}），来源不可溯。</div>` : ""}

@@ -58,6 +58,8 @@ test("样品详情子页：身份 + 状态追加历史（逐版保留）+ 来源
   assert.ok(html.includes("10 mg") && html.includes("12 mg"), "各版用量逐条可见");
   // 来源回链：执行 / 方案 / 测量（测量固定在其样品状态版本上，并可回链表）
   assert.ok(html.includes('data-exec="e1"'), "回链来源执行");
+  // 回链须真能跳：按钮得带 app.js 委托处理器认的类名，只给 data-* 是死链（假入口）
+  assert.ok(/class="[^"]*rec-exec-open[^"]*"[^>]*data-exec="e1"/.test(html), "来源执行回链按钮须带 rec-exec-open 类（app.js 委托处理器识别）");
   assert.ok(html.includes('data-proto-open="pr1"'), "回链来源方案");
   assert.match(html, /固定样品状态 第2版/);
   assert.ok(html.includes('data-tid="tb1"'), "测量回链表可打开");
@@ -86,6 +88,7 @@ test("app.js 接线：样品详情子页可打开/返回，状态纳入历史栈
   assert.ok(APP_SRC.includes('ui.sampleView = "detail"'));
   assert.ok(APP_SRC.includes("data-smp-open"));
   assert.ok(APP_SRC.includes("data-smp-back"));
+  assert.ok(APP_SRC.includes('closest(".rec-exec-open")'), "执行详情入口由 .rec-exec-open 委托处理器识别（样品详情来源执行回链复用同一入口）");
   assert.ok(APP_SRC.includes("content.innerHTML = sampleDetailHtml(state, ui)"), "详情由 renderMiddle 挂载");
   // 历史栈与持久化
   assert.ok(APP_SRC.includes("sampleView: ui.sampleView, sampleId: ui.sampleId"), "pageState/saveUi 带上样品子页状态");
