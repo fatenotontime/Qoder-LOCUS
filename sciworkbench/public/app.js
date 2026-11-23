@@ -2391,8 +2391,9 @@ document.addEventListener("click", (ev) => {
     let assetId;
     if (file && isBinaryDoc(file.name)) {
       // 二进制方案原件：原件外置归档并提取正文（不产出文献卡），随后走方案解析。
-      const up = await api.importFile(file.name, await readFileBase64(file), ui.topicId, { kind: "protocol" });
-      assetId = up.assetId;
+      // 同字节重传 → 后端 409 指回已有原件：复用其 id 继续解析（与文本分支同口径，不算失败）。
+      try { const up = await api.importFile(file.name, await readFileBase64(file), ui.topicId, { kind: "protocol" }); assetId = up.assetId; }
+      catch (e) { if (e.status === 409 && e.details?.existingAssetId) { assetId = e.details.existingAssetId; setStatus("原件已归档：定位已有原件，继续解析"); } else throw e; }
       $("#proto-up-text").value = ""; if ($("#proto-up-file")) $("#proto-up-file").value = "";
     } else {
       let text = $("#proto-up-text").value, name = $("#proto-up-name").value;

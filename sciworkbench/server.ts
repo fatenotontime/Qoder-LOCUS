@@ -481,7 +481,13 @@ export async function createApp(store: Store, opts: { aiConfigPath?: string; ori
   };
 
   const sendBinary = (res: ServerResponse, status: number, buf: Buffer, filename: string, type: string) => {
-    res.writeHead(status, { "content-type": type, "content-disposition": `attachment; filename="${filename}"`, "cache-control": "no-store" });
+    // 文件名须转义：CR/LF 会令 Node 拒绝写头（整个附件回取 → 500），引号会产出畸形 content-disposition。
+    // 纯 ASCII 安全名保持原样（既有下载名不变）；含非 ASCII 时补 RFC 5987 filename*，并留 ASCII fallback。
+    const clean = filename.replace(/[\r\n"]/g, "_");
+    const disposition = /^[\x20-\x7e]*$/.test(clean)
+      ? `attachment; filename="${clean}"`
+      : `attachment; filename="${clean.replace(/[^\x20-\x7e]/g, "_")}"; filename*=UTF-8''${encodeURIComponent(clean)}`;
+    res.writeHead(status, { "content-type": type, "content-disposition": disposition, "cache-control": "no-store" });
     res.end(buf);
   };
 

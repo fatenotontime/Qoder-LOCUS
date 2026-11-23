@@ -141,6 +141,41 @@ test("M6 论文附件路径：带 paperId 上传 PDF → 建附件且卡片归�
   });
 });
 
+test("M6 回取原件：畸形文件名（引号/CRLF）不再致 500，头部安全且字节逐一致", async () => {
+  await withApp(async (base) => {
+    const bytes = read("sample-bom.csv");
+    // 文件名含引号 + CRLF：修复前会产出畸形 content-disposition，CR/LF 更令 Node 拒绝写头 → 整个回取 500。
+    const up = await upload(base, 'weird"\r\nname.csv', bytes);
+    assert.equal(up.status, 200, "含引号/CRLF 的文件名仍可上传归档");
+    const res = await fetch(`${base}/api/originals/${up.body.originalId}`);
+    assert.equal(res.status, 200, "畸形文件名不得使原件回取 500");
+    const cd = res.headers.get("content-disposition") ?? "";
+    assert.ok(cd.startsWith("attachment;"), "仍为附件下载头");
+    assert.equal(/[\r\n]/.test(cd), false, "响应头不得含换行");
+    assert.equal(/filename="[^"]*"/.test(cd), true, "文件名为完整引号对（无裸引号破坏结构）");
+    const back = new Uint8Array(await res.arrayBuffer());
+    assert.deepEqual(Array.from(back), Array.from(bytes), "回取字节仍逐字节一致");
+  });
+});
+
+test("M6 回取原件：普通 ASCII 文件名 content-disposition 不变样", async () => {
+  await withApp(async (base) => {
+    const up = await upload(base, "plain.csv", read("sample-bom.csv"));
+    assert.equal(up.status, 200);
+    const res = await fetch(`${base}/api/originals/${up.body.originalId}`);
+    assert.equal(res.headers.get("content-disposition"), 'attachment; filename="plain.csv"', "既有可控文件名输出不变");
+  });
+});
+
+test("M6 接线：方案二进制上传的 409 复用已有原件（与文本分支同口径）", () => {
+  const APP = readFileSync(join(HERE, "..", "public", "app.js"), "utf8");
+  assert.match(
+    APP,
+    /isBinaryDoc\(file\.name\)\)[\s\S]{0,400}?api\.importFile\([\s\S]{0,200}?kind: "protocol"[\s\S]{0,250}?existingAssetId/,
+    "二进制方案分支须捕获 409 并复用 existingAssetId 继续解析（不得整段报错）",
+  );
+});
+
 test("M6 方案原件路径：kind=protocol 的 PDF 只归档（不产卡/表），正文可留待方案解析", async () => {
   await withApp(async (base) => {
     const up = await upload(base, "protocol.pdf", read("text-2page.pdf"), { kind: "protocol" });
