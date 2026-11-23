@@ -28,19 +28,9 @@ async function world() {
   return { s, topicId: t.topic.id, subqId: q.subquestion.id, execId: e.execution.id, protoId: p.protocol.id, measId: m.measurement.id, tableId: tab.state.tables[0].id, cardIds: s.cards.map((c) => c.id) };
 }
 
-/** 复刻 analysis.js an-create：core＝勾选数据＋B5 自动推导；optional＝{ref,included} 包装（含未勾选）。 */
+/** 复刻 analysis.js an-create：core＝勾选数据（必选推导已收进后端 createAnalysisTask）；optional＝{ref,included} 包装（含未勾选）。 */
 function frontendCreatePayload(w: Awaited<ReturnType<typeof world>>, opts: { dataKind: "table" | "measurement"; dataId: string; defChecked: boolean[]; opt2: { kind: string; id: string }[] }) {
-  const state2 = w.s;
   const core: { kind: string; id: string }[] = [{ kind: opts.dataKind, id: opts.dataId }];
-  const seen = new Set(core.map((r) => `${r.kind}:${r.id}`));
-  for (const d of [...core]) {
-    if (d.kind !== "measurement") continue;
-    const m = state2.measurements.find((x) => x.id === d.id);
-    const sm = m && state2.samples.find((x) => x.id === m.sampleId);
-    if (sm?.executionId && !seen.has(`execution:${sm.executionId}`)) { seen.add(`execution:${sm.executionId}`); core.push({ kind: "execution", id: sm.executionId }); }
-    const e = sm?.executionId && state2.executions.find((x) => x.id === sm.executionId);
-    if (e && !seen.has(`protocol:${e.protocolId}`)) { seen.add(`protocol:${e.protocolId}`); core.push({ kind: "protocol", id: e.protocolId }); }
-  }
   const optional = [
     ...w.cardIds.map((id, i) => ({ ref: { kind: "card", id }, included: opts.defChecked[i] === true })),
     ...opts.opt2.map((x) => ({ ref: { kind: x.kind, id: x.id }, included: true })),
