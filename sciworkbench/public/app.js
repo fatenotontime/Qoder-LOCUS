@@ -690,6 +690,22 @@ async function readTextFile(file) {
   else if (u8[0] === 0xfe && u8[1] === 0xff) enc = "utf-16be";
   return new TextDecoder(enc).decode(buf).replace(/^\uFEFF/, "");
 }
+/** 读文件为 base64（不带 dataURL 前缀）——二进制原件上传用。分块避免超长参数。 */
+async function readFileBase64(file) {
+  const u8 = new Uint8Array(await file.arrayBuffer());
+  let bin = "";
+  for (let i = 0; i < u8.length; i += 0x8000) bin += String.fromCharCode.apply(null, u8.subarray(i, i + 0x8000));
+  return btoa(bin);
+}
+/** 二进制文档格式（走原件外置 + 解析路径，而非文本粘贴）。 */
+const BINARY_DOC_EXT = new Set([".pdf", ".docx", ".doc", ".xlsx", ".xls"]);
+const fileExt = (name) => (String(name ?? "").toLowerCase().match(/\.[^.]+$/) ?? [""])[0];
+const isBinaryDoc = (name) => BINARY_DOC_EXT.has(fileExt(name));
+/** 解析状态徽标：非 ok 如实标出（needs_ocr/partial/failed 不谎报成功）。 */
+function parseStatusText(parse) {
+  const S = { ok: "解析完成", partial: "部分解析", needs_ocr: "需 OCR（无可提取文字）", unsupported: "格式不支持", failed: "解析失败" };
+  return S[parse?.status] ?? parse?.status ?? "";
+}
 /** 人话错误：把原始报错翻译成可读文案，原始信息进「详情」。 */
 function humanError(e) {
   const raw = String(e?.message ?? e ?? "");
@@ -1416,19 +1432,20 @@ function paperHtml() {
       <div class="meta">附件（${atts.length}）· 导入只归档，不触发解析</div>
       ${atts.map((a) => {
         const asset = state.assets.find((x) => x.id === a.assetId);
+        const orig = asset?.originalId ? `<a class="mini-act" href="/api/originals/${encodeURIComponent(asset.originalId)}" download title="下载原始文件">原件</a>` : "";
         return `<div class="material ${a.id === (currentAttachment()?.id ?? "") ? "active" : ""}" data-attid="${a.id}">
-          <div class="m-title">${esc(asset?.name ?? a.assetId)}</div>
-          <div class="m-meta">${ROLE_LABEL[a.role]}${a.version ? " · " + esc(a.version) : ""} · ${asset?.bytes ?? 0}B</div>
+          <div class="m-title">${esc(asset?.name ?? a.assetId)}${asset?.originalId ? ` <span class="hint">· ${esc(asset.mediaType ?? "")}</span>` : ""}</div>
+          <div class="m-meta">${ROLE_LABEL[a.role]}${a.version ? " · " + esc(a.version) : ""} · ${asset?.bytes ?? 0}B ${orig}</div>
         </div>`;
       }).join("") || `<p class="hint">暂无附件。</p>`}
       <details class="mini">
-        <summary>导入附件（Markdown/纯文本）</summary>
-        <input id="att-file" type="file" accept=".md,.markdown,.txt,text/markdown,text/plain" />
-        <textarea id="att-text" rows="3" placeholder="或粘贴文本…"></textarea>
+        <summary>导入附件（Markdown/纯文本/PDF/DOCX）</summary>
+        <input id="att-file" type="file" accept=".md,.markdown,.txt,text/markdown,text/plain,.pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document" />
+        <textarea id="att-text" rows="3" placeholder="或粘贴文本…（PDF/DOCX 请用文件上传）"></textarea>
         <div class="row"><select id="att-role"><option value="fulltext">正文</option><option value="supplement">补充材料</option><option value="other">其他</option></select>
           <input id="att-version" placeholder="版本（可空，如 v2）" /></div>
         <button class="primary" id="att-add">导入附件</button>
-        <p class="hint">同 DOI 的不同附件/版本不互拒；真重复（同内容）会给出已有原件定位。PDF 等格式解析器未配置。</p>
+        <p class="hint">PDF/DOCX 按二进制原件外置归档并解析成 draft 卡（可回取原件）；Markdown/纯文本照旧。同内容会给出已有原件定位。</p>
       </details>
     </div>`;
 }
@@ -1497,9 +1514,11 @@ function openTableMax(tid) {
   const wrap = document.createElement("div");
   wrap.id = "table-max"; wrap.className = "item"; wrap.dataset.id = t.id;
   wrap.innerHTML = `
-    <div class="tblmax-head"><strong>${esc(t.name)}</strong>${t.origin === "reconstructed" ? ` <span class="badge warn">文献重构</span>` : ""} <span class="hint">${t.rows.length} 行（含 ${markers.size} 个标记行：疑似标题/备注/占位，保留待核对）× ${t.columns.length} 列 · 原件 ${asset?.bytes ?? 0}B${t.origin === "reconstructed" ? " · 历史文献重构数据，非本地实测" : ""}</span>
+    <div class="tblmax-head"><strong>${esc(t.name)}</strong>${t.origin === "reconstructed" ? ` <span class="badge warn">文献重构</span>` : ""} <span class="hint">${t.rows.length} 行（含 ${markers.size} 个标记行：疑似标题/备注/占位，保留待核对）× ${t.columns.length} 列 · 原件 ${asset?.bytes ?? 0}B${asset?.originalId ? ` · ${esc(asset.mediaType ?? "")}` : ""}${t.origin === "reconstructed" ? " · 历史文献重构数据，非本地实测" : ""}</span>
       <button id="tblmax-fold">${foldEmpty ? "展开全空行" : "折叠全空行"}</button>
-      <button id="tblmax-csv">查看原始 CSV</button>
+      ${asset?.originalId
+        ? `<a class="mini-act" href="/api/originals/${encodeURIComponent(asset.originalId)}" download title="下载原始文件">下载原件</a>`
+        : `<button id="tblmax-csv">查看原始 CSV</button>`}
       <button id="tblmax-close">关闭</button></div>
     <div class="tblmax-body">
       ${tableGridHtml(t, true).html}
@@ -1520,7 +1539,7 @@ function openTableMax(tid) {
   document.body.appendChild(wrap);
   wrap.querySelector("#tblmax-close").onclick = () => { ui.cell = null; wrap.remove(); };
   wrap.querySelector("#tblmax-fold").onclick = () => { foldEmpty = !foldEmpty; saveUi(); openTableMax(tid); };
-  wrap.querySelector("#tblmax-csv").onclick = () => { const r = wrap.querySelector("#tblmax-raw"); r.hidden = !r.hidden; };
+  wrap.querySelector("#tblmax-csv")?.addEventListener("click", () => { const r = wrap.querySelector("#tblmax-raw"); r.hidden = !r.hidden; });
   wrap.querySelector(".tblmax-body").addEventListener("click", (ev) => {
     const td = ev.target.closest("td.cell"); if (!td) return;
     ev.stopPropagation();
@@ -1599,11 +1618,11 @@ function protocolImportHtml() {
   return `
     <details class="mini" open><summary>① 上传原件并解析</summary>
       <input id="proto-up-name" placeholder="文件名（如 protocol.md）" />
-      <input id="proto-up-file" type="file" accept=".md,.markdown,.txt,.text,text/markdown,text/plain" />
+      <input id="proto-up-file" type="file" accept=".md,.markdown,.txt,.text,text/markdown,text/plain,.pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document" />
       <textarea id="proto-up-text" rows="3" placeholder="或粘贴方案文本（Markdown/纯文本）…"></textarea>
       <button class="primary" id="proto-upload" type="button">上传并解析为方案草稿</button>
-      <p class="hint">原件按方案类归档；草稿标「模型草稿」，须人工编辑确认。AI 未配置时只归档，可稍后解析。</p>
-      ${protos.length ? `<div class="hint">已归档方案原件（${protos.length}）：</div>${protos.map((a) => `<div class="row protoasset" data-aid="${a.id}"><span class="hint">${esc(a.name)} · ${a.bytes}B</span><button class="protoasset-parse" type="button">解析为草稿</button></div>`).join("")}` : ""}
+      <p class="hint">原件按方案类归档；PDF/DOCX 按二进制原件外置归档并提取正文（可回取原件）；草稿标「模型草稿」，须人工编辑确认。AI 未配置时只归档，可稍后解析。</p>
+      ${protos.length ? `<div class="hint">已归档方案原件（${protos.length}）：</div>${protos.map((a) => `<div class="row protoasset" data-aid="${a.id}"><span class="hint">${esc(a.name)} · ${a.bytes}B</span>${a.originalId ? `<a class="mini-act" href="/api/originals/${encodeURIComponent(a.originalId)}" download title="下载原始文件">原件</a>` : ""}<button class="protoasset-parse" type="button">解析为草稿</button></div>`).join("")}` : ""}
     </details>
     <details class="mini"><summary>② 从论文重构（非作者原始）</summary>
       ${paperAtts.length ? `<select id="parse-asset">${paperAtts.map((a) => `<option value="${a.id}">${esc(a.name)}</option>`).join("")}</select>
@@ -1730,7 +1749,23 @@ function renderRecordImport(box) {
       <select id="exec-tmpl"><option value="">不用模板</option>${tmpls.map((t) => `<option value="${t.id}">模板 ${fmtVersion(t.protocolRevision)} · ${t.fields.length} 字段</option>`).join("")}</select>
       <button class="primary" id="exec-start">创建执行</button>
       <p class="hint">创建后进入准备稿：可登记本次差异，确认快照后才开始补记录；实际开始另行记录。之后方案修订不影响本执行。</p>` : `<p class="hint">先在「方案与图」创建方案。</p>`}
+    </details>
+    <details class="mini">
+      <summary>上传数据表（XLSX/CSV/TSV 真实文件）</summary>
+      <input id="data-file" type="file" accept=".xlsx,.csv,.tsv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv,text/tab-separated-values" />
+      <button class="primary" id="data-upload">上传并解析入库</button>
+      <p class="hint">原件按原始字节外置归档（state 不含二进制），解析成数据表；XLSX 默认取首个可见非空工作表。解析状态如实上报（需 OCR/失败不谎报成功）。</p>
     </details>`;
+  const upBtn = $("#data-upload");
+  if (upBtn) upBtn.addEventListener("click", (ev) => runBusy(ev.target, "上传数据表", async () => {
+    const file = $("#data-file").files?.[0];
+    if (!file) throw new Error("请先选择文件（XLSX/CSV/TSV）。");
+    const r = await api.importFile(file.name, await readFileBase64(file), ui.topicId || undefined, { kind: "measurement" });
+    if ($("#data-file")) $("#data-file").value = "";
+    await refresh();
+    const warns = [...(r.parse?.warnings ?? []), ...(r.parse?.unknowns ?? [])].map((w) => w.message).join("；");
+    setStatus(`数据表已入库：${parseStatusText(r.parse)}（${r.created.tables} 张表）${warns ? " · " + warns : ""}`);
+  }));
   const btn = $("#exec-start");
   if (btn) btn.addEventListener("click", (ev) => runBusy(ev.target, "创建执行", async () => {
     if (!ui.topicId) throw new Error("请先选择/创建课题");
@@ -2353,12 +2388,19 @@ document.addEventListener("click", (ev) => {
   if (ev.target.id === "proto-upload") { runJob(ev.target, "上传并解析方案", async () => {
     if (!ui.topicId) throw new Error("请先选择/创建课题");
     const file = $("#proto-up-file").files?.[0];
-    let text = $("#proto-up-text").value, name = $("#proto-up-name").value;
-    if (file) { text = await readTextFile(file); if (!name) name = file.name; }
     let assetId;
-    try { const up = await api.uploadProtocolSource(name, text, ui.topicId); assetId = up.assetId; }
-    catch (e) { if (e.status === 409 && e.details?.existingAssetId) { assetId = e.details.existingAssetId; setStatus("原件已归档：定位已有原件，继续解析"); } else throw e; }
-    $("#proto-up-text").value = ""; if ($("#proto-up-file")) $("#proto-up-file").value = "";
+    if (file && isBinaryDoc(file.name)) {
+      // 二进制方案原件：原件外置归档并提取正文（不产出文献卡），随后走方案解析。
+      const up = await api.importFile(file.name, await readFileBase64(file), ui.topicId, { kind: "protocol" });
+      assetId = up.assetId;
+      $("#proto-up-text").value = ""; if ($("#proto-up-file")) $("#proto-up-file").value = "";
+    } else {
+      let text = $("#proto-up-text").value, name = $("#proto-up-name").value;
+      if (file) { text = await readTextFile(file); if (!name) name = file.name; }
+      try { const up = await api.uploadProtocolSource(name, text, ui.topicId); assetId = up.assetId; }
+      catch (e) { if (e.status === 409 && e.details?.existingAssetId) { assetId = e.details.existingAssetId; setStatus("原件已归档：定位已有原件，继续解析"); } else throw e; }
+      $("#proto-up-text").value = ""; if ($("#proto-up-file")) $("#proto-up-file").value = "";
+    }
     let r;
     try { r = await api.parseProtocol(assetId, ui.topicId); }
     catch (e) { if (e.status === 422) { await refresh(); setStatus(`原件已归档。${e.message}`); return; } throw e; }
@@ -2811,6 +2853,13 @@ $("#right-content").addEventListener("click", async (ev) => {
       const p = currentPaper();
       await runBusy(ev.target, "导入附件", async () => {
         const file = $("#att-file").files?.[0];
+        if (file && isBinaryDoc(file.name)) {
+          // 二进制文档：原件外置归档 → 解析成 draft 卡 → 建论文正文附件（一次到底）。
+          const r = await api.importFile(file.name, await readFileBase64(file), ui.topicId || undefined, { kind: "literature", paperId: p.id });
+          $("#att-text").value = ""; if ($("#att-file")) $("#att-file").value = "";
+          await refresh(); setStatus(`附件已归档并解析：${parseStatusText(r.parse)}（文献卡 ${r.created.cards} 张）${r.originalId ? "，原件可回取" : ""}`);
+          return;
+        }
         let text = $("#att-text").value, name = file?.name ?? "";
         if (file) text = await readTextFile(file);
         if (!name) name = "attachment.md";

@@ -19,19 +19,24 @@ import {
   applyLiterature,
   batchConfirm,
   batchPreview,
+  binaryAssetKind,
   createComparison,
   createMapping,
   createSubquestion,
   createTopic,
   importLiterature,
   importMeasurements,
+  importParsedFile,
+  makeBinaryAsset,
   mapAiLiteratureCards,
+  parsedSummaryText,
   prepareLiterature,
   reviewCard,
   reviewTable,
   sourceView,
   upsertAdoption,
 } from "./services/app.ts";
+import { ImportError, OriginalStore, listWorkbookSheets, parseBytes } from "./services/import-formats/index.ts";
 import {
   addManualOcr,
   addMeasurement,
@@ -151,8 +156,10 @@ export interface Job {
   error?: string;
 }
 
-export async function createApp(store: Store, opts: { aiConfigPath?: string } = {}) {
+export async function createApp(store: Store, opts: { aiConfigPath?: string; originalRoot?: string } = {}) {
   const aiConfigPath = opts.aiConfigPath;
+  // 二进制原件专用根目录（state.json 外置）：未显式指定时用实例级临时目录（测试用），生产由 main 传数据目录下 originals/。
+  const originals = new OriginalStore(opts.originalRoot ?? join(tmpdir(), `locus-originals-${randomUUID()}`));
   // 启动读回本机保存的 AI 配置（环境变量优先；两者都无则未配置）。
   if (aiConfigPath && !getAiConfig()) {
     const saved = loadAiConfigFile(aiConfigPath);
@@ -732,6 +739,16 @@ export async function createApp(store: Store, opts: { aiConfigPath?: string } = 
         send(res, 200, sourceView(state, decodeURIComponent(path.slice("/api/source/".length))));
         return;
       }
+      // 二进制原件回取：按 M OriginalStore 标识取回原字节（校验 hash 一致），附原文件名与 media type。
+      const origGet = path.match(/^\/api\/originals\/([^/]+)$/);
+      if (method === "GET" && origGet) {
+        const id = decodeURIComponent(origGet[1]);
+        if (!originals.has(id)) { send(res, 404, { error: `原件不存在：${id}` }); return; }
+        const meta = originals.meta(id);
+        const bytes = originals.retrieve(id);
+        sendBinary(res, 200, Buffer.from(bytes), meta.fileName, meta.mediaTypeGuess);
+        return;
+      }
       const tmplCheck = path.match(/^\/api\/templates\/([^/]+)\/check$/);
       if (method === "GET" && tmplCheck) {
         send(res, 200, templateProtocolCheck(state, decodeURIComponent(tmplCheck[1])));
@@ -1026,6 +1043,43 @@ export async function createApp(store: Store, opts: { aiConfigPath?: string } = 
           const r = createKnowledgeStatement(state, body);
           await store.save(r.state); state = r.state;
           send(res, 200, { ok: true, id: r.item.id, revision: r.item.revision, review: r.item.payload.review.status, nature: r.item.payload.nature });
+          return;
+        }
+        if (path === "/api/import/file") {
+          const name = String(body.name ?? "").trim();
+          if (!name) { send(res, 422, { error: "缺少文件名。" }); return; }
+          const rawB64 = String(body.dataBase64 ?? "");
+          const b64 = rawB64.startsWith("data:") && rawB64.includes(",") ? rawB64.slice(rawB64.indexOf(",") + 1) : rawB64;
+          if (!b64) { send(res, 422, { error: "缺少文件内容（dataBase64）。" }); return; }
+          const bytes = new Uint8Array(Buffer.from(b64, "base64"));
+          if (bytes.length === 0) { send(res, 422, { error: "文件内容为空或不是合法 base64。" }); return; }
+          // 先用内存字节判定格式：不支持的格式在落盘前拒绝，避免留下无引用的孤儿原件。
+          let parsed = await parseBytes(bytes, name);
+          if (parsed.status === "unsupported") {
+            send(res, 422, { error: parsed.unknowns.map((u) => u.message).join("；") || "不支持的格式。", parse: { status: parsed.status, format: parsed.format } });
+            return;
+          }
+          // XLSX 默认规则（工作表人工选择后置）：取首个「可见且非空」的工作表解析；无则退回首个可见表。
+          if (parsed.format === "xlsx" && parsed.tables.length === 0) {
+            const sheets = parsed.sheets ?? (await listWorkbookSheets(bytes));
+            const pick = sheets.find((s) => s.state === "visible" && !s.isEmpty) ?? sheets.find((s) => s.state === "visible") ?? sheets[0];
+            if (pick) parsed = await parseBytes(bytes, name, { sheet: pick.name });
+          }
+          const saved = originals.save(bytes, name); // 超限抛 ImportError(original_too_large)，去重按原始字节 hash
+          const parsedWithSource = { ...parsed, sourceId: saved.id };
+          const kind = body.kind === "literature" || body.kind === "measurement" || body.kind === "protocol" ? body.kind as "literature" | "measurement" | "protocol" : binaryAssetKind(parsedWithSource.format, name);
+          const paperId = typeof body.paperId === "string" && body.paperId ? body.paperId : undefined;
+          const asset = makeBinaryAsset({
+            kind, name, originalId: saved.id, mediaType: saved.mediaTypeGuess, byteLength: saved.byteLength,
+            hash: saved.hash, summary: parsedSummaryText(parsedWithSource), topicId: body.topicId as string | undefined,
+          });
+          const outcome = importParsedFile(state, asset, parsedWithSource, { topicId: body.topicId as string | undefined, paperId });
+          await store.save(outcome.state); state = outcome.state;
+          send(res, 200, {
+            ok: true, assetId: asset.id, originalId: saved.id, kind,
+            parse: { status: outcome.status, format: outcome.format, warnings: outcome.warnings, unknowns: outcome.unknowns },
+            created: outcome.created,
+          });
           return;
         }
         if (path === "/api/import/literature") {
@@ -1659,6 +1713,7 @@ export async function createApp(store: Store, opts: { aiConfigPath?: string } = 
       send(res, 404, { error: "未知接口" });
     } catch (err) {
       if (err instanceof AiError) send(res, 502, { error: err.message });
+      else if (err instanceof ImportError) send(res, err.code === "original_too_large" ? 413 : 422, { error: err.message });
       else if (err instanceof AppError) send(res, err.status, { error: err.message, ...(err.details ?? {}) });
       else if (err instanceof SyntaxError) send(res, 400, { error: "JSON 解析失败" });
       else send(res, 500, { error: (err as Error).message ?? "内部错误" });
@@ -1678,7 +1733,7 @@ export async function createApp(store: Store, opts: { aiConfigPath?: string } = 
 import { pathToFileURL } from "node:url";
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const store = new JsonFileStore(DATA_PATH);
-  const app = await createApp(store, { aiConfigPath: AI_CONFIG_PATH });
+  const app = await createApp(store, { aiConfigPath: AI_CONFIG_PATH, originalRoot: join(dirname(DATA_PATH), "originals") });
   app.listen(PORT, "127.0.0.1", () => {
     const d = describeConfig(getAiConfig());
     console.log(`LOCUS dev server: http://127.0.0.1:${PORT}  (data: ${DATA_PATH})`);

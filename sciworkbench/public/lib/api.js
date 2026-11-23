@@ -11,6 +11,9 @@ export const api = {
   async createSubquestion(topicId, question, kind) { return json(`/api/topics/${encodeURIComponent(topicId)}/subquestions`, { question, kind }); },
   async importLiterature(name, text, mode, topicId) { return json("/api/import/literature", { name, text, mode, topicId }); },
   async importMeasurements(name, csv, topicId, headerRows, profile) { return json("/api/import/measurements", { name, csv, topicId, headerRows, profile }); },
+  /** 二进制原件上传：base64 经 JSON 通道（不新增依赖）。kind 可选 literature/measurement；paperId 可挂论文附件。 */
+  async importFile(name, dataBase64, topicId, opts = {}) { return json("/api/import/file", { name, dataBase64, topicId, ...opts }); },
+  originalUrl(originalId) { return `/api/originals/${encodeURIComponent(originalId)}`; },
   async reviewCard(id, patch) { return json(`/api/cards/${encodeURIComponent(id)}/review`, patch); },
   async addCard(input) { return json("/api/cards", input); },
   async batchPreview(ids) { return json("/api/cards/batch-preview", { ids }); },
