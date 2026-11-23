@@ -9,7 +9,7 @@ import {
   topbarTopicHtml, topicSwitcherListHtml, emptyTopicGuideHtml, navHtml, navChar, panelErrorHtml, sidebarListHtml,
   topicOverviewHtml, topicFlowHtml, topicTodosHtml, subqBlockHtml, subqDetailHtml, nextStepHtml, NAV_ITEMS,
 } from "./lib/views.js";
-import { knowledgeLeftHtml, knowledgeWorkspaceHtml, knowledgeQueueHtml, renderKnowledgeForm, bindKnowledge } from "./lib/pages/knowledge.js";
+import { knowledgeLeftHtml, knowledgeWorkspaceHtml, knowledgeQueueHtml, renderKnowledgeForm, bindKnowledge, hasPendingStatements } from "./lib/pages/knowledge.js";
 import { renderAnalysisForm, currentTask, contextMapHtml, analysisRightHtml, snapshotHtml, bindAnalysis } from "./lib/pages/analysis.js";
 
 let state = { topics: [], subquestions: [], assets: [], papers: [], attachments: [], cards: [], tables: [], adoptions: [], mappings: [], comparisons: [], protocols: [], templates: [], executions: [], samples: [], measurements: [], impacts: [], ocrs: [], analysisTasks: [], analysisResults: [], reports: [], chats: [] };
@@ -1122,7 +1122,7 @@ function renderMiddle() {
   if (ui.nav === "knowledge") {
     $("#mid-title").textContent = ui.kzPanel === "library" ? "知识总览" : ui.kzPanel === "themes" ? "主题" : "卡片审阅";
     note.hidden = true;
-    if (!state.papers.length && ui.kzPanel !== "library") { midEmpty("knowledge", "还没有可审的卡片", "先在文献卷建立条目并导入附件，再回到知识卷发起语义提取。"); return; }
+    if (!state.papers.length && ui.kzPanel !== "library" && !(ui.kzPanel !== "themes" && hasPendingStatements(state))) { midEmpty("knowledge", "还没有可审的卡片", "先在文献卷建立条目并导入附件，再回到知识卷发起语义提取。"); return; }
     content.innerHTML = knowledgeWorkspaceHtml(state, ui);
     return;
   }

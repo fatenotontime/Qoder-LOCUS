@@ -67,8 +67,16 @@ function firstQuote(c) {
 
 const kzEnv = (state, coll, id) => (state.knowledge?.[coll] ?? []).find((e) => e.id === id) ?? null;
 const kzItems = (state, cardId) => (state.knowledge?.items ?? []).filter((e) => e.payload?.cardId === cardId);
+/** 卡内知识项待审：必须归属某张卡；选中文献时再按该文献的卡过滤。 */
 const kzPendingItems = (state, cardIds) => (state.knowledge?.items ?? [])
-  .filter((e) => e.payload?.review?.status === "pending" && (!cardIds || cardIds.has(e.payload.cardId)));
+  .filter((e) => e.payload?.review?.status === "pending" && e.payload?.cardId && (!cardIds || cardIds.has(e.payload.cardId)));
+/** 人工陈述待审：不依赖卡片（无 cardId），不得被卡／文献过滤掉，须独立成区可审。 */
+const kzPendingStatements = (state) => (state.knowledge?.items ?? [])
+  .filter((e) => e.payload?.review?.status === "pending" && !e.payload?.cardId);
+/** 是否有待审人工陈述：决定无文献时「分项审阅」中栏是否仍需渲染（陈述不依赖卡片）。 */
+export function hasPendingStatements(state) {
+  return kzPendingStatements(state).length > 0;
+}
 
 /** 按钉住的版本读 payload（§4.2 旧版从 history 读，界面不退回最新版冒充）。 */
 const kzEnvAt = (state, coll, ref) => {
@@ -298,10 +306,17 @@ export function knowledgeWorkspaceHtml(state, ui) {
       </div>` : ""}
     </div>`;
   }).join("");
+  const statements = kzPendingStatements(state);
+  const stmtHtml = statements.length
+    ? `<div class="kzstmts"><div class="kzq-head">人工陈述待审 <span class="badge">${statements.length}</span></div>
+      <p class="hint">人工陈述不依赖卡片：在此查看、确认或改值；确认后才能进入主题「当前认识」。</p>
+      ${statements.map((e) => kzItemHtml(state, e, ui)).join("")}</div>`
+    : "";
   return `${knowledgeStageHtml(state, ui)}${kzPickHtml("cards")}
     <div class="kzpick">文献：<select id="kz-paper">${state.papers.length ? state.papers.map((p) => `<option value="${esc(p.id)}" ${p.id === ui.paperId ? "selected" : ""}>${esc(p.title)}</option>`).join("") : `<option>（暂无文献）</option>`}</select></div>
     <div class="kztabs">${tabHtml}</div>
     <div class="kzlist">${rows || `<p class="hint">此分区暂无卡片。</p>`}</div>
+    ${stmtHtml}
     <div class="kzfoot"><button class="kz-skipall">一键全部跳过</button><span class="hint">为时间紧准备，不推荐</span></div>`;
 }
 
@@ -315,12 +330,15 @@ export function knowledgeQueueHtml(state, ui) {
   </div>${(j.chunkErrors ?? []).map((e) => `<div class="kzq-err">第 ${e.index + 1} 块失败 · <button class="kzq-retry" data-index="${e.index}">重试</button></div>`).join("")}${(j.unresolvedLinks ?? []).length ? `<div class="kzq-warn">有 ${j.unresolvedLinks.length} 处表号/小节引用未能唯一定位，已在对应知识项标为待补来源。</div>` : ""}` : "";
   const paperCards = new Set(kzCards(state, ui).map((c) => c.id));
   const pending = kzPendingItems(state, ui.paperId ? paperCards : null);
+  const statements = kzPendingStatements(state);
   return `<div class="kzq">
     <div class="kzq-head">AI 待审队列 <span class="badge">新增 ${queue.length}</span></div>
     ${task}
     <div class="kzq-list">${queue.map((c) => `<button class="kzq-item" data-cid="${c.id}">${esc(c.kind ? fmtEnum(c.kind) : "摘录")} · ${esc(c.rawText.slice(0, 28))}</button>`).join("") || `<p class="hint">队列为空。</p>`}</div>
-    <div class="kzq-head kzq-items">知识项待审 <span class="badge">${pending.length}</span></div>
+    <div class="kzq-head kzq-items">卡内知识项待审 <span class="badge">${pending.length}</span></div>
     <div class="kzq-list">${pending.slice(0, 30).map((e) => `<button class="kzq-kitem" data-iid="${esc(e.id)}" data-cid="${esc(e.payload?.cardId ?? "")}">${esc(fmtEnum(e.payload?.nature))} · ${esc(String(e.payload?.text ?? "").slice(0, 28))}</button>`).join("") || `<p class="hint">没有待审知识项。</p>`}</div>
+    <div class="kzq-head kzq-items">人工陈述待审 <span class="badge">${statements.length}</span></div>
+    <div class="kzq-list">${statements.slice(0, 30).map((e) => `<button class="kzq-kitem" data-iid="${esc(e.id)}" data-cid="">${esc(fmtEnum(e.payload?.nature))} · ${esc(String(e.payload?.text ?? "").slice(0, 28))}</button>`).join("") || `<p class="hint">没有待审的人工陈述。</p>`}</div>
   </div>`;
 }
 
