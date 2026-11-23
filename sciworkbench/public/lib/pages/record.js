@@ -24,10 +24,14 @@ export function recordOverviewHtml(state, ui) {
       <div class="pi-actions"><button class="mini-act rec-exec-open" type="button" data-exec="${e.id}">打开</button></div>
     </article>`;
   }).join("") : `<p class="hint">${state.topics.length ? "还没有执行；用上方「创建执行」从方案进入准备稿。" : "先建课题。"}</p>`;
-  const tableRows = tables.length ? tables.map((t) => `<article class="paper-item">
-    <div class="pi-main"><div class="pi-title">${esc(t.name)}</div><div class="pi-meta">${t.rows.length} 行 × ${t.columns.length} 列${t.origin === "reconstructed" ? " · 文献重构" : ""}</div></div>
-    <div class="pi-actions"><button class="mini-act tbl-open" type="button" data-tid="${t.id}">查看表格</button></div>
-  </article>`).join("") : `<p class="hint">还没有数据表；在「数据与分析」导入，或从论文数据重构。</p>`;
+  const tableRows = tables.length ? tables.map((t) => {
+    const asset = state.assets.find((x) => x.id === t.assetId);
+    const orig = asset?.originalId ? `<a class="mini-act" href="/api/originals/${encodeURIComponent(asset.originalId)}" download title="下载原始文件（二进制原件外置，按 hash 校验）">原件</a>` : "";
+    return `<article class="paper-item">
+    <div class="pi-main"><div class="pi-title">${esc(t.name)}</div><div class="pi-meta">${t.rows.length} 行 × ${t.columns.length} 列${t.origin === "reconstructed" ? " · 文献重构" : ""}${asset?.originalId ? " · 原件外置" : ""}</div></div>
+    <div class="pi-actions"><button class="mini-act tbl-open" type="button" data-tid="${t.id}">查看表格</button>${orig}</div>
+  </article>`;
+  }).join("") : `<p class="hint">还没有数据表；用左侧「上传数据表」导入真实文件，或从论文数据重构。</p>`;
   const sampleRows = samples.length ? samples.map((s) => {
     const mOfS = state.measurements.filter((m) => m.sampleId === s.id);
     return `<article class="paper-item ${s.id === ui.sampleId ? "active" : ""}" data-smprow="${s.id}">

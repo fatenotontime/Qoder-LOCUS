@@ -494,6 +494,17 @@
 | S08-T06 | feat/s06-sample-detail | `9ea38ee` | 2026-11-23 12:30:35 +08:00 | 样品详情子页（状态追加历史＋来源回链）＋总览入口＋返回恢复列表态；448/448；PR #35 OPEN（base d402d8e）；[会话记录](sessions/2026-11-23_session-08.md) |
 | S08-T06（返工） | feat/s06-sample-detail | `d6164c0` | 2026-11-23 12:57:58 +08:00 | 返工：样品详情「来源执行」回链死链（`smp-exec-open`→`rec-exec-open`）修复＋断言；更正先前不实描述；448/448；PR #35 head 更新；[会话记录](sessions/2026-11-23_session-08.md) §6.7 |
 
+### 会话 S08 · P7 M6 集成——二进制导入路接入应用（`feat/s06-m6-integration`）
+
+| # | 分支 `main` | 分支 `feat/s06-m6-integration` | 关联轮次 | 说明 |
+| --- | --- | --- | --- | --- |
+| 129 | — | `bc3d626` · 2026-11-23 13:58:30 +08:00、`c1f0eb8` · 2026-11-23 14:00:03 +08:00（记录，自指）、`17be98a` · 2026-11-23 14:29:41 +08:00（**定点返工**，见索引 S08-T07（返工））｜PR **#36** OPEN（base `main`=4298e61） | S08-T07 | **P7 / M6 集成**：把已合入的 M 导入路底座（`services/import-formats/**`）接进应用，真实二进制文件（PDF/DOCX/XLSX/CSV/TSV/MD/TXT）可经界面**上传→存原件→解析→画像→入库→回取**。①**AssetRecord 二进制承载（方案 A）**：新增 `originalId?`/`mediaType?`，原件字节落 `OriginalStore` 专用根目录（`state.json` 外置）、`hash`=原始字节 sha256；文本类导入路径（文献 draft / 测量 CSV）**语义不变**。②`MeasurementTableRecord` 新增 `profile?`（M 全表画像）与 `gridOrigin?`（原件位置基址，供 `cellOriginAt` 回查）；解析入库**不另建并行数据模型**（表类→测量表〔口径对齐 `importMeasurements`：列/体/标记行同规则〕、文本类→文献 **draft 卡**）。③**HTTP**：`POST /api/import/file`（**base64**，复用 JSON 通道，**不新增依赖**；不支持的格式在落盘前拒绝→无孤儿原件；XLSX 默认取首个「可见非空」工作表）；`GET /api/originals/:id` 回取原件（按 hash 校验，附原文件名/media type）；`createApp` 接 `originalRoot`（生产=数据目录下 `originals/`，测试=实例级临时目录）；`ImportError` 映射 413/422。④**无假入口/不谎报**：`needs_ocr`/`partial`/`failed` 如实上报，无可提取内容时不伪造卡/表，仅归档并记明；`unsupported` 拒绝。⑤**界面入口**：文献页附件支持 PDF/DOCX、记录页新增 XLSX/CSV/TSV 数据表上传、方案页原件支持 PDF/DOCX；assets/表格显示「原件」回取链接。新增 `tests/m6-integration.test.ts`（6）；**454/454**；HTTP 冒烟实测（上传 PDF→原件 md5 逐字节一致、GET 回取 200、坏 id 404）；[会话记录](sessions/2026-11-23_session-08.md) §7 |
+
+| 轮次 | 分支 | 提交 | 提交时间 | 本轮产出 |
+| --- | --- | --- | --- | --- |
+| S08-T07 | feat/s06-m6-integration | `bc3d626` | 2026-11-23 13:58:30 +08:00 | M6 集成：二进制上传→原件外置→解析→画像→入库→回取；AssetRecord originalId/mediaType＋表 profile/gridOrigin；`/api/import/file`＋`/api/originals/:id`；文献/记录/方案真实文件入口；m6-integration 6 用例；454/454；PR **#36** OPEN（base 4298e61）；[会话记录](sessions/2026-11-23_session-08.md) §7 |
+| S08-T07（返工） | feat/s06-m6-integration | `17be98a` | 2026-11-23 14:29:41 +08:00 | 定点返工两项：①`sendBinary` 转义 `content-disposition` 文件名（CR/LF/引号→`_`，非 ASCII 补 RFC 5987 `filename*`），修「畸形/CRLF 文件名致 `GET /api/originals/:id` 500」——普通名输出不变；②方案页二进制上传捕获 409 复用 `existingAssetId`（与文本分支同口径）。m6-integration +3 用例（共 9）；反向验证（去修复则新断言失败）；**457/457**；PR **#36** head 更新；[会话记录](sessions/2026-11-23_session-08.md) §7.7 |
+
 ## 独立提示词维护记录 S02-T1
 
 | # | 分支 `main` | 分支 `<其他>` | 关联轮次 | 说明 |

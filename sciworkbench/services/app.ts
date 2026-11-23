@@ -17,12 +17,15 @@ import type {
   LocusState,
   MeasurementTableRecord,
   NameMappingRecord,
+  PaperAttachment,
   RevisionEntry,
   SubquestionRecord,
   TopicRecord,
 } from "../store.ts";
 import { contentHash, rawHash } from "../store.ts";
 import { AiError, extractLiterature, type AiConfig } from "./ai.ts";
+import { profileGrid } from "./import-formats/profile.ts";
+import type { Diagnostic, DetectedFormat, GridTable, ParseResult, ParseStatus } from "./import-formats/contracts.ts";
 
 /** 原件大小上限（字节）。超过即拒绝导入，绝不静默截断。 */
 export const MAX_IMPORT_BYTES = 2 * 1024 * 1024;
@@ -181,6 +184,150 @@ export function makeAsset(kind: AssetRecord["kind"], name: string, text: string,
   }
   // hash=原始字节（保存后不重算）；fingerprint=逻辑内容指纹，仅用于查重（5C）。
   return { id: `ast_${randomUUID()}`, kind, name: name.trim() || "未命名", topicId: topicId || undefined, bytes, hash: rawHash(text), fingerprint: contentHash(text), text, createdAt: now() };
+}
+
+// ── 二进制原件承载与解析入库（M6 集成）──────────────────────
+// 约定：二进制类资产的原件字节落在 M OriginalStore（state.json 外置），AssetRecord 只引用
+// `originalId`＋`mediaType` 并保留可读摘要；文本类导入路径（文献 draft / 测量 CSV）保持不变。
+/** M 识别到的文本类格式（走文献 draft 路径）。 */
+const M_TEXT_FORMATS = new Set<DetectedFormat>(["pdf", "docx", "markdown", "text"]);
+/** M 识别到的数据表类格式（走表格入库路径）。 */
+const M_TABLE_FORMATS = new Set<DetectedFormat>(["xlsx", "csv", "tsv"]);
+
+export function isMTextFormat(format: DetectedFormat): boolean {
+  return M_TEXT_FORMATS.has(format);
+}
+
+/** 由 M 识别结果决定业务资产类别：文本类→literature，表类→measurement；unrecognized 按扩展名兜底。 */
+export function binaryAssetKind(format: DetectedFormat, fileName: string): AssetRecord["kind"] {
+  if (M_TEXT_FORMATS.has(format)) return "literature";
+  if (M_TABLE_FORMATS.has(format)) return "measurement";
+  const ext = extname(fileName).toLowerCase();
+  return [".pdf", ".docx", ".doc", ".md", ".markdown", ".txt", ".text"].includes(ext) ? "literature" : "measurement";
+}
+
+/** 解析结果的可读摘要文本（仅文本类格式；表类返回空，数据落在表格记录中）。 */
+export function parsedSummaryText(parsed: ParseResult): string {
+  if (!M_TEXT_FORMATS.has(parsed.format)) return "";
+  return parsed.textBlocks.map((b) => b.text).join("\n\n").trim();
+}
+
+export interface BinaryAssetInput {
+  kind: AssetRecord["kind"];
+  name: string;
+  /** M OriginalStore 原件标识（`orig_<sha256>`）。 */
+  originalId: string;
+  mediaType: string;
+  byteLength: number;
+  /** 原始字节 sha256（与原件标识内 hash 一致）。 */
+  hash: string;
+  /** 可读摘要（文本类=解析正文；表类可空）。 */
+  summary?: string;
+  topicId?: string;
+}
+
+/** 建二进制类资产：原件外置引用（originalId/mediaType）；hash/fingerprint 均取原始字节 hash。 */
+export function makeBinaryAsset(input: BinaryAssetInput): AssetRecord {
+  if (input.byteLength > MAX_IMPORT_BYTES) {
+    throw new AppError(413, `文件超过上限 ${MAX_IMPORT_BYTES} 字节，已拒绝导入（不截断）。请缩减后再试。`);
+  }
+  return {
+    id: `ast_${randomUUID()}`, kind: input.kind, name: (input.name ?? "").trim() || "未命名",
+    topicId: input.topicId || undefined, bytes: input.byteLength, hash: input.hash, fingerprint: input.hash,
+    text: input.summary ?? "", originalId: input.originalId, mediaType: input.mediaType, createdAt: now(),
+  };
+}
+
+export interface ParsedFileImport {
+  state: LocusState;
+  asset: AssetRecord;
+  created: { tables: number; cards: number };
+  status: ParseStatus;
+  format: DetectedFormat;
+  warnings: Diagnostic[];
+  unknowns: Diagnostic[];
+}
+
+/** 由 M ParseResult 的网格建业务表格（口径对齐 importMeasurements：列/体/标记行同规则）。 */
+function buildTablesFromGrids(asset: AssetRecord, grids: readonly GridTable[]): MeasurementTableRecord[] {
+  const out: MeasurementTableRecord[] = [];
+  grids.forEach((g, i) => {
+    const a = analyseTable(g.rows.map((r) => [...r]), "auto");
+    if (a.body.length === 0) return;
+    const suffix = g.name ? ` · ${g.name}` : "";
+    const idx = grids.length > 1 ? ` (${i + 1}/${grids.length})` : "";
+    out.push({
+      id: `tbl_${randomUUID()}`,
+      assetId: asset.id,
+      name: `${asset.name}${suffix}${idx}`,
+      columns: a.columns,
+      rows: a.body,
+      columnMeta: a.columns.map<ColumnMeta>((cname) => ({ name: cname, unit: "", decision: "unreviewed" })),
+      markerRows: a.markerRows,
+      profile: profileGrid(g, { headerRows: "auto" }),
+      gridOrigin: g.gridOrigin,
+      note: "",
+      revision: 1,
+      history: [],
+      createdAt: now(),
+      updatedAt: now(),
+    });
+  });
+  return out;
+}
+
+/**
+ * 把一次二进制解析结果接入应用（不另建并行数据模型）：
+ * - 数据表类（xlsx/csv/tsv）→ MeasurementTableRecord（含 M 画像与原始位置基址）。
+ * - 文本类（pdf/docx/md/txt）→ 文献 draft 卡（mechanical，与 importLiterature draft 同口径）。
+ * - status 非 ok 时如实透传给调用方；无可用派生内容时**不伪造**，仅归档并记明原因。
+ * paperId 存在且资产为文献类时，同时建论文正文附件（卡片随附件归属论文）。
+ */
+export function importParsedFile(
+  state: LocusState,
+  asset: AssetRecord,
+  parsed: ParseResult,
+  opts: { topicId?: string; paperId?: string } = {},
+): ParsedFileImport {
+  assertUniqueHash(state, asset.fingerprint!);
+  const warnings = [...parsed.warnings];
+  const unknowns = [...parsed.unknowns];
+  let next: LocusState = { ...state, assets: [...state.assets, asset] };
+  let tables = 0;
+  let cards = 0;
+
+  if (opts.paperId) {
+    const paper = next.papers.find((p) => p.id === opts.paperId);
+    if (!paper) throw new AppError(404, `论文条目不存在：${opts.paperId}`);
+    if (asset.kind !== "literature") throw new AppError(422, "论文附件须为文献类原件（PDF/DOCX/MD/TXT）。");
+    const attachment: PaperAttachment = { id: `att_${randomUUID()}`, paperId: paper.id, assetId: asset.id, role: "fulltext", version: "", createdAt: now() };
+    next = { ...next, attachments: [...next.attachments, attachment] };
+  }
+
+  if (asset.kind === "measurement" && M_TABLE_FORMATS.has(parsed.format) && parsed.tables.length > 0) {
+    const built = buildTablesFromGrids(asset, parsed.tables);
+    if (built.length > 0) {
+      next = { ...next, tables: [...next.tables, ...built] };
+      tables = built.length;
+    } else {
+      unknowns.push({ code: "no_data_rows", message: "解析出网格但没有可核对的数据行（可能只有表头/空表）。原件已归档，不伪造数据行。" });
+    }
+  } else if (asset.kind === "literature" && M_TEXT_FORMATS.has(parsed.format)) {
+    const text = parsedSummaryText(parsed);
+    if (text) {
+      const links = linkCardsToPaper(next, draftCards(asset.id, text));
+      next = { ...next, cards: [...next.cards, ...links] };
+      cards = links.length;
+    } else {
+      unknowns.push({ code: "no_extractable_text", message: `未从 ${parsed.format} 提取到可用文本（状态：${parsed.status}）。原件已归档可回取，不伪造内容。` });
+    }
+  } else if (asset.kind !== "protocol") {
+    // 类别与格式不匹配（如强制按测量导入 PDF）：归档原件但不产出业务对象，如实记明。
+    unknowns.push({ code: "no_products", message: `格式 ${parsed.format} 未产出可用表格或文本（状态：${parsed.status}）。原件已归档。` });
+  }
+  // kind=protocol：仅归档原件（含可读摘要文本），后续由方案解析任务消费，不在此产出卡/表。
+
+  return { state: next, asset, created: { tables, cards }, status: parsed.status, format: parsed.format, warnings, unknowns };
 }
 
 // ── 课题 / 子问题（TOP01）────────────────────────────────────

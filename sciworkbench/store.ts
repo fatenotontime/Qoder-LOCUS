@@ -7,6 +7,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync, renameSync } from "
 import { createHash, randomUUID } from "node:crypto";
 import { dirname } from "node:path";
 import { assertKnowledgeShape, emptyKnowledge, type KnowledgeState } from "./domain/knowledge.ts";
+import type { GridOrigin, TableProfile } from "./services/import-formats/contracts.ts";
 
 /** 查重口径：逻辑内容（剥 BOM + CRLF→LF），与传输编码无关；原件文本仍逐字保存。 */
 export function canonicalText(t: string): string {
@@ -37,11 +38,16 @@ export interface AssetRecord {
   readonly name: string;
   readonly topicId?: string;
   readonly bytes: number;
-  /** 原始字节 hash（导入时固定，加载不重算）。 */
+  /** 原始字节 hash（导入时固定，加载不重算）。二进制原件即原始文件字节 sha256（与 M 原件标识一致）。 */
   readonly hash: string;
   /** 逻辑内容指纹（剥 BOM/CRLF 规范化），仅用于跨路径查重；与原件 hash 分开保存。 */
   readonly fingerprint?: string;
+  /** 文本承载：文本类资产存原文；二进制类存可读摘要（无则空），原件字节落在 OriginalStore，不进 state。 */
   readonly text: string;
+  /** 二进制类资产的原件标识（M OriginalStore 的 `orig_<sha256>`）；文本类无此字段。 */
+  readonly originalId?: string;
+  /** 原件 media type（二进制类随原件标识保存；供回取时正确响应）。 */
+  readonly mediaType?: string;
   readonly createdAt: string;
 }
 
@@ -201,6 +207,10 @@ export interface MeasurementTableRecord {
   readonly markerRows?: number[];
   /** 数据来源性质：reconstructed=历史文献重构（非本地实测）；缺省视为 user。 */
   readonly origin?: "user" | "public" | "reconstructed";
+  /** M 导入路产出的全表画像（列型/缺失/分组线索/待答问题）；仅在二进制/解析路径导入时随表保存。 */
+  readonly profile?: TableProfile;
+  /** 网格原始位置基址（xlsx→A1；delim→记录/字段；docx→表内行列），供 cellOriginAt 回查原件。 */
+  readonly gridOrigin?: GridOrigin;
   readonly columnMeta: ColumnMeta[];
   readonly note: string;
   readonly revision: number;
