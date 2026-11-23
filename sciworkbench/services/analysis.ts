@@ -23,6 +23,7 @@ import { exportKnowledge } from "./knowledge-export.ts";
 import { canonicalHash, knowledgeRef as makeKnowledgeRef } from "../domain/knowledge.ts";
 import type { ItemPayload, KnowledgeRef } from "../domain/knowledge.ts";
 import { effectiveSnapshot, appendEvent } from "./experiment.ts";
+import { deriveCore } from "./context-map.ts";
 
 const now = () => new Date().toISOString();
 const str = (v: unknown): string => String(v ?? "").trim();
@@ -203,11 +204,15 @@ export function createAnalysisTask(
     if (!q) throw new AppError(404, `子问题不存在：${subquestionId}`);
     if (q.topicId !== input.topicId) throw new AppError(422, "子问题不属于该课题。");
   }
-  const core = (input.core ?? []).map(cleanRef);
-  if (!core.length) throw new AppError(422, "分析任务须至少挂一个核心对象（执行/测量/数据表）。");
-  if (!core.some((r) => ["execution", "measurement", "table"].includes(r.kind))) {
+  const picks = (input.core ?? []).map(cleanRef);
+  if (!picks.length) throw new AppError(422, "分析任务须至少挂一个核心对象（执行/测量/数据表）。");
+  if (!picks.some((r) => ["execution", "measurement", "table"].includes(r.kind))) {
     throw new AppError(422, "分析任务的核心须来自执行或测量数据（方案/知识卡可作补充核心）。");
   }
+  // 必选自动推导（后端唯一实现，见 context-map.deriveCore）：测量 → 样品 → 执行 → 方案一并入核心；
+  // 按 kind:id 保留调用方原始引用（含 item 固定版本），仅追加推导出的执行/方案。
+  const pickedByKindId = new Map(picks.map((r) => [`${r.kind}:${r.id}`, r]));
+  const core = deriveCore(state, picks).core.map((r) => pickedByKindId.get(`${r.kind}:${r.id}`) ?? r);
   for (const r of core) { resolveFragment(state, r); assertSelectable(state, r); }
   const coreKeys = new Set(core.map(refKeyOf));
   // 与核心重复的候选静默去重（前端必选自动推导可能与「其他可选」勾选重叠）。

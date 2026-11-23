@@ -57,10 +57,10 @@ test("推导：缺环记缺口、不报错（测量无样品执行）", () => {
   assert.equal(d.gaps[0].code, "source_missing");
 });
 
-test("推导结果与前端旧逻辑一致（同一实现对照）", () => {
+test("推导与「测量→样品→执行→方案」口径一致（独立参照实现）", () => {
   const s = fixture();
   const picks = [{ kind: "measurement", id: "me1" }];
-  // 前端旧逻辑（renderAnalysisForm）：测量→样品→执行→方案，seen 去重。
+  // 独立参照实现（原前端推导，现已后端化为 deriveCore）：测量→样品→执行→方案，seen 去重。
   const core: { kind: string; id: string }[] = picks.map((p) => ({ ...p }));
   const seen = new Set(core.map((r) => `${r.kind}:${r.id}`));
   for (const d of [...core]) {

@@ -42,19 +42,8 @@ export function renderAnalysisForm(box) {
       <button class="primary" id="an-create">创建任务（必选项自动锁定）</button>
     </details>`;
   $("#an-create").addEventListener("click", (ev) => ctx.runBusy(ev.target, "创建分析任务", async () => {
-    const state2 = ctx.getState();
     const core = [...$$(".an-data:checked")].map((x) => ({ kind: x.dataset.kind, id: x.dataset.id }));
     if (!core.length) { ctx.notify("mid", "请至少选择一个数据表/测量作为必选数据。"); return; }
-    // B5 必选自动推导：所选测量 → 样品 → 执行 → 方案，一并锁定为必选
-    const seen = new Set(core.map((r) => `${r.kind}:${r.id}`));
-    for (const d of [...core]) {
-      if (d.kind !== "measurement") continue;
-      const m = state2.measurements.find((x) => x.id === d.id);
-      const s = m && state2.samples.find((x) => x.id === m.sampleId);
-      if (s?.executionId && !seen.has(`execution:${s.executionId}`)) { seen.add(`execution:${s.executionId}`); core.push({ kind: "execution", id: s.executionId }); }
-      const e = s?.executionId && state2.executions.find((x) => x.id === s.executionId);
-      if (e && !seen.has(`protocol:${e.protocolId}`)) { seen.add(`protocol:${e.protocolId}`); core.push({ kind: "protocol", id: e.protocolId }); }
-    }
     const optional = [
       ...[...$$(".an-def:checked")].map((x) => ({ ref: { kind: "card", id: x.dataset.id }, included: true })),
       ...[...$$(".an-opt2:checked")].map((x) => ({ ref: { kind: x.dataset.kind, id: x.dataset.id }, included: true })),
@@ -113,26 +102,9 @@ function anMapHtml(state, ui, t) {
 
 export function contextMapHtml(state, ui, t) {
   const q = t.subquestionId ? state.subquestions.find((x) => x.id === t.subquestionId) : null;
-  const refOpen = (r) => {
-    if (r.kind === "table") return ` <button class="tbl-open" data-tid="${r.id}">查看表格</button>`;
-    if (r.kind === "measurement") {
-      const mr = state.measurements.find((x) => x.id === r.id);
-      const tb = state.tables.find((x) => x.assetId === r.id) || (mr?.cellRef ? state.tables.find((t) => t.id === mr.cellRef.tableId) : null);
-      return tb ? ` <button class="tbl-open" data-tid="${tb.id}">查看表格</button>` : ` <span class="hint">（无关联数据表）</span>`;
-    }
-    return "";
-  };
-  const inc = t.optional.map((o, i) => ({ o, i })).filter(({ o }) => o.included);
-  const others = t.optional.map((o, i) => ({ o, i })).filter(({ o }) => !o.included);
-  const cand = ({ o, i }) => `<li><label><input type="checkbox" class="cand-toggle" data-idx="${i}" ${o.included ? "checked" : ""}/> ${esc(refLabel(state, o.ref))}</label>${refOpen(o.ref)}</li>`;
   return `
     <p><b>课题「${esc(topicName(state, t.topicId) ?? t.topicId)}」${q ? ` → 子问题「${esc(q.question)}」` : ""}</b></p>
-    <p class="hint">必选（锁定，不可取消）：</p>
-    <ul>${t.core.map((r) => `<li>🔒 ${esc(refLabel(state, r))}${refOpen(r)}</li>`).join("") || `<li class="hint">无</li>`}</ul>
-    <p class="hint">默认已选（可取消）：</p>
-    ${inc.length ? `<ul>${inc.map(cand).join("")}</ul>` : `<p class="hint">无。</p>`}
-    ${others.length ? `<details class="mini"><summary>其他可选（${others.length}，折叠）</summary><ul>${others.map(cand).join("")}</ul></details>` : ""}
-    ${t.optional.length ? `<button id="cand-save">保存候选选择</button>` : `<p class="hint">无候选。</p>`}
+    <p class="hint">在地图上直接采用/排除（写入真实状态）；节点与关系均来自后端，前端不补造。</p>
     ${t.snapshot ? snapshotHtml(t.snapshot) : ""}
     ${anMapHtml(state, ui, t)}`;
 }
@@ -307,18 +279,10 @@ function renderRepBlocks(box, rep) {
 
 export function bindAnalysis(c) {
   ctx = c;
-  const { api, ui, $, $$, refresh, refreshAfterJob, runBusy, runJob } = ctx;
+  const { api, ui, $, refresh, refreshAfterJob, runBusy, runJob } = ctx;
 
-  // 中栏：保存候选选择（cand-save）
+  // 中栏：上下文地图交互（刷新地图 / 在地图上采用、排除 —— 均写真实状态）
   document.querySelector("#mid-content").addEventListener("click", async (ev) => {
-    if (ev.target.id === "cand-save") {
-      const t = currentTask(ctx.getState(), ui); if (!t) return;
-      await runBusy(ev.target, "保存候选", async () => {
-        const optional = [...$$("#mid-content .cand-toggle")].map((cb) => ({ ref: t.optional[Number(cb.dataset.idx)].ref, included: cb.checked }));
-        await api.setTaskCandidates(t.id, optional);
-        await refresh(); ctx.invalidateAnalysisMap?.(); ctx.setStatus("候选选择已保存（旧快照不受影响）");
-      }); return;
-    }
     if (ev.target.classList.contains("anmap-reload")) { ctx.loadAnalysisMap?.({ force: true }); return; }
     if (ev.target.classList.contains("an-adopt")) {
       const btn = ev.target;

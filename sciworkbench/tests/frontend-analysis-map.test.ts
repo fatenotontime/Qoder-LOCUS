@@ -1,10 +1,16 @@
 /**
  * 知识页最小接线 item4：「上下文地图」纯渲染 —— 节点/边只来自后端 map（不补造）；
+ * 勾选式旧路径（cand-toggle / #cand-save / t.core 锁定清单）已移除，真地图是唯一主体；
  * 采用入口走真实状态（已采用显示徽标、未采用给按钮）；无子问题时不给采用按钮；接口未就绪明确提示。
  */
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { contextMapHtml } from "../public/lib/pages/analysis.js";
+
+const HERE = fileURLToPath(new URL(".", import.meta.url));
+const ANALYSIS_SRC = readFileSync(`${HERE}/../public/lib/pages/analysis.js`, "utf8");
 
 const state = {
   topics: [{ id: "t1", name: "课题甲" }],
@@ -17,7 +23,7 @@ const state = {
   ],
   adoptions: [{ id: "ad1", cardId: "c2", subquestionId: "q1", decision: "adopt" }],
 };
-const task = { id: "at1", topicId: "t1", title: "分析", subquestionId: "q1", core: [], optional: [], resultIds: [] };
+const task = { id: "at1", topicId: "t1", title: "分析", subquestionId: "q1", core: [{ kind: "card", id: "c1" }], optional: [{ ref: { kind: "card", id: "c2" }, included: true }], resultIds: [] };
 const readyMap = (data) => ({ status: "ready", key: "t1|at1", data, dirty: false });
 const MAP = {
   ok: true,
@@ -36,11 +42,27 @@ test("item4 地图节点/边只来自后端 map（不补造），采用入口按
   const html = contextMapHtml(state, { nav: "analysis", taskId: "at1", anMap: readyMap(MAP) }, task);
   assert.match(html, /上下文地图（只读）/);
   assert.match(html, /卡一/);
-  assert.match(html, /关系 1/);
+  assert.match(html, /节点 4 · 关系 1/); // 计数恒等于后端 map 的 nodes/edges
   assert.match(html, /card:c1 → topic:t1/); // 唯一那条边来自 map
   assert.match(html, /已采用/); // c2 已在 adoptions 里
   assert.ok((html.match(/>采用</g) ?? []).length >= 1, "c1 未采用 → 给「采用」按钮");
   assert.match(html, /不可采用：缺原文定位/); // c3 可选但未达采用前置 → 给如实原因，不给假入口
+});
+
+test("item4 勾选式旧路径已移除：渲染不再含锁定清单/勾选框/保存候选按钮", () => {
+  const html = contextMapHtml(state, { nav: "analysis", taskId: "at1", anMap: readyMap(MAP) }, task);
+  assert.equal(html.includes("cand-toggle"), false);
+  assert.equal(html.includes("cand-save"), false);
+  assert.equal(html.includes("保存候选选择"), false);
+  assert.equal(html.includes("必选（锁定"), false);
+  assert.equal(html.includes("默认已选（可取消）"), false);
+  assert.equal((html.match(/type="checkbox"/g) ?? []).length, 0); // 地图里不再有勾选层
+});
+
+test("item4 勾选式旧路径已移除：源码不再绑定 #cand-save、无 cand-toggle、不再走前端 setTaskCandidates", () => {
+  assert.equal(ANALYSIS_SRC.includes("cand-toggle"), false);
+  assert.equal(ANALYSIS_SRC.includes("cand-save"), false);
+  assert.equal(ANALYSIS_SRC.includes("setTaskCandidates"), false);
 });
 
 test("item4 采用按钮只对 adoptable 节点：不可采用卡不给「采用」按钮", () => {
