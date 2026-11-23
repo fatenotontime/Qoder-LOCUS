@@ -507,6 +507,13 @@ export async function createApp(store: Store, opts: { aiConfigPath?: string; ori
       const path = url.pathname;
       const method = req.method ?? "GET";
 
+      // 竞赛接入：业务 API 仅接受站点代理（Edge Function）携带的服务端凭据。
+      // 未配置 LOCUS_SITE_TOKEN 时不启用 → 私网/本地测试与现有测试行为不变。
+      const siteToken = process.env.LOCUS_SITE_TOKEN;
+      if (siteToken && path.startsWith("/api/") && req.headers["x-locus-site-token"] !== siteToken) {
+        send(res, 401, { error: "未授权：业务 API 仅限站点代理调用。" }); return;
+      }
+
       if (!path.startsWith("/api/")) { serveStatic(res, path); return; }
 
       if (method === "GET" && path === "/api/state") { send(res, 200, state); return; }
@@ -1827,6 +1834,11 @@ export async function createSessionRouter(opts: {
 // 仅在被直接运行时才监听（被 import 时不产生副作用，便于测试）。
 import { pathToFileURL } from "node:url";
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  // 竞赛模式：缺少站点服务端凭据则**拒绝启动**（不静默降级为无鉴权）。
+  if (process.env.LOCUS_COMPETITION === "1" && !process.env.LOCUS_SITE_TOKEN) {
+    console.error("竞赛模式（LOCUS_COMPETITION=1）缺少 LOCUS_SITE_TOKEN：拒绝启动。");
+    process.exit(1);
+  }
   const isolation = process.env.LOCUS_SESSION_ISOLATION === "1";
   const app = isolation
     ? await createSessionRouter({
