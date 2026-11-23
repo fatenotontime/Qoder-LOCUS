@@ -5,7 +5,7 @@
  * 网页保存/清除会同步落盘/删盘；配置文件含 Key，仅本机、不入 Git/日志/导出。
  */
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { copyFileSync, cpSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { randomUUID } from "node:crypto";
 import { dirname, extname, join, normalize, resolve } from "node:path";
@@ -506,6 +506,13 @@ export async function createApp(store: Store, opts: { aiConfigPath?: string; ori
       const url = new URL(req.url ?? "/", `http://${req.headers.host}`);
       const path = url.pathname;
       const method = req.method ?? "GET";
+
+      // 竞赛接入：业务 API 仅接受站点代理（Edge Function）携带的服务端凭据。
+      // 未配置 LOCUS_SITE_TOKEN 时不启用 → 私网/本地测试与现有测试行为不变。
+      const siteToken = process.env.LOCUS_SITE_TOKEN;
+      if (siteToken && path.startsWith("/api/") && req.headers["x-locus-site-token"] !== siteToken) {
+        send(res, 401, { error: "未授权：业务 API 仅限站点代理调用。" }); return;
+      }
 
       if (!path.startsWith("/api/")) { serveStatic(res, path); return; }
 
@@ -1725,24 +1732,135 @@ export async function createApp(store: Store, opts: { aiConfigPath?: string; ori
       else send(res, 500, { error: (err as Error).message ?? "内部错误" });
     }
   };
-  return createServer((req: IncomingMessage, res: ServerResponse) => {
+  const onRequest = (req: IncomingMessage, res: ServerResponse): void => {
     const m = req.method ?? "GET";
     // 只读请求直接读已提交 state（GET 不落库、不排队）；写请求串行进入单提交边界。
     if (m === "GET" || m === "HEAD" || m === "OPTIONS") { void handle(req, res); return; }
     // 失败块重试要调模型：合同禁止队列内网络调用，故该路由不入队，其写入仍经 commitState。
     if (m === "POST" && /^\/api\/knowledge\/jobs\/[^/]+\/retry-chunk$/.test(new URL(req.url ?? "/", "http://localhost").pathname)) { void handle(req, res); return; }
     void commitState(() => handle(req, res));
-  });
+  };
+  const server = createServer(onRequest);
+  // 暴露请求处理器，供会话隔离路由（createSessionRouter）复用同一闭包内的 state/store；不改变默认单实例行为。
+  (server as ServerWithHandler).__locusHandler = onRequest;
+  return server;
+}
+
+/** 带可复用请求处理器的 http.Server（会话隔离路由复用其闭包内的 state/store）。 */
+type ServerWithHandler = import("node:http").Server & {
+  __locusHandler?: (req: IncomingMessage, res: ServerResponse) => void;
+};
+
+/**
+ * 竞赛会话隔离路由（最小实现）：
+ * - 每个浏览器会话（Cookie `locus_sid`）拥有**独立可写工作区**：自己的 `state.json` 与 `originals/`。
+ * - 新会话若提供了**只读公开样本底稿**（samplePath/sampleOriginals），则复制为会话初始数据；否则以空工作区起步。
+ * - sid 严格校验（仅 32 位十六进制）后用于文件路径，杜绝目录穿越。
+ * - `/healthz` 不建会话、只回健康状态。
+ * 仅当入口读到 `LOCUS_SESSION_ISOLATION=1` 时启用；不改动默认单实例行为与现有测试。
+ */
+export async function createSessionRouter(opts: {
+  dataRoot: string;
+  aiConfigPath?: string;
+  samplePath?: string;
+  sampleOriginals?: string;
+}): Promise<ServerWithHandler> {
+  const SID_COOKIE = "locus_sid";
+  const SID_RE = /^[a-f0-9]{32}$/;
+  type Sess = { handler: (req: IncomingMessage, res: ServerResponse) => void };
+  const sessions = new Map<string, Sess>();
+  const pending = new Map<string, Promise<Sess>>();
+
+  const cookieSid = (req: IncomingMessage): string | null => {
+    const raw = req.headers.cookie;
+    if (!raw) return null;
+    for (const part of raw.split(";")) {
+      const idx = part.indexOf("=");
+      if (idx < 0) continue;
+      if (part.slice(0, idx).trim() === SID_COOKIE) {
+        const v = part.slice(idx + 1).trim();
+        if (SID_RE.test(v)) return v;
+      }
+    }
+    return null;
+  };
+
+  const loadSession = (sid: string): Promise<Sess> => {
+    const existing = sessions.get(sid);
+    if (existing) return Promise.resolve(existing);
+    const inflight = pending.get(sid);
+    if (inflight) return inflight;
+    const p = (async (): Promise<Sess> => {
+      const sessionDir = join(opts.dataRoot, "sessions", sid);
+      const statePath = join(sessionDir, "state.json");
+      const originalRoot = join(sessionDir, "originals");
+      mkdirSync(sessionDir, { recursive: true });
+      if (!existsSync(statePath) && opts.samplePath && existsSync(opts.samplePath)) {
+        copyFileSync(opts.samplePath, statePath);
+        if (opts.sampleOriginals && existsSync(opts.sampleOriginals)) cpSync(opts.sampleOriginals, originalRoot, { recursive: true });
+      }
+      const app = (await createApp(new JsonFileStore(statePath), { aiConfigPath: opts.aiConfigPath, originalRoot })) as ServerWithHandler;
+      const handler = app.__locusHandler;
+      if (!handler) throw new Error("会话处理器未暴露（createApp 未返回 __locusHandler）。");
+      const s: Sess = { handler };
+      sessions.set(sid, s);
+      pending.delete(sid);
+      return s;
+    })();
+    pending.set(sid, p);
+    return p;
+  };
+
+  const onRequest = (req: IncomingMessage, res: ServerResponse): void => {
+    const url = new URL(req.url ?? "/", "http://localhost");
+    if (url.pathname === "/healthz") {
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({ ok: true, isolation: "session" }));
+      return;
+    }
+    // 凭据检查必须在**任何会话初始化 / 写盘之前**：未授权请求不得创建会话目录或复制样本。
+    const siteToken = process.env.LOCUS_SITE_TOKEN;
+    if (siteToken && url.pathname.startsWith("/api/") && req.headers["x-locus-site-token"] !== siteToken) {
+      res.writeHead(401, { "content-type": "application/json" });
+      res.end(JSON.stringify({ error: "未授权：业务 API 仅限站点代理调用。" }));
+      return;
+    }
+    let sid = cookieSid(req);
+    if (!sid) sid = randomUUID().replace(/-/g, "");
+    // 每次响应回写 cookie：刷新保持同一会话；新请求无 cookie 时开启新会话。
+    res.setHeader("set-cookie", `${SID_COOKIE}=${sid}; Path=/; HttpOnly; SameSite=Lax`);
+    loadSession(sid).then((s) => s.handler(req, res)).catch((e) => {
+      res.writeHead(500, { "content-type": "application/json" });
+      res.end(JSON.stringify({ error: `会话初始化失败：${(e as Error).message}` }));
+    });
+  };
+
+  return createServer(onRequest) as ServerWithHandler;
 }
 
 // 仅在被直接运行时才监听（被 import 时不产生副作用，便于测试）。
 import { pathToFileURL } from "node:url";
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  const store = new JsonFileStore(DATA_PATH);
-  const app = await createApp(store, { aiConfigPath: AI_CONFIG_PATH, originalRoot: join(dirname(DATA_PATH), "originals") });
+  const competition = process.env.LOCUS_COMPETITION === "1";
+  // 竞赛模式：缺少站点服务端凭据则拒绝启动（不静默降级为无鉴权）。
+  if (competition && !process.env.LOCUS_SITE_TOKEN) {
+    console.error("竞赛模式（LOCUS_COMPETITION=1）缺少 LOCUS_SITE_TOKEN：拒绝启动。");
+    process.exit(1);
+  }
+  // 竞赛模式**强制启用**会话隔离（不允许以共享工作区启动）。
+  const isolation = competition || process.env.LOCUS_SESSION_ISOLATION === "1";
+  const app = isolation
+    ? await createSessionRouter({
+        dataRoot: dirname(DATA_PATH),
+        aiConfigPath: AI_CONFIG_PATH,
+        samplePath: process.env.LOCUS_SAMPLE_STATE,
+        sampleOriginals: process.env.LOCUS_SAMPLE_ORIGINALS,
+      })
+    : await createApp(new JsonFileStore(DATA_PATH), { aiConfigPath: AI_CONFIG_PATH, originalRoot: join(dirname(DATA_PATH), "originals") });
   app.listen(PORT, "127.0.0.1", () => {
     const d = describeConfig(getAiConfig());
-    console.log(`LOCUS dev server: http://127.0.0.1:${PORT}  (data: ${DATA_PATH})`);
+    const where = isolation ? join(dirname(DATA_PATH), "sessions") : DATA_PATH;
+    console.log(`LOCUS ${isolation ? "server (session-isolated)" : "dev server"}: http://127.0.0.1:${PORT}  (data: ${where})`);
     console.log(`AI: ${d.configured ? `已配置 model=${d.model} @ ${d.baseUrl}` : "未配置（在左下角「模型设置」里填写；保存后本机留存，不入库）"}`);
   });
 }
