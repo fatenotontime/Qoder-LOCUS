@@ -473,6 +473,16 @@
 | --- | --- | --- | --- | --- |
 | S08-T04 | feat/s06-statement-review | `1eaa85b` | 2026-11-23 11:08:43 +08:00 | 无卡人工陈述独立待审区＋中栏独立审阅落点＋无文献闸门；A7 缺陷 D 用例；441/441；PR 待开（merge 后本轮回填）；[会话记录](sessions/2026-11-23_session-08.md) |
 
+### 会话 S08 · 缺陷 E 上下文地图改回真地图（`feat/s06-context-map`）
+
+| # | 分支 `main` | 分支 `feat/s06-context-map` | 关联轮次 | 说明 |
+| --- | --- | --- | --- | --- |
+| 127 | — | `e535fd9` · 2026-11-23 11:59:21 +08:00｜PR **#34** OPEN（base `main`=c54d0c8） | S08-T05 | **缺陷 E**：分析页「上下文地图」同时存在只读真地图 `anMapHtml` 与旧勾选式 `contextMapHtml`（`t.core` 锁定清单＋`t.optional` `cand-toggle` 勾选＋`#cand-save`「保存候选选择」），真地图被压在下面。改：`contextMapHtml` 以**真地图为唯一主体**（节点/边只来自后端 `buildNetwork`，不臆造/不补链）；删 `t.core/t.optional` 锁定＋勾选列表、`cand-toggle`、「保存候选选择」按钮及其 `bindAnalysis` 中 `#cand-save` 分支与旧候选推导；「在地图上选一次」保留为地图节点**真实操作**（采用/排除 `an-adopt`，`adoptable` 门控，落 `api.adopt`→后端 `upsertAdoption`）。**必选推导收进后端**：`createAnalysisTask` 复用 `context-map.deriveCore`（后端唯一实现），删 `renderAnalysisForm` 前端旧推导（核实其仍被 `#an-create` 使用、且非前端无调用者的 `GET /api/analysis/map` 路径）。新增/更新用例（真地图唯一主体＋旧路径移除〔渲染＋源码〕）；**443/443**；反向验证（去修复则新断言失败）；[会话记录](sessions/2026-11-23_session-08.md) |
+
+| 轮次 | 分支 | 提交 | 提交时间 | 本轮产出 |
+| --- | --- | --- | --- | --- |
+| S08-T05 | feat/s06-context-map | `e535fd9` | 2026-11-23 11:59:21 +08:00 | 真地图为唯一主体、删勾选式旧层、必选推导收进后端；443/443；PR #34 OPEN（base c54d0c8）；[会话记录](sessions/2026-11-23_session-08.md) |
+
 ## 独立提示词维护记录 S02-T1
 
 | # | 分支 `main` | 分支 `<其他>` | 关联轮次 | 说明 |
