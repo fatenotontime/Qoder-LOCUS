@@ -20,9 +20,9 @@ export class DemoMissingError extends Error {
 }
 
 const KINDS = new Set([
-  "topic", "subquestion", "paper", "asset", "card", "table", "protocol", "execution",
+  "topic", "subquestion", "paper", "attachment", "asset", "card", "table", "protocol", "execution",
   "sample", "measurement", "task", "result", "report", "block", "item", "context",
-  "evidence", "comparison", "chat", "message",
+  "evidence", "comparison", "chat", "message", "template",
 ]);
 
 function arr(v) { return Array.isArray(v) ? v : []; }
@@ -154,7 +154,10 @@ export function createDemoData(snapshot, options = {}) {
     return { card, paper, source, items, contexts, secondaryCitation: !!card.secondaryCitation };
   }
 
-  function listComparisons(topicId) { return topicsOf(snapshot.comparisons, topicId ?? mainTopicId); }
+  function listComparisons(topicId) {
+    if (demo.comparison) return [demo.comparison];
+    return topicsOf(snapshot.comparisons, topicId ?? mainTopicId);
+  }
   function getComparison(id) { const c = idx.comparisons.get(id); need(c, `comparison:${id}`, "比较快照不存在"); return c; }
 
   // ── 知识 ──────────────────────────────────────────────────
@@ -287,6 +290,12 @@ export function createDemoData(snapshot, options = {}) {
   let graphCache = null;
   function buildGraph() {
     if (graphCache) return graphCache;
+    // A 正式数据带真实引用网络（buildNetwork 生成）：直接用，不另派生。
+    if (Array.isArray(demo.references?.nodes) && demo.references.nodes.length) {
+      const nodes = new Map(demo.references.nodes.map((n) => [n.key ?? `${n.kind}:${n.id}`, n]));
+      graphCache = { nodes, edges: arr(demo.references.edges) };
+      return graphCache;
+    }
     const nodes = new Map();
     const edges = [];
     const addNode = (kind, id, label) => {

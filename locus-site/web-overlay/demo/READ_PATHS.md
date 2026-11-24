@@ -33,3 +33,23 @@
 - 适配器抛 `DemoMissingError(path, reason)`：`code = "DEMO_MISSING"`，带 `path` 与 `reason`。
 - 页面捕获后在该栏显示可读提示 + 独立 ZIP 下载入口（`snapshot.demo.zip`）。
 - 不存在的对象 ID、断开的引用、版本不符、缺字段，都必须显示**具体原因**（哪个对象、哪条路径），不渲染占位假数据。
+
+## 4. A 正式包的静态落点（`locus-site/demo-data/`）
+
+`a-snapshot.js` 把 A 的多文件结构按**明确文件**搬运为适配器快照（只搬不改，缺文件报缺项）：
+
+| 读路径 | A 文件 | 形态核对 |
+| --- | --- | --- |
+| `getState` | `snapshot/state.json` | `LocusState` v9：cards 10 / tables 2 / protocols 1 / executions 1 / samples 1 / measurements 2 / analysisTasks 1 / analysisResults 1 / reports 1 / chats 1 / comparisons 0（`knowledge` 为空，改由 knowledge.json 供给） |
+| `getSource` | `state.json` 的 `assets/cards/tables` | 与 `sourceView` 同形；不存在 asset 抛缺项 |
+| `originalUrl` | `snapshot/manifest.json.originals` + `state.assets[].text` | 有文本优先内嵌；外链为 `originals/` 下 Public Domain 文件 |
+| `backtrace` | `snapshot/references.json` | `{nodes:34, edges:75}`，节点键 `kind:id`；适配器直用该网络 |
+| `knowledgeItem` | `snapshot/knowledge.json.items` | 10 项，扁平结构（fields/units/conditions/locator/sourceRefs）；`version` 为版本，缺版报缺项 |
+| `knowledgeContainer` | 无对应导出 | 报缺项（不伪造 token） |
+| 上下文地图 | `snapshot/context-map.json.mapTask` | 13 节点 / 18 边，真实 `buildContextMap` 产物；`mapPre` 22 节点另存 |
+| 下一步指导 | `snapshot/next-steps.json.items` | 2 条；basis/needData/distinguishes/stillUncertain 映射为四类依据 |
+| 预生成标识 | `snapshot/ai-products.json` | `modelRunThisSession=false` → `preset.ai=false`，页面标「未调用（未授权）」 |
+| ZIP | `SHA256SUMS.txt` + `locus-demo-public.zip` | sha256=`785b4689…4312b` |
+
+`fixture/snapshot.json` 仅用于适配器单测，页面不再读取。
+

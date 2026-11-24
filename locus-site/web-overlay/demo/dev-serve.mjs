@@ -8,6 +8,7 @@ import { fileURLToPath } from "node:url";
 
 const HERE = resolve(fileURLToPath(new URL(".", import.meta.url)));
 const PUBLIC = resolve(HERE, "../../../sciworkbench/public");
+const DEMO_DATA = resolve(HERE, "../../demo-data");
 const PORT = Number(process.argv[2] ?? 8787);
 
 const MIME = {
@@ -26,7 +27,8 @@ function pick(pathname) {
   if (pathname === "/" ) return join(HERE, "demo.html");
   if (pathname === "/demo" || pathname === "/demo/") return join(HERE, "demo.html");
   if (pathname.startsWith("/demo/")) return safeJoin(HERE, pathname.slice("/demo/".length));
-  if (pathname.startsWith("/demo-data/")) return safeJoin(join(HERE, "fixture"), pathname.slice("/demo-data/".length));
+  if (pathname.startsWith("/demo-data/")) return safeJoin(DEMO_DATA, pathname.slice("/demo-data/".length));
+  if (pathname.startsWith("/demo-fixture/")) return safeJoin(join(HERE, "fixture"), pathname.slice("/demo-fixture/".length));
   return safeJoin(PUBLIC, pathname.replace(/^\/+/, ""));
 }
 function safeJoin(base, rel) {
@@ -52,5 +54,5 @@ const server = createServer(async (req, res) => {
 
 server.listen(PORT, "127.0.0.1", () => {
   console.log(`demo 自测站点：http://127.0.0.1:${PORT}/demo/demo.html`);
-  console.log(`数据：http://127.0.0.1:${PORT}/demo-data/snapshot.json（fixture）`);
+  console.log(`正式数据：http://127.0.0.1:${PORT}/demo-data/snapshot/state.json（A 正式包）`);
 });

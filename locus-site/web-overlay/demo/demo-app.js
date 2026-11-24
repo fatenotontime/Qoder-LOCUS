@@ -66,7 +66,9 @@ export async function initDemo(options = {}) {
   root.setAttribute("aria-busy", "true");
   root.innerHTML = `<div class="demo-loading">读取预置课题…</div>`;
   try {
-    const snapshot = await loadDemoSnapshot(options.dataUrl ?? "/demo-data/snapshot.json", options.fetch);
+    const snapshot = options.loader ? await options.loader()
+      : options.snapshot ? options.snapshot
+      : await loadDemoSnapshot(options.dataUrl ?? "/demo-data/snapshot.json", options.fetch);
     state.data = createDemoData(snapshot, { topicId: options.topicId });
     state.error = null;
     initViewState();
@@ -219,6 +221,10 @@ function locate(assetId, quote) {
 function jumpToRef(kind, id) {
   const vi = state.vi;
   if (kind === "card") return openCard(id);
+  if (kind === "attachment") {
+    const at = safe(() => state.data.getAttachment(id), null);
+    if (at) { vi.nav = "papers"; vi.compare = false; vi.card = null; vi.paperId = at.paperId; vi.attId = at.id; vi.assetView = null; return render(); }
+  }
   if (kind === "asset") return locate(id, null);
   if (kind === "paper") { selectPaper(id); return; }
   if (kind === "execution" || kind === "sample" || kind === "measurement") { vi.nav = "record"; vi.execTab = kind === "measurement" ? "table" : kind === "sample" ? "sample" : "deviation"; return render(); }
@@ -405,13 +411,19 @@ function suggestionHtml(s, i) {
   const open = state.vi.openBasis === s.id;
   const b = s.basis ?? {};
   const list = (label, arr) => (arr ?? []).length ? `<div class="demo-basisrow"><b>${label}</b><ul>${arr.map((x) => `<li>${esc(x)}</li>`).join("")}</ul></div>` : "";
+  const refs = (s.refs ?? []).map((r) => {
+    const kind = String(r).split("_")[0] === "card" ? "card" : String(r).includes(":") ? String(r).split(":")[0] : "card";
+    const id = String(r).includes(":") ? String(r).split(":")[1] : r;
+    return `<button class="demo-chip" type="button" data-action="backref" data-kind="${esc(kind)}" data-id="${esc(id)}">证据卡 ${esc(id.slice(0, 12))}…</button>`;
+  }).join("");
   return `<div class="demo-suggestion">
-    <div class="demo-sug-head"><span class="demo-badge">建议 ${i + 1}</span>${s.aiPreset ? `<span class="demo-badge preset">预生成</span>` : ""}</div>
+    <div class="demo-sug-head"><span class="demo-badge">建议 ${i + 1}</span>${s.aiPreset ? `<span class="demo-badge preset">预生成</span>` : `<span class="demo-badge">人工整理</span>`}${s.status ? `<span class="demo-badge ${s.status === "to_verify" ? "warn" : ""}">${esc(fmtEnum(s.status))}</span>` : ""}</div>
     <h3>${esc(s.title)}</h3>
     <p>${esc(s.text)}</p>
     <button type="button" class="demo-link" data-action="basis" data-basis="${esc(s.id)}" aria-expanded="${open}">${open ? "收起依据" : "查看依据"}</button>
     ${open ? `<div class="demo-basis">
-      ${list("证据分歧", b.divergence)}${list("待补数据", b.dataGaps)}${list("可区分解释", b.distinguishing)}${list("不确定性", b.uncertainty)}
+      ${list("证据分歧 / 缺口", b.divergence)}${list("要补什么数据", b.dataGaps)}${list("可区分解释", b.distinguishing)}${list("仍不确定", b.uncertainty)}
+      ${refs ? `<div class="demo-refchips">${refs}</div>` : ""}
       <p class="demo-hint">依据来自复核后的预生成记录；不触发现场模型调用。</p></div>` : ""}
   </div>`;
 }
@@ -485,26 +497,63 @@ function renderSource(text, hl) {  const escd = esc(text);
 function midCompare() {
   const d = state.data;
   const cmps = d.listComparisons(d.meta().mainTopicId);
+  if (!cmps.length) return `<div class="demo-pane-head">对比视图
+      <button class="demo-toggle on" type="button" data-action="compare">返回原文</button></div>
+    <div class="demo-miss"><p>快照未提供比较（缺项：comparisons）。</p></div>`;
   return `<div class="demo-pane-head">对比视图
       <button class="demo-toggle on" type="button" data-action="compare">返回原文</button></div>
-    ${cmps.length ? cmps.map((c) => `
-      <div class="demo-card-block">
-        <h3>比较：${esc(c.groups.map((g) => g.name).join("；"))}</h3>
-        <p class="demo-hint">快照固定于 ${esc(fmtTime(c.snapshot.pinnedAt))} · ${esc(c.note)}</p>
-        ${c.groups.map((g) => `<div class="demo-cmpgroup">
-          <div class="demo-cmphead"><b>${esc(g.name)}</b><span class="demo-badge">${cmpLabel(g.divergence)}</span></div>
-          <table class="demo-table"><thead><tr><th>来源</th><th>原名称</th><th>映射</th><th>值</th><th>条件</th><th></th></tr></thead><tbody>
-            ${g.entries.map((en) => {
-              const card = safe(() => d.getCard(en.cardId), null);
-              const detail = card ? safe(() => d.getCardDetail(card.id), null) : null;
-              const src = detail?.paper?.title ?? detail?.source?.name ?? en.cardId;
-              return `<tr><td>${esc(src)}</td><td>${esc(en.originalName)}</td><td>${esc(en.mappedName)}</td><td>${esc(en.value)} ${esc(en.unit === "—" ? "" : en.unit)}</td><td>${esc(en.conditions.join("；"))}</td>
-                <td><button class="demo-link" type="button" data-action="cmp-entry" data-card="${esc(en.cardId)}">看这张卡</button></td></tr>`;
-            }).join("")}
-          </tbody></table>
-          ${g.unresolved.length ? `<p class="demo-hint">未解决：${g.unresolved.map(esc).join("；")}</p>` : ""}
-        </div>`).join("")}
-      </div>`).join("") : `<div class="demo-miss"><p>快照未提供比较（缺项：comparisons）。</p></div>`}`;
+    ${cmps.map((c) => (c.sides ? aComparisonHtml(c) : legacyComparisonHtml(c))).join("")}`;
+}
+
+function aComparisonHtml(c) {
+  const d = state.data;
+  const sideOf = (side) => {
+    const card = side.refs?.find((r) => r.kind === "card");
+    const cardObj = card ? safe(() => d.getCard(card.id), null) : null;
+    const att = cardObj ? safe(() => d.listAttachments(cardObj.paperId ?? "").find((a) => a.assetId === cardObj.assetId), null) : null;
+    const src = cardObj ? safe(() => d.getAsset(cardObj.assetId)?.name, card.id) : "";
+    return { side, card, cardObj, att, src };
+  };
+  const sides = (c.sides ?? []).map(sideOf);
+  return `<div class="demo-card-block">
+    <h3>比较：${esc(c.title ?? "")}</h3>
+    <p class="demo-hint">独立性：${esc(c.independenceStatus ?? "未标注")} · ${esc(c.independenceNote ?? "")}</p>
+    <table class="demo-table"><thead><tr><th>来源</th><th>指标</th><th>值</th><th>条件</th><th>二手转引</th><th></th></tr></thead><tbody>
+      ${sides.map(({ side, card, cardObj, att, src }) => `<tr>
+        <td>${esc(side.label)}${src ? `<br/><span class="demo-hint">${esc(src)}</span>` : ""}</td>
+        <td>${esc(side.metric ?? "")}</td><td>${esc(side.value ?? "")}</td><td>${esc(side.conditions ?? "")}</td>
+        <td>${side.secondaryCitation ? `<span class="demo-badge warn">二手</span>` : "否"}</td>
+        <td>${card && cardObj ? `<button class="demo-link" type="button" data-action="cmp-entry" data-card="${esc(card.id)}">看这张卡</button>
+          ${att ? `<button class="demo-link" type="button" data-action="locate" data-asset="${esc(cardObj.assetId)}" data-quote="${esc(cardObj.locator?.sectionQuote || cardObj.rawText)}">回查原文</button>` : ""}` : `<span class="demo-hint">引用缺失</span>`}</td>
+      </tr>`).join("")}
+    </tbody></table>
+    ${(c.commonMetric ?? []).length ? `<p class="demo-hint">共同指标：${c.commonMetric.map(esc).join("；")}</p>` : ""}
+    ${(c.conditionDiff ?? []).length ? `<p class="demo-hint">条件差异：${c.conditionDiff.map(esc).join("；")}</p>` : ""}
+    ${(c.unknownFields ?? []).length ? `<p class="demo-hint">未知字段：${c.unknownFields.map(esc).join("；")}</p>` : ""}
+    ${c.units ? `<p class="demo-hint">单位：${Object.entries(c.units).map(([k, v]) => `${esc(k)}=${esc(v)}`).join("；")}</p>` : ""}
+    ${c.caveat ? `<p class="demo-hint">作者说明：${esc(c.caveat)}</p>` : ""}
+  </div>`;
+}
+
+function legacyComparisonHtml(c) {
+  const d = state.data;
+  return `<div class="demo-card-block">
+    <h3>比较：${esc(c.groups.map((g) => g.name).join("；"))}</h3>
+    <p class="demo-hint">快照固定于 ${esc(fmtTime(c.snapshot?.pinnedAt))} · ${esc(c.note)}</p>
+    ${c.groups.map((g) => `<div class="demo-cmpgroup">
+      <div class="demo-cmphead"><b>${esc(g.name)}</b><span class="demo-badge">${cmpLabel(g.divergence)}</span></div>
+      <table class="demo-table"><thead><tr><th>来源</th><th>原名称</th><th>映射</th><th>值</th><th>条件</th><th></th></tr></thead><tbody>
+        ${g.entries.map((en) => {
+          const card = safe(() => d.getCard(en.cardId), null);
+          const detail = card ? safe(() => d.getCardDetail(card.id), null) : null;
+          const src = detail?.paper?.title ?? detail?.source?.name ?? en.cardId;
+          return `<tr><td>${esc(src)}</td><td>${esc(en.originalName)}</td><td>${esc(en.mappedName)}</td><td>${esc(en.value)} ${esc(en.unit === "—" ? "" : en.unit)}</td><td>${esc(en.conditions.join("；"))}</td>
+            <td><button class="demo-link" type="button" data-action="cmp-entry" data-card="${esc(en.cardId)}">看这张卡</button></td></tr>`;
+        }).join("")}
+      </tbody></table>
+      ${g.unresolved.length ? `<p class="demo-hint">未解决：${g.unresolved.map(esc).join("；")}</p>` : ""}
+    </div>`).join("")}
+  </div>`;
 }
 function cmpLabel(d) { return ({ single: "单一来源", consistent: "一致", value_diff: "数值分歧", conditions_diff: "条件差异" }[d] ?? d); }
 
@@ -537,9 +586,10 @@ function cardDetailHtml(c) {
   const fieldRows = Object.entries(f).map(([k, v]) => `<tr><th>${esc(fieldLabels(k))}</th><td>${esc(v)}</td></tr>`).join("");
   return `<div class="demo-carddetail">
     <div class="demo-cdrow"><b>出处定位</b>
-      <button class="demo-link" type="button" data-action="locate" data-asset="${esc(c.assetId)}" data-quote="${esc(c.rawText)}">在原文中定位</button>
+      <button class="demo-link" type="button" data-action="locate" data-asset="${esc(c.assetId)}" data-quote="${esc(c.locator?.sectionQuote || c.rawText)}">在原文中定位</button>
       <span class="demo-hint">${esc(c.locator?.sectionQuote ?? "")}</span></div>
-    <blockquote class="demo-quote">${esc(c.rawText)}</blockquote>
+    <blockquote class="demo-quote">摘要：${esc(c.rawText)}</blockquote>
+    ${c.locator?.sectionQuote && c.locator.sectionQuote !== c.rawText ? `<blockquote class="demo-quote">原文：${esc(c.locator.sectionQuote)}</blockquote>` : ""}
     <table class="demo-table kv"><tbody>
       ${fieldRows || `<tr><th>提取字段</th><td class="demo-hint">未提供</td></tr>`}
       <tr><th>单位</th><td>${esc((c.extracted?.units ?? []).join("、") || "未提供")}</td></tr>
@@ -595,6 +645,11 @@ function midKnowledge() {
         <tr><th>审阅</th><td><span class="demo-badge ${p.review?.status === "confirmed" ? "ok" : "warn"}">${esc(fmtReview(p.review?.status))}</span> ${esc(p.review?.basis ?? "")}</td></tr>
         <tr><th>来源类别</th><td>${esc(fmtEnum(p.origin?.sourceClass))} · ${p.origin?.secondaryCitation ? "综述转引" : "一次来源"}</td></tr>
       </tbody></table>
+      ${Object.keys(p.demoFields ?? {}).length ? `<table class="demo-table kv"><tbody>
+        ${Object.entries(p.demoFields).map(([k, v]) => `<tr><th>${esc(k)}</th><td>${esc(v)}</td></tr>`).join("")}
+        ${(p.demoUnits ?? []).length ? `<tr><th>单位</th><td>${esc(p.demoUnits.join("、"))}</td></tr>` : ""}
+        ${(p.demoUnknowns ?? []).length ? `<tr><th>未知项</th><td>${esc(p.demoUnknowns.join("；"))}</td></tr>` : ""}
+      </tbody></table>` : ""}
     </div>
     <div class="demo-card-block">
       <h3>条件</h3>

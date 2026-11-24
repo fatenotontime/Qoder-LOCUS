@@ -9,11 +9,13 @@
   <link rel="stylesheet" href="./demo.css" />
 </head>
 <body>
-  <div id="locus-demo-root" data-demo-auto data-data-url="../demo-data/snapshot.json"></div>
+  <div id="locus-demo-root" data-demo-auto data-data-base="../demo-data"></div>
   <script type="module">
     import { initDemo } from "./demo-app.js";
+    import { loadASnapshot } from "./a-snapshot.js";
     const root = document.getElementById("locus-demo-root");
-    initDemo({ root, dataUrl: root.dataset.dataUrl || "../demo-data/snapshot.json" });
+    const base = new URLSearchParams(location.search).get("base") || root.dataset.dataBase || "../demo-data";
+    initDemo({ root, loader: () => loadASnapshot({ baseUrl: base, zipUrl: `${base}/locus-demo-public.zip` }) });
   </script>
 </body>
 </html>
