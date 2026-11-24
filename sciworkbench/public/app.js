@@ -589,12 +589,15 @@ function bootFailure(e) {
   const msg = h.message === raw ? "服务暂时不可用，请稍后重试。" : h.message;
   notify("mid", `加载失败：${msg}`, h.detail);
   clearBootState();
+  // 公开展示版：数据层读取失败时给出独立的样本 ZIP 下载入口（构建注入 data-demo-zip）。
+  const demoZip = document.documentElement.dataset.demoZip;
+  const zipLink = demoZip ? ` <a class="primary" href="${esc(demoZip)}" download role="button">下载样本 ZIP</a>` : "";
   $("#mid-content").innerHTML = `<div class="empty-state boot-error">
     <span class="es-seal" aria-hidden="true">迹</span>
     <div class="es-eyebrow">卷宗未展开</div>
     <h3>暂时读不到卷宗</h3>
     <p>${esc(msg)}</p>
-    <div class="empty-actions"><button class="primary" id="boot-retry" type="button">重试读取</button></div>
+    <div class="empty-actions"><button class="primary" id="boot-retry" type="button">重试读取</button>${zipLink}</div>
   </div>`;
   $("#material-list").innerHTML = `<p class="hint">等待卷宗…</p>`;
   $("#right-content").innerHTML = `<p class="hint">等待卷宗…</p>`;
