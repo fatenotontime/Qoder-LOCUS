@@ -22,8 +22,9 @@ PY="$(command -v python || true)"
 
 PORT="$(echo "$BASE_URL" | sed -E 's#.*:([0-9]+).*#\1#')"
 mkdir -p "$OUT_DIR"
+OUT_ABS="$(cd "$OUT_DIR" && pwd)"
 PROFILE="$(mktemp -d "${TMPDIR:-/tmp}/e-edge-profile.XXXXXX")"
-SERVER_LOG="$OUT_DIR/server.log"
+SERVER_LOG="$OUT_ABS/server.log"
 : > "$SERVER_LOG"
 
 # 1) 仅本机静态服务（不启动任何 Node 后端）
@@ -45,9 +46,9 @@ done
   --disable-features=Translate,OptimizationHints,MediaRouter,InterestFeedContentSuggestions \
   --user-data-dir="$PROFILE" \
   --host-resolver-rules="MAP * ~NOTFOUND , EXCLUDE 127.0.0.1" \
-  --log-net-log="$OUT_DIR/netlog.json" --net-log-capture-mode=Default \
+  --log-net-log="$OUT_ABS/netlog.json" --net-log-capture-mode=Default \
   --virtual-time-budget=8000 \
-  --screenshot="$OUT_DIR/shot.png" --window-size="${VIEWPORT/x/,}" \
+  --screenshot="$OUT_ABS/shot.png" --window-size="${VIEWPORT/x/,}" \
   "$BASE_URL$PAGE_PATH" >/dev/null 2>&1
 
 # 3) 判读：触达后端? 外部主机?
@@ -55,7 +56,7 @@ grep -nE "/api/|/functions/" "$SERVER_LOG" > "$OUT_DIR/api-hits.txt" || true
 grep -oE 'https?://[A-Za-z0-9._-]+(:[0-9]+)?' "$OUT_DIR/netlog.json" 2>/dev/null \
   | sort -u | grep -vE '://(127\.0\.0\.1|localhost)' > "$OUT_DIR/hosts-all.txt" || true
 # 浏览器/本机自带噪声白名单（与本页无关；raw 全量见 hosts-all.txt，仍逐次人工确认无遗漏）
-grep -vE '://(edge\.microsoft\.com|config\.edge\.skype\.com|clients2\.google\.com|clients2\.googleusercontent\.com|cn\.bing\.com|bing\.com|csp\.withgoogle\.com|google\.com|googleusercontent\.com|microsoft\.com|me\.kis\.v2\.scr\.kaspersky-labs\.com)' \
+grep -vE '://(edge\.microsoft\.com|config\.edge\.skype\.com|clients2\.google\.com|clients2\.googleusercontent\.com|cn\.bing\.com|www\.bing\.com|bing\.com|csp\.withgoogle\.com|google\.com|googleusercontent\.com|microsoft\.com|mss\.office\.com|office\.com|substrate\.office\.com|prod\.rewardsplatform\.microsoft\.com|me\.kis\.v2\.scr\.kaspersky-labs\.com)' \
   "$OUT_DIR/hosts-all.txt" > "$OUT_DIR/hosts.txt" || true
 
 echo "== 产出 =="

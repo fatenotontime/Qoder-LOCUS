@@ -1,0 +1,70 @@
+PASS E1.1 直接进入主课题 | url=http://127.0.0.1:8785/demo/demo.html#/topic topic=['种子经海水漂流后的萌发（达尔文 1859）']
+PASS E1.2 全站暖色 | data-theme=paper
+PASS E1.3 非夹具占位 | fixture bar=0
+PASS E1.4 构建版本 | build=s08-public-3103888
+PASS E1.5 无未捕获异常 | []
+PASS E1.6 预存 tech 仍暖色 | data-theme=paper
+PASS E1.7 无冷色切换入口 | seal/replay nodes=0
+PASS E2.1 待审/已审可区分 | ['已确认', '已确认', '已确认', '已确认', '已确认', '已确认', '已确认', '已确认', '待审', '待审']
+PASS E2.2 存在待审卡 | states=['已确认', '已确认', '已确认', '已确认', '已确认', '已确认', '已确认', '已确认', '待审', '待审']
+PASS E2.3 卡片详情含条件/单位
+PASS E2.4 原文定位逐字命中 | marks=1 quotes=['摘要：M. Martens 的对照实验：将98粒种子（多为与达尔文不同者）装入盒', '原文：he placed the seeds in a box in the a']
+PASS E2.5 定位到同一引文 | mark=he placed the seeds in a box in the actual sea, so that they
+PASS E2.6 比较视图两边来源 | rows=2
+PASS E2.7 比较含共同指标/条件差异 | 对比视图
+返回原文
+比较：静水实验 vs 真实海水（干湿交替）：漂浮时长与浸后萌发
+
+独立性：未具备（同页转引，非独立两篇文献） · 两项数据均出自达尔文 1859 第十一章同一页（书页 360 / 扫描索引页 372）；马滕斯试验由达尔文
+PASS E2.8 比较可回查原文 | clicked locate
+PASS E3.1 报告块有可回查引用 | refs=5
+PASS E3.2 引用覆盖多类对象 | ['card', 'card', 'result', 'card', 'result']
+PASS E3.3 每跳可点且无缺项 | [{'kind': 'card', 'id': 'card_7012e88a-b06a-4b57-8d00-ba0bdbae1386', 'hash': '#/papers?paper=paper_a4936b8e-f895-4f57-99ee-19c834a365d5&att=att_2cbd1126-3258-4d61-a877-4e5da0abeab6&card=card_7012e88a-
+PASS E3.4 结果附件到原件 | head=原件 · flotation-summary.csv
+返回文献
+PASS E4.1 下一步 1–2 条 | sugs=2
+PASS E4.2 依据四要素 | 证据分歧 / 缺口
+作者自述海浪条件下漂浮时间应更短，但静水实验未给出波浪折扣量；马滕斯真实海水数据物种不同。
+要补什么数据
+对达尔文 94 株同批物种，在真实海水/干湿交替箱体中测漂浮天数与浸后萌发（Martens 式装置）。
+可区分解释
+「静水估计可直接外推」 vs 「海浪条件需下修」两种解释。
+仍不确定
+下修幅度
+PASS E4.3 实跑上下文图节点 | nodes=13
+PASS E4.4 图节点可回查 | #/papers?paper=paper_a4936b8e-f895-4f57-99ee-19c834a365d5&att=att_2cbd1126-3258-4d61-a877-4e5da0abeab6
+PASS E4.5 预生成/只读标识 | 预生成：未调用（未授权） · 11-24 18:26 · 人工核对后公开展示
+本页不触发后端：上传、写入、即时解析、实时对话均收起。
+PASS E5.1 ZIP 可下载并打开 | entries=13
+PASS E5.2 ZIP 哈希一致 | down=785b468908b0f024 site=785b468908b0f024
+PASS E5.3 页面显示哈希一致 | page=785b468908b0f024
+PASS E5.4 许可与指引齐全 | ['README.md', 'docs/五步走查.md', 'docs/来源与许可.md', 'docs/站内映射.md']
+PASS E5.5 原件齐备 | ['originals/data/darwin-dispersal-estimates.csv', 'originals/data/darwin-flotation.csv', 'originals/data/flotation-summary.csv', 'originals/origin-1859-p371-373.md', 'originals/sources/page-369.wiki',
+PASS E6.1 折扇打开且焦点进入 | aria-expanded=true inside=True
+PASS E6.2 Tab 焦点限制
+PASS E6.3 Esc 关闭并归还焦点 | focus=settings-open
+PASS E6.4 偏好刷新保留 | before=['compact', 'lg', 'reduced'] after=['compact', 'lg', 'reduced']
+PASS E6.10 页签鼠标可点击 | active=models err=None
+PASS E6.5 模型页只读无密钥控件 | checked
+PASS E6.11 键盘可切页签 | kbd models
+PASS E6.6 关于显示构建版本 | active=about text=外观
+模型
+关于
+设置
+合拢 ✕
+名称
+LOCUS · 科研上下文工作台
+版本
+s08-public-3103888 · 3103888
+数据
+预生成 · 只读
+PASS E6.12 窄屏抽屉页签可点击 | active=models
+PASS E6.7 四档无错位 | [{'vp': '1440x900', 'sheet': 'false', 'content': {'x': 111.515625, 'y': 307.09375, 'width': 426.359375, 'height': 360.015625}, 'ok': True}, {'vp': '1280x720', 'sheet': 'false', 'content': {'x': 95.406
+PASS E6.8 系统减少动效生效 | motion=reduced instant=True
+PASS E6.9 存 tech 后仍暖色且无冷色控件 | theme=paper ctrls=0
+PASS E7.1 无 /api 或 /functions 请求
+PASS E7.2 无外部主机请求（除本机 AV 注入）
+PASS E7.3 无写入请求（除本机 AV 注入）
+PASS E7.4 控制台无初始化错误 | {'console': [], 'pageerror': []}
+
+== 汇总 == 45 项；失败 0 []
