@@ -1,0 +1,7 @@
+http://edge.microsoft.com
+http://me.kis.v2.scr.kaspersky-labs.com
+https://bing.com
+https://cn.bing.com
+https://edge.microsoft.com
+https://microsoft.com
+https://www.bing.com

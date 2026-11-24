@@ -1,0 +1,182 @@
+{
+ "E1.1 直接进入主课题": {
+  "ok": true,
+  "detail": "url=http://127.0.0.1:8785/demo/demo.html#/topic topic=['种子经海水漂流后的萌发（达尔文 1859）']"
+ },
+ "E1.2 全站暖色": {
+  "ok": true,
+  "detail": "data-theme=paper"
+ },
+ "E1.3 非夹具占位": {
+  "ok": true,
+  "detail": "fixture bar=0"
+ },
+ "E1.4 构建版本": {
+  "ok": true,
+  "detail": "build=s08-public-3103888"
+ },
+ "E1.5 无未捕获异常": {
+  "ok": true,
+  "detail": "[]"
+ },
+ "E1.6 预存 tech 仍暖色": {
+  "ok": true,
+  "detail": "data-theme=paper"
+ },
+ "E1.7 无冷色切换入口": {
+  "ok": true,
+  "detail": "seal/replay nodes=0"
+ },
+ "E2.1 待审/已审可区分": {
+  "ok": true,
+  "detail": "['已确认', '已确认', '已确认', '已确认', '已确认', '已确认', '已确认', '已确认', '待审', '待审']"
+ },
+ "E2.2 存在待审卡": {
+  "ok": true,
+  "detail": "states=['已确认', '已确认', '已确认', '已确认', '已确认', '已确认', '已确认', '已确认', '待审', '待审']"
+ },
+ "E2.3 卡片详情含条件/单位": {
+  "ok": true,
+  "detail": ""
+ },
+ "E2.4 原文定位逐字命中": {
+  "ok": true,
+  "detail": "marks=1 quotes=['摘要：M. Martens 的对照实验：将98粒种子（多为与达尔文不同者）装入盒', '原文：he placed the seeds in a box in the a']"
+ },
+ "E2.5 定位到同一引文": {
+  "ok": true,
+  "detail": "mark=he placed the seeds in a box in the actual sea, so that they"
+ },
+ "E2.6 比较视图两边来源": {
+  "ok": true,
+  "detail": "rows=2"
+ },
+ "E2.7 比较含共同指标/条件差异": {
+  "ok": true,
+  "detail": "对比视图\n返回原文\n比较：静水实验 vs 真实海水（干湿交替）：漂浮时长与浸后萌发\n\n独立性：未具备（同页转引，非独立两篇文献） · 两项数据均出自达尔文 1859 第十一章同一页（书页 360 / 扫描索引页 372）；马滕斯试验由达尔文"
+ },
+ "E2.8 比较可回查原文": {
+  "ok": true,
+  "detail": "clicked locate"
+ },
+ "E3.1 报告块有可回查引用": {
+  "ok": true,
+  "detail": "refs=5"
+ },
+ "E3.2 引用覆盖多类对象": {
+  "ok": true,
+  "detail": "['card', 'card', 'result', 'card', 'result']"
+ },
+ "E3.3 每跳可点且无缺项": {
+  "ok": true,
+  "detail": "[{'kind': 'card', 'id': 'card_7012e88a-b06a-4b57-8d00-ba0bdbae1386', 'hash': '#/papers?paper=paper_a4936b8e-f895-4f57-99ee-19c834a365d5&att=att_2cbd1126-3258-4d61-a877-4e5da0abeab6&card=card_7012e88a-b06a-4b57-8d00-ba0bdbae1386', 'ok': True}, {'kind': 'card', 'id': 'card_a56d5514-401c-44a5-a19e-3006ddcec46a', 'hash': '#/papers?paper=paper_a4936b8e-f895-4f57-99ee-19c834a365d5&att=att_2cbd1126-3258-4d61-a877-4e5da0abeab6&card=card_a56d5514-401c-44a5-a19e-3006ddcec46a', 'ok': True}, {'kind': 'result', 'id': 'ares_806d9047-755c-4d33-bf22-4d8b77da8cad', 'hash': '#/analysis?task=atask_9cf2587e-9818-447d-9f63-9111eb090fa8', 'ok': True}, {'kind': 'card', 'id': 'card_cfa0372e-18bb-4aa2-9606-8a140780c598', 'hash': '#/papers?paper=paper_a4936b8e-f895-4f57-99ee-19c834a365d5&att=att_2cbd1126-3258-4d61-"
+ },
+ "E3.4 结果附件到原件": {
+  "ok": true,
+  "detail": "head=原件 · flotation-summary.csv\n返回文献"
+ },
+ "E4.1 下一步 1–2 条": {
+  "ok": true,
+  "detail": "sugs=2"
+ },
+ "E4.2 依据四要素": {
+  "ok": true,
+  "detail": "证据分歧 / 缺口\n作者自述海浪条件下漂浮时间应更短，但静水实验未给出波浪折扣量；马滕斯真实海水数据物种不同。\n要补什么数据\n对达尔文 94 株同批物种，在真实海水/干湿交替箱体中测漂浮天数与浸后萌发（Martens 式装置）。\n可区分解释\n「静水估计可直接外推」 vs 「海浪条件需下修」两种解释。\n仍不确定\n下修幅度"
+ },
+ "E4.3 实跑上下文图节点": {
+  "ok": true,
+  "detail": "nodes=13"
+ },
+ "E4.4 图节点可回查": {
+  "ok": true,
+  "detail": "#/papers?paper=paper_a4936b8e-f895-4f57-99ee-19c834a365d5&att=att_2cbd1126-3258-4d61-a877-4e5da0abeab6"
+ },
+ "E4.5 预生成/只读标识": {
+  "ok": true,
+  "detail": "预生成：未调用（未授权） · 11-24 18:26 · 人工核对后公开展示\n本页不触发后端：上传、写入、即时解析、实时对话均收起。"
+ },
+ "E5.1 ZIP 可下载并打开": {
+  "ok": true,
+  "detail": "entries=13"
+ },
+ "E5.2 ZIP 哈希一致": {
+  "ok": true,
+  "detail": "down=785b468908b0f024 site=785b468908b0f024"
+ },
+ "E5.3 页面显示哈希一致": {
+  "ok": true,
+  "detail": "page=785b468908b0f024"
+ },
+ "E5.4 许可与指引齐全": {
+  "ok": true,
+  "detail": "['README.md', 'docs/五步走查.md', 'docs/来源与许可.md', 'docs/站内映射.md']"
+ },
+ "E5.5 原件齐备": {
+  "ok": true,
+  "detail": "['originals/data/darwin-dispersal-estimates.csv', 'originals/data/darwin-flotation.csv', 'originals/data/flotation-summary.csv', 'originals/origin-1859-p371-373.md', 'originals/sources/page-369.wiki', 'originals/sources/page-370.wiki', 'originals/sources/page-371.wiki', 'originals/sources/page-372.wiki', 'originals/sources/page-373.wiki']"
+ },
+ "E6.1 折扇打开且焦点进入": {
+  "ok": true,
+  "detail": "aria-expanded=true inside=True"
+ },
+ "E6.2 Tab 焦点限制": {
+  "ok": true,
+  "detail": ""
+ },
+ "E6.3 Esc 关闭并归还焦点": {
+  "ok": true,
+  "detail": "focus=settings-open"
+ },
+ "E6.4 偏好刷新保留": {
+  "ok": true,
+  "detail": "before=['compact', 'lg', 'reduced'] after=['compact', 'lg', 'reduced']"
+ },
+ "E6.10 页签鼠标可点击": {
+  "ok": true,
+  "detail": "active=models err=None"
+ },
+ "E6.5 模型页只读无密钥控件": {
+  "ok": true,
+  "detail": "checked"
+ },
+ "E6.11 键盘可切页签": {
+  "ok": true,
+  "detail": "kbd models"
+ },
+ "E6.6 关于显示构建版本": {
+  "ok": true,
+  "detail": "active=about text=外观\n模型\n关于\n设置\n合拢 ✕\n名称\nLOCUS · 科研上下文工作台\n版本\ns08-public-3103888 · 3103888\n数据\n预生成 · 只读"
+ },
+ "E6.12 窄屏抽屉页签可点击": {
+  "ok": true,
+  "detail": "active=models"
+ },
+ "E6.7 四档无错位": {
+  "ok": true,
+  "detail": "[{'vp': '1440x900', 'sheet': 'false', 'content': {'x': 111.515625, 'y': 307.09375, 'width': 426.359375, 'height': 360.015625}, 'ok': True}, {'vp': '1280x720', 'sheet': 'false', 'content': {'x': 95.40625, 'y': 237.953125, 'width': 341.09375, 'height': 288.015625}, 'ok': True}, {'vp': '1024x768', 'sheet': 'false', 'content': {'x': 99.71875, 'y': 256.375, 'width': 363.8125, 'height': 307.21875}, 'ok': True}, {'vp': '390x800', 'sheet': 'true', 'content': {'x': 16, 'y': 136, 'width': 358, 'height': 648}, 'ok': True}]"
+ },
+ "E6.8 系统减少动效生效": {
+  "ok": true,
+  "detail": "motion=reduced instant=True"
+ },
+ "E6.9 存 tech 后仍暖色且无冷色控件": {
+  "ok": true,
+  "detail": "theme=paper ctrls=0"
+ },
+ "E7.1 无 /api 或 /functions 请求": {
+  "ok": true,
+  "detail": "[]"
+ },
+ "E7.2 无外部主机请求（除本机 AV 注入）": {
+  "ok": true,
+  "detail": "[]"
+ },
+ "E7.3 无写入请求（除本机 AV 注入）": {
+  "ok": true,
+  "detail": "[]"
+ },
+ "E7.4 控制台无初始化错误": {
+  "ok": true,
+  "detail": "{'console': [], 'pageerror': []}"
+ }
+}
