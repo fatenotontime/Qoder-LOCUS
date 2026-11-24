@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="paper">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="color-scheme" content="light" />
+  <title>LOCUS · 公开展示（只读）</title>
+  <link rel="stylesheet" href="../styles.css" />
+  <link rel="stylesheet" href="./demo.css" />
+</head>
+<body>
+  <div id="locus-demo-root" data-demo-auto data-data-url="../demo-data/snapshot.json"></div>
+  <script type="module">
+    import { initDemo } from "./demo-app.js";
+    const root = document.getElementById("locus-demo-root");
+    initDemo({ root, dataUrl: root.dataset.dataUrl || "../demo-data/snapshot.json" });
+  </script>
+</body>
+</html>
