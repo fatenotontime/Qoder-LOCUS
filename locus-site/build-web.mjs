@@ -8,8 +8,15 @@ import { cpSync, existsSync, readFileSync, writeFileSync, copyFileSync, rmSync, 
 import { join, resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createHash } from "node:crypto";
+import { execSync } from "node:child_process";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
+
+// 构建版本：显式 --version= 优先，否则取 git 短提交；供设置「关于」显示。
+let BUILD_COMMIT = "";
+try { BUILD_COMMIT = execSync("git rev-parse --short HEAD", { cwd: HERE, stdio: ["ignore", "pipe", "ignore"] }).toString().trim(); } catch { /* 非 git 环境忽略 */ }
+const verArg = process.argv.find((a) => a.startsWith("--version="));
+const BUILD_VERSION = verArg ? verArg.split("=")[1] : (BUILD_COMMIT ? `s08-public-${BUILD_COMMIT}` : "s08-public");
 
 // ── 参数与构建模式 ──────────────────────────────────────────
 const argv = process.argv.slice(2);
@@ -82,11 +89,17 @@ if (MODE === "public") {
   copyFileSync(join(HERE, "web-overlay", "settings", "settings-fan.js"), join(setOut, "settings-fan.js"));
   copyFileSync(join(HERE, "web-overlay", "settings", "settings-fan.css"), join(setOut, "settings-fan.css"));
 
-  // 2d) 把设置折扇挂到演示页：head 加 CSS link，body 末加静态入口 + module 脚本。
+  // 2d) 把设置折扇挂到演示页：head 加 CSS link + 构建版本注入，body 末加静态入口 + module 脚本。
   const demoHtmlPath = join(demoOut, "demo.html");
   let demoHtml = readFileSync(demoHtmlPath, "utf8");
   if (!demoHtml.includes("settings-fan.css")) {
     demoHtml = demoHtml.replace(/<\/head>/i, `  <link rel="stylesheet" href="/settings/settings-fan.css" />\n</head>`);
+  }
+  if (!demoHtml.includes("locus-build-version")) {
+    const buildMeta =
+      `  <meta name="locus-build-version" content="${BUILD_VERSION}" />\n` +
+      `  <script>window.__LOCUS_BUILD__=${JSON.stringify({ version: BUILD_VERSION, commit: BUILD_COMMIT })};</script>\n`;
+    demoHtml = demoHtml.replace(/<\/head>/i, `${buildMeta}</head>`);
   }
   const entry =
     `\n  <button id="settings-open" class="modelbtn" type="button" style="position:fixed;left:16px;bottom:16px;z-index:60" aria-haspopup="dialog" aria-controls="settings-fan" aria-expanded="false">设置 <span class="hint" id="ai-state">预生成</span></button>\n` +
