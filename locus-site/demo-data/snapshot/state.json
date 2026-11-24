@@ -1,0 +1,1606 @@
+{
+  "version": 8,
+  "topics": [
+    {
+      "id": "topic_f6bff443-3f74-4677-810d-0c15c7d06bf0",
+      "name": "种子经海水漂流后的萌发（达尔文 1859）",
+      "researchQuestion": "种子能否经海水漂流后仍萌发，从而跨海传播？",
+      "createdAt": "2026-11-20T07:09:09.540Z"
+    }
+  ],
+  "subquestions": [
+    {
+      "id": "subq_744874b8-3948-4514-bfd6-87a8a16dd8ae",
+      "topicId": "topic_f6bff443-3f74-4677-810d-0c15c7d06bf0",
+      "question": "干燥与新鲜的漂浮时长差异如何？",
+      "kind": "declared",
+      "createdAt": "2026-11-20T07:09:09.541Z"
+    },
+    {
+      "id": "subq_1e40d696-48ad-4979-b020-37ddaa72474a",
+      "topicId": "topic_f6bff443-3f74-4677-810d-0c15c7d06bf0",
+      "question": "海浪条件下传播估计是否需下修？",
+      "kind": "exploratory",
+      "createdAt": "2026-11-20T07:09:09.541Z"
+    }
+  ],
+  "assets": [
+    {
+      "id": "ast_907d8227-cbc3-45ba-8e2e-dd8a7d286c28",
+      "kind": "literature",
+      "name": "origin-1859-p371-373.md",
+      "topicId": "topic_f6bff443-3f74-4677-810d-0c15c7d06bf0",
+      "bytes": 5644,
+      "hash": "7f639fdc900eaee2b90ebad3ef69bbffcd7ca9a14d01ecceb803b9214fbf5c62",
+      "fingerprint": "7f639fdc900eaee2b90ebad3ef69bbffcd7ca9a14d01ecceb803b9214fbf5c62",
+      "text": "达尔文《物种起源》1859 · 第十一章 地理分布（影印页 359–361；公有领域）。原文摘录，未改写。\n\nFor convenience sake I chiefly tried small seeds, without the capsule or fruit; and as all of these sank in a few days, they could not be floated across wide spaces of the sea, whether or not they were injured by the salt-water. Afterwards I tried some larger fruits, capsules, &c., and some of these floated for a long time. It is well known what a difference there is in the buoyancy of green and seasoned timber; and it occurred to me that floods might wash down plants or branches, and that these might be dried on the banks, and then by a fresh rise in the stream be washed into the sea. Hence I was led to dry stems and branches of 94 plants with ripe fruit, and to place them on sea water. The majority sank quickly, but some which whilst green floated for a very short time, when dried floated much longer; for instance, ripe hazel-nuts sank immediately, but when dried, they floated for 90 days and afterwards when planted they germinated; an asparagus plant with ripe berries floated for 23 days, when dried it floated for 85 days, and the seeds afterwards germinated: the ripe seeds of Helosciadium sank in two days, when dried they floated for above 90 days, and afterwards germinated. Altogether out of the 94 dried plants, 18 floated for above 28 days, and some of the 18 floated for a very much longer period. So that as seeds germinated after an immersion of 28 days; and as plants with ripe fruit (but not all the same species as in the foregoing experiment) floated, after being dried, for above 28 days, as far as we may infer anything from these scanty facts, we may conclude that the seeds of plants of any country might be floated by sea-currents during 28 days, and would retain their power of germination. In Johnston's Physical Atlas, the average rate of the several Atlantic currents is 33 miles per diem (some currents running at the rate of 60 miles\n\nper diem); on this average, the seeds of plants belonging to one country might be floated across 924 miles of sea to another country; and when stranded, if blown to a favourable spot by an inland gale, they would germinate. Subsequently to my experiments, M. Martens tried similar ones, but in a much better manner, for he placed the seeds in a box in the actual sea, so that they were alternately wet and exposed to the air like really floating plants. He tried 98 seeds, mostly different from mine; but he chose many large fruits and likewise seeds from plants which live near the sea; and this would have favoured the average length of their flotation and of their resistance to the injurious action of the salt-water. On the other hand he did not previously dry the plants or branches with the fruit; and this, as we have seen, would have caused some of them to have floated much longer. The result was that of his seeds floated for 42 days, and were then capable of germination. But I do not doubt that plants exposed to the waves would float for a less time than those protected from violent movement as in our experiments. Therefore it would perhaps be safer to assume that the seeds of about plants of a flora, after having been dried, could be floated across a space of sea 900 miles in width, and would then germinate. The fact of the larger fruits often floating longer than the small, is interesting; as plants with large seeds or fruit could hardly be transported by any other means; and Alph. de Candolle has shown that such plants generally have restricted ranges. But seeds may be occasionally transported in another manner. Drift timber is thrown up on most islands, even on those in the midst of the widest oceans; and the natives of the coral-islands in the Pacific, procure\n\nstones for their tools, solely from the roots of drifted trees, these stones being a valuable royal tax. I find on examination, that when irregularly shaped stones are embedded in the roots of trees, small parcels of earth are very frequently enclosed in their interstices and behind them,—so perfectly that not a particle could be washed away in the longest transport: out of one small portion of earth thus ''completely'' enclosed by wood in an oak about 50 years old, three dicotyledonous plants germinated: I am certain of the accuracy of this observation. Again, I can show that the carcasses of birds, when floating on the sea, sometimes escape being immediately devoured; and seeds of many kinds in the crops of floating birds long retain their vitality: peas and vetches, for instance, are killed by even a few days' immersion in sea-water; but some taken out of the crop of a pigeon, which had floated on artificial salt-water for 30 days, to my surprise nearly all germinated. Living birds can hardly fail to be highly effective agents in the transportation of seeds. I could give many facts showing how frequently birds of many kinds are blown by gales to vast distances across the ocean. We may I think safely assume that under such circumstances their rate of flight would often be 35 miles an hour; and some authors have given a far higher estimate. I have never seen an instance of nutritious seeds passing through the intestines of a bird; but hard seeds of fruit will pass uninjured through even the digestive organs of a turkey. In the course of two months, I picked up in my garden 12 kinds of seeds, out of the excrement of small birds, and these seemed perfect, and some of them, which I tried, germinated. But the following fact is more important: the crops of birds do not secrete gastric juice, and do not in the",
+      "createdAt": "2026-11-20T07:09:09.543Z"
+    },
+    {
+      "id": "ast_46e6463a-a10b-4c85-9d3d-b38ab2bf1dd0",
+      "kind": "measurement",
+      "name": "darwin-flotation.csv",
+      "topicId": "topic_f6bff443-3f74-4677-810d-0c15c7d06bf0",
+      "bytes": 739,
+      "hash": "ebdc1366ebbdc7b6d87487b41b56199596347729f10c65063b476baa9c5a067a",
+      "fingerprint": "ebdc1366ebbdc7b6d87487b41b56199596347729f10c65063b476baa9c5a067a",
+      "text": "item,fresh_float_days,dried_float_days,germinated_after,note,source_page\nripe hazel-nuts,0(sank immediately),90,yes,dried then planted,371\nasparagus plant with ripe berries,23,85,yes,seeds afterwards germinated,371\nHelosciadium (ripe seeds),2(sank),>90,yes,afterwards germinated,371\ndried stems and branches of 94 plants with ripe fruit,-,-,-,majority sank quickly; some dried floated much longer,371\npeas and vetches,few days immersion,-,no,killed by even a few days' immersion in sea-water,373\nseeds from crop of a pigeon (artificial salt-water),30,-,nearly all,after 30 days in artificial salt-water,373\nirregularly shaped stones in tree roots (enclosed earth),-,-,yes,three dicotyledonous plants germinated (oak about 50 years old),373",
+      "createdAt": "2026-11-20T07:09:09.546Z"
+    },
+    {
+      "id": "ast_400c4531-aae6-4e31-a510-3bbac7ede6c1",
+      "kind": "measurement",
+      "name": "darwin-dispersal-estimates.csv",
+      "topicId": "topic_f6bff443-3f74-4677-810d-0c15c7d06bf0",
+      "bytes": 481,
+      "hash": "fb97f51b4cf15f82091162b6ba34b9b49a8c212795a74f74a23883da22c423e1",
+      "fingerprint": "fb97f51b4cf15f82091162b6ba34b9b49a8c212795a74f74a23883da22c423e1",
+      "text": "estimate,value,condition,source_page\nseeds of smaller plants floated across sea,14/100 plants could float 924 miles,on Darwin's average,372\nMartens' sea trials,18/98 seeds floated 42 days and were then capable of germination,seeds placed in a box in the actual sea (alternately wet and exposed to air),372\ncaveat recorded by author,plants exposed to waves would float for a less time than those protected from violent movement,author's own caveat — estimate may need revision,372",
+      "createdAt": "2026-11-20T07:09:09.547Z"
+    },
+    {
+      "id": "ast_951ceed0-b2ee-437c-97cf-4698d1ed95ef",
+      "kind": "result",
+      "name": "flotation-summary.csv",
+      "topicId": "topic_f6bff443-3f74-4677-810d-0c15c7d06bf0",
+      "bytes": 94,
+      "hash": "9510a7b24baa49ee392df77df50a7e91a30ea470e98c0b703ffe97961cd35686",
+      "fingerprint": "9510a7b24baa49ee392df77df50a7e91a30ea470e98c0b703ffe97961cd35686",
+      "text": "group,float_days\nfresh,多数数日内下沉\ndried,榛子90; 芦笋23->85; Helosciadium 2->>90",
+      "createdAt": "2026-11-20T07:09:09.548Z"
+    }
+  ],
+  "papers": [
+    {
+      "id": "paper_a4936b8e-f895-4f57-99ee-19c834a365d5",
+      "title": "On the Origin of Species（1859）· 第十一章 地理分布",
+      "authors": [
+        "Charles Darwin"
+      ],
+      "year": "1859",
+      "doi": "",
+      "source": "Wikisource 影印（页 371–373）",
+      "license": "Public Domain",
+      "topicIds": [
+        "topic_f6bff443-3f74-4677-810d-0c15c7d06bf0"
+      ],
+      "note": "原文叙述，非实验记录本；条件多未量化。",
+      "revision": 1,
+      "history": [],
+      "createdAt": "2026-11-20T07:09:09.542Z",
+      "updatedAt": "2026-11-20T07:39:54.712Z"
+    }
+  ],
+  "attachments": [
+    {
+      "id": "att_2cbd1126-3258-4d61-a877-4e5da0abeab6",
+      "paperId": "paper_a4936b8e-f895-4f57-99ee-19c834a365d5",
+      "assetId": "ast_907d8227-cbc3-45ba-8e2e-dd8a7d286c28",
+      "role": "fulltext",
+      "version": "v1",
+      "createdAt": "2026-11-20T07:09:09.543Z"
+    }
+  ],
+  "cards": [
+    {
+      "id": "card_8a4e4db2-5ada-42f8-a1fd-6fbcff8a4ae7",
+      "assetId": "ast_907d8227-cbc3-45ba-8e2e-dd8a7d286c28",
+      "rawText": "干燥后榛子漂浮 90 天，随后种植萌发（新鲜时立即下沉）。",
+      "locator": {
+        "sectionQuote": "ripe hazel-nuts sank immediately, but when dried, they floated for 90 days and afterwards when planted they germinated"
+      },
+      "extracted": {
+        "fields": {
+          "对象": "榛子",
+          "新鲜": "0",
+          "干燥": "90",
+          "萌发": "是"
+        },
+        "units": [],
+        "conditions": [
+          "海水浸泡"
+        ]
+      },
+      "unknowns": [],
+      "secondaryCitation": false,
+      "audit": "confirm",
+      "importance": "high",
+      "note": "",
+      "reason": "人工核对原文",
+      "extraction": "manual",
+      "revision": 2,
+      "history": [
+        {
+          "revision": 2,
+          "at": "2026-11-20T07:09:09.544Z",
+          "field": "audit",
+          "before": "unreviewed",
+          "after": "confirm",
+          "reason": "人工核对原文"
+        },
+        {
+          "revision": 2,
+          "at": "2026-11-20T07:09:09.544Z",
+          "field": "importance",
+          "before": "",
+          "after": "high",
+          "reason": "人工核对原文"
+        },
+        {
+          "revision": 2,
+          "at": "2026-11-20T07:09:09.544Z",
+          "field": "reason",
+          "before": "",
+          "after": "人工核对原文",
+          "reason": "人工核对原文"
+        }
+      ],
+      "createdAt": "2026-11-20T07:09:09.543Z",
+      "updatedAt": "2026-11-20T07:09:09.544Z",
+      "mechanical": false,
+      "paperId": "paper_a4936b8e-f895-4f57-99ee-19c834a365d5"
+    },
+    {
+      "id": "card_cfa623de-2b0f-44b8-8096-5ae1a3b7d8ae",
+      "assetId": "ast_907d8227-cbc3-45ba-8e2e-dd8a7d286c28",
+      "rawText": "芦笋带熟果：新鲜漂 23 天；干燥后 85 天，种子随后萌发。",
+      "locator": {
+        "sectionQuote": "an asparagus plant with ripe berries floated for 23 days, when dried it floated for 85 days, and the seeds afterwards germinated"
+      },
+      "extracted": {
+        "fields": {
+          "对象": "芦笋",
+          "新鲜": "23",
+          "干燥": "85",
+          "萌发": "是"
+        },
+        "units": [],
+        "conditions": [
+          "海水浸泡"
+        ]
+      },
+      "unknowns": [],
+      "secondaryCitation": false,
+      "audit": "confirm",
+      "importance": "medium",
+      "note": "",
+      "reason": "人工核对原文",
+      "extraction": "manual",
+      "revision": 2,
+      "history": [
+        {
+          "revision": 2,
+          "at": "2026-11-20T07:09:09.544Z",
+          "field": "audit",
+          "before": "unreviewed",
+          "after": "confirm",
+          "reason": "人工核对原文"
+        },
+        {
+          "revision": 2,
+          "at": "2026-11-20T07:09:09.544Z",
+          "field": "importance",
+          "before": "",
+          "after": "medium",
+          "reason": "人工核对原文"
+        },
+        {
+          "revision": 2,
+          "at": "2026-11-20T07:09:09.544Z",
+          "field": "reason",
+          "before": "",
+          "after": "人工核对原文",
+          "reason": "人工核对原文"
+        }
+      ],
+      "createdAt": "2026-11-20T07:09:09.544Z",
+      "updatedAt": "2026-11-20T07:09:09.544Z",
+      "mechanical": false,
+      "paperId": "paper_a4936b8e-f895-4f57-99ee-19c834a365d5"
+    },
+    {
+      "id": "card_a24884fb-3af2-4b41-b094-28e0937aa72d",
+      "assetId": "ast_907d8227-cbc3-45ba-8e2e-dd8a7d286c28",
+      "rawText": "Helosciadium 熟种：2 天沉；干燥后漂浮 >90 天，随后萌发。",
+      "locator": {
+        "sectionQuote": "the ripe seeds of Helosciadium sank in two days, when dried they floated for above 90 days, and afterwards germinated"
+      },
+      "extracted": {
+        "fields": {
+          "对象": "Helosciadium",
+          "新鲜": "2",
+          "干燥": ">90",
+          "萌发": "是"
+        },
+        "units": [],
+        "conditions": [
+          "海水浸泡"
+        ]
+      },
+      "unknowns": [],
+      "secondaryCitation": false,
+      "audit": "confirm",
+      "importance": "medium",
+      "note": "",
+      "reason": "人工核对原文",
+      "extraction": "manual",
+      "revision": 2,
+      "history": [
+        {
+          "revision": 2,
+          "at": "2026-11-20T07:09:09.544Z",
+          "field": "audit",
+          "before": "unreviewed",
+          "after": "confirm",
+          "reason": "人工核对原文"
+        },
+        {
+          "revision": 2,
+          "at": "2026-11-20T07:09:09.544Z",
+          "field": "importance",
+          "before": "",
+          "after": "medium",
+          "reason": "人工核对原文"
+        },
+        {
+          "revision": 2,
+          "at": "2026-11-20T07:09:09.544Z",
+          "field": "reason",
+          "before": "",
+          "after": "人工核对原文",
+          "reason": "人工核对原文"
+        }
+      ],
+      "createdAt": "2026-11-20T07:09:09.544Z",
+      "updatedAt": "2026-11-20T07:09:09.544Z",
+      "mechanical": false,
+      "paperId": "paper_a4936b8e-f895-4f57-99ee-19c834a365d5"
+    },
+    {
+      "id": "card_cfa0372e-18bb-4aa2-9606-8a140780c598",
+      "assetId": "ast_907d8227-cbc3-45ba-8e2e-dd8a7d286c28",
+      "rawText": "作者据稀少事实推断：约 14/100 植物种子可经海流漂 28 天并保持萌发力（推断，非测量）。",
+      "locator": {
+        "sectionQuote": "plants belonging to one country might be floated across 924 miles of sea to another country"
+      },
+      "extracted": {
+        "fields": {
+          "类型": "作者推断",
+          "比例": "14/100"
+        },
+        "units": [],
+        "conditions": [
+          "海水浸泡"
+        ]
+      },
+      "unknowns": [],
+      "secondaryCitation": false,
+      "audit": "confirm",
+      "importance": "high",
+      "note": "",
+      "reason": "人工核对原文",
+      "extraction": "manual",
+      "revision": 2,
+      "history": [
+        {
+          "revision": 2,
+          "at": "2026-11-20T07:09:09.544Z",
+          "field": "audit",
+          "before": "unreviewed",
+          "after": "confirm",
+          "reason": "人工核对原文"
+        },
+        {
+          "revision": 2,
+          "at": "2026-11-20T07:09:09.544Z",
+          "field": "importance",
+          "before": "",
+          "after": "high",
+          "reason": "人工核对原文"
+        },
+        {
+          "revision": 2,
+          "at": "2026-11-20T07:09:09.544Z",
+          "field": "reason",
+          "before": "",
+          "after": "人工核对原文",
+          "reason": "人工核对原文"
+        }
+      ],
+      "createdAt": "2026-11-20T07:09:09.544Z",
+      "updatedAt": "2026-11-20T07:09:09.544Z",
+      "mechanical": false,
+      "paperId": "paper_a4936b8e-f895-4f57-99ee-19c834a365d5"
+    },
+    {
+      "id": "card_7012e88a-b06a-4b57-8d00-ba0bdbae1386",
+      "assetId": "ast_907d8227-cbc3-45ba-8e2e-dd8a7d286c28",
+      "rawText": "马滕斯在真实海水实测：98 粒中 18 粒漂浮 42 天且仍能萌发（干湿交替）。",
+      "locator": {
+        "sectionQuote": "of his seeds floated for 42 days, and were then capable of germination"
+      },
+      "extracted": {
+        "fields": {
+          "对象": "马滕斯实测",
+          "比例": "18/98",
+          "天": "42"
+        },
+        "units": [],
+        "conditions": [
+          "海水浸泡"
+        ]
+      },
+      "unknowns": [],
+      "secondaryCitation": false,
+      "audit": "confirm",
+      "importance": "high",
+      "note": "",
+      "reason": "人工核对原文",
+      "extraction": "manual",
+      "revision": 2,
+      "history": [
+        {
+          "revision": 2,
+          "at": "2026-11-20T07:09:09.544Z",
+          "field": "audit",
+          "before": "unreviewed",
+          "after": "confirm",
+          "reason": "人工核对原文"
+        },
+        {
+          "revision": 2,
+          "at": "2026-11-20T07:09:09.544Z",
+          "field": "importance",
+          "before": "",
+          "after": "high",
+          "reason": "人工核对原文"
+        },
+        {
+          "revision": 2,
+          "at": "2026-11-20T07:09:09.544Z",
+          "field": "reason",
+          "before": "",
+          "after": "人工核对原文",
+          "reason": "人工核对原文"
+        }
+      ],
+      "createdAt": "2026-11-20T07:09:09.544Z",
+      "updatedAt": "2026-11-20T07:09:09.544Z",
+      "mechanical": false,
+      "paperId": "paper_a4936b8e-f895-4f57-99ee-19c834a365d5"
+    },
+    {
+      "id": "card_a56d5514-401c-44a5-a19e-3006ddcec46a",
+      "assetId": "ast_907d8227-cbc3-45ba-8e2e-dd8a7d286c28",
+      "rawText": "作者自述：暴露于海浪者漂浮时间应短于静水实验 → 传播估计或需下修。",
+      "locator": {
+        "sectionQuote": "plants exposed to the waves would float for a less time than those protected from violent movement"
+      },
+      "extracted": {
+        "fields": {
+          "类型": "作者修正意见",
+          "方向": "下修"
+        },
+        "units": [],
+        "conditions": [
+          "海水浸泡"
+        ]
+      },
+      "unknowns": [],
+      "secondaryCitation": false,
+      "audit": "confirm",
+      "importance": "high",
+      "note": "",
+      "reason": "人工核对原文",
+      "extraction": "manual",
+      "revision": 2,
+      "history": [
+        {
+          "revision": 2,
+          "at": "2026-11-20T07:09:09.544Z",
+          "field": "audit",
+          "before": "unreviewed",
+          "after": "confirm",
+          "reason": "人工核对原文"
+        },
+        {
+          "revision": 2,
+          "at": "2026-11-20T07:09:09.544Z",
+          "field": "importance",
+          "before": "",
+          "after": "high",
+          "reason": "人工核对原文"
+        },
+        {
+          "revision": 2,
+          "at": "2026-11-20T07:09:09.544Z",
+          "field": "reason",
+          "before": "",
+          "after": "人工核对原文",
+          "reason": "人工核对原文"
+        }
+      ],
+      "createdAt": "2026-11-20T07:09:09.544Z",
+      "updatedAt": "2026-11-20T07:09:09.544Z",
+      "mechanical": false,
+      "paperId": "paper_a4936b8e-f895-4f57-99ee-19c834a365d5"
+    },
+    {
+      "id": "card_5e9e8544-e19e-4584-8eec-07844d961dc7",
+      "assetId": "ast_907d8227-cbc3-45ba-8e2e-dd8a7d286c28",
+      "rawText": "鸽嗉囊中的种子在人工海水漂浮 30 天，取出后几乎全部萌发。",
+      "locator": {
+        "sectionQuote": "some taken out of the crop of a pigeon, which had floated on artificial salt-water for 30 days, to my surprise nearly all germinated"
+      },
+      "extracted": {
+        "fields": {
+          "对象": "鸽嗉囊种子",
+          "天": "30"
+        },
+        "units": [],
+        "conditions": [
+          "海水浸泡"
+        ]
+      },
+      "unknowns": [],
+      "secondaryCitation": false,
+      "audit": "confirm",
+      "importance": "medium",
+      "note": "",
+      "reason": "人工核对原文",
+      "extraction": "manual",
+      "revision": 2,
+      "history": [
+        {
+          "revision": 2,
+          "at": "2026-11-20T07:09:09.544Z",
+          "field": "audit",
+          "before": "unreviewed",
+          "after": "confirm",
+          "reason": "人工核对原文"
+        },
+        {
+          "revision": 2,
+          "at": "2026-11-20T07:09:09.544Z",
+          "field": "importance",
+          "before": "",
+          "after": "medium",
+          "reason": "人工核对原文"
+        },
+        {
+          "revision": 2,
+          "at": "2026-11-20T07:09:09.544Z",
+          "field": "reason",
+          "before": "",
+          "after": "人工核对原文",
+          "reason": "人工核对原文"
+        }
+      ],
+      "createdAt": "2026-11-20T07:09:09.544Z",
+      "updatedAt": "2026-11-20T07:09:09.544Z",
+      "mechanical": false,
+      "paperId": "paper_a4936b8e-f895-4f57-99ee-19c834a365d5"
+    },
+    {
+      "id": "card_b2405e44-467f-46d7-ada5-a31b7c2fa3a1",
+      "assetId": "ast_907d8227-cbc3-45ba-8e2e-dd8a7d286c28",
+      "paperId": "paper_a4936b8e-f895-4f57-99ee-19c834a365d5",
+      "kind": "data",
+      "rawText": "干燥处理对种子/果实漂浮时间的影响：94株带成熟果实的植物枝条干燥后置于海水中，其中18株漂浮超过28天；成熟榛子未干燥时立即下沉、干燥后漂浮90天且种植后发芽；芦笋成熟浆果未干燥漂浮23天、干燥后漂浮85天且发芽；Helosciadium成熟种子2天沉没、干燥后漂浮90天以上并随后发芽。",
+      "locator": {
+        "sectionQuote": "Hence I was led to dry stems and branches of 94 plants with ripe fruit, and to place them on sea water."
+      },
+      "spans": [
+        {
+          "assetId": "ast_907d8227-cbc3-45ba-8e2e-dd8a7d286c28",
+          "quote": "Hence I was led to dry stems and branches of 94 plants with ripe fruit, and to place them on sea water.",
+          "matched": true
+        },
+        {
+          "assetId": "ast_907d8227-cbc3-45ba-8e2e-dd8a7d286c28",
+          "quote": "The majority sank quickly, but some which whilst green floated for a very short time, when dried floated much longer; for instance, ripe hazel-nuts sank immediately, but when dried, they floated for 90 days and afterwards when planted they germinated; an asparagus plant with ripe berries floated for 23 days, when dried it floated for 85 days, and the seeds afterwards germinated: the ripe seeds of Helosciadium sank in two days, when dried they floated for above 90 days, and afterwards germinated.",
+          "matched": true
+        },
+        {
+          "assetId": "ast_907d8227-cbc3-45ba-8e2e-dd8a7d286c28",
+          "quote": "Altogether out of the 94 dried plants, 18 floated for above 28 days, and some of the 18 floated for a very much longer period.",
+          "matched": true
+        }
+      ],
+      "extracted": {
+        "fields": {
+          "实验植物总数": "94",
+          "漂浮超过28天的株数": "18",
+          "榛子干燥后漂浮天数": "90",
+          "芦笋干燥后漂浮天数": "85",
+          "Helosciadium干燥后漂浮天数": ">90",
+          "成熟榛子未干燥沉没": "立即",
+          "芦笋成熟浆果未干燥漂浮天数": "23",
+          "Helosciadium成熟种子未干燥沉没天数": "2",
+          "是否发芽": "发芽"
+        },
+        "units": [
+          "株",
+          "天"
+        ],
+        "conditions": [
+          "干燥的带成熟果实枝条",
+          "置于海水（sea water）"
+        ]
+      },
+      "scope": "",
+      "interpretation": "绿色与干燥木材浮力不同，干燥可显著延长漂浮时间",
+      "unknowns": [
+        "未写明实验温度、盐度、海水容器体积等具体条件",
+        "未写明94种植物的种类清单"
+      ],
+      "secondaryCitation": false,
+      "audit": "confirm",
+      "importance": null,
+      "note": "",
+      "reason": "",
+      "extraction": "ai",
+      "mechanical": false,
+      "revision": 2,
+      "history": [
+        {
+          "revision": 2,
+          "at": "2026-11-20T07:43:10.018Z",
+          "field": "audit",
+          "before": "unreviewed",
+          "after": "confirm",
+          "reason": ""
+        }
+      ],
+      "createdAt": "2026-11-20T07:42:24.159Z",
+      "updatedAt": "2026-11-20T07:43:10.018Z"
+    },
+    {
+      "id": "card_709a3cb3-589b-4e54-bf52-38b080eaa180",
+      "assetId": "ast_907d8227-cbc3-45ba-8e2e-dd8a7d286c28",
+      "paperId": "paper_a4936b8e-f895-4f57-99ee-19c834a365d5",
+      "kind": "data",
+      "rawText": "M. Martens 的对照实验：将98粒种子（多为与达尔文不同者）装入盒子放入真实海水中，使其交替浸湿与暴露于空气，模拟真实漂浮植物；结果漂浮42天后仍具发芽能力。",
+      "locator": {
+        "sectionQuote": "he placed the seeds in a box in the actual sea, so that they were alternately wet and exposed to the air like really flo"
+      },
+      "spans": [
+        {
+          "assetId": "ast_907d8227-cbc3-45ba-8e2e-dd8a7d286c28",
+          "quote": "he placed the seeds in a box in the actual sea, so that they were alternately wet and exposed to the air like really floating plants.",
+          "matched": true
+        },
+        {
+          "assetId": "ast_907d8227-cbc3-45ba-8e2e-dd8a7d286c28",
+          "quote": "He tried 98 seeds, mostly different from mine",
+          "matched": true
+        },
+        {
+          "assetId": "ast_907d8227-cbc3-45ba-8e2e-dd8a7d286c28",
+          "quote": "The result was that of his seeds floated for 42 days, and were then capable of germination.",
+          "matched": true
+        }
+      ],
+      "extracted": {
+        "fields": {
+          "种子数量": "98",
+          "漂浮天数": "42",
+          "漂浮后是否发芽": "具备发芽能力",
+          "实验装置": "盒子置于真实海水中",
+          "干湿交替": "是"
+        },
+        "units": [
+          "粒",
+          "天"
+        ],
+        "conditions": [
+          "真实海水中",
+          "交替浸湿与暴露于空气",
+          "未预先干燥（on the other hand he did not previously dry the plants or branches with the fruit）"
+        ]
+      },
+      "scope": "",
+      "interpretation": "",
+      "unknowns": [
+        "原文该句数字缺失（'of his seeds floated for 42 days'），实际参与计数的种子数不明",
+        "未写明海水盐度、地点与观察起止条件"
+      ],
+      "secondaryCitation": false,
+      "audit": "unreviewed",
+      "importance": null,
+      "note": "",
+      "reason": "",
+      "extraction": "ai",
+      "mechanical": false,
+      "revision": 1,
+      "history": [],
+      "createdAt": "2026-11-20T07:42:24.159Z",
+      "updatedAt": "2026-11-20T07:42:24.159Z"
+    },
+    {
+      "id": "card_8abc19d0-2813-4d0e-a0b0-87ab2fff76c7",
+      "assetId": "ast_907d8227-cbc3-45ba-8e2e-dd8a7d286c28",
+      "paperId": "paper_a4936b8e-f895-4f57-99ee-19c834a365d5",
+      "kind": "idea",
+      "rawText": "方法改进思路：M. Martens 用真实海水中干湿交替的盒子实验，被作者评价为比原实验更好；同时作者指出其两项偏倚（选大型果实与近海植物、未预先干燥）会分别延长和缩短漂浮时间，而波浪中的植物漂浮时间可能短于受保护的实验条件。",
+      "locator": {
+        "sectionQuote": "Subsequently to my experiments, M. Martens tried similar ones, but in a much better manner"
+      },
+      "spans": [
+        {
+          "assetId": "ast_907d8227-cbc3-45ba-8e2e-dd8a7d286c28",
+          "quote": "Subsequently to my experiments, M. Martens tried similar ones, but in a much better manner",
+          "matched": true
+        },
+        {
+          "assetId": "ast_907d8227-cbc3-45ba-8e2e-dd8a7d286c28",
+          "quote": "he chose many large fruits and likewise seeds from plants which live near the sea; and this would have favoured the average length of their flotation and of their resistance to the injurious action of the salt-water.",
+          "matched": true
+        },
+        {
+          "assetId": "ast_907d8227-cbc3-45ba-8e2e-dd8a7d286c28",
+          "quote": "On the other hand he did not previously dry the plants or branches with the fruit; and this, as we have seen, would have caused some of them to have floated much longer.",
+          "matched": true
+        },
+        {
+          "assetId": "ast_907d8227-cbc3-45ba-8e2e-dd8a7d286c28",
+          "quote": "But I do not doubt that plants exposed to the waves would float for a less time than those protected from violent movement as in our experiments.",
+          "matched": true
+        }
+      ],
+      "extracted": {
+        "fields": {
+          "更优方法": "种子装盒置于真实海水中，交替浸湿与暴露空气",
+          "偏倚1": "选择大型果实与近海植物→利于延长漂浮与耐盐",
+          "偏倚2": "未预先干燥→本应使部分漂浮更久",
+          "野外修正": "受波浪冲击的植物漂浮时间短于受保护的实验"
+        },
+        "units": [],
+        "conditions": [
+          "真实海水",
+          "波浪冲击",
+          "预先干燥与否"
+        ]
+      },
+      "scope": "",
+      "interpretation": "实验条件（干燥与否、是否受波浪扰动、材料选择）会系统性改变漂浮时长估计",
+      "unknowns": [
+        "未量化波浪条件下的漂浮时间折扣"
+      ],
+      "secondaryCitation": false,
+      "audit": "unreviewed",
+      "importance": null,
+      "note": "",
+      "reason": "",
+      "extraction": "ai",
+      "mechanical": false,
+      "revision": 1,
+      "history": [],
+      "createdAt": "2026-11-20T07:42:24.159Z",
+      "updatedAt": "2026-11-20T07:42:24.159Z"
+    }
+  ],
+  "tables": [
+    {
+      "id": "tbl_3c626067-1f9e-41f0-a168-00ebba478810",
+      "assetId": "ast_46e6463a-a10b-4c85-9d3d-b38ab2bf1dd0",
+      "name": "darwin-flotation.csv",
+      "columns": [
+        "item",
+        "fresh_float_days",
+        "dried_float_days",
+        "germinated_after",
+        "note",
+        "source_page"
+      ],
+      "rows": [
+        [
+          "ripe hazel-nuts",
+          "0(sank immediately)",
+          "90",
+          "yes",
+          "dried then planted",
+          "371"
+        ],
+        [
+          "asparagus plant with ripe berries",
+          "23",
+          "85",
+          "yes",
+          "seeds afterwards germinated",
+          "371"
+        ],
+        [
+          "Helosciadium (ripe seeds)",
+          "2(sank)",
+          ">90",
+          "yes",
+          "afterwards germinated",
+          "371"
+        ],
+        [
+          "dried stems and branches of 94 plants with ripe fruit",
+          "-",
+          "-",
+          "-",
+          "majority sank quickly; some dried floated much longer",
+          "371"
+        ],
+        [
+          "peas and vetches",
+          "few days immersion",
+          "-",
+          "no",
+          "killed by even a few days' immersion in sea-water",
+          "373"
+        ],
+        [
+          "seeds from crop of a pigeon (artificial salt-water)",
+          "30",
+          "-",
+          "nearly all",
+          "after 30 days in artificial salt-water",
+          "373"
+        ],
+        [
+          "irregularly shaped stones in tree roots (enclosed earth)",
+          "-",
+          "-",
+          "yes",
+          "three dicotyledonous plants germinated (oak about 50 years old)",
+          "373"
+        ]
+      ],
+      "columnMeta": [
+        {
+          "name": "item",
+          "unit": "",
+          "decision": "unreviewed"
+        },
+        {
+          "name": "fresh_float_days",
+          "unit": "",
+          "decision": "unreviewed"
+        },
+        {
+          "name": "dried_float_days",
+          "unit": "",
+          "decision": "unreviewed"
+        },
+        {
+          "name": "germinated_after",
+          "unit": "",
+          "decision": "unreviewed"
+        },
+        {
+          "name": "note",
+          "unit": "",
+          "decision": "unreviewed"
+        },
+        {
+          "name": "source_page",
+          "unit": "",
+          "decision": "unreviewed"
+        }
+      ],
+      "markerRows": [],
+      "origin": "reconstructed",
+      "note": "",
+      "revision": 1,
+      "history": [],
+      "createdAt": "2026-11-20T07:09:09.547Z",
+      "updatedAt": "2026-11-20T07:09:09.547Z"
+    },
+    {
+      "id": "tbl_ac0c7cf6-b11d-47a8-bd67-414b7d240ebc",
+      "assetId": "ast_400c4531-aae6-4e31-a510-3bbac7ede6c1",
+      "name": "darwin-dispersal-estimates.csv",
+      "columns": [
+        "estimate",
+        "value",
+        "condition",
+        "source_page"
+      ],
+      "rows": [
+        [
+          "seeds of smaller plants floated across sea",
+          "14/100 plants could float 924 miles",
+          "on Darwin's average",
+          "372"
+        ],
+        [
+          "Martens' sea trials",
+          "18/98 seeds floated 42 days and were then capable of germination",
+          "seeds placed in a box in the actual sea (alternately wet and exposed to air)",
+          "372"
+        ],
+        [
+          "caveat recorded by author",
+          "plants exposed to waves would float for a less time than those protected from violent movement",
+          "author's own caveat — estimate may need revision",
+          "372"
+        ]
+      ],
+      "columnMeta": [
+        {
+          "name": "estimate",
+          "unit": "",
+          "decision": "unreviewed"
+        },
+        {
+          "name": "value",
+          "unit": "",
+          "decision": "unreviewed"
+        },
+        {
+          "name": "condition",
+          "unit": "",
+          "decision": "unreviewed"
+        },
+        {
+          "name": "source_page",
+          "unit": "",
+          "decision": "unreviewed"
+        }
+      ],
+      "markerRows": [],
+      "origin": "reconstructed",
+      "note": "",
+      "revision": 1,
+      "history": [],
+      "createdAt": "2026-11-20T07:09:09.547Z",
+      "updatedAt": "2026-11-20T07:09:09.547Z"
+    }
+  ],
+  "adoptions": [],
+  "mappings": [],
+  "comparisons": [],
+  "templates": [],
+  "protocols": [
+    {
+      "id": "proto_2b4f1e2f-92f4-4503-99d0-0990a3fd907e",
+      "topicId": "topic_f6bff443-3f74-4677-810d-0c15c7d06bf0",
+      "name": "海水浸泡萌发试验（干燥 vs 新鲜）",
+      "sourceKind": "reconstructed",
+      "sourceAssetId": "ast_907d8227-cbc3-45ba-8e2e-dd8a7d286c28",
+      "revision": 1,
+      "revisions": [
+        {
+          "revision": 1,
+          "at": "2026-11-20T07:09:09.544Z",
+          "reason": "创建",
+          "purpose": "比较新鲜与干燥茎枝/果实在海水中的漂浮时长与浸后萌发（按达尔文 1859 原文重构，非本地实测方案）",
+          "inputs": [],
+          "steps": [
+            {
+              "id": "s1",
+              "op": "采集 94 种带熟果的茎枝与果实",
+              "params": {},
+              "note": "",
+              "durationMin": null,
+              "estimated": false,
+              "durationSource": "unknown",
+              "amount": null,
+              "ratePerMin": null,
+              "slackMin": null,
+              "branch": null,
+              "branchFrom": null,
+              "mergeInto": null,
+              "observeEnd": ""
+            },
+            {
+              "id": "s2",
+              "op": "干燥部分茎枝（保留新鲜组作对照）",
+              "params": {},
+              "note": "",
+              "durationMin": null,
+              "estimated": false,
+              "durationSource": "unknown",
+              "amount": null,
+              "ratePerMin": null,
+              "slackMin": null,
+              "branch": null,
+              "branchFrom": null,
+              "mergeInto": null,
+              "observeEnd": ""
+            },
+            {
+              "id": "s3",
+              "op": "置于海水浸泡并计时",
+              "params": {},
+              "note": "盐度/温度原文未写明",
+              "durationMin": null,
+              "estimated": false,
+              "durationSource": "unknown",
+              "amount": null,
+              "ratePerMin": null,
+              "slackMin": null,
+              "branch": null,
+              "branchFrom": null,
+              "mergeInto": null,
+              "observeEnd": ""
+            },
+            {
+              "id": "s4",
+              "op": "取出后种植并观察萌发",
+              "params": {},
+              "note": "",
+              "durationMin": null,
+              "estimated": false,
+              "durationSource": "unknown",
+              "amount": null,
+              "ratePerMin": null,
+              "slackMin": null,
+              "branch": null,
+              "branchFrom": null,
+              "mergeInto": null,
+              "observeEnd": "记录是否萌发"
+            }
+          ],
+          "conditions": [],
+          "criteria": "记录漂浮天数（新鲜 vs 干燥）与浸后是否萌发；未量化条件明示未知",
+          "unknowns": [
+            "海水盐度未写明",
+            "温度未写明",
+            "浸泡容器未写明"
+          ],
+          "sourceFragments": []
+        }
+      ],
+      "createdAt": "2026-11-20T07:09:09.545Z",
+      "updatedAt": "2026-11-20T07:09:09.544Z"
+    }
+  ],
+  "executions": [
+    {
+      "id": "exec_8eddd772-b298-42eb-b8b6-6f114bd27b3f",
+      "topicId": "topic_f6bff443-3f74-4677-810d-0c15c7d06bf0",
+      "protocolId": "proto_2b4f1e2f-92f4-4503-99d0-0990a3fd907e",
+      "protocolRevision": 1,
+      "phase": "recording",
+      "preparation": {
+        "baseRevision": 1,
+        "adjustments": [
+          {
+            "stepId": "s3",
+            "field": "note",
+            "before": "盐度/温度原文未写明",
+            "after": "海水（盐度/温度未写明）",
+            "reason": "原文未量化，明示缺项，不补造"
+          }
+        ],
+        "notes": "浸泡条件缺量化；计时口径：新鲜 vs 干燥对照。",
+        "snapshot": {
+          "revision": 1,
+          "at": "2026-11-20T07:09:09.545Z",
+          "reason": "本次执行确认快照（基础 r1 ＋ 1 条本次差异）",
+          "purpose": "比较新鲜与干燥茎枝/果实在海水中的漂浮时长与浸后萌发（按达尔文 1859 原文重构，非本地实测方案）",
+          "inputs": [],
+          "steps": [
+            {
+              "id": "s1",
+              "op": "采集 94 种带熟果的茎枝与果实",
+              "params": {},
+              "note": "",
+              "durationMin": null,
+              "estimated": false,
+              "durationSource": "unknown",
+              "amount": null,
+              "ratePerMin": null,
+              "slackMin": null,
+              "branch": null,
+              "branchFrom": null,
+              "mergeInto": null,
+              "observeEnd": ""
+            },
+            {
+              "id": "s2",
+              "op": "干燥部分茎枝（保留新鲜组作对照）",
+              "params": {},
+              "note": "",
+              "durationMin": null,
+              "estimated": false,
+              "durationSource": "unknown",
+              "amount": null,
+              "ratePerMin": null,
+              "slackMin": null,
+              "branch": null,
+              "branchFrom": null,
+              "mergeInto": null,
+              "observeEnd": ""
+            },
+            {
+              "id": "s3",
+              "op": "置于海水浸泡并计时",
+              "params": {},
+              "note": "海水（盐度/温度未写明）",
+              "durationMin": null,
+              "estimated": false,
+              "durationSource": "unknown",
+              "amount": null,
+              "ratePerMin": null,
+              "slackMin": null,
+              "branch": null,
+              "branchFrom": null,
+              "mergeInto": null,
+              "observeEnd": ""
+            },
+            {
+              "id": "s4",
+              "op": "取出后种植并观察萌发",
+              "params": {},
+              "note": "",
+              "durationMin": null,
+              "estimated": false,
+              "durationSource": "unknown",
+              "amount": null,
+              "ratePerMin": null,
+              "slackMin": null,
+              "branch": null,
+              "branchFrom": null,
+              "mergeInto": null,
+              "observeEnd": "记录是否萌发"
+            }
+          ],
+          "conditions": [],
+          "criteria": "记录漂浮天数（新鲜 vs 干燥）与浸后是否萌发；未量化条件明示未知",
+          "unknowns": [
+            "海水盐度未写明",
+            "温度未写明",
+            "浸泡容器未写明"
+          ],
+          "sourceFragments": []
+        },
+        "confirmedAt": "2026-11-20T07:09:09.545Z"
+      },
+      "status": "active",
+      "origin": "reconstructed",
+      "sourceAssetId": "ast_907d8227-cbc3-45ba-8e2e-dd8a7d286c28",
+      "events": [
+        {
+          "id": "ev_69ebad29-ee46-46e3-9b39-545a78c88388",
+          "at": "2026-11-20T07:09:09.545Z",
+          "recordedAt": "2026-11-20T07:09:09.545Z",
+          "backfilled": true,
+          "kind": "note",
+          "text": "本执行为历史文献重构（达尔文 1859 第十一章）：非本地实际实验，事件与数值均为原文陈述的补记。",
+          "actual": {},
+          "revision": 1,
+          "history": []
+        },
+        {
+          "id": "ev_42dd4d4c-e5a5-4bbf-97d0-d950653781b9",
+          "at": "2026-11-20T07:09:09.545Z",
+          "recordedAt": "2026-11-20T07:09:09.545Z",
+          "backfilled": true,
+          "kind": "start",
+          "text": "文献重构补记：干燥茎枝与对照置于海水（原文叙述）",
+          "actual": {},
+          "revision": 1,
+          "history": []
+        },
+        {
+          "id": "ev_3df58c58-28a5-4d2e-b04d-11604fe60cc9",
+          "at": "2026-11-20T07:09:09.545Z",
+          "recordedAt": "2026-11-20T07:09:09.545Z",
+          "backfilled": true,
+          "kind": "step",
+          "stepId": "s3",
+          "text": "文献重构补记：浸泡计时（漂浮天数为原文陈述）",
+          "actual": {},
+          "revision": 1,
+          "history": []
+        },
+        {
+          "id": "ev_b81ffd4a-7a7c-4c87-97e9-f1eadd3806b3",
+          "at": "2026-11-20T07:09:09.545Z",
+          "recordedAt": "2026-11-20T07:09:09.545Z",
+          "backfilled": true,
+          "kind": "note",
+          "text": "缺项：海水盐度/温度未写明；容器未写明。",
+          "actual": {},
+          "revision": 1,
+          "history": []
+        }
+      ],
+      "createdAt": "2026-11-20T07:09:09.545Z",
+      "updatedAt": "2026-11-20T07:09:09.545Z"
+    }
+  ],
+  "samples": [
+    {
+      "id": "smp_efeed827-56a0-4c7c-8a36-e67b82cb0bbb",
+      "topicId": "topic_f6bff443-3f74-4677-810d-0c15c7d06bf0",
+      "executionId": "exec_8eddd772-b298-42eb-b8b6-6f114bd27b3f",
+      "shortName": "SEA-94",
+      "displayName": "SEA-94",
+      "origin": "reconstructed",
+      "states": [
+        {
+          "revision": 1,
+          "at": "2026-11-20T07:09:09.546Z",
+          "amount": {
+            "value": "94",
+            "unit": "plants",
+            "estimated": false
+          },
+          "handling": "",
+          "use": "",
+          "note": "原文所述 94 种植物的文献重构样品，非本地样品"
+        }
+      ],
+      "createdAt": "2026-11-20T07:09:09.546Z"
+    }
+  ],
+  "measurements": [
+    {
+      "id": "meas_28204d07-e9ec-4f56-8404-6c873a07c0e8",
+      "topicId": "topic_f6bff443-3f74-4677-810d-0c15c7d06bf0",
+      "sampleId": "smp_efeed827-56a0-4c7c-8a36-e67b82cb0bbb",
+      "sampleStateRevision": 1,
+      "time": "2026-11-20T07:09:09.546Z",
+      "method": "干燥后浸泡-种植（原文陈述）",
+      "instrument": "",
+      "value": "90",
+      "unit": "days",
+      "origin": "reconstructed",
+      "note": "榛子（干燥）漂浮天数：达尔文 1859 原文陈述，非本地测量",
+      "revision": 1,
+      "history": [],
+      "createdAt": "2026-11-20T07:09:09.546Z"
+    },
+    {
+      "id": "meas_1ec52121-7eb1-40ee-a804-b8e10ce7d88b",
+      "topicId": "topic_f6bff443-3f74-4677-810d-0c15c7d06bf0",
+      "sampleId": "smp_efeed827-56a0-4c7c-8a36-e67b82cb0bbb",
+      "sampleStateRevision": 1,
+      "time": "2026-11-20T07:09:09.546Z",
+      "method": "干燥后浸泡-种植（原文陈述）",
+      "instrument": "",
+      "value": "85",
+      "unit": "days",
+      "origin": "reconstructed",
+      "note": "芦笋（干燥）漂浮天数：达尔文 1859 原文陈述，非本地测量",
+      "revision": 1,
+      "history": [],
+      "createdAt": "2026-11-20T07:09:09.546Z"
+    }
+  ],
+  "impacts": [],
+  "ocrs": [],
+  "analysisTasks": [
+    {
+      "id": "atask_9cf2587e-9818-447d-9f63-9111eb090fa8",
+      "topicId": "topic_f6bff443-3f74-4677-810d-0c15c7d06bf0",
+      "subquestionId": "subq_744874b8-3948-4514-bfd6-87a8a16dd8ae",
+      "title": "传播量级与漂浮时长（干燥 vs 新鲜）",
+      "core": [
+        {
+          "kind": "table",
+          "id": "tbl_3c626067-1f9e-41f0-a168-00ebba478810"
+        },
+        {
+          "kind": "measurement",
+          "id": "meas_28204d07-e9ec-4f56-8404-6c873a07c0e8"
+        }
+      ],
+      "optional": [
+        {
+          "ref": {
+            "kind": "card",
+            "id": "card_cfa0372e-18bb-4aa2-9606-8a140780c598"
+          },
+          "included": true
+        },
+        {
+          "ref": {
+            "kind": "card",
+            "id": "card_7012e88a-b06a-4b57-8d00-ba0bdbae1386"
+          },
+          "included": true
+        },
+        {
+          "ref": {
+            "kind": "card",
+            "id": "card_a56d5514-401c-44a5-a19e-3006ddcec46a"
+          },
+          "included": true
+        }
+      ],
+      "resultIds": [
+        "ares_806d9047-755c-4d33-bf22-4d8b77da8cad"
+      ],
+      "createdAt": "2026-11-20T07:09:09.548Z",
+      "updatedAt": "2026-11-20T07:09:09.548Z"
+    }
+  ],
+  "analysisResults": [
+    {
+      "id": "ares_806d9047-755c-4d33-bf22-4d8b77da8cad",
+      "taskId": "atask_9cf2587e-9818-447d-9f63-9111eb090fa8",
+      "topicId": "topic_f6bff443-3f74-4677-810d-0c15c7d06bf0",
+      "method": "表格统计（按新鲜/干燥分组）",
+      "params": "分组口径见所附 CSV；浸泡天数取原文陈述",
+      "reason": "",
+      "note": "逐物件漂浮与萌发事实汇总（历史文献重构：数值为达尔文 1859 原文陈述，非本地实测）",
+      "assetIds": [
+        "ast_951ceed0-b2ee-437c-97cf-4698d1ed95ef"
+      ],
+      "reproducible": true,
+      "missing": [],
+      "adoptedRecommendation": "",
+      "revision": 1,
+      "history": [],
+      "createdAt": "2026-11-20T07:09:09.548Z",
+      "updatedAt": "2026-11-20T07:09:09.548Z"
+    }
+  ],
+  "reports": [
+    {
+      "id": "rep_f69e24f7-e4d7-4097-ab26-0ff74e165170",
+      "topicId": "topic_f6bff443-3f74-4677-810d-0c15c7d06bf0",
+      "taskId": "atask_9cf2587e-9818-447d-9f63-9111eb090fa8",
+      "pinned": {
+        "taskId": "atask_9cf2587e-9818-447d-9f63-9111eb090fa8",
+        "resultIds": [
+          "ares_806d9047-755c-4d33-bf22-4d8b77da8cad"
+        ]
+      },
+      "blocks": [
+        {
+          "id": "rblk_3ad9837a-4e28-43f8-b44a-b7e4f1467367",
+          "order": 0,
+          "nature": "to_verify",
+          "text": "反证与修正：马滕斯实测 18/98 漂 42 天可萌发；作者自述海浪条件下漂浮应更短 → 传播估计或需下修，本解释待复核。",
+          "refs": [
+            {
+              "kind": "card",
+              "id": "card_7012e88a-b06a-4b57-8d00-ba0bdbae1386",
+              "version": "核对",
+              "label": "证据卡·马滕斯实测"
+            },
+            {
+              "kind": "card",
+              "id": "card_a56d5514-401c-44a5-a19e-3006ddcec46a",
+              "version": "核对",
+              "label": "证据卡·作者修正意见"
+            }
+          ],
+          "draft": false,
+          "history": []
+        },
+        {
+          "id": "rblk_0d95f9d5-b406-48bf-990d-2b5b6880cf07",
+          "order": 1,
+          "nature": "observation",
+          "text": "干燥显著延长漂浮时长：榛子 0→90 天、芦笋 23→85 天、Helosciadium 2→>90 天（浸后均萌发）。（复核：天数为原文陈述，非本次实测）",
+          "refs": [
+            {
+              "kind": "result",
+              "id": "ares_806d9047-755c-4d33-bf22-4d8b77da8cad",
+              "version": "rev 1",
+              "label": "表格统计"
+            }
+          ],
+          "draft": false,
+          "history": [
+            {
+              "at": "2026-11-20T07:09:09.549Z",
+              "reason": "新证据（马滕斯/海浪条件）→ 复核：待验证提前并加注",
+              "text": "干燥显著延长漂浮时长：榛子 0→90 天、芦笋 23→85 天、Helosciadium 2→>90 天（浸后均萌发）。",
+              "nature": "observation"
+            }
+          ]
+        },
+        {
+          "id": "rblk_47930fa1-f0f2-42bb-bc33-37f26a075625",
+          "order": 2,
+          "nature": "observation",
+          "text": "94 株干燥植物中 18 株漂浮 >28 天；作者据此推断约 14/100 植物种子可经海流漂 28 天并保持萌发。",
+          "refs": [
+            {
+              "kind": "card",
+              "id": "card_cfa0372e-18bb-4aa2-9606-8a140780c598",
+              "version": "核对",
+              "label": "证据卡·作者推断"
+            }
+          ],
+          "draft": false,
+          "history": []
+        },
+        {
+          "id": "rblk_d7cd8c53-ae04-405a-a046-af9692272e9f",
+          "order": 3,
+          "nature": "human_judgment",
+          "text": "据此，海流可为部分跨海传播提供可行途径（人工判断，非测量结论）。",
+          "refs": [
+            {
+              "kind": "result",
+              "id": "ares_806d9047-755c-4d33-bf22-4d8b77da8cad",
+              "version": "rev 1",
+              "label": "表格统计"
+            }
+          ],
+          "draft": false,
+          "history": []
+        }
+      ],
+      "revision": 3,
+      "history": [
+        {
+          "revision": 1,
+          "at": "2026-11-20T07:09:09.548Z",
+          "reason": "首稿：观察/判断/待复核分列",
+          "blocks": []
+        },
+        {
+          "revision": 2,
+          "at": "2026-11-20T07:09:09.549Z",
+          "reason": "新证据（马滕斯/海浪条件）→ 复核：待验证提前并加注",
+          "blocks": [
+            {
+              "id": "rblk_0d95f9d5-b406-48bf-990d-2b5b6880cf07",
+              "order": 0,
+              "nature": "observation",
+              "text": "干燥显著延长漂浮时长：榛子 0→90 天、芦笋 23→85 天、Helosciadium 2→>90 天（浸后均萌发）。",
+              "refs": [
+                {
+                  "kind": "result",
+                  "id": "ares_806d9047-755c-4d33-bf22-4d8b77da8cad",
+                  "version": "rev 1",
+                  "label": "表格统计"
+                }
+              ],
+              "draft": false,
+              "history": []
+            },
+            {
+              "id": "rblk_47930fa1-f0f2-42bb-bc33-37f26a075625",
+              "order": 1,
+              "nature": "observation",
+              "text": "94 株干燥植物中 18 株漂浮 >28 天；作者据此推断约 14/100 植物种子可经海流漂 28 天并保持萌发。",
+              "refs": [
+                {
+                  "kind": "card",
+                  "id": "card_cfa0372e-18bb-4aa2-9606-8a140780c598",
+                  "version": "核对",
+                  "label": "证据卡·作者推断"
+                }
+              ],
+              "draft": false,
+              "history": []
+            },
+            {
+              "id": "rblk_d7cd8c53-ae04-405a-a046-af9692272e9f",
+              "order": 2,
+              "nature": "human_judgment",
+              "text": "据此，海流可为部分跨海传播提供可行途径（人工判断，非测量结论）。",
+              "refs": [
+                {
+                  "kind": "result",
+                  "id": "ares_806d9047-755c-4d33-bf22-4d8b77da8cad",
+                  "version": "rev 1",
+                  "label": "表格统计"
+                }
+              ],
+              "draft": false,
+              "history": []
+            },
+            {
+              "id": "rblk_3ad9837a-4e28-43f8-b44a-b7e4f1467367",
+              "order": 3,
+              "nature": "to_verify",
+              "text": "反证与修正：马滕斯实测 18/98 漂 42 天可萌发；作者自述海浪条件下漂浮应更短 → 传播估计或需下修，本解释待复核。",
+              "refs": [
+                {
+                  "kind": "card",
+                  "id": "card_7012e88a-b06a-4b57-8d00-ba0bdbae1386",
+                  "version": "核对",
+                  "label": "证据卡·马滕斯实测"
+                },
+                {
+                  "kind": "card",
+                  "id": "card_a56d5514-401c-44a5-a19e-3006ddcec46a",
+                  "version": "核对",
+                  "label": "证据卡·作者修正意见"
+                }
+              ],
+              "draft": false,
+              "history": []
+            }
+          ]
+        }
+      ],
+      "createdAt": "2026-11-20T07:09:09.548Z",
+      "updatedAt": "2026-11-20T07:09:09.549Z"
+    }
+  ],
+  "chats": [
+    {
+      "id": "chat_4df55716-afe9-40c6-a408-8584c38e9c34",
+      "topicId": "topic_f6bff443-3f74-4677-810d-0c15c7d06bf0",
+      "scope": [
+        {
+          "kind": "card",
+          "id": "card_8a4e4db2-5ada-42f8-a1fd-6fbcff8a4ae7"
+        },
+        {
+          "kind": "card",
+          "id": "card_cfa623de-2b0f-44b8-8096-5ae1a3b7d8ae"
+        },
+        {
+          "kind": "card",
+          "id": "card_a24884fb-3af2-4b41-b094-28e0937aa72d"
+        },
+        {
+          "kind": "card",
+          "id": "card_cfa0372e-18bb-4aa2-9606-8a140780c598"
+        },
+        {
+          "kind": "card",
+          "id": "card_7012e88a-b06a-4b57-8d00-ba0bdbae1386"
+        },
+        {
+          "kind": "card",
+          "id": "card_a56d5514-401c-44a5-a19e-3006ddcec46a"
+        },
+        {
+          "kind": "card",
+          "id": "card_5e9e8544-e19e-4584-8eec-07844d961dc7"
+        },
+        {
+          "kind": "card",
+          "id": "card_b2405e44-467f-46d7-ada5-a31b7c2fa3a1"
+        }
+      ],
+      "messages": [
+        {
+          "id": "msg_6d7aa3bd-af85-42f5-81a1-c2c62705012a",
+          "role": "user",
+          "content": "你好",
+          "status": "done",
+          "proposals": [],
+          "sources": [],
+          "at": "2026-11-20T07:45:28.122Z"
+        },
+        {
+          "id": "msg_7e4b340b-f08d-43d0-a1a7-b5470792ba95",
+          "role": "assistant",
+          "content": "你好！我已载入该课题的冻结上下文（达尔文 1859 种子海水漂流萌发，8 个已选对象，碎片 hash c311daf7…）。可以开始讨论，例如：漂浮时长与萌发力的证据梳理、干燥处理对浮力的影响、作者推断与实测数据的区分等。请提出你的问题。",
+          "status": "done",
+          "proposals": [],
+          "sources": [
+            "碎片 1",
+            "碎片 2",
+            "碎片 3",
+            "碎片 4",
+            "碎片 5",
+            "碎片 6",
+            "碎片 7",
+            "碎片 8"
+          ],
+          "at": "2026-11-20T07:45:28.122Z",
+          "snapshot": {
+            "at": "2026-11-20T07:45:28.125Z",
+            "purpose": "你好",
+            "model": "mimo-v2.6-flash",
+            "promptVersion": "context_chat/v1",
+            "summary": "课题「种子经海水漂流后的萌发（达尔文 1859）」对话 · 显式选取 8 个对象",
+            "hash": "c311daf7b4985c582b9d3c7e996aed6fc7e26bf19b8a1d7703fb9a511aa95458",
+            "fragments": [
+              {
+                "ref": {
+                  "kind": "card",
+                  "id": "card_8a4e4db2-5ada-42f8-a1fd-6fbcff8a4ae7"
+                },
+                "label": "知识卡 · 干燥后榛子漂浮 90 天，随后种植萌发（新鲜时立即下沉）。",
+                "version": "核对 confirm",
+                "excerpt": "干燥后榛子漂浮 90 天，随后种植萌发（新鲜时立即下沉）。"
+              },
+              {
+                "ref": {
+                  "kind": "card",
+                  "id": "card_cfa623de-2b0f-44b8-8096-5ae1a3b7d8ae"
+                },
+                "label": "知识卡 · 芦笋带熟果：新鲜漂 23 天；干燥后 85 天，种子随后萌发。",
+                "version": "核对 confirm",
+                "excerpt": "芦笋带熟果：新鲜漂 23 天；干燥后 85 天，种子随后萌发。"
+              },
+              {
+                "ref": {
+                  "kind": "card",
+                  "id": "card_a24884fb-3af2-4b41-b094-28e0937aa72d"
+                },
+                "label": "知识卡 · Helosciadium 熟种：2 天沉；干燥后漂浮 >90 天，随后萌发。",
+                "version": "核对 confirm",
+                "excerpt": "Helosciadium 熟种：2 天沉；干燥后漂浮 >90 天，随后萌发。"
+              },
+              {
+                "ref": {
+                  "kind": "card",
+                  "id": "card_cfa0372e-18bb-4aa2-9606-8a140780c598"
+                },
+                "label": "知识卡 · 作者据稀少事实推断：约 14/100 植物种子可经海流漂 28 天并保持萌发力（",
+                "version": "核对 confirm",
+                "excerpt": "作者据稀少事实推断：约 14/100 植物种子可经海流漂 28 天并保持萌发力（推断，非测量）。"
+              },
+              {
+                "ref": {
+                  "kind": "card",
+                  "id": "card_7012e88a-b06a-4b57-8d00-ba0bdbae1386"
+                },
+                "label": "知识卡 · 马滕斯在真实海水实测：98 粒中 18 粒漂浮 42 天且仍能萌发（干湿交替）。",
+                "version": "核对 confirm",
+                "excerpt": "马滕斯在真实海水实测：98 粒中 18 粒漂浮 42 天且仍能萌发（干湿交替）。"
+              },
+              {
+                "ref": {
+                  "kind": "card",
+                  "id": "card_a56d5514-401c-44a5-a19e-3006ddcec46a"
+                },
+                "label": "知识卡 · 作者自述：暴露于海浪者漂浮时间应短于静水实验 → 传播估计或需下修。",
+                "version": "核对 confirm",
+                "excerpt": "作者自述：暴露于海浪者漂浮时间应短于静水实验 → 传播估计或需下修。"
+              },
+              {
+                "ref": {
+                  "kind": "card",
+                  "id": "card_5e9e8544-e19e-4584-8eec-07844d961dc7"
+                },
+                "label": "知识卡 · 鸽嗉囊中的种子在人工海水漂浮 30 天，取出后几乎全部萌发。",
+                "version": "核对 confirm",
+                "excerpt": "鸽嗉囊中的种子在人工海水漂浮 30 天，取出后几乎全部萌发。"
+              },
+              {
+                "ref": {
+                  "kind": "card",
+                  "id": "card_b2405e44-467f-46d7-ada5-a31b7c2fa3a1"
+                },
+                "label": "知识卡 · 干燥处理对种子/果实漂浮时间的影响：94株带成熟果实的植物枝条干燥后置于海水中，",
+                "version": "核对 confirm",
+                "excerpt": "干燥处理对种子/果实漂浮时间的影响：94株带成熟果实的植物枝条干燥后置于海水中，其中18株漂浮超过28天；成熟榛子未干燥时立即下沉、干燥后漂浮90天且种植后发芽；芦笋成熟浆果未干燥漂浮23天、干燥后漂浮85天且发芽；Helosciadium成熟种子2天沉没、干燥后漂浮90天以上并随后发芽。\n作者解释：绿色与干燥木材浮力不同，干燥可显著延长漂浮时间"
+              }
+            ]
+          }
+        }
+      ],
+      "createdAt": "2026-11-20T07:43:25.819Z",
+      "updatedAt": "2026-11-20T07:45:33.136Z"
+    }
+  ],
+  "knowledge": {
+    "schemaVersion": 1,
+    "items": [],
+    "contexts": [],
+    "evidence": [],
+    "relations": [],
+    "themes": [],
+    "mappings": [],
+    "datasets": [],
+    "comparisons": [],
+    "sourcePolicies": [],
+    "extractionRuns": [],
+    "snapshots": [],
+    "sourceVersions": []
+  }
+}

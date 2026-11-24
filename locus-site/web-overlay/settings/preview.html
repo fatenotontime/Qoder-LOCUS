@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="paper">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>设置折扇 · 预览（开发自测，非发布物）</title>
+<meta name="locus-build-version" content="0.0.1-dev" />
+<link rel="stylesheet" href="/styles.css" />
+<link rel="stylesheet" href="./settings-fan.css" />
+<script>
+  // 自测用：在模块加载前预置存储值，模拟“评委机上的旧 tech / 减少动效偏好”
+  (function () {
+    window.__errs = [];
+    window.addEventListener("error", function (e) { window.__errs.push(String(e.message || e.error)); });
+    window.addEventListener("unhandledrejection", function (e) { window.__errs.push("unhandled: " + String(e.reason)); });
+    var q = new URLSearchParams(location.search);
+    try {
+      if (q.get("seedtech")) localStorage.setItem("locus.theme.v1", "tech");
+      if (q.get("seedmotion")) localStorage.setItem("locus.motion.v1", q.get("seedmotion"));
+      if (q.get("seeddensity")) localStorage.setItem("locus.density.v1", q.get("seeddensity"));
+      if (q.get("seedfont")) localStorage.setItem("locus.fontsize.v1", q.get("seedfont"));
+      if (q.get("seedtech")) document.documentElement.dataset.theme = "tech";
+    } catch (e) {}
+  })();
+</script>
+<style>
+  .preview-spine { position: fixed; left: 0; top: 0; bottom: 0; width: 96px; background: var(--surface-2); border-right: 1px solid var(--line); z-index: 1; }
+  .preview-left { position: fixed; left: 96px; bottom: 0; width: 260px; z-index: 2; }
+  .preview-left .leftfoot { background: var(--surface); }
+  @media (max-width: 900px) { .preview-spine { display: none; } .preview-left { left: 0; right: 0; width: auto; } }
+  .preview-mark { position: fixed; right: 14px; top: 12px; color: var(--muted); font-size: 12px; z-index: 3; }
+</style>
+</head>
+<body>
+  <div class="preview-spine" aria-hidden="true"></div>
+  <div class="preview-mark">设置折扇 · 预览</div>
+  <div class="preview-left">
+    <div class="leftfoot">
+      <button id="settings-open" class="modelbtn" type="button">设置 <span class="hint" id="ai-state">已配置 · demo-model</span></button>
+    </div>
+  </div>
+
+  <script type="module">
+    import "./settings-fan.js";
+
+    const q = new URLSearchParams(location.search);
+    if (q.get("still")) {
+      const s = document.createElement("style");
+      s.textContent = "*{transition:none!important;animation:none!important}";
+      document.head.appendChild(s);
+    }
+    if (q.get("tab")) window.LocusSettings?.setTab(q.get("tab"));
+    if (q.get("open")) window.LocusSettings?.open(q.get("open"));
+
+    if (q.get("debug")) {
+      setTimeout(() => {
+        const fan = document.querySelector("#settings-fan");
+        const cs = fan ? getComputedStyle(fan) : null;
+        const btn = document.querySelector("#settings-open");
+        const glyph = document.querySelector("#settings-open .settings-glyph");
+        const info = {
+          viewport: [innerWidth, innerHeight],
+          ready: document.documentElement.dataset.settingsFan,
+          hidden: fan?.hidden,
+          cls: fan?.className,
+          sheet: fan?.dataset.fanSheet,
+          rect: fan ? [fan.getBoundingClientRect().left, fan.getBoundingClientRect().top, fan.getBoundingClientRect().width, fan.getBoundingClientRect().height] : null,
+          S: cs?.getPropertyValue("--S"),
+          px: cs?.getPropertyValue("--px"),
+          py: cs?.getPropertyValue("--py"),
+          a: cs?.getPropertyValue("--locus-fan-a"),
+          background: cs?.backgroundColor,
+          btnRect: btn ? [btn.getBoundingClientRect().left, btn.getBoundingClientRect().top, btn.getBoundingClientRect().width, btn.getBoundingClientRect().height] : null,
+          glyph: !!glyph,
+          errs: window.__errs,
+        };
+        const pre = document.createElement("pre");
+        pre.style.cssText = "position:fixed;left:8px;top:8px;z-index:9999;background:rgba(255,255,255,.94);border:1px solid #333;padding:8px;font:11px/1.4 monospace;white-space:pre-wrap;max-width:640px";
+        pre.textContent = JSON.stringify(info, null, 1);
+        document.body.appendChild(pre);
+      }, 900);
+    }
+
+    // DOM 级自测：返回逐项断言结果（供无头浏览器 / browser-use 读取）
+    window.__fanSelfTest = function () {
+      const out = [];
+      const ok = (name, cond, extra) => out.push({ name, pass: !!cond, extra: extra ?? "" });
+      const $ = (s) => document.querySelector(s);
+      const fan = $("#settings-fan");
+      const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+
+      return (async () => {
+        // 1) 入口打开（模拟指针点击：先聚焦再点击）
+        window.LocusSettings.close();
+        await wait(450);
+        $("#settings-open").focus();
+        $("#settings-open").click();
+        await wait(60);
+        ok("open.visible", fan && !fan.hidden);
+        ok("open.is-open", fan?.classList.contains("is-open"));
+        ok("open.aria-expanded", $("#settings-open").getAttribute("aria-expanded") === "true");
+        ok("open.focus-in-fan", fan?.contains(document.activeElement));
+        ok("open.scrim-on", document.querySelector(".settings-fan-scrim")?.classList.contains("is-on"));
+        ok("open.glyph", !!$("#settings-open .settings-glyph"));
+
+        // 2) 切分区
+        fan.querySelector('[data-fan-tab="about"]').click();
+        ok("tab.about", fan.querySelector('[data-fan-panel="about"]')?.hidden === false);
+        ok("tab.current", fan.querySelector('[data-fan-tab="about"]').getAttribute("aria-current") === "true");
+        fan.querySelector('[data-fan-tab="appearance"]').click();
+
+        // 3) 开合取消过期计时：关闭后立刻重开，不应被旧计时关掉
+        window.LocusSettings.close();
+        await wait(40);
+        window.LocusSettings.open("appearance");
+        await wait(500);
+        ok("reopen.alive", fan && !fan.hidden, "关闭后 40ms 重开，500ms 后仍打开");
+
+        // 4) Tab 焦点循环
+        const items = [...fan.querySelectorAll('button:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])')]
+          .filter((el) => el.getClientRects().length);
+        items[items.length - 1].focus();
+        document.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab", bubbles: true }));
+        ok("tabtrap.wrap-forward", document.activeElement === items[0]);
+        items[0].focus();
+        document.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab", shiftKey: true, bubbles: true }));
+        ok("tabtrap.wrap-back", document.activeElement === items[items.length - 1]);
+
+        // 5) 遮罩关闭 + 焦点归还
+        document.querySelector(".settings-fan-scrim").click();
+        await wait(450);
+        ok("scrim.close-hidden", fan.hidden);
+        ok("scrim.focus-return", document.activeElement === $("#settings-open"));
+
+        // 6) Esc 关闭（同样经入口打开）
+        $("#settings-open").focus();
+        $("#settings-open").click();
+        await wait(60);
+        document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+        await wait(450);
+        ok("esc.close-hidden", fan.hidden);
+
+        // 7) 外观偏好：写入并立即生效
+        const seg = fan.querySelector('[data-density-seg] button[data-v="compact"]');
+        window.LocusSettings.open("appearance");
+        await wait(60);
+        seg.click();
+        ok("prefs.density-attr", document.documentElement.dataset.density === "compact");
+        ok("prefs.density-stored", (() => { try { return localStorage.getItem("locus.density.v1") === "compact"; } catch { return false; } })());
+        fan.querySelector('[data-fontsize-seg] button[data-v="lg"]').click();
+        ok("prefs.fontsize-attr", document.documentElement.dataset.fontsize === "lg");
+        const sw = fan.querySelector("[data-motion-switch]");
+        const before = sw.getAttribute("aria-checked");
+        sw.click();
+        ok("prefs.motion-toggle", sw.getAttribute("aria-checked") !== before);
+        ok("prefs.motion-attr", document.documentElement.dataset.motion === "reduced" || document.documentElement.dataset.motion === "full");
+
+        // 8) 暖色固定：无论存储里是否有 tech，加载后都是 paper，且不覆写存储
+        ok("theme.forced-paper", document.documentElement.dataset.theme === "paper");
+        ok("theme.storage-untouched", (() => {
+          try { return localStorage.getItem("locus.theme.v1") !== "paper" || !new URLSearchParams(location.search).get("seedtech"); } catch { return false; }
+        })(), "seedtech 时存储应仍是 tech");
+        const hint = fan.querySelector("[data-motion-hint]");
+        ok("motion.ui-synced", sw.getAttribute("aria-checked") === String(!(document.documentElement.dataset.motion === "reduced")));
+        ok("motion.hint", !!hint?.textContent, hint?.textContent);
+
+        window.LocusSettings.close();
+        return out;
+      })();
+    };
+  </script>
+</body>
+</html>

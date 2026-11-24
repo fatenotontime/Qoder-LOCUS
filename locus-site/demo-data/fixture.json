@@ -1,0 +1,130 @@
+{
+  "schemaVersion": 1,
+  "fixtureVersion": "s08-a-fixture-1",
+  "sourceCommit": "8120986",
+  "projectId": "topic_f6bff443-3f74-4677-810d-0c15c7d06bf0",
+  "generatedAt": "2026-11-24T00:00:00.000Z",
+  "note": "A→B 贯通夹具（最小接线样本）。字段值与对象 ID 取自真实验收运行（acceptance-darwin），只保留最小闭环；正式内容见 snapshot/。此文件可随正式导出替换。",
+  "readPaths": {
+    "wholeState": "GET /api/state（返回同一 state 对象；本站公开版由 B 的只读适配按同形返回本文件）",
+    "sourceView": "GET /api/source/{assetId} → sourceView(state, assetId)",
+    "backtrace": "GET /api/backtrace?kind={kind}&id={id}&dir=both",
+    "contextMap": "GET /api/analysis/map?topicId={topicId}&taskId={taskId}",
+    "knowledgeItem": "GET /api/knowledge/items/{id}?revision={n}（正式库路径；夹具提供简化 kitem 供 B 适配）"
+  },
+  "topic": {
+    "id": "topic_f6bff443-3f74-4677-810d-0c15c7d06bf0",
+    "name": "种子经海水漂流后的萌发（达尔文 1859）",
+    "researchQuestion": "种子能否经海水漂流后仍萌发，从而跨海传播？"
+  },
+  "nav": {
+    "literature": { "kind": "paper", "id": "paper_a4936b8e-f895-4f57-99ee-19c834a365d5" },
+    "kernel_plan": { "kind": "protocol", "id": "proto_2b4f1e2f-92f4-4503-99d0-0990a3fd907e" },
+    "kernel_execution": { "kind": "execution", "id": "exec_8eddd772-b298-42eb-b8b6-6f114bd27b3f" },
+    "analysis": { "kind": "analysisTask", "id": "atask_9cf2587e-9818-447d-9f63-9111eb090fa8" },
+    "report": { "kind": "report", "id": "rep_f69e24f7-e4d7-4097-ab26-0ff74e165170" }
+  },
+  "chainA_literatureToKnowledge": {
+    "paper": {
+      "id": "paper_a4936b8e-f895-4f57-99ee-19c834a365d5",
+      "title": "On the Origin of Species（1859）· 第十一章 地理分布",
+      "authors": ["Charles Darwin"],
+      "year": "1859",
+      "source": "Wikisource 影印（扫描索引页 371–373 = 书页 359–361）",
+      "license": "Public Domain",
+      "revision": 1
+    },
+    "original": {
+      "assetId": "ast_907d8227-cbc3-45ba-8e2e-dd8a7d286c28",
+      "kind": "literature",
+      "name": "origin-1859-p371-373.md",
+      "bytes": 5644,
+      "sha256": "7f639fdc900eaee2b90ebad3ef69bbffcd7ca9a14d01ecceb803b9214fbf5c62",
+      "file": "originals/origin-1859-p371-373.md",
+      "locator": {
+        "djvuIndexPage": 371,
+        "printedBookPage": 359,
+        "quote": "ripe hazel-nuts sank immediately, but when dried, they floated for 90 days and afterwards when planted they germinated",
+        "precision": "段落级（逐字引文可回查；页码含扫描索引页与书页两套编号）"
+      }
+    },
+    "attachment": {
+      "id": "att_2cbd1126-3258-4d61-a877-4e5da0abeab6",
+      "paperId": "paper_a4936b8e-f895-4f57-99ee-19c834a365d5",
+      "assetId": "ast_907d8227-cbc3-45ba-8e2e-dd8a7d286c28",
+      "role": "fulltext",
+      "version": "v1"
+    },
+    "card": {
+      "id": "card_8a4e4db2-5ada-42f8-a1fd-6fbcff8a4ae7",
+      "paperId": "paper_a4936b8e-f895-4f57-99ee-19c834a365d5",
+      "assetId": "ast_907d8227-cbc3-45ba-8e2e-dd8a7d286c28",
+      "audit": "confirm",
+      "extraction": "manual",
+      "importance": "high",
+      "revision": 2,
+      "locator": {
+        "sectionQuote": "ripe hazel-nuts sank immediately, but when dried, they floated for 90 days and afterwards when planted they germinated"
+      },
+      "extracted": {
+        "fields": { "对象": "榛子", "新鲜": "0", "干燥": "90", "萌发": "是" },
+        "units": [],
+        "conditions": ["海水浸泡"]
+      },
+      "unknowns": []
+    },
+    "knowledgeItem": {
+      "id": "kitem_card_8a4e4db2",
+      "cardId": "card_8a4e4db2-5ada-42f8-a1fd-6fbcff8a4ae7",
+      "revision": 1,
+      "status": "confirmed",
+      "sourceRefs": [
+        { "kind": "card", "id": "card_8a4e4db2-5ada-42f8-a1fd-6fbcff8a4ae7", "revision": 2 },
+        { "kind": "asset", "id": "ast_907d8227-cbc3-45ba-8e2e-dd8a7d286c28" },
+        { "kind": "paper", "id": "paper_a4936b8e-f895-4f57-99ee-19c834a365d5", "revision": 1 }
+      ],
+      "note": "夹具用简化知识条目：把「卡片→知识条目」的关系显式化。正式库为 state.knowledge.items（见 snapshot/state.json 的 knowledge 命名空间）。"
+    }
+  },
+  "chainB_resultToOriginal": {
+    "result": {
+      "id": "ares_806d9047-755c-4d33-bf22-4d8b77da8cad",
+      "taskId": "atask_9cf2587e-9818-447d-9f63-9111eb090fa8",
+      "method": "表格统计（按新鲜/干燥分组）",
+      "revision": 1,
+      "assetIds": ["ast_951ceed0-b2ee-437c-97cf-4698d1ed95ef"]
+    },
+    "processingSample": {
+      "measurementId": "meas_28204d07-e9ec-4f56-8404-6c873a07c0e8",
+      "sampleId": "smp_efeed827-56a0-4c7c-8a36-e67b82cb0bbb",
+      "sampleStateRevision": 1,
+      "value": "90",
+      "unit": "days",
+      "origin": "reconstructed",
+      "note": "榛子（干燥）漂浮天数：原文陈述，非本地测量"
+    },
+    "tableRow": {
+      "tableId": "tbl_3c626067-1f9e-41f0-a168-00ebba478810",
+      "revision": 1,
+      "rowIndex": 0,
+      "row": ["ripe hazel-nuts", "0(sank immediately)", "90", "yes", "dried then planted", "371"],
+      "columns": ["item", "fresh_float_days", "dried_float_days", "germinated_after", "note", "source_page"]
+    },
+    "execution": {
+      "id": "exec_8eddd772-b298-42eb-b8b6-6f114bd27b3f",
+      "protocolId": "proto_2b4f1e2f-92f4-4503-99d0-0990a3fd907e",
+      "protocolRevision": 1,
+      "phase": "recording",
+      "origin": "reconstructed",
+      "note": "文献重构补记，非本地实测执行"
+    },
+    "original": {
+      "assetId": "ast_46e6463a-a10b-4c85-9d3d-b38ab2bf1dd0",
+      "kind": "measurement",
+      "name": "darwin-flotation.csv",
+      "bytes": 739,
+      "sha256": "ebdc1366ebbdc7b6d87487b41b56199596347729f10c65063b476baa9c5a067a",
+      "file": "originals/data/darwin-flotation.csv"
+    }
+  }
+}

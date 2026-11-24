@@ -1,0 +1,356 @@
+/* LOCUS 设置折扇 · 公开版（宣纸固定）
+   交接组件样式：几何与材质取自《设置页折扇_原型.html》v2，仅保留暖色（paper）。
+   包含三部分：
+   1) 外观偏好令牌（字号 / 疏密 / 减少动效）——全站生效的 CSS 钩子
+   2) 折扇与底部抽屉（窄屏 / 矮视口降级）
+   3) 左栏入口小扇图标
+   不包含任何 [data-theme="tech"] 规则；公开版不加载冷色。 */
+
+/* ── 1. 外观偏好令牌 ───────────────────────────────────── */
+html[data-density="compact"] {
+  --space-1: 3px;
+  --space-2: 6px;
+  --space-3: 9px;
+  --space-4: 12px;
+  --space-5: 18px;
+  --space-6: 24px;
+}
+html[data-fontsize="sm"] {
+  --text-sm: 12px;
+  --text: 13px;
+  --text-lg: 16.5px;
+}
+html[data-fontsize="lg"] {
+  --text-sm: 14.5px;
+  --text: 15.7px;
+  --text-lg: 20px;
+}
+
+/* ── 2. 左栏入口小扇 ───────────────────────────────────── */
+#settings-open {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+#settings-open .settings-glyph {
+  display: inline-flex;
+  flex: none;
+  transition: transform .24s;
+}
+#settings-open .hint {
+  margin-left: auto;
+  float: none;
+}
+#settings-open[aria-expanded="true"] .settings-glyph {
+  transform: rotate(18deg);
+}
+
+/* ── 3. 折扇 ───────────────────────────────────────────── */
+@property --locus-fan-a {
+  syntax: "<angle>";
+  inherits: true;
+  initial-value: 0deg;
+}
+
+.settings-fan {
+  /* 宣纸折扇材质（取自原型 v2 的 paper 取值） */
+  --fan-rib-a: #d3b585;
+  --fan-rib-b: #a9824f;
+  --fan-rib-line: rgba(110, 72, 34, .55);
+  --fan-rib-hi: rgba(255, 244, 214, .55);
+  --fan-silk-a: #fbf5ea;
+  --fan-silk-b: #efe3cc;
+  --fan-silk-grain: rgba(140, 90, 50, .06);
+  --fan-silk-edge: rgba(138, 106, 69, .55);
+  --fan-silk-alpha: .95;
+  --fan-rivet: var(--seal, #a63f2e);
+  --fan-rivet-ring: #8a6a45;
+  --fan-shadow: drop-shadow(0 16px 30px rgba(90, 60, 30, .22));
+  --fan-tag: #f6ecd8;
+  --fan-tag-line: #c9b28d;
+
+  --S: min(100dvh, 94vw, 900px);
+  --px: 28px;
+  --py: 33px;
+  position: fixed;
+  z-index: 120;
+  left: calc(var(--px) - var(--S) * 40 / 760);
+  bottom: calc(var(--py) - var(--S) * 40 / 760);
+  width: var(--S);
+  height: var(--S);
+  pointer-events: none;
+  --locus-fan-a: 0deg;
+  transition: --locus-fan-a .36s cubic-bezier(.22, .9, .24, 1);
+}
+.settings-fan[hidden] { display: none !important; }
+.settings-fan.is-open { --locus-fan-a: 88deg; }
+
+.settings-fan svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+.settings-fan .fan-art { filter: var(--fan-shadow); }
+.settings-fan .fan-ribs g,
+.settings-fan .fan-silk path { pointer-events: visiblePainted; }
+
+.settings-fan .fan-rib {
+  transform-box: view-box;
+  transform-origin: 40px 720px;
+  transform: rotate(var(--fold));
+  transition: transform .34s cubic-bezier(.22, .9, .24, 1) calc(var(--k) * 12ms);
+}
+.settings-fan.is-open .fan-rib { transform: rotate(0deg); }
+
+.settings-fan .fan-silk-svg {
+  -webkit-mask-image: conic-gradient(from 0deg at 5.263% 94.737%, #000 0 var(--locus-fan-a), transparent var(--locus-fan-a));
+  mask-image: conic-gradient(from 0deg at 5.263% 94.737%, #000 0 var(--locus-fan-a), transparent var(--locus-fan-a));
+}
+.settings-fan .rib-blade { fill: url(#locus-fan-rib-grad); stroke: var(--fan-rib-line); stroke-width: .8; }
+.settings-fan .rib-hi { stroke: var(--fan-rib-hi); stroke-width: .9; fill: none; }
+.settings-fan .fan-rivet .core { fill: var(--fan-rivet); }
+.settings-fan .fan-rivet .ring { fill: none; stroke: var(--fan-rivet-ring); stroke-width: 2; }
+.settings-fan .rib-a { stop-color: var(--fan-rib-a); }
+.settings-fan .rib-b { stop-color: var(--fan-rib-b); }
+.settings-fan .silk-a { stop-color: var(--fan-silk-a); }
+.settings-fan .silk-b { stop-color: var(--fan-silk-b); }
+.settings-fan .fan-silk .silk { fill: url(#locus-fan-silk-grad); fill-opacity: var(--fan-silk-alpha); }
+.settings-fan .fan-silk .grain { fill: url(#locus-fan-silk-grain); }
+.settings-fan .fan-silk .edge { fill: none; stroke: var(--fan-silk-edge); stroke-width: 1.4; }
+.settings-fan .fan-silk .fold { fill: none; stroke: var(--fan-silk-edge); stroke-width: .8; opacity: .16; }
+.settings-fan .fan-silk .edge2 { fill: none; stroke: var(--fan-silk-edge); stroke-width: .7; opacity: .55; }
+
+/* HTML 层：位置按 760 箱体换算为百分比（v2 §2.3） */
+.settings-fan .fan-ui {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  transform: translateY(6px);
+  transition: opacity .2s ease-out, transform .2s ease-out;
+}
+.settings-fan.is-open .fan-ui {
+  opacity: 1;
+  transform: none;
+  transition-delay: .26s;
+}
+.settings-fan .fan-content {
+  position: absolute;
+  pointer-events: auto;
+  left: 14.21%;
+  top: 33.16%;
+  right: 38.42%;
+  bottom: 26.84%;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.settings-fan .fan-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--line-soft, rgba(112, 86, 55, .18));
+}
+.settings-fan .fan-title {
+  font: 600 var(--text-lg, 18px)/1 var(--font-display, serif);
+  letter-spacing: .18em;
+  color: var(--fg, #2b2520);
+}
+.settings-fan .fan-close {
+  background: transparent;
+  border: 0;
+  color: var(--muted, #796a58);
+  font-size: var(--text-sm, 13px);
+  padding: 2px 4px;
+  cursor: pointer;
+}
+.settings-fan .fan-close:hover { color: var(--seal, #a63f2e); }
+.settings-fan .fan-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: 6px 4px 4px 0;
+}
+.settings-fan .fan-panel[hidden] { display: none; }
+
+.settings-fan .fan-tabs { position: static; }
+.settings-fan .fan-tab {
+  position: absolute;
+  pointer-events: auto;
+  transform: translate(-50%, -50%);
+  padding: 5px 12px 5px 16px;
+  font: var(--text-sm, 13px)/1 var(--font-display, serif);
+  letter-spacing: .2em;
+  color: var(--fg, #2b2520);
+  background: var(--fan-tag);
+  border: 1px solid var(--fan-tag-line);
+  border-radius: 3px 12px 12px 3px;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background .15s, color .15s, margin .15s;
+}
+.settings-fan .fan-tab::before {
+  content: "";
+  position: absolute;
+  left: 5px;
+  top: 50%;
+  width: 4px;
+  height: 4px;
+  margin-top: -2px;
+  border-radius: 50%;
+  background: var(--fan-tag-line);
+}
+.settings-fan .fan-tab:hover { background: var(--hover, rgba(166, 63, 46, .06)); }
+.settings-fan .fan-tab[aria-current="true"] {
+  background: var(--seal, #a63f2e);
+  color: var(--accent-fg, #fff8ef);
+  border-color: var(--seal, #a63f2e);
+  margin-left: 8px;
+}
+.settings-fan .fan-tab[aria-current="true"]::before { background: var(--accent-fg, #fff8ef); opacity: .7; }
+
+.settings-fan .fan-field {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 0;
+  border-bottom: 1px dashed var(--line-soft, rgba(112, 86, 55, .18));
+}
+.settings-fan .fan-field:last-child { border-bottom: 0; }
+.settings-fan .fan-label { color: var(--fg, #2b2520); font-size: var(--text, 14px); }
+.settings-fan .f-hint { display: block; color: var(--muted, #796a58); font-size: 12px; }
+
+.settings-fan .seg {
+  display: inline-flex;
+  flex: none;
+  border: 1px solid var(--line, #d8c8b1);
+  border-radius: var(--radius-sm, 6px);
+  overflow: hidden;
+}
+.settings-fan .seg button {
+  border: 0;
+  background: transparent;
+  padding: 5px 11px;
+  font-size: var(--text-sm, 13px);
+  color: inherit;
+  cursor: pointer;
+}
+.settings-fan .seg button[aria-pressed="true"] {
+  background: var(--surface-active, #f0e1ca);
+  color: var(--accent, #a63f2e);
+}
+.settings-fan .switch {
+  position: relative;
+  flex: none;
+  width: 38px;
+  height: 21px;
+  border-radius: 999px;
+  border: 0;
+  background: var(--line, #d8c8b1);
+  cursor: pointer;
+}
+.settings-fan .switch::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 17px;
+  height: 17px;
+  border-radius: 50%;
+  background: #fff;
+  transition: left .18s;
+}
+.settings-fan .switch[aria-checked="true"] { background: var(--seal, #a63f2e); }
+.settings-fan .switch[aria-checked="true"]::after { left: 19px; }
+
+.settings-fan .fan-note { color: var(--muted, #796a58); font-size: 12px; margin: 2px 0 8px; }
+.settings-fan .fan-note-strong { color: var(--fg, #2b2520); font-size: var(--text-sm, 13px); letter-spacing: .06em; }
+.settings-fan .kv {
+  display: grid;
+  grid-template-columns: 4.5em 1fr;
+  gap: 4px 8px;
+  font-size: var(--text-sm, 13px);
+}
+.settings-fan .kv dt { color: var(--muted, #796a58); }
+.settings-fan .kv dd { margin: 0; word-break: break-all; }
+
+/* 底部抽屉的三段分区按钮（扇面题签的降级替身） */
+.settings-fan .sheet-tabs { display: none; gap: 6px; margin: 8px 0; }
+.settings-fan .sheet-tabs button {
+  flex: 1;
+  padding: 6px;
+  background: transparent;
+  border: 1px solid var(--line, #d8c8b1);
+  border-radius: var(--radius-sm, 6px);
+  font-size: var(--text-sm, 13px);
+  color: inherit;
+  cursor: pointer;
+}
+.settings-fan .sheet-tabs button[aria-current="true"] {
+  background: var(--seal, #a63f2e);
+  color: var(--accent-fg, #fff8ef);
+  border-color: var(--seal, #a63f2e);
+}
+
+/* 遮罩（独立于 app 的 #dialog-scrim，避免改动公共入口） */
+.settings-fan-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 110;
+  background: var(--scrim, rgba(60, 40, 20, .32));
+  backdrop-filter: blur(1px);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .24s;
+}
+.settings-fan-scrim[hidden] { display: none; }
+.settings-fan-scrim.is-on { opacity: 1; pointer-events: auto; }
+
+/* 现阶段的旧样式兜底：#ai-drawer 若尚未移除，不得盖住扇子 */
+.settings-fan[data-fan-sheet="true"] {
+  left: 0;
+  right: 0;
+  bottom: 0;
+  top: auto;
+  width: 100%;
+  height: min(86dvh, 680px);
+  border-radius: 16px 16px 0 0;
+  background: var(--surface, rgba(250, 245, 235, .96));
+  box-shadow: 0 -10px 30px rgba(0, 0, 0, .25);
+  pointer-events: auto;
+}
+.settings-fan[data-fan-sheet="true"] .fan-art,
+.settings-fan[data-fan-sheet="true"] .fan-silk-svg,
+.settings-fan[data-fan-sheet="true"] .fan-tabs { display: none; }
+.settings-fan[data-fan-sheet="true"] .fan-ui { opacity: 1; transform: none; }
+.settings-fan[data-fan-sheet="true"] .fan-content {
+  left: 16px;
+  right: 16px;
+  top: 16px;
+  bottom: 16px;
+}
+.settings-fan[data-fan-sheet="true"] .sheet-tabs { display: flex; }
+
+/* ── 4. 减少动效：OS 与应用内开关双通道 ─────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  .settings-fan .fan-rib,
+  .settings-fan .fan-silk-svg,
+  .settings-fan .fan-ui,
+  #settings-open .settings-glyph { transition: none !important; }
+  .settings-fan { --locus-fan-a: 88deg; }
+  .settings-fan .fan-rib { transform: rotate(0) !important; }
+  .settings-fan .fan-ui { transition: opacity .12s !important; transform: none; }
+  .settings-fan-scrim { transition: none !important; }
+}
+html[data-motion="reduced"] .settings-fan .fan-rib,
+html[data-motion="reduced"] .settings-fan .fan-silk-svg,
+html[data-motion="reduced"] .settings-fan .fan-ui,
+html[data-motion="reduced"] #settings-open .settings-glyph { transition: none !important; }
+html[data-motion="reduced"] .settings-fan { --locus-fan-a: 88deg; }
+html[data-motion="reduced"] .settings-fan .fan-rib { transform: rotate(0) !important; }
+html[data-motion="reduced"] .settings-fan .fan-ui { transition: opacity .12s !important; transform: none; }
+html[data-motion="reduced"] .settings-fan-scrim { transition: none !important; }

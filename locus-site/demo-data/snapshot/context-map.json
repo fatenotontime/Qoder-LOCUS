@@ -1,0 +1,712 @@
+{
+  "note": "上下文地图由 buildContextMap(state) 真实生成（非手绘）。mapTask=分析任务现有选择；mapPre=建任务前按 pick 推导。",
+  "mapTask": {
+    "ok": true,
+    "scope": {
+      "topicId": "topic_f6bff443-3f74-4677-810d-0c15c7d06bf0",
+      "taskId": "atask_9cf2587e-9818-447d-9f63-9111eb090fa8",
+      "frozen": false
+    },
+    "nodes": [
+      {
+        "key": "asset:ast_46e6463a-a10b-4c85-9d3d-b38ab2bf1dd0",
+        "kind": "asset",
+        "id": "ast_46e6463a-a10b-4c85-9d3d-b38ab2bf1dd0",
+        "label": "darwin-flotation.csv",
+        "role": "context",
+        "selectable": false,
+        "gaps": []
+      },
+      {
+        "key": "asset:ast_907d8227-cbc3-45ba-8e2e-dd8a7d286c28",
+        "kind": "asset",
+        "id": "ast_907d8227-cbc3-45ba-8e2e-dd8a7d286c28",
+        "label": "origin-1859-p371-373.md",
+        "role": "context",
+        "selectable": false,
+        "gaps": []
+      },
+      {
+        "key": "attachment:att_2cbd1126-3258-4d61-a877-4e5da0abeab6",
+        "kind": "attachment",
+        "id": "att_2cbd1126-3258-4d61-a877-4e5da0abeab6",
+        "label": "附件 · 正文",
+        "version": "v1",
+        "role": "context",
+        "selectable": false,
+        "gaps": []
+      },
+      {
+        "key": "card:card_7012e88a-b06a-4b57-8d00-ba0bdbae1386",
+        "kind": "card",
+        "id": "card_7012e88a-b06a-4b57-8d00-ba0bdbae1386",
+        "label": "马滕斯在真实海水实测：98 粒中 18 粒漂浮 42 天且仍",
+        "version": "核对 已确认",
+        "role": "selected",
+        "selectable": true,
+        "gaps": []
+      },
+      {
+        "key": "card:card_a56d5514-401c-44a5-a19e-3006ddcec46a",
+        "kind": "card",
+        "id": "card_a56d5514-401c-44a5-a19e-3006ddcec46a",
+        "label": "作者自述：暴露于海浪者漂浮时间应短于静水实验 → 传播估计或",
+        "version": "核对 已确认",
+        "role": "selected",
+        "selectable": true,
+        "gaps": []
+      },
+      {
+        "key": "card:card_cfa0372e-18bb-4aa2-9606-8a140780c598",
+        "kind": "card",
+        "id": "card_cfa0372e-18bb-4aa2-9606-8a140780c598",
+        "label": "作者据稀少事实推断：约 14/100 植物种子可经海流漂 2",
+        "version": "核对 已确认",
+        "role": "selected",
+        "selectable": true,
+        "gaps": []
+      },
+      {
+        "key": "execution:exec_8eddd772-b298-42eb-b8b6-6f114bd27b3f",
+        "kind": "execution",
+        "id": "exec_8eddd772-b298-42eb-b8b6-6f114bd27b3f",
+        "label": "执行 · 第1版（文献重构）",
+        "version": "进行中",
+        "role": "context",
+        "selectable": false,
+        "gaps": [
+          {
+            "code": "pending",
+            "label": "历史文献重构（非本地实际实验；数值为原文陈述）"
+          }
+        ]
+      },
+      {
+        "key": "measurement:meas_28204d07-e9ec-4f56-8404-6c873a07c0e8",
+        "kind": "measurement",
+        "id": "meas_28204d07-e9ec-4f56-8404-6c873a07c0e8",
+        "label": "90 days（文献重构）",
+        "version": "样品状态 第1版 · 第1版",
+        "role": "core",
+        "selectable": false,
+        "gaps": []
+      },
+      {
+        "key": "paper:paper_a4936b8e-f895-4f57-99ee-19c834a365d5",
+        "kind": "paper",
+        "id": "paper_a4936b8e-f895-4f57-99ee-19c834a365d5",
+        "label": "On the Origin of Species（1859）· 第十一章 地理分布",
+        "version": "第1版",
+        "role": "context",
+        "selectable": false,
+        "gaps": []
+      },
+      {
+        "key": "protocol:proto_2b4f1e2f-92f4-4503-99d0-0990a3fd907e",
+        "kind": "protocol",
+        "id": "proto_2b4f1e2f-92f4-4503-99d0-0990a3fd907e",
+        "label": "海水浸泡萌发试验（干燥 vs 新鲜）",
+        "version": "第1版（重构）",
+        "role": "context",
+        "selectable": false,
+        "gaps": []
+      },
+      {
+        "key": "sample:smp_efeed827-56a0-4c7c-8a36-e67b82cb0bbb",
+        "kind": "sample",
+        "id": "smp_efeed827-56a0-4c7c-8a36-e67b82cb0bbb",
+        "label": "SEA-94（SEA-94）（文献重构）",
+        "version": "状态 1 条",
+        "role": "context",
+        "selectable": false,
+        "gaps": []
+      },
+      {
+        "key": "table:tbl_3c626067-1f9e-41f0-a168-00ebba478810",
+        "kind": "table",
+        "id": "tbl_3c626067-1f9e-41f0-a168-00ebba478810",
+        "label": "darwin-flotation.csv（文献重构）",
+        "version": "第1版",
+        "role": "core",
+        "selectable": false,
+        "gaps": []
+      },
+      {
+        "key": "topic:topic_f6bff443-3f74-4677-810d-0c15c7d06bf0",
+        "kind": "topic",
+        "id": "topic_f6bff443-3f74-4677-810d-0c15c7d06bf0",
+        "label": "种子经海水漂流后的萌发（达尔文 1859）",
+        "role": "context",
+        "selectable": false,
+        "gaps": []
+      }
+    ],
+    "edges": [
+      {
+        "from": "asset:ast_46e6463a-a10b-4c85-9d3d-b38ab2bf1dd0",
+        "to": "table:tbl_3c626067-1f9e-41f0-a168-00ebba478810",
+        "edgeKind": "provenance",
+        "establishedBy": "run"
+      },
+      {
+        "from": "asset:ast_907d8227-cbc3-45ba-8e2e-dd8a7d286c28",
+        "to": "card:card_7012e88a-b06a-4b57-8d00-ba0bdbae1386",
+        "edgeKind": "provenance",
+        "establishedBy": "human"
+      },
+      {
+        "from": "asset:ast_907d8227-cbc3-45ba-8e2e-dd8a7d286c28",
+        "to": "card:card_a56d5514-401c-44a5-a19e-3006ddcec46a",
+        "edgeKind": "provenance",
+        "establishedBy": "human"
+      },
+      {
+        "from": "asset:ast_907d8227-cbc3-45ba-8e2e-dd8a7d286c28",
+        "to": "card:card_cfa0372e-18bb-4aa2-9606-8a140780c598",
+        "edgeKind": "provenance",
+        "establishedBy": "human"
+      },
+      {
+        "from": "asset:ast_907d8227-cbc3-45ba-8e2e-dd8a7d286c28",
+        "to": "execution:exec_8eddd772-b298-42eb-b8b6-6f114bd27b3f",
+        "edgeKind": "provenance",
+        "establishedBy": "human",
+        "note": "重构执行的文献来源"
+      },
+      {
+        "from": "asset:ast_907d8227-cbc3-45ba-8e2e-dd8a7d286c28",
+        "to": "protocol:proto_2b4f1e2f-92f4-4503-99d0-0990a3fd907e",
+        "edgeKind": "provenance",
+        "establishedBy": "human",
+        "note": "由公开材料重构"
+      },
+      {
+        "from": "attachment:att_2cbd1126-3258-4d61-a877-4e5da0abeab6",
+        "to": "asset:ast_907d8227-cbc3-45ba-8e2e-dd8a7d286c28",
+        "edgeKind": "provenance",
+        "establishedBy": "human"
+      },
+      {
+        "from": "execution:exec_8eddd772-b298-42eb-b8b6-6f114bd27b3f",
+        "to": "sample:smp_efeed827-56a0-4c7c-8a36-e67b82cb0bbb",
+        "edgeKind": "provenance",
+        "establishedBy": "human"
+      },
+      {
+        "from": "paper:paper_a4936b8e-f895-4f57-99ee-19c834a365d5",
+        "to": "attachment:att_2cbd1126-3258-4d61-a877-4e5da0abeab6",
+        "edgeKind": "affiliation",
+        "establishedBy": "human"
+      },
+      {
+        "from": "paper:paper_a4936b8e-f895-4f57-99ee-19c834a365d5",
+        "to": "card:card_7012e88a-b06a-4b57-8d00-ba0bdbae1386",
+        "edgeKind": "affiliation",
+        "establishedBy": "human"
+      },
+      {
+        "from": "paper:paper_a4936b8e-f895-4f57-99ee-19c834a365d5",
+        "to": "card:card_a56d5514-401c-44a5-a19e-3006ddcec46a",
+        "edgeKind": "affiliation",
+        "establishedBy": "human"
+      },
+      {
+        "from": "paper:paper_a4936b8e-f895-4f57-99ee-19c834a365d5",
+        "to": "card:card_cfa0372e-18bb-4aa2-9606-8a140780c598",
+        "edgeKind": "affiliation",
+        "establishedBy": "human"
+      },
+      {
+        "from": "protocol:proto_2b4f1e2f-92f4-4503-99d0-0990a3fd907e",
+        "to": "execution:exec_8eddd772-b298-42eb-b8b6-6f114bd27b3f",
+        "edgeKind": "lineage",
+        "establishedBy": "human",
+        "note": "固定方案 r1（当前版）"
+      },
+      {
+        "from": "sample:smp_efeed827-56a0-4c7c-8a36-e67b82cb0bbb",
+        "to": "measurement:meas_28204d07-e9ec-4f56-8404-6c873a07c0e8",
+        "edgeKind": "lineage",
+        "establishedBy": "human"
+      },
+      {
+        "from": "topic:topic_f6bff443-3f74-4677-810d-0c15c7d06bf0",
+        "to": "execution:exec_8eddd772-b298-42eb-b8b6-6f114bd27b3f",
+        "edgeKind": "affiliation",
+        "establishedBy": "human"
+      },
+      {
+        "from": "topic:topic_f6bff443-3f74-4677-810d-0c15c7d06bf0",
+        "to": "paper:paper_a4936b8e-f895-4f57-99ee-19c834a365d5",
+        "edgeKind": "affiliation",
+        "establishedBy": "human"
+      },
+      {
+        "from": "topic:topic_f6bff443-3f74-4677-810d-0c15c7d06bf0",
+        "to": "protocol:proto_2b4f1e2f-92f4-4503-99d0-0990a3fd907e",
+        "edgeKind": "affiliation",
+        "establishedBy": "human"
+      },
+      {
+        "from": "topic:topic_f6bff443-3f74-4677-810d-0c15c7d06bf0",
+        "to": "sample:smp_efeed827-56a0-4c7c-8a36-e67b82cb0bbb",
+        "edgeKind": "affiliation",
+        "establishedBy": "human"
+      }
+    ],
+    "gaps": [
+      {
+        "key": "execution:exec_8eddd772-b298-42eb-b8b6-6f114bd27b3f",
+        "code": "pending",
+        "label": "历史文献重构（非本地实际实验；数值为原文陈述）"
+      }
+    ],
+    "truncated": false
+  },
+  "mapPre": {
+    "ok": true,
+    "scope": {
+      "topicId": "topic_f6bff443-3f74-4677-810d-0c15c7d06bf0",
+      "subquestionId": "subq_744874b8-3948-4514-bfd6-87a8a16dd8ae"
+    },
+    "nodes": [
+      {
+        "key": "asset:ast_400c4531-aae6-4e31-a510-3bbac7ede6c1",
+        "kind": "asset",
+        "id": "ast_400c4531-aae6-4e31-a510-3bbac7ede6c1",
+        "label": "darwin-dispersal-estimates.csv",
+        "role": "context",
+        "selectable": false,
+        "gaps": []
+      },
+      {
+        "key": "asset:ast_46e6463a-a10b-4c85-9d3d-b38ab2bf1dd0",
+        "kind": "asset",
+        "id": "ast_46e6463a-a10b-4c85-9d3d-b38ab2bf1dd0",
+        "label": "darwin-flotation.csv",
+        "role": "context",
+        "selectable": false,
+        "gaps": []
+      },
+      {
+        "key": "asset:ast_907d8227-cbc3-45ba-8e2e-dd8a7d286c28",
+        "kind": "asset",
+        "id": "ast_907d8227-cbc3-45ba-8e2e-dd8a7d286c28",
+        "label": "origin-1859-p371-373.md",
+        "role": "context",
+        "selectable": false,
+        "gaps": []
+      },
+      {
+        "key": "attachment:att_2cbd1126-3258-4d61-a877-4e5da0abeab6",
+        "kind": "attachment",
+        "id": "att_2cbd1126-3258-4d61-a877-4e5da0abeab6",
+        "label": "附件 · 正文",
+        "version": "v1",
+        "role": "context",
+        "selectable": false,
+        "gaps": []
+      },
+      {
+        "key": "card:card_5e9e8544-e19e-4584-8eec-07844d961dc7",
+        "kind": "card",
+        "id": "card_5e9e8544-e19e-4584-8eec-07844d961dc7",
+        "label": "鸽嗉囊中的种子在人工海水漂浮 30 天，取出后几乎全部萌发。",
+        "version": "核对 已确认",
+        "role": "selected",
+        "selectable": true,
+        "gaps": []
+      },
+      {
+        "key": "card:card_7012e88a-b06a-4b57-8d00-ba0bdbae1386",
+        "kind": "card",
+        "id": "card_7012e88a-b06a-4b57-8d00-ba0bdbae1386",
+        "label": "马滕斯在真实海水实测：98 粒中 18 粒漂浮 42 天且仍",
+        "version": "核对 已确认",
+        "role": "selected",
+        "selectable": true,
+        "gaps": []
+      },
+      {
+        "key": "card:card_8a4e4db2-5ada-42f8-a1fd-6fbcff8a4ae7",
+        "kind": "card",
+        "id": "card_8a4e4db2-5ada-42f8-a1fd-6fbcff8a4ae7",
+        "label": "干燥后榛子漂浮 90 天，随后种植萌发（新鲜时立即下沉）。",
+        "version": "核对 已确认",
+        "role": "selected",
+        "selectable": true,
+        "gaps": []
+      },
+      {
+        "key": "card:card_a24884fb-3af2-4b41-b094-28e0937aa72d",
+        "kind": "card",
+        "id": "card_a24884fb-3af2-4b41-b094-28e0937aa72d",
+        "label": "Helosciadium 熟种：2 天沉；干燥后漂浮 >90",
+        "version": "核对 已确认",
+        "role": "selected",
+        "selectable": true,
+        "gaps": []
+      },
+      {
+        "key": "card:card_a56d5514-401c-44a5-a19e-3006ddcec46a",
+        "kind": "card",
+        "id": "card_a56d5514-401c-44a5-a19e-3006ddcec46a",
+        "label": "作者自述：暴露于海浪者漂浮时间应短于静水实验 → 传播估计或",
+        "version": "核对 已确认",
+        "role": "selected",
+        "selectable": true,
+        "gaps": []
+      },
+      {
+        "key": "card:card_b2405e44-467f-46d7-ada5-a31b7c2fa3a1",
+        "kind": "card",
+        "id": "card_b2405e44-467f-46d7-ada5-a31b7c2fa3a1",
+        "label": "干燥处理对种子/果实漂浮时间的影响：94株带成熟果实的植物枝",
+        "version": "核对 已确认",
+        "role": "selected",
+        "selectable": true,
+        "gaps": []
+      },
+      {
+        "key": "card:card_cfa0372e-18bb-4aa2-9606-8a140780c598",
+        "kind": "card",
+        "id": "card_cfa0372e-18bb-4aa2-9606-8a140780c598",
+        "label": "作者据稀少事实推断：约 14/100 植物种子可经海流漂 2",
+        "version": "核对 已确认",
+        "role": "selected",
+        "selectable": true,
+        "gaps": []
+      },
+      {
+        "key": "card:card_cfa623de-2b0f-44b8-8096-5ae1a3b7d8ae",
+        "kind": "card",
+        "id": "card_cfa623de-2b0f-44b8-8096-5ae1a3b7d8ae",
+        "label": "芦笋带熟果：新鲜漂 23 天；干燥后 85 天，种子随后萌发",
+        "version": "核对 已确认",
+        "role": "selected",
+        "selectable": true,
+        "gaps": []
+      },
+      {
+        "key": "execution:exec_8eddd772-b298-42eb-b8b6-6f114bd27b3f",
+        "kind": "execution",
+        "id": "exec_8eddd772-b298-42eb-b8b6-6f114bd27b3f",
+        "label": "执行 · 第1版（文献重构）",
+        "version": "进行中",
+        "role": "core",
+        "selectable": false,
+        "gaps": [
+          {
+            "code": "pending",
+            "label": "历史文献重构（非本地实际实验；数值为原文陈述）"
+          }
+        ]
+      },
+      {
+        "key": "measurement:meas_1ec52121-7eb1-40ee-a804-b8e10ce7d88b",
+        "kind": "measurement",
+        "id": "meas_1ec52121-7eb1-40ee-a804-b8e10ce7d88b",
+        "label": "85 days（文献重构）",
+        "version": "样品状态 第1版 · 第1版",
+        "role": "optional",
+        "selectable": true,
+        "gaps": []
+      },
+      {
+        "key": "measurement:meas_28204d07-e9ec-4f56-8404-6c873a07c0e8",
+        "kind": "measurement",
+        "id": "meas_28204d07-e9ec-4f56-8404-6c873a07c0e8",
+        "label": "90 days（文献重构）",
+        "version": "样品状态 第1版 · 第1版",
+        "role": "core",
+        "selectable": false,
+        "gaps": []
+      },
+      {
+        "key": "paper:paper_a4936b8e-f895-4f57-99ee-19c834a365d5",
+        "kind": "paper",
+        "id": "paper_a4936b8e-f895-4f57-99ee-19c834a365d5",
+        "label": "On the Origin of Species（1859）· 第十一章 地理分布",
+        "version": "第1版",
+        "role": "context",
+        "selectable": false,
+        "gaps": []
+      },
+      {
+        "key": "protocol:proto_2b4f1e2f-92f4-4503-99d0-0990a3fd907e",
+        "kind": "protocol",
+        "id": "proto_2b4f1e2f-92f4-4503-99d0-0990a3fd907e",
+        "label": "海水浸泡萌发试验（干燥 vs 新鲜）",
+        "version": "第1版（重构）",
+        "role": "core",
+        "selectable": false,
+        "gaps": []
+      },
+      {
+        "key": "sample:smp_efeed827-56a0-4c7c-8a36-e67b82cb0bbb",
+        "kind": "sample",
+        "id": "smp_efeed827-56a0-4c7c-8a36-e67b82cb0bbb",
+        "label": "SEA-94（SEA-94）（文献重构）",
+        "version": "状态 1 条",
+        "role": "context",
+        "selectable": false,
+        "gaps": []
+      },
+      {
+        "key": "subquestion:subq_744874b8-3948-4514-bfd6-87a8a16dd8ae",
+        "kind": "subquestion",
+        "id": "subq_744874b8-3948-4514-bfd6-87a8a16dd8ae",
+        "label": "干燥与新鲜的漂浮时长差异如何？",
+        "role": "context",
+        "selectable": false,
+        "gaps": []
+      },
+      {
+        "key": "table:tbl_3c626067-1f9e-41f0-a168-00ebba478810",
+        "kind": "table",
+        "id": "tbl_3c626067-1f9e-41f0-a168-00ebba478810",
+        "label": "darwin-flotation.csv（文献重构）",
+        "version": "第1版",
+        "role": "core",
+        "selectable": false,
+        "gaps": []
+      },
+      {
+        "key": "table:tbl_ac0c7cf6-b11d-47a8-bd67-414b7d240ebc",
+        "kind": "table",
+        "id": "tbl_ac0c7cf6-b11d-47a8-bd67-414b7d240ebc",
+        "label": "darwin-dispersal-estimates.csv（文献重构）",
+        "version": "第1版",
+        "role": "optional",
+        "selectable": true,
+        "gaps": []
+      },
+      {
+        "key": "topic:topic_f6bff443-3f74-4677-810d-0c15c7d06bf0",
+        "kind": "topic",
+        "id": "topic_f6bff443-3f74-4677-810d-0c15c7d06bf0",
+        "label": "种子经海水漂流后的萌发（达尔文 1859）",
+        "role": "context",
+        "selectable": false,
+        "gaps": []
+      }
+    ],
+    "edges": [
+      {
+        "from": "asset:ast_400c4531-aae6-4e31-a510-3bbac7ede6c1",
+        "to": "table:tbl_ac0c7cf6-b11d-47a8-bd67-414b7d240ebc",
+        "edgeKind": "provenance",
+        "establishedBy": "run"
+      },
+      {
+        "from": "asset:ast_46e6463a-a10b-4c85-9d3d-b38ab2bf1dd0",
+        "to": "table:tbl_3c626067-1f9e-41f0-a168-00ebba478810",
+        "edgeKind": "provenance",
+        "establishedBy": "run"
+      },
+      {
+        "from": "asset:ast_907d8227-cbc3-45ba-8e2e-dd8a7d286c28",
+        "to": "card:card_5e9e8544-e19e-4584-8eec-07844d961dc7",
+        "edgeKind": "provenance",
+        "establishedBy": "human"
+      },
+      {
+        "from": "asset:ast_907d8227-cbc3-45ba-8e2e-dd8a7d286c28",
+        "to": "card:card_7012e88a-b06a-4b57-8d00-ba0bdbae1386",
+        "edgeKind": "provenance",
+        "establishedBy": "human"
+      },
+      {
+        "from": "asset:ast_907d8227-cbc3-45ba-8e2e-dd8a7d286c28",
+        "to": "card:card_8a4e4db2-5ada-42f8-a1fd-6fbcff8a4ae7",
+        "edgeKind": "provenance",
+        "establishedBy": "human"
+      },
+      {
+        "from": "asset:ast_907d8227-cbc3-45ba-8e2e-dd8a7d286c28",
+        "to": "card:card_a24884fb-3af2-4b41-b094-28e0937aa72d",
+        "edgeKind": "provenance",
+        "establishedBy": "human"
+      },
+      {
+        "from": "asset:ast_907d8227-cbc3-45ba-8e2e-dd8a7d286c28",
+        "to": "card:card_a56d5514-401c-44a5-a19e-3006ddcec46a",
+        "edgeKind": "provenance",
+        "establishedBy": "human"
+      },
+      {
+        "from": "asset:ast_907d8227-cbc3-45ba-8e2e-dd8a7d286c28",
+        "to": "card:card_b2405e44-467f-46d7-ada5-a31b7c2fa3a1",
+        "edgeKind": "provenance",
+        "establishedBy": "run"
+      },
+      {
+        "from": "asset:ast_907d8227-cbc3-45ba-8e2e-dd8a7d286c28",
+        "to": "card:card_b2405e44-467f-46d7-ada5-a31b7c2fa3a1",
+        "edgeKind": "provenance",
+        "establishedBy": "run"
+      },
+      {
+        "from": "asset:ast_907d8227-cbc3-45ba-8e2e-dd8a7d286c28",
+        "to": "card:card_b2405e44-467f-46d7-ada5-a31b7c2fa3a1",
+        "edgeKind": "provenance",
+        "establishedBy": "run"
+      },
+      {
+        "from": "asset:ast_907d8227-cbc3-45ba-8e2e-dd8a7d286c28",
+        "to": "card:card_b2405e44-467f-46d7-ada5-a31b7c2fa3a1",
+        "edgeKind": "provenance",
+        "establishedBy": "run"
+      },
+      {
+        "from": "asset:ast_907d8227-cbc3-45ba-8e2e-dd8a7d286c28",
+        "to": "card:card_cfa0372e-18bb-4aa2-9606-8a140780c598",
+        "edgeKind": "provenance",
+        "establishedBy": "human"
+      },
+      {
+        "from": "asset:ast_907d8227-cbc3-45ba-8e2e-dd8a7d286c28",
+        "to": "card:card_cfa623de-2b0f-44b8-8096-5ae1a3b7d8ae",
+        "edgeKind": "provenance",
+        "establishedBy": "human"
+      },
+      {
+        "from": "asset:ast_907d8227-cbc3-45ba-8e2e-dd8a7d286c28",
+        "to": "execution:exec_8eddd772-b298-42eb-b8b6-6f114bd27b3f",
+        "edgeKind": "provenance",
+        "establishedBy": "human",
+        "note": "重构执行的文献来源"
+      },
+      {
+        "from": "asset:ast_907d8227-cbc3-45ba-8e2e-dd8a7d286c28",
+        "to": "protocol:proto_2b4f1e2f-92f4-4503-99d0-0990a3fd907e",
+        "edgeKind": "provenance",
+        "establishedBy": "human",
+        "note": "由公开材料重构"
+      },
+      {
+        "from": "attachment:att_2cbd1126-3258-4d61-a877-4e5da0abeab6",
+        "to": "asset:ast_907d8227-cbc3-45ba-8e2e-dd8a7d286c28",
+        "edgeKind": "provenance",
+        "establishedBy": "human"
+      },
+      {
+        "from": "execution:exec_8eddd772-b298-42eb-b8b6-6f114bd27b3f",
+        "to": "sample:smp_efeed827-56a0-4c7c-8a36-e67b82cb0bbb",
+        "edgeKind": "provenance",
+        "establishedBy": "human"
+      },
+      {
+        "from": "paper:paper_a4936b8e-f895-4f57-99ee-19c834a365d5",
+        "to": "attachment:att_2cbd1126-3258-4d61-a877-4e5da0abeab6",
+        "edgeKind": "affiliation",
+        "establishedBy": "human"
+      },
+      {
+        "from": "paper:paper_a4936b8e-f895-4f57-99ee-19c834a365d5",
+        "to": "card:card_5e9e8544-e19e-4584-8eec-07844d961dc7",
+        "edgeKind": "affiliation",
+        "establishedBy": "human"
+      },
+      {
+        "from": "paper:paper_a4936b8e-f895-4f57-99ee-19c834a365d5",
+        "to": "card:card_7012e88a-b06a-4b57-8d00-ba0bdbae1386",
+        "edgeKind": "affiliation",
+        "establishedBy": "human"
+      },
+      {
+        "from": "paper:paper_a4936b8e-f895-4f57-99ee-19c834a365d5",
+        "to": "card:card_8a4e4db2-5ada-42f8-a1fd-6fbcff8a4ae7",
+        "edgeKind": "affiliation",
+        "establishedBy": "human"
+      },
+      {
+        "from": "paper:paper_a4936b8e-f895-4f57-99ee-19c834a365d5",
+        "to": "card:card_a24884fb-3af2-4b41-b094-28e0937aa72d",
+        "edgeKind": "affiliation",
+        "establishedBy": "human"
+      },
+      {
+        "from": "paper:paper_a4936b8e-f895-4f57-99ee-19c834a365d5",
+        "to": "card:card_a56d5514-401c-44a5-a19e-3006ddcec46a",
+        "edgeKind": "affiliation",
+        "establishedBy": "human"
+      },
+      {
+        "from": "paper:paper_a4936b8e-f895-4f57-99ee-19c834a365d5",
+        "to": "card:card_b2405e44-467f-46d7-ada5-a31b7c2fa3a1",
+        "edgeKind": "affiliation",
+        "establishedBy": "human"
+      },
+      {
+        "from": "paper:paper_a4936b8e-f895-4f57-99ee-19c834a365d5",
+        "to": "card:card_cfa0372e-18bb-4aa2-9606-8a140780c598",
+        "edgeKind": "affiliation",
+        "establishedBy": "human"
+      },
+      {
+        "from": "paper:paper_a4936b8e-f895-4f57-99ee-19c834a365d5",
+        "to": "card:card_cfa623de-2b0f-44b8-8096-5ae1a3b7d8ae",
+        "edgeKind": "affiliation",
+        "establishedBy": "human"
+      },
+      {
+        "from": "protocol:proto_2b4f1e2f-92f4-4503-99d0-0990a3fd907e",
+        "to": "execution:exec_8eddd772-b298-42eb-b8b6-6f114bd27b3f",
+        "edgeKind": "lineage",
+        "establishedBy": "human",
+        "note": "固定方案 r1（当前版）"
+      },
+      {
+        "from": "sample:smp_efeed827-56a0-4c7c-8a36-e67b82cb0bbb",
+        "to": "measurement:meas_1ec52121-7eb1-40ee-a804-b8e10ce7d88b",
+        "edgeKind": "lineage",
+        "establishedBy": "human"
+      },
+      {
+        "from": "sample:smp_efeed827-56a0-4c7c-8a36-e67b82cb0bbb",
+        "to": "measurement:meas_28204d07-e9ec-4f56-8404-6c873a07c0e8",
+        "edgeKind": "lineage",
+        "establishedBy": "human"
+      },
+      {
+        "from": "topic:topic_f6bff443-3f74-4677-810d-0c15c7d06bf0",
+        "to": "execution:exec_8eddd772-b298-42eb-b8b6-6f114bd27b3f",
+        "edgeKind": "affiliation",
+        "establishedBy": "human"
+      },
+      {
+        "from": "topic:topic_f6bff443-3f74-4677-810d-0c15c7d06bf0",
+        "to": "paper:paper_a4936b8e-f895-4f57-99ee-19c834a365d5",
+        "edgeKind": "affiliation",
+        "establishedBy": "human"
+      },
+      {
+        "from": "topic:topic_f6bff443-3f74-4677-810d-0c15c7d06bf0",
+        "to": "protocol:proto_2b4f1e2f-92f4-4503-99d0-0990a3fd907e",
+        "edgeKind": "affiliation",
+        "establishedBy": "human"
+      },
+      {
+        "from": "topic:topic_f6bff443-3f74-4677-810d-0c15c7d06bf0",
+        "to": "sample:smp_efeed827-56a0-4c7c-8a36-e67b82cb0bbb",
+        "edgeKind": "affiliation",
+        "establishedBy": "human"
+      },
+      {
+        "from": "topic:topic_f6bff443-3f74-4677-810d-0c15c7d06bf0",
+        "to": "subquestion:subq_744874b8-3948-4514-bfd6-87a8a16dd8ae",
+        "edgeKind": "affiliation",
+        "establishedBy": "human"
+      }
+    ],
+    "gaps": [
+      {
+        "key": "execution:exec_8eddd772-b298-42eb-b8b6-6f114bd27b3f",
+        "code": "pending",
+        "label": "历史文献重构（非本地实际实验；数值为原文陈述）"
+      }
+    ],
+    "truncated": false
+  }
+}

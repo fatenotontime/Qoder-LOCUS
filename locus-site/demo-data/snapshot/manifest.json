@@ -1,0 +1,119 @@
+{
+  "schemaVersion": 1,
+  "fixtureVersion": "s08-a-fixture-1",
+  "sourceCommit": "8120986",
+  "projectId": "topic_f6bff443-3f74-4677-810d-0c15c7d06bf0",
+  "generatedAt": "2026-11-24T10:26:37.139Z",
+  "generator": "locus-site/demo-data/tools/build-demo.mjs",
+  "verificationStatus": "verified-local",
+  "counts": {
+    "topics": 1,
+    "papers": 1,
+    "assets": 4,
+    "cards": 10,
+    "tables": 2,
+    "protocols": 1,
+    "executions": 1,
+    "samples": 1,
+    "measurements": 2,
+    "analysisTasks": 1,
+    "analysisResults": 1,
+    "reports": 1,
+    "chats": 1,
+    "mapNodes": 13,
+    "mapEdges": 18,
+    "refNodes": 34,
+    "refEdges": 75
+  },
+  "originals": [
+    {
+      "path": "originals/origin-1859-p371-373.md",
+      "bytes": 5644,
+      "sha256": "7f639fdc900eaee2b90ebad3ef69bbffcd7ca9a14d01ecceb803b9214fbf5c62",
+      "license": "Public Domain",
+      "redistributable": true,
+      "assetId": "ast_907d8227-cbc3-45ba-8e2e-dd8a7d286c28",
+      "kind": "literature"
+    },
+    {
+      "path": "originals/data/darwin-flotation.csv",
+      "bytes": 739,
+      "sha256": "ebdc1366ebbdc7b6d87487b41b56199596347729f10c65063b476baa9c5a067a",
+      "license": "Public Domain",
+      "redistributable": true,
+      "assetId": "ast_46e6463a-a10b-4c85-9d3d-b38ab2bf1dd0",
+      "kind": "measurement"
+    },
+    {
+      "path": "originals/data/darwin-dispersal-estimates.csv",
+      "bytes": 481,
+      "sha256": "fb97f51b4cf15f82091162b6ba34b9b49a8c212795a74f74a23883da22c423e1",
+      "license": "Public Domain",
+      "redistributable": true,
+      "assetId": "ast_400c4531-aae6-4e31-a510-3bbac7ede6c1",
+      "kind": "measurement"
+    },
+    {
+      "path": "originals/data/flotation-summary.csv",
+      "bytes": 94,
+      "sha256": "9510a7b24baa49ee392df77df50a7e91a30ea470e98c0b703ffe97961cd35686",
+      "license": "Public Domain",
+      "redistributable": true,
+      "assetId": "ast_951ceed0-b2ee-437c-97cf-4698d1ed95ef",
+      "kind": "result"
+    },
+    {
+      "path": "originals/sources/page-369.wiki",
+      "bytes": 2017,
+      "sha256": "5b1d6ee25068429b8d57eedbdb7619256875534829487f07d90b47f3b1813756",
+      "license": "Public Domain",
+      "redistributable": true,
+      "djvuIndexPage": 369
+    },
+    {
+      "path": "originals/sources/page-370.wiki",
+      "bytes": 2016,
+      "sha256": "b73d5ac7bd60995f1e12b83d1d81ca1acd507d7cb4b1c2aab659fb5439b13d4a",
+      "license": "Public Domain",
+      "redistributable": true,
+      "djvuIndexPage": 370
+    },
+    {
+      "path": "originals/sources/page-371.wiki",
+      "bytes": 2115,
+      "sha256": "50cd034339cef783159800fd8ac78dc63ecef0c173948ad4184a5e5f069eeccd",
+      "license": "Public Domain",
+      "redistributable": true,
+      "djvuIndexPage": 371
+    },
+    {
+      "path": "originals/sources/page-372.wiki",
+      "bytes": 2041,
+      "sha256": "eaeeb01072c6608857681ee04b40901992835a0f5ffd983e5f31b96c33cbd15a",
+      "license": "Public Domain",
+      "redistributable": true,
+      "djvuIndexPage": 372
+    },
+    {
+      "path": "originals/sources/page-373.wiki",
+      "bytes": 1992,
+      "sha256": "9dd17fd1db4f6736ae579bc3bd9b3cec52f620d3ba192061232f06ae6b046065",
+      "license": "Public Domain",
+      "redistributable": true,
+      "djvuIndexPage": 373
+    }
+  ],
+  "files": {
+    "snapshot/state.json": "128e936c7d4b94877b13fbedd5cceaed9991b691c0d7f156f2fa2e629d449e99",
+    "snapshot/context-map.json": "8b88469f523c126a916840f10596ba6bd5f12f22381eef3f55dd049739204946",
+    "snapshot/references.json": "18869fd6676ad5890211a19401ff363507108969fbc5749f6004f06e33b62973",
+    "snapshot/knowledge.json": "33d92f7c2bc9913e524b29bb76ae03747f2164238eb3700ec880cb91d7d501b5",
+    "snapshot/ai-products.json": "cc4db8100f3d389cd9a4c3e893ff5f029dc2c42c9df7b41c6e943b67053f58da",
+    "snapshot/next-steps.json": "4d051c7939514832b9b795d88210990a237936a73b46a2fc34fefa210db5be33",
+    "snapshot/report-snippet.md": "ef0b56d35ab319552a1f52013cac4cd7007be2fe01b147bf1fb9311a7b148628"
+  },
+  "caveats": [
+    "comparison.independenceStatus=未具备：两项数据同页转引，非独立两篇文献。",
+    "全部模型产物标 unverified/incomplete/curated；本轮未调用模型。"
+  ]
+}

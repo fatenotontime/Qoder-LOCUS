@@ -1,0 +1,88 @@
+{
+  "modelRunThisSession": false,
+  "modelRunReason": "真实模型未授权（P8/D2：/api/ai/status configured=false）。本轮未调用任何模型；以下为历史产物标注，不冒充本轮真实运行。",
+  "items": [
+    {
+      "id": "ai_lit_extract_cards",
+      "kind": "literature_extract",
+      "label": "unverified",
+      "model": null,
+      "contextRef": {
+        "assetId": "ast_907d8227-cbc3-45ba-8e2e-dd8a7d286c28"
+      },
+      "objectRefs": [
+        "card_b2405e44-467f-46d7-ada5-a31b7c2fa3a1",
+        "card_709a3cb3-589b-4e54-bf52-38b080eaa180",
+        "card_8abc19d0-2813-4d0e-a0b0-87ab2fff76c7"
+      ],
+      "reviewStatus": "混合：1 张已人工核对，2 张待审",
+      "note": "历史 AI 抽取卡（extraction=ai）；模型与授权路径未核实，按未核实标注。"
+    },
+    {
+      "id": "ai_protocol_parse",
+      "kind": "protocol_parse",
+      "label": "unverified",
+      "model": null,
+      "contextRef": {
+        "assetId": "ast_907d8227-cbc3-45ba-8e2e-dd8a7d286c28"
+      },
+      "objectRefs": [
+        "proto_2b4f1e2f-92f4-4503-99d0-0990a3fd907e"
+      ],
+      "reviewStatus": "已人工确认（revision 1）",
+      "note": "方案为文献重构，来源与条件未知项已明示；解析模型未核实。"
+    },
+    {
+      "id": "ai_context_chat",
+      "kind": "context_chat",
+      "label": "unverified",
+      "model": "mimo-v2.6-flash",
+      "contextRef": {
+        "hash": "c311daf7b4985c582b9d3c7e996aed6fc7e26bf19b8a1d7703fb9a511aa95458"
+      },
+      "objectRefs": [
+        "chat_4df55716-afe9-40c6-a408-8584c38e9c34"
+      ],
+      "reviewStatus": "已展示，未复核",
+      "note": "历史对话记录（模型名取自记录）；授权状态未核实。"
+    },
+    {
+      "id": "ai_impact",
+      "kind": "impact_assess",
+      "label": "incomplete",
+      "model": null,
+      "contextRef": {
+        "executionId": "exec_8eddd772-b298-42eb-b8b6-6f114bd27b3f"
+      },
+      "objectRefs": [],
+      "reviewStatus": "未完成",
+      "note": "原验收记录为「AI 未配置」失败（status=failed），语义影响未分析；未作为正式结论纳入快照。"
+    },
+    {
+      "id": "cur_next_steps",
+      "kind": "next_step_guidance",
+      "label": "curated",
+      "model": null,
+      "contextRef": {
+        "taskId": "atask_9cf2587e-9818-447d-9f63-9111eb090fa8"
+      },
+      "objectRefs": [],
+      "reviewStatus": "人工整理（非模型调用）",
+      "note": "下一步方向由人工依据证据分歧整理，供展示；非模型生成。"
+    },
+    {
+      "id": "cur_report",
+      "kind": "report",
+      "label": "curated",
+      "model": null,
+      "contextRef": {
+        "reportId": "rep_f69e24f7-e4d7-4097-ab26-0ff74e165170"
+      },
+      "objectRefs": [
+        "rep_f69e24f7-e4d7-4097-ab26-0ff74e165170"
+      ],
+      "reviewStatus": "人工整理并复核",
+      "note": "报告块为人工撰写/复核，非模型生成。"
+    }
+  ]
+}
