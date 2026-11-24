@@ -1,0 +1,4 @@
+# 锁定 demo-data 内所有文件的字节表示，保证 SHA-256 可复现
+# （本机 core.autocrlf=true，若不锁定，检出会把行尾改为 CRLF，导致 manifest/校验值失配）
+* -text
+*.zip binary
