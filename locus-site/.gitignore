@@ -1,0 +1,4 @@
+# 生成物：由 build-web.mjs 从 sciworkbench/public 产出，不入库
+web/
+# Qoder Sites 发布描述符（含内嵌发布产物），由平台生成
+*.qoder.site

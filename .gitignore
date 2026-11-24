@@ -28,3 +28,6 @@ Thumbs.db
 sciworkbench/data/
 验收材料/
 test-packages/
+
+# 并行 worktree
+.worktrees/
