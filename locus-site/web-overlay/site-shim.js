@@ -4,13 +4,6 @@
 (function () {
   var BASE = "/functions/v1/app";
 
-  // 竞赛页面：收起「AI 配置」入口与抽屉（模型固定，避免评委打开必然失败的表单）。
-  try {
-    var st = document.createElement("style");
-    st.textContent = "[data-open-ai]{display:none!important}#ai-drawer{display:none!important}";
-    (document.head || document.documentElement).appendChild(st);
-  } catch (e) { /* 忽略 */ }
-
   // 1) 覆盖 fetch：仅改写以 /api/ 开头的同源请求
   var _fetch = window.fetch ? window.fetch.bind(window) : null;
   if (_fetch) {
@@ -36,7 +29,7 @@
     true
   );
 
-  // 3) 顶部 AI 状态按钮改为**只读**：不打开（已隐藏的）配置面板，仅展示当前状态。
+  // 3) 顶部 AI 状态按钮改为**只读**：仅展示当前状态，不打开任何配置面板。
   function showHint(msg) {
     try {
       var d = document.createElement("div");
@@ -50,7 +43,7 @@
   document.addEventListener(
     "click",
     function (e) {
-      var el = e.target && e.target.closest ? e.target.closest("#ai-chip,[data-open-ai]") : null;
+      var el = e.target && e.target.closest ? e.target.closest("#ai-chip") : null;
       if (!el) return;
       // 捕获阶段截断：阻止 app.js 的冒泡监听打开配置面板
       e.preventDefault();

@@ -2,9 +2,9 @@
 // 用法：node build-web.mjs <publicDir> [outDir] [--mode=trial|public]
 //   <publicDir> 例：F:/Qoder dev competition/sciworkbench/public
 //   [outDir]   默认本目录下的 web/
-//   --mode=trial   线上试玩/既有发布：注入 shim、收掉 AI 配置入口（默认，行为不变）
-//   --mode=public  静态公开展示：额外打包 demo-data/、失败页改为可离线下载样本 ZIP
-import { cpSync, existsSync, readFileSync, writeFileSync, copyFileSync, rmSync } from "node:fs";
+//   --mode=trial   线上试玩/既有发布：注入 shim（默认，行为不变）
+//   --mode=public  静态公开展示：落地页=演示页，打包 demo-data/demo/settings，剥离冷色素材与自测件
+import { cpSync, existsSync, readFileSync, writeFileSync, copyFileSync, rmSync, mkdirSync } from "node:fs";
 import { join, resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createHash } from "node:crypto";
@@ -39,22 +39,18 @@ if (!html.includes("site-shim.js")) {
   if (!injected.includes("site-shim.js")) { console.error("未能注入 shim：index.html 缺 </head>"); process.exit(1); }
   html = injected;
 }
-// 竞赛页面：静态收掉「AI 配置」入口（模型固定，避免评委打开必然失败的表单）。
-const before = html;
-html = html.replace(/<button[^>]*\bdata-open-ai\b[^>]*>[\s\S]*?<\/button>\s*/i, "");
-if (html === before) console.warn("提示：未找到 data-open-ai 入口（可能已改动）；依赖 shim 的 CSS 兜底。");
 
-// ── 2) 公开展示模式：打包 demo-data、失败页改可下载 ZIP ─────
+// ── 2) 公开展示模式 ─────────────────────────────────────────
 const ZIP_URL = "/demo-data/locus-demo-public.zip";
 let demoSummary = "";
 if (MODE === "public") {
+  // 2a) demo-data：只发布展示必需文件；tools/ 与私有生成输入一律不进入公开包。
   const src = join(HERE, "demo-data");
   const dst = join(out, "demo-data");
   if (!existsSync(join(src, "snapshot", "manifest.json"))) {
     console.error("public 模式需要 locus-site/demo-data（缺 snapshot/manifest.json）");
     process.exit(1);
   }
-  // 只发布展示必需文件；tools/ 与私有生成输入一律不进入公开包。
   cpSync(join(src, "snapshot"), join(dst, "snapshot"), { recursive: true });
   cpSync(join(src, "originals"), join(dst, "originals"), { recursive: true });
   for (const f of ["fixture.json", "SHA256SUMS.txt", "locus-demo-public.zip"]) {
@@ -62,7 +58,6 @@ if (MODE === "public") {
     if (!existsSync(from)) { console.error(`public 模式缺文件：demo-data/${f}`); process.exit(1); }
     copyFileSync(from, join(dst, f));
   }
-
   // 校验：ZIP 字节 SHA-256 与 A 的 SHA256SUMS.txt 一致（生成物不变）。
   const sums = readFileSync(join(src, "SHA256SUMS.txt"), "utf8").split("\n");
   const line = sums.find((l) => l.trim().endsWith("locus-demo-public.zip"));
@@ -72,25 +67,54 @@ if (MODE === "public") {
     console.error(`ZIP SHA-256 不一致：生成物 ${zipHash} ≠ 清单 ${expected || "(缺失)"}`);
     process.exit(1);
   }
-  // 记录 manifest 一致性（sourceCommit / projectId / fixtureVersion）。
   const manifest = JSON.parse(readFileSync(join(dst, "snapshot", "manifest.json"), "utf8"));
-  demoSummary = `demo-data 已打包：manifest.sourceCommit=${manifest.sourceCommit} · projectId=${manifest.projectId} · fixture=${manifest.fixtureVersion} · ZIP sha256=${zipHash.slice(0, 16)}…`;
 
-  // 失败页（静态资源未加载兜底）：公开展示版不提示“跑服务端”，改为可离线下载样本 ZIP。
-  const warnOld = /<p>这个页面必须由[\s\S]*?<\/p>\s*<p>不要直接双击[\s\S]*?<\/p>/;
-  if (warnOld.test(html)) {
-    html = html.replace(
-      warnOld,
-      `<p>这是 LOCUS 公开展示版，演示主线无需联网或服务端即可完成。</p>
-      <p>若界面未能加载，可直接下载样本包离线查看：<a href="${ZIP_URL}" download>下载样本 ZIP</a>。</p>`
-    );
-  } else {
-    console.warn("提示：未匹配到 #boot-warn 开发提示文案，失败页下载入口未改写（页面数据层失败入口由 app.js bootFailure 兜底）。");
+  // 2b) demo 展示模块：只发布运行必需文件，剔除 README/READ_PATHS/dev-serve/tests/fixture。
+  const demoOut = join(out, "demo");
+  cpSync(join(HERE, "web-overlay", "demo"), demoOut, { recursive: true });
+  for (const rel of ["README.md", "READ_PATHS.md", "dev-serve.mjs"]) rmSync(join(demoOut, rel), { force: true });
+  rmSync(join(demoOut, "tests"), { recursive: true, force: true });
+  rmSync(join(demoOut, "fixture"), { recursive: true, force: true });
+
+  // 2c) settings 折扇：只发布 settings-fan.js / settings-fan.css。
+  const setOut = join(out, "settings");
+  mkdirSync(setOut, { recursive: true });
+  copyFileSync(join(HERE, "web-overlay", "settings", "settings-fan.js"), join(setOut, "settings-fan.js"));
+  copyFileSync(join(HERE, "web-overlay", "settings", "settings-fan.css"), join(setOut, "settings-fan.css"));
+
+  // 2d) 把设置折扇挂到演示页：head 加 CSS link，body 末加静态入口 + module 脚本。
+  const demoHtmlPath = join(demoOut, "demo.html");
+  let demoHtml = readFileSync(demoHtmlPath, "utf8");
+  if (!demoHtml.includes("settings-fan.css")) {
+    demoHtml = demoHtml.replace(/<\/head>/i, `  <link rel="stylesheet" href="/settings/settings-fan.css" />\n</head>`);
   }
-  // 标记公开展示模式，供前端失败页读取 ZIP 入口。
-  html = html.replace(/<html\b([^>]*)>/i, (m, attrs) => `<html${attrs} data-locus-mode="public" data-demo-zip="${ZIP_URL}">`);
+  const entry =
+    `\n  <button id="settings-open" class="modelbtn" type="button" style="position:fixed;left:16px;bottom:16px;z-index:60" aria-haspopup="dialog" aria-controls="settings-fan" aria-expanded="false">设置 <span class="hint" id="ai-state">预生成</span></button>\n` +
+    `  <script type="module" src="/settings/settings-fan.js"></script>\n`;
+  if (!demoHtml.includes("settings-fan.js")) {
+    demoHtml = demoHtml.replace(/<\/body>/i, `${entry}</body>`);
+  }
+  writeFileSync(demoHtmlPath, demoHtml);
+
+  // 2e) 落地页 = 演示页（评委匿名打开 Site 直达暖色预置课题，无需后端）。
+  html = `<!doctype html>
+<html lang="zh-CN" data-theme="paper">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta http-equiv="refresh" content="0; url=/demo/demo.html" />
+  <title>LOCUS · 公开展示</title>
+  <script>location.replace("/demo/demo.html");</script>
+</head>
+<body>
+  <noscript>请打开 <a href="/demo/demo.html">LOCUS 公开展示</a>。</noscript>
+</body>
+</html>
+`;
+
+  demoSummary = `demo-data 已打包：manifest.sourceCommit=${manifest.sourceCommit} · projectId=${manifest.projectId} · fixture=${manifest.fixtureVersion} · ZIP sha256=${zipHash.slice(0, 16)}…；demo/ + settings/ 已接入，落地页→/demo/demo.html`;
 }
 
 writeFileSync(join(out, "index.html"), html);
-console.log(`web/ 已生成：${out}（mode=${MODE}；注入 site-shim.js；已收掉 AI 配置入口）`);
+console.log(`web/ 已生成：${out}（mode=${MODE}；注入 site-shim.js）`);
 if (demoSummary) console.log(`  ${demoSummary}`);

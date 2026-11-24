@@ -194,30 +194,6 @@
 
 .kz-ai-start .primary { flex: none; }
 
-/* ── 光卷主题：更硬的轮廓与扫描线 ── */
-
-[data-theme="tech"] .kzstage {
-  border-radius: var(--radius-sm);
-  border-color: var(--line);
-  background:
-    linear-gradient(180deg, rgba(79, 209, 197, .06), transparent 62%),
-    var(--surface-2);
-  box-shadow: inset 0 0 24px rgba(0, 0, 0, .22);
-}
-
-[data-theme="tech"] .kzstage::before {
-  width: 2px;
-  opacity: .8;
-}
-
-[data-theme="tech"] .kzstage-progress { border-radius: 0; }
-[data-theme="tech"] .kzstage-progress > span { border-radius: 0; box-shadow: 0 0 8px var(--kzstage-tone); }
-[data-theme="tech"] .kzstage-dot { border-radius: 1px; }
-[data-theme="tech"] .kzstage-state { border-radius: 2px; }
-[data-theme="tech"] .kzstage-step.active .kzstage-dot {
-  box-shadow: 0 0 0 1px var(--kzstage-tone), 0 0 12px color-mix(in srgb, var(--kzstage-tone) 45%, transparent);
-}
-
 /* ── 窄栏：四步折成两行，不把字挤没 ── */
 
 @media (max-width: 1200px) {

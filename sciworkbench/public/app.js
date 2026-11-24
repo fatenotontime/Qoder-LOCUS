@@ -72,509 +72,11 @@ const $$ = (s) => document.querySelectorAll(s);
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const topicName = (id) => state.topics.find((t) => t.id === id)?.name;
 
-// ── 双卷主题与换卷动效 ─────────────────────────────────────
-const THEME_KEY = "locus.theme.v1";
-const wait = (ms) => new Promise((res) => setTimeout(res, ms));
-const nextFrame = () => new Promise((res) => requestAnimationFrame(() => requestAnimationFrame(res)));
-function prefersReducedMotion() { return window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false; }
-function currentTheme() { return document.documentElement.dataset.theme === "tech" ? "tech" : "paper"; }
-function applyTheme(theme, { persist = true } = {}) {
-  const t = theme === "tech" ? "tech" : "paper";
-  document.documentElement.dataset.theme = t;
-  document.body.classList.toggle("theme-tech", t === "tech");
-  if (persist) { try { localStorage.setItem(THEME_KEY, t); } catch {} }
-  const seal = $("#theme-seal");
-  if (seal) {
-    seal.setAttribute("aria-pressed", t === "tech" ? "true" : "false");
-    seal.title = t === "paper" ? "宣纸卷 · 点击换光卷" : "光卷 · 点击换宣纸";
-  }
-  const meta = $("#theme-color");
-  if (meta) meta.content = t === "tech" ? "#070d0f" : "#f2ede2";
-}
-let switchingTheme = false;
-function sealAnchor(btn) {
-  const r = (btn || $("#theme-seal"))?.getBoundingClientRect();
-  return r && r.width ? { x: r.left + r.width / 2, y: r.top + r.height / 2 }
-                     : { x: innerWidth / 2, y: innerHeight / 2 };
-}
-async function quickSwitchTheme(btn) {
-  if (switchingTheme || replaying) return;
-  const next = currentTheme() === "paper" ? "tech" : "paper";
-  if (prefersReducedMotion()) { applyTheme(next); return; }
-  switchingTheme = true;
-  const origin = sealAnchor(btn);
-  // 标识自己先合卷再开卷，随后整页换卷
-  if (btn) btn.classList.add("is-curling");
-  await wait(280);
-  if (btn) btn.classList.remove("is-curling");
-  await wait(150);
-  // 亮→暗：界面拆成蓝图、由光标群重建成光卷；暗→亮：从朱印晕开的墨洗
-  if (next === "tech") await runSwarmRebuild(next);
-  else await runInkBloom(next, { origin });
-  switchingTheme = false;
-  setStatus(next === "tech" ? "已换光卷" : "已换宣纸");
-}
-let replaying = false;
-const FIG_CURSOR_COLORS = ["#e0472f", "#e8833a", "#d9a520", "#2f9e6f", "#3b7fd6", "#6a54c9", "#c74d92", "#3aa8b8"];
-
-function figEl(cls, css) {
-  const d = document.createElement("div");
-  d.className = cls;
-  if (css) d.style.cssText = css;
-  return d;
-}
-function figRect(sel) {
-  const el = typeof sel === "string" ? $(sel) : sel;
-  return el ? el.getBoundingClientRect() : null;
-}
-function typeText(el, text, delay, msPerChar = 55) {
-  const t0 = performance.now() + delay;
-  let i = 0;
-  const step = () => {
-    if (!el.isConnected) return;
-    const n = Math.min(text.length, Math.max(0, Math.ceil((performance.now() - t0) / msPerChar)));
-    if (n > i) { i = n; el.textContent = text.slice(0, i); }
-    if (i < text.length) requestAnimationFrame(step);
-  };
-  requestAnimationFrame(step);
-}
-// 光标群：围着朱印聚拢，随后散开在各元素间游走，靠近时互相让位
-function startSwarmFlock(host, origin) {
-  const cursors = [];
-  const total = 16;
-  for (let i = 0; i < total; i++) {
-    const el = document.createElement("span");
-    el.className = "fig-pointer";
-    el.style.setProperty("--c", FIG_CURSOR_COLORS[i % FIG_CURSOR_COLORS.length]);
-    el.innerHTML = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M1.4 1.2 14.6 6.4 8.9 8.6 6.9 14.8Z"/></svg>';
-    host.append(el);
-    const a = (i / total) * Math.PI * 2;
-    const rad = 20 + (i % 5) * 14;
-    const x = origin.x + Math.cos(a) * rad;
-    const y = origin.y + Math.sin(a) * rad * 0.75;
-    cursors.push({ el, x, y, vx: 0, vy: 0, tx: x, ty: y, ph: i * 1.93, onArrive: null });
-  }
-  let raf = 0, last = performance.now(), hand = 0, running = true;
-  const tick = (now) => {
-    if (!running) return;
-    const dt = Math.min(48, Math.max(8, now - last));
-    last = now;
-    for (const c of cursors) {
-      const dx = c.tx - c.x, dy = c.ty - c.y;
-      const dist = Math.hypot(dx, dy) || 1;
-      const speed = Math.min(0.95, dist * 0.018);
-      const dvx = (dx / dist) * speed + Math.cos(now * 0.0017 + c.ph) * 0.05;
-      const dvy = (dy / dist) * speed + Math.sin(now * 0.0014 + c.ph * 1.4) * 0.05;
-      c.vx += (dvx - c.vx) * 0.085;
-      c.vy += (dvy - c.vy) * 0.085;
-      c.x += c.vx * dt;
-      c.y += c.vy * dt;
-    }
-    for (let i = 0; i < cursors.length; i++) {
-      for (let j = i + 1; j < cursors.length; j++) {
-        const a = cursors[i], b = cursors[j];
-        const dx = b.x - a.x, dy = b.y - a.y, d = Math.hypot(dx, dy);
-        if (!d || d > 48) continue;
-        const f = ((48 - d) / 48) * 0.7 * (dt / 16), ux = dx / d, uy = dy / d;
-        a.x -= ux * f; a.y -= uy * f;
-        b.x += ux * f; b.y += uy * f;
-      }
-    }
-    for (const c of cursors) {
-      if (c.onArrive && Math.hypot(c.tx - c.x, c.ty - c.y) < 24) {
-        const fire = c.onArrive;
-        c.onArrive = null;
-        fire();
-      }
-      const rot = Math.atan2(c.vy, c.vx) * 57.2958 + 135;
-      c.el.style.transform = `translate(${c.x.toFixed(1)}px, ${c.y.toFixed(1)}px) rotate(${(Number.isFinite(rot) ? rot : 135).toFixed(1)}deg)`;
-    }
-    raf = requestAnimationFrame(tick);
-  };
-  raf = requestAnimationFrame(tick);
-  return {
-    aim(x, y, onArrive) {
-      const c = cursors[hand++ % cursors.length];
-      if (c.onArrive) { const fire = c.onArrive; c.onArrive = null; fire(); }
-      c.tx = x; c.ty = y;
-      c.onArrive = onArrive || null;
-      return c;
-    },
-    all(x, y) {
-      cursors.forEach((c, i) => {
-        if (c.onArrive) { const fire = c.onArrive; c.onArrive = null; fire(); }
-        const a = (i / cursors.length) * Math.PI * 2;
-        c.tx = x + Math.cos(a) * (24 + (i % 4) * 14);
-        c.ty = y + Math.sin(a) * (18 + (i % 3) * 10);
-      });
-    },
-    roam() {
-      for (let k = 0; k < 5; k++) {
-        const c = cursors[Math.floor(Math.random() * cursors.length)];
-        if (c.onArrive) continue;
-        c.tx = 60 + Math.random() * Math.max(40, innerWidth - 120);
-        c.ty = 70 + Math.random() * Math.max(40, innerHeight - 140);
-      }
-    },
-    stop() { running = false; cancelAnimationFrame(raf); host.innerHTML = ""; },
-  };
-}
-function buildSwarmStage(bp) {
-  bp.innerHTML = "";
-  const vw = innerWidth, vh = innerHeight;
-  const timers = [];
-  const at = (ms, fn) => timers.push(setTimeout(fn, ms));
-
-  bp.append(figEl("fig-canvas"));
-  const rh = figEl("fig-ruler h");
-  for (let x = 0; x <= vw; x += 100) {
-    const n = figEl("num", `left:${x + 4}px`);
-    n.textContent = String(x);
-    rh.append(n);
-  }
-  bp.append(rh);
-  const rv = figEl("fig-ruler v");
-  for (let y = 100; y <= vh; y += 100) {
-    const n = figEl("num", `top:${y + 3}px`);
-    n.textContent = String(y);
-    rv.append(n);
-  }
-  bp.append(rv);
-  const board = figEl("fig-board");
-  for (const k of ["tl", "tr", "bl", "br"]) board.append(figEl(`fig-board-handle ${k}`));
-  const size = figEl("fig-board-size");
-  size.textContent = `${vw} × ${vh}`;
-  board.append(size);
-  bp.append(board);
-
-  const host = figEl("fig-pointers");
-  bp.append(host);
-  const flock = startSwarmFlock(host, sealAnchor($("#theme-seal")));
-  const hud = figEl("fig-hud");
-  hud.innerHTML = '<b>16</b> 光标 · <span class="fig-done">0</span> / <span class="fig-total">0</span> 图层';
-  bp.append(hud);
-  const doneEl = hud.querySelector(".fig-done"), totalEl = hud.querySelector(".fig-total");
-  let totalLayers = 0, doneLayers = 0;
-
-  // 图层画完即“变前沿”：把真实元素抬到遮罩之上，线框随即淡出
-  const liveEls = [];
-  const shellBody = $(".shell-body");
-  const goLive = (src, figNode) => {
-    if (!src || !src.isConnected || liveEls.includes(src)) return;
-    liveEls.push(src);
-    // 整页的堆叠上下文先压平，真元素才能越过遮罩逐层出现
-    if (shellBody) shellBody.style.zIndex = "auto";
-    if (getComputedStyle(src).position === "static") src.style.position = "relative";
-    src.style.zIndex = "212";
-    src.style.opacity = "0";
-    src.style.transition = "opacity .3s ease";
-    requestAnimationFrame(() => { if (src.isConnected) src.style.opacity = "1"; });
-    if (figNode) figNode.classList.add("is-done");
-  };
-
-  // 每个元素都是画布上的一个图层：光标飞到位置后，选框才落笔
-  const box = (r, opt = {}) => {
-    if (!r || r.width < 6 || r.height < 6) return null;
-    const x = Math.round(r.left), y = Math.round(r.top);
-    const w = Math.max(10, Math.round(r.width)), h = Math.max(10, Math.round(r.height));
-    const el = figEl("fig-el" + (opt.cls ? " " + opt.cls : ""), `left:${x}px;top:${y}px;width:${w}px;height:${h}px`);
-    if (opt.fill) el.style.background = opt.fill;
-    if (opt.handles !== false) for (const k of ["tl", "tr", "bl", "br"]) el.append(figEl(`fig-handle ${k}`));
-    if (opt.dim) {
-      const d = figEl("fig-dim");
-      d.textContent = `${w} × ${h}`;
-      if (opt.dimRight) { d.style.left = "calc(100% + 6px)"; d.style.top = "50%"; d.style.marginTop = "-7px"; }
-      else if (y + h + 26 > vh) { d.style.top = "auto"; d.style.bottom = "6px"; }
-      el.append(d);
-    }
-    let txt = null;
-    if (opt.text) {
-      txt = figEl("fig-txt");
-      if (opt.textCss) txt.style.cssText = opt.textCss;
-      el.append(txt);
-    }
-    bp.insertBefore(el, host);
-    totalLayers++;
-    totalEl.textContent = String(totalLayers);
-    const reveal = () => {
-      el.classList.add("on");
-      doneEl.textContent = String(++doneLayers);
-      if (txt) typeText(txt, opt.text, 140, 28);
-      if (opt.src) {
-        const hold = (txt ? 140 + opt.text.length * 28 : 0) + 420;
-        timers.push(setTimeout(() => goLive(opt.src, el), hold));
-      }
-    };
-    if (opt.cursor === false) requestAnimationFrame(() => requestAnimationFrame(reveal));
-    else flock.aim(x + 12, y + 12, reveal);
-    if (txt) flock.aim(x + Math.min(w - 16, 26 + opt.text.length * 7), y + Math.max(16, h / 2));
-    return el;
-  };
-  const boxOf = (sel, opt = {}) => {
-    const el = typeof sel === "string" ? $(sel) : sel;
-    if (!el) return null;
-    return box(el.getBoundingClientRect(), { ...opt, src: el });
-  };
-  const line = (x, y, w) => {
-    const el = figEl("fig-line", `left:${Math.round(x)}px;top:${Math.round(y)}px;width:${Math.round(w)}px`);
-    el.append(figEl("fig-end l"), figEl("fig-end r"));
-    bp.insertBefore(el, host);
-    flock.aim(x + 10, y - 8, () => el.classList.add("on"));
-  };
-
-  // 时间轴整体拉长，按“线条 → 栏 → 标题 → 导航 → 表单”一层一层显形
-  at(90, () => { rh.classList.add("on"); rv.classList.add("on"); board.classList.add("on"); });
-
-  let topbarFig = null, brandFig = null, sealFig = null;
-  at(300, () => { topbarFig = box(figRect(".topbar")); });
-
-  at(520, () => {
-    brandFig = box(figRect(".brand"), { text: "研迹 LOCUS", handles: false, textCss: "font-size:11px;letter-spacing:.16em;padding:9px 8px" });
-  });
-
-  at(760, () => { sealFig = box(figRect("#theme-seal"), { cls: "is-seal" }); });
-
-  // 顶栏整体一次变成真界面（品牌与朱印都在其中）
-  at(1560, () => {
-    const tb = $(".topbar");
-    if (!tb) return;
-    goLive(tb, topbarFig);
-    brandFig?.classList.add("is-done");
-    sealFig?.classList.add("is-done");
-  });
-
-  // 每栏先落框，过一拍再补标题，一栏一栏地显
-  [...$$(".pane")].slice(0, 3).forEach((p, i) => {
-    at(1010 + i * 300, () => box(p.getBoundingClientRect(), { dim: true }));
-    at(1150 + i * 300, () => {
-      const t = p.querySelector(".pane-title");
-      if (!t) return;
-      boxOf(t, { cls: "is-text", text: t.textContent.trim(), handles: false, textCss: "font-size:11px;letter-spacing:.12em;padding:2px" });
-    });
-  });
-
-  // 导航七格逐格出现（课题 → 对话）
-  [...$$(".nav.spine .navitem")].slice(0, 7).forEach((n, i) => at(1900 + i * 150, () => {
-    boxOf(n, {
-      dim: i === 0,
-      dimRight: i === 0,
-      handles: i === 0,
-      text: n.querySelector(".navsigil")?.textContent.trim() || "",
-      textCss: "font-size:13px;text-align:center;padding:10px 0;letter-spacing:.1em",
-    });
-  }));
-
-  [...$$(".pane .hint")].slice(0, 3).forEach((n, i) => at(2800 + i * 60, () => {
-    const label = n.textContent.trim().replace(/\s+/g, " ").slice(0, 24);
-    boxOf(n, { cls: "is-text", text: label, handles: false, textCss: "font-size:11px;padding:2px 4px" });
-  }));
-  // 中栏新建表单：整块作为一个图层，画完即变真界面
-  at(2960, () => {
-    const ca = $("#create-area");
-    if (ca && ca.getBoundingClientRect().height > 40) boxOf(ca, { dim: true, handles: false });
-  });
-
-  // 空状态全息徽记与文字同步登场
-  at(3080, () => {
-    const holo = $(".pane .es-seal") || $(".pane .empty-seal");
-    if (holo) boxOf(holo, { handles: false });
-  });
-
-  at(3180, () => {
-    const h2 = $(".empty-guide h2") || $(".pane h2");
-    if (h2) boxOf(h2, { cls: "is-text", text: h2.textContent.trim(), dim: true, textCss: "font-size:19px;font-weight:600;padding:12px 4px" });
-  });
-
-  at(3400, () => {
-    const btn = $(".pane .primary");
-    if (btn) boxOf(btn, { cls: "is-fill", fill: "#5fd3c8", dim: true, text: btn.textContent.trim(), textCss: "font-size:11px;color:#062a2a;padding:11px 0;text-align:center;width:100%" });
-  });
-
-  at(3640, () => boxOf("#topic-name", { handles: false, text: "例如：SLAC 漆酶动力学表征", textCss: "font-size:10px;padding:8px 10px;color:#8fb3b2" }));
-  at(3860, () => boxOf("#topic-q", { handles: false, text: "想回答的科学问题", textCss: "font-size:10px;padding:8px 10px;color:#8fb3b2" }));
-
-  [...$$(".pane .item")].slice(0, 2).forEach((n, i) => at(4100 + i * 210, () => {
-    const label = n.textContent.trim().replace(/\s+/g, " ").slice(0, 12);
-    boxOf(n, { handles: false, text: label, textCss: "font-size:10px;padding:8px 6px;color:#bcd6d4" });
-  }));
-
-  at(4520, () => boxOf(".pane .empty-sub", { cls: "is-text", text: "只需名称与研究问题即可开始…", handles: false, textCss: "font-size:10px;padding:3px 2px" }));
-  at(4720, () => boxOf(".pane .goto", { dim: true }));
-  at(4900, () => {
-    const tb = figRect(".topbar");
-    if (tb) line(24, tb.bottom + 3, vw - 48);
-  });
-
-  const roamTimer = setInterval(() => flock.roam(), 420);
-  bp._figCleanup = () => {
-    timers.forEach(clearTimeout);
-    clearInterval(roamTimer);
-    flock.stop();
-    document.documentElement.classList.remove("swarm-build");
-    liveEls.forEach((elm) => {
-      elm.style.position = "";
-      elm.style.zIndex = "";
-      elm.style.opacity = "";
-      elm.style.transition = "";
-    });
-    liveEls.length = 0;
-    if (shellBody) shellBody.style.zIndex = "";
-  };
-
-  // 全部图层都落笔后，光标群再聚回朱印，光卷才落定
-  return new Promise((resolve) => {
-    const t0 = performance.now();
-    const check = () => {
-      const elapsed = performance.now() - t0;
-      if (elapsed < 5000 || doneLayers < totalLayers) {
-        if (elapsed < 12000) { timers.push(setTimeout(check, 100)); return; }
-      }
-      clearInterval(roamTimer);
-      const o = sealAnchor($("#theme-seal"));
-      flock.all(o.x, o.y);
-      timers.push(setTimeout(resolve, 750));
-    };
-    timers.push(setTimeout(check, 5000));
-  });
-}
-// 亮→暗：整页摊成一张设计画布，光标群按图元重画这一页，随后光卷落定
-async function runSwarmRebuild(next, { rebuild = false } = {}) {
-  const layer = $("#replay-layer"), bp = $("#replay-blueprint");
-  const caption = layer.querySelector(".replay-caption");
-  if (caption) caption.textContent = rebuild ? "换卷 · 重绘" : "换卷";
-  layer.classList.add("is-fig");
-  // 暂时取消卷卡的裁切/毛玻璃，避免其层叠上下文把被抬升的真元素压回画布下
-  document.documentElement.classList.add("swarm-build");
-  const stageEnd = buildSwarmStage(bp);
-  // 遮罩盖好之前先切到目标主题：画完的图层直接以真界面出现
-  applyTheme(next);
-  layer.hidden = false;
-  layer.classList.remove("is-out");
-  await nextFrame();
-  layer.classList.add("is-on");
-  await stageEnd;
-  if (rebuild) renderAll();
-  await wait(160);
-  layer.classList.add("is-out");
-  await wait(380);
-  bp._figCleanup?.();
-  document.documentElement.classList.remove("swarm-build");
-  layer.classList.remove("is-on", "is-out", "is-fig");
-  layer.hidden = true;
-  bp.innerHTML = "";
-}
-// 暗→亮：古墨整屏垫底，宣纸色从朱印晕开，带湿纸墨边与飞溅
-function themePalette(theme) {
-  const probe = document.createElement("div");
-  probe.dataset.theme = theme;
-  probe.style.cssText = "position:fixed;left:-9999px;top:0;width:1px;height:1px";
-  document.body.append(probe);
-  const cs = getComputedStyle(probe);
-  const bg = cs.getPropertyValue("--bg").trim() || (theme === "tech" ? "#070d0f" : "#efe7d8");
-  probe.remove();
-  return bg;
-}
-async function runInkBloom(next, { origin, onApply } = {}) {
-  if (document.querySelector(".ink-bloom")) return;
-  const vw = innerWidth, vh = innerHeight, dpr = Math.min(devicePixelRatio || 1, 2);
-  const oldBg = themePalette(currentTheme());
-  const c = document.createElement("canvas");
-  c.className = "ink-bloom";
-  c.width = Math.round(vw * dpr); c.height = Math.round(vh * dpr);
-  const ctx = c.getContext("2d");
-  ctx.scale(dpr, dpr);
-  ctx.fillStyle = oldBg;
-  ctx.fillRect(0, 0, vw, vh);
-  document.body.append(c);
-  // 先垫满旧墨再换主题，覆盖层之下直接就是新宣纸，墨晕只负责揭开
-  applyTheme(next);
-  if (onApply) onApply();
-
-  const ox = origin?.x ?? vw / 2, oy = origin?.y ?? vh / 2;
-  const grains = [];
-  for (let i = 0; i < 900; i++) grains.push([Math.random() * vw, Math.random() * vh, Math.random() * 0.05]);
-  const maxR = Math.hypot(Math.max(ox, vw - ox), Math.max(oy, vh - oy)) + 90;
-  const grow = 780;
-  const ease = (p) => (p < .5 ? 4 * p * p * p : 1 - Math.pow(-2 * p + 2, 3) / 2);
-  const t0 = performance.now();
-
-  return new Promise((resolve) => {
-    function frame(now) {
-      const p = Math.min(1, (now - t0) / grow);
-      const e = ease(p);
-      const r = 10 + e * maxR;
-      const pts = [];
-      const N = 96;
-      for (let i = 0; i <= N; i++) {
-        const th = (i / N) * Math.PI * 2;
-        const wob = 1 + .055 * Math.sin(3 * th + p * 7) + .035 * Math.sin(7 * th - p * 11) + .018 * Math.sin(13 * th + p * 17);
-        pts.push([ox + Math.cos(th) * r * wob, oy + Math.sin(th) * r * wob]);
-      }
-      const trace = () => {
-        ctx.beginPath();
-        pts.forEach(([px, py], i) => (i ? ctx.lineTo(px, py) : ctx.moveTo(px, py)));
-        ctx.closePath();
-      };
-      ctx.clearRect(0, 0, vw, vh);
-      ctx.fillStyle = oldBg;
-      ctx.fillRect(0, 0, vw, vh);
-      ctx.globalCompositeOperation = "destination-out";
-      trace();
-      ctx.fill();
-      ctx.globalCompositeOperation = "source-over";
-      // 纸面颗粒
-      ctx.save();
-      trace();
-      ctx.clip();
-      for (let i = 0; i < grains.length; i++) {
-        const gx = grains[i][0], gy = grains[i][1];
-        if ((gx - ox) ** 2 + (gy - oy) ** 2 > (r * 1.06) ** 2) continue;
-        ctx.fillStyle = `rgba(90,64,40,${grains[i][2]})`;
-        ctx.fillRect(gx, gy, 1, 1);
-      }
-      ctx.restore();
-      // 湿纸墨边：贴着纸色前沿的一圈墨，外加琥珀微光
-      const rimA = 0.55 - 0.3 * e;
-      ctx.lineWidth = 9 + 7 * (1 - e);
-      ctx.strokeStyle = `rgba(96,62,36,${rimA})`;
-      ctx.shadowColor = `rgba(160,108,58,${rimA * .9})`;
-      ctx.shadowBlur = 24;
-      trace();
-      ctx.stroke();
-      ctx.shadowBlur = 0;
-      // 墨点先于前沿在纸上洇开
-      ctx.fillStyle = `rgba(96,62,36,${rimA * .45})`;
-      for (let i = 0; i < 9; i++) {
-        const th = i * 2.399 + p * 3;
-        const rr = r * (0.9 + 0.06 * ((i * 37) % 10) / 10);
-        ctx.beginPath();
-        ctx.arc(ox + Math.cos(th) * rr, oy + Math.sin(th) * rr, 1.6 + ((i * 13) % 5), 0, Math.PI * 2);
-        ctx.fill();
-      }
-      if (p < 1) { requestAnimationFrame(frame); return; }
-      c.remove();
-      resolve();
-    }
-    requestAnimationFrame(frame);
-  });
-}
-async function replayAndRecast(btn) {
-  if (replaying || switchingTheme) return;
-  const next = currentTheme() === "paper" ? "tech" : "paper";
-  if (prefersReducedMotion()) {
-    applyTheme(next);
-    renderAll();
-    setStatus("已换卷并重绘");
-    return;
-  }
-  replaying = true;
-  if (btn) { btn.disabled = true; btn.setAttribute("aria-busy", "true"); }
-  const origin = sealAnchor(btn);
-  if (next === "tech") await runSwarmRebuild(next, { rebuild: true });
-  else await runInkBloom(next, { origin, onApply: renderAll });
-  if (btn) { btn.disabled = false; btn.removeAttribute("aria-busy"); }
-  replaying = false;
-  setStatus("已换卷并重绘");
+// 减少动效：优先读站内偏好（设置折扇写入 locus.motion.v1），其次跟随系统。
+function prefersReducedMotion() {
+  try { const v = localStorage.getItem("locus.motion.v1");
+    if (v === "reduced") return true; if (v === "full") return false; } catch (e) {}
+  return window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
 }
 
 function clearBootState() {
@@ -1957,7 +1459,7 @@ if (incident && targetOps.length) await api.appendEvent(ui.executionId, { kind: 
 });
 const dialogFocusReturns = new WeakMap();
 const dialogMotionIds = new WeakMap();
-const DIALOG_SELECTORS = ["#ai-drawer", "#drawer", "#navdrawer"];
+const DIALOG_SELECTORS = ["#drawer", "#navdrawer"];
 const isDialogOpen = (el) => Boolean(el && !el.hidden && !el.dataset.closing);
 function syncDialogScrim() {
   const scrim = $("#dialog-scrim");
@@ -2028,14 +1530,13 @@ function closeDialog(el) {
   ], { duration: 180, easing: "ease-in" }).finished.then(finish).catch(() => {});
 }
 $("#dialog-scrim").addEventListener("click", () => {
-  if (isDialogOpen($("#ai-drawer"))) closeAiDrawer();
-  else if (isDialogOpen($("#drawer"))) closeDialog($("#drawer"));
+  if (isDialogOpen($("#drawer"))) closeDialog($("#drawer"));
   else if (isDialogOpen($("#navdrawer"))) closeNavDrawer();
 });
 const DIALOG_FOCUSABLE = 'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])';
 document.addEventListener("keydown", (ev) => {
   if (ev.key !== "Tab") return;
-  const dialog = [...document.querySelectorAll("#ai-drawer:not([hidden]):not([data-closing]), #drawer:not([hidden]):not([data-closing]), #navdrawer:not([hidden]):not([data-closing])")].at(-1);
+  const dialog = [...document.querySelectorAll("#drawer:not([hidden]):not([data-closing]), #navdrawer:not([hidden]):not([data-closing])")].at(-1);
   if (!dialog) return;
   const items = [...dialog.querySelectorAll(DIALOG_FOCUSABLE)].filter((el) => el.getClientRects().length);
   if (!items.length) { ev.preventDefault(); dialog.focus(); return; }
@@ -2058,11 +1559,12 @@ $("#spine-menu").addEventListener("click", () => { if (!isDialogOpen($("#navdraw
 $("#navrail").addEventListener("click", (ev) => { if (ev.target.closest(".navitem")) openNavDrawer(); });
 $("#navdrawer").addEventListener("click", (ev) => {
   if (ev.target.id === "nd-close" || ev.target.closest("[data-close-navdrawer]")) { closeNavDrawer(); return; }
-  if (ev.target.closest("[data-open-ai]")) { closeNavDrawer(); openAiDrawer(); return; }
   const b = ev.target.closest(".nd-item"); if (!b) return;
   closeNavDrawer();
   activateNav(b.dataset.nav);
 });
+// 设置折扇将打开时先合拢卷目抽屉（settings-fan 派发可取消事件）。
+window.addEventListener("locus-settings:will-open", () => { if (isDialogOpen($("#navdrawer"))) closeNavDrawer(); });
 
 $("#material-list").addEventListener("click", (ev) => {
   const el = ev.target.closest(".material"); if (!el) return;
@@ -2536,93 +2038,20 @@ document.addEventListener("keydown", (e) => {
   if (e.key !== "Escape" || e.defaultPrevented) return;
   let closed = false;
   if (isDialogOpen($("#drawer"))) { closeDialog($("#drawer")); closed = true; }
-  if (isDialogOpen($("#ai-drawer"))) { closeAiDrawer(); closed = true; }
   if (isDialogOpen($("#navdrawer"))) { closeNavDrawer(); closed = true; }
   const tm = $("#table-max"); if (tm) { tm.remove(); closed = true; }
   if (closed) e.preventDefault();
 });
 window.addEventListener("beforeunload", (e) => { if (ui.dirty) { e.preventDefault(); e.returnValue = ""; } });
 
-let aiStatus = null;
-function openAiDrawer() {
-  openDialog($("#ai-drawer"), "#ai-base");
-  $("#ai-chip").setAttribute("aria-expanded", "true");
-  if (aiStatus && !$("#ai-msg").textContent) {
-    $("#ai-msg").textContent = aiStatus.configured
-      ? `当前已配置 · ${aiStatus.model}（修改后需重新保存）`
-      : "未配置：填写地址、模型与 Key 后保存；配置保存在本机数据目录，不入库。";
-  }
-}
-function closeAiDrawer() {
-  closeDialog($("#ai-drawer"));
-  $("#ai-chip").setAttribute("aria-expanded", "false");
-}
-$("#ai-chip").addEventListener("click", () => { if (!isDialogOpen($("#ai-drawer"))) openAiDrawer(); else closeAiDrawer(); });
-$("#ai-close").addEventListener("click", closeAiDrawer);
-document.addEventListener("click", (ev) => { if (ev.target.closest("[data-open-ai]")) openAiDrawer(); });
-
-async function refreshAiState() {
-  const s = await api.aiStatus();
-  aiStatus = s;
+// 公开展示版：顶部 AI 状态只读展示（无配置面板、不请求后端、不写配置）。
+{
   const chip = $("#ai-chip"), txt = $("#ai-chip-text");
-  txt.textContent = s.configured ? `AI · ${s.model}` : "AI 未配置";
-  chip.dataset.state = s.configured ? "ready" : "off";
-  chip.title = s.configured ? `AI 已配置 · ${s.model}（点击管理）` : "AI 未配置（点击配置）";
-  $("#ai-state").textContent = s.configured ? `已配置 · ${s.model}` : "未配置";
-  const st2 = $("#ai-state-2");
-  if (st2) st2.textContent = s.configured ? `已配置 · ${s.model} @ ${s.baseUrl}` : "未配置：填写接口地址 / 模型 / Key 后保存。";
-  if (s.configured) {
-    if (!$("#ai-base").value) $("#ai-base").value = s.baseUrl;
-    if (!$("#ai-model").value) $("#ai-model").value = s.model;
-    if (!$("#ai-timeout").value && s.timeoutMs) $("#ai-timeout").value = Math.round(s.timeoutMs / 1000);
-  }
+  if (txt) txt.textContent = "AI · 预生成";
+  if (chip) { chip.dataset.state = "preset"; chip.title = "AI 结果预生成（公开展示版只读）"; chip.removeAttribute("aria-controls"); }
+  const hint = $("#ai-state");
+  if (hint) hint.textContent = "预生成";
 }
-$("#ai-open").addEventListener("click", () => { openAiDrawer(); refreshAiState().catch(() => {}); });
-$("#ai-save").addEventListener("click", async (ev) => {
-  const btn = ev.target, old = btn.textContent;
-  btn.disabled = true; btn.setAttribute("aria-busy", "true"); btn.textContent = "处理中…"; $("#ai-msg").textContent = "";
-  try {
-    const secs = Number($("#ai-timeout").value);
-    const timeoutMs = Number.isFinite(secs) && secs > 0 ? secs * 1000 : undefined;
-    const s = await api.setAiConfig($("#ai-base").value, $("#ai-model").value, $("#ai-key").value, timeoutMs);
-    $("#ai-key").value = "";
-    if (s.configured) { $("#ai-msg").textContent = `已保存 · ${s.model}`; setStatus(`AI 已配置 · ${s.model}`); }
-    else { $("#ai-msg").textContent = "配置不完整：需要地址 / 模型 / Key 三项。"; }
-    await refreshAiState();
-  } catch (e) { const h = humanError(e); $("#ai-msg").textContent = `保存失败：${h.message}`; }
-  finally { btn.disabled = false; btn.removeAttribute("aria-busy"); btn.textContent = old; }
-});
-$("#ai-clear").addEventListener("click", (ev) => runBusy(ev.target, "清除模型配置", async () => { await api.clearAiConfig(); $("#ai-models-list").hidden = true; await refreshAiState(); setStatus("模型配置已清除"); }));
-$("#ai-test").addEventListener("click", (ev) => {
-  const btn = ev.target, old = btn.textContent;
-  btn.disabled = true; btn.setAttribute("aria-busy", "true"); btn.textContent = "测试中…"; $("#ai-msg").textContent = "";
-  api.aiTest()
-    .then((r) => { $("#ai-msg").textContent = (r.ok ? "✓ " : "✗ ") + r.message; })
-    .catch((e) => { $("#ai-msg").textContent = "测试失败：" + (e.status === 400 ? "未配置（先保存再测）" : String(e.message ?? e)); })
-    .finally(() => { btn.disabled = false; btn.removeAttribute("aria-busy"); btn.textContent = old; });
-});
-$("#ai-models").addEventListener("click", (ev) => {
-  const btn = ev.target, old = btn.textContent;
-  const box = $("#ai-models-list");
-  btn.disabled = true; btn.textContent = "检测中…"; $("#ai-msg").textContent = "";
-  api.listAiModels()
-    .then((r) => {
-      $("#ai-msg").textContent = (r.ok ? "✓ " : "✗ ") + r.message;
-      if (r.ok && r.models.length) {
-        box.innerHTML = `<div class="hint">可用模型（点选填入）：</div>${r.models.map((m) => `<button type="button" class="moption" data-model="${esc(m)}">${esc(m)}</button>`).join("")}`;
-        box.hidden = false;
-      } else { box.hidden = true; }
-    })
-    .catch((e) => { $("#ai-msg").textContent = "检测失败：" + (e.status === 400 ? "未配置（先保存再测）" : String(e.message ?? e)); box.hidden = true; })
-    .finally(() => { btn.disabled = false; btn.textContent = old; });
-});
-// 点选可用模型 → 填入模型名输入框（不自动保存）。
-$("#ai-models-list").addEventListener("click", (ev) => {
-  const b = ev.target.closest(".moption");
-  if (!b) return;
-  $("#ai-model").value = b.dataset.model;
-  $("#ai-msg").textContent = `已填入模型名：${b.dataset.model}（点「保存配置」生效）`;
-});
 
 // 领域知识积累 / 数据处理与分析 两页的渲染与事件（拆分到 lib/pages/*，行为不变）。
 bindKnowledge({
@@ -2634,8 +2063,6 @@ bindAnalysis({
   setStatus, setError, setDirty, humanError, runBusy, runJob, notify, pollJob, noteChangeHits, clearAllErrors,
 });
 
-$("#theme-seal").addEventListener("click", (ev) => quickSwitchTheme(ev.currentTarget));
-$("#replay-theme").addEventListener("click", (ev) => replayAndRecast(ev.currentTarget));
 $("#replay-splash").addEventListener("click", () => window.__locusSplash?.play());
 document.addEventListener("click", (ev) => {
   if (ev.target.id !== "boot-retry") return;
@@ -2643,9 +2070,7 @@ document.addEventListener("click", (ev) => {
   bootstrap();
 });
 
-applyTheme(currentTheme(), { persist: false });
-refreshAiState().catch(() => {
-  $("#ai-chip-text").textContent = "AI 状态未知";
-  $("#ai-chip").dataset.state = "off";
-});
+// 公开展示版固定暖色：顶栏主题色只取宣纸底，不读存储、不换卷。
+const themeMeta = $("#theme-color");
+if (themeMeta) themeMeta.content = "#f2ede2";
 bootstrap();
