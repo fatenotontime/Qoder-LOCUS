@@ -16,7 +16,7 @@ locus-site/web-overlay/demo/
   READ_PATHS.md        B.1 读路径盘点（真实调用、返回形态、A 数据落点）
   dev-serve.mjs        本地静态自测服务（仅开发用，不进发布包）
   fixture/snapshot.json 自造夹具（仅供适配器单测，页面不再使用）
-  tests/               24 项单测：adapter（夹具）＋ a-snapshot（A 正式包）
+  tests/               28 项单测：adapter（夹具）＋ a-snapshot（A 正式包）＋ a-chains（A 两条最小链）
 ```
 
 ## 初始化入口与参数
@@ -102,10 +102,15 @@ const handle = await initDemo({
 ## 自测
 
 ```bash
-node --test locus-site/web-overlay/demo/tests/   # 24 项（adapter 13 + a-snapshot 11）
+node --test locus-site/web-overlay/demo/tests/   # 28 项（adapter 13 + a-snapshot 11 + a-chains 4）
 node locus-site/web-overlay/demo/dev-serve.mjs 8788   # 本地静态站（/demo-data 指向 A 正式包）
 # http://127.0.0.1:8788/demo/demo.html
 ```
+
+`tests/a-chains.test.mjs` 直接读 A 的 `fixture.json`，验证两条最小链在**正式快照**上逐环可解析：
+- chainA：`paper → original(asset+locator) → attachment → card → 正式知识条目`，且卡片定位引文与原件逐字一致；
+- chainB：`result → measurement → tableRow(第 0 行) → execution → original(asset)`，表行/列原样一致。
+（fixture 内 `kitem_card_*` 为简化知识条目 id；正式对应 `knowledge.json` 中按 `cardId` 关联的条目。）
 
 - 实测（离屏浏览器，A 正式包）：全站无 `.demo-miss`、无控制台错误；文献定位/对比回查命中；知识项按第 2 版读取并回查引文；方案图 4 节点可点；执行 3 分项与 10 行表；分析地图 13 节点、报告 4 块回查有效；对话 2 条；下一步依据 2 条、证据 chip 可点；无任何 `/api` 或 `/functions` 请求；ZIP 按钮可用（哈希取自 `SHA256SUMS.txt`）。
 - **未测**：截图（本环境无可见画布，未取证）；1280/1024/390 窄屏布局（属 C/E）；A 的 `docs/五步走查.md` 全流程走查；ZIP 实际解包哈希复核（属 E）。
