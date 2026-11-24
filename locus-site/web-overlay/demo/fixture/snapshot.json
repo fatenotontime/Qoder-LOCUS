@@ -1,0 +1,297 @@
+{
+  "schemaVersion": 1,
+  "fixtureVersion": "b-wire-0",
+  "sourceCommit": "8120986",
+  "projectId": "locus-public-demo-b-wire",
+  "generatedAt": "2026-11-24T10:00:00Z",
+  "fixture": true,
+  "mainTopicId": "TP1",
+  "version": 9,
+  "topics": [
+    { "id": "TP1", "name": "漆酶催化降解染料的动力学条件比较", "researchQuestion": "在可比条件下，漆酶（Laccase）对染料的降解随 pH／温度的走向如何，文献之间是否一致？", "createdAt": "2026-11-24T10:00:00Z" }
+  ],
+  "subquestions": [
+    { "id": "SQ1", "topicId": "TP1", "question": "漆酶降解的 pH／温度最适条件在各文献是否一致？", "kind": "declared", "createdAt": "2026-11-24T10:00:00Z" }
+  ],
+  "assets": [
+    {
+      "id": "A1", "kind": "literature", "name": "paper-laccase-btb-2026.md", "topicId": "TP1", "bytes": 0, "hash": "fixture", "createdAt": "2026-11-24T10:00:00Z",
+      "text": "# Individual and Cooperative Photochemical–Enzymatic Processes for the Degradation of the Dye Bromothymol Blue: Kinetic and Eco-Toxicity Analysis\n\n来源：Europe PMC PMC13566542 · DOI 10.3390/ijms27177767 · International Journal of Molecular Sciences (2026) · 许可：CC BY 4.0\n\nIndividual and Cooperative Photochemical–Enzymatic Processes for the Degradation of the Dye Bromothymol Blue\n\n[摘要] The degradation of bromothymol blue (BTB) in aqueous solution was investigated through individual and sequential photochemical and enzymatic treatments. ... enzymatic degradation was favored at acidic pH, elevated temperature, and high amount of laccase, with optimal performance observed at pH 5 and 40 °C. Sequential treatments combining photochemical and enzymatic processes improved the overall removal efficiency, reaching degradation values above 70% regardless of the treatments order. ...\n\n## 3. Results and Discussion\n\n3.2 Enzymatic degradation of BTB\nEnzymatic degradation was favored at acidic pH, elevated temperature, and high amount of laccase, with optimal performance observed at pH 5 and 40 °C.\n\n3.3 Sequential treatments\nThe overall removal efficiency reached degradation values above 70% regardless of the treatments order."
+    },
+    {
+      "id": "A2", "kind": "protocol", "name": "protocol-source.md", "topicId": "TP1", "bytes": 0, "hash": "fixture", "createdAt": "2026-11-24T10:00:00Z",
+      "text": "# SLAC 实验设计与数据管理（原作者 notebook 节选）\n\n来源：Häußler, DaRUS DOI 10.18419/DARUS-3337，CC BY 4.0。\n\n- 研究对象：小型漆酶 SLAC 催化 ABTS 氧化为 ABTS 自由基；考察 pH 3–5.5、温度 25–45°C。\n- 实验设计：30 组动力学测定，初始 ABTS 浓度范围 0–200 µM；每个初始底物浓度有不加酶的对照。每种 pH/温度条件记录 ABTS 标准曲线与吸收光谱；以 340 nm 和 420 nm 同步跟踪底物消耗及产物生成，测量 15 分钟。\n- 处理路径：对照用于扣除酶和缓冲液吸收；各条件建立标准曲线，仅使用吸光度低于 3.2 的点；限定标准曲线范围内换算浓度以避免外推。"
+    },
+    {
+      "id": "A3", "kind": "measurement", "name": "slac-ph3-data.csv", "topicId": "TP1", "bytes": 0, "hash": "fixture", "createdAt": "2026-11-24T10:00:00Z",
+      "text": "Experiment ID,Type,Reaction,Protein,Initial concentration,Unit,Reactant,Initial concentration,Unit\n0,Absorption,ABTS oxidation,Small laccase (SLAC),0.07393872680094507,umole / l,ABTS,0,umole / l\n0,Absorption,ABTS oxidation,Small laccase (SLAC),0,umole / l,ABTS control,0,umole / l"
+    }
+  ],
+  "papers": [
+    {
+      "id": "P1", "title": "Individual and Cooperative Photochemical–Enzymatic Processes for the Degradation of the Dye Bromothymol Blue: Kinetic and Eco-Toxicity Analysis",
+      "authors": ["Andrea S. Urquiza", "Agustina Reynoso", "M. Alicia Biasutti", "Hernán A. Montejano", "Eugenia Reynoso"],
+      "year": "2026", "doi": "10.3390/ijms27177767",
+      "source": "Europe PMC PMC13566542 · International Journal of Molecular Sciences (2026) · https://www.ebi.ac.uk/europepmc/webservices/rest/PMC13566542/fullTextXML",
+      "license": "CC BY 4.0", "topicIds": ["TP1"], "note": "主课题原始文献。",
+      "revision": 1, "history": [], "createdAt": "2026-11-24T10:00:00Z", "updatedAt": "2026-11-24T10:00:00Z"
+    },
+    {
+      "id": "P2", "title": "From raw data to kinetic parameters: an EnzymeML-based workflow for reproducible enzyme kinetics（SLAC 节选）",
+      "authors": ["Häußler"], "year": "2024", "doi": "10.18419/DARUS-3337",
+      "source": "DaRUS DOI 10.18419/DARUS-3337 · 节选自 SLAC_kinetic_characterization.ipynb",
+      "license": "CC BY 4.0", "topicIds": ["TP1"], "note": "用于与主文献做跨文献条件比较。",
+      "revision": 1, "history": [], "createdAt": "2026-11-24T10:00:00Z", "updatedAt": "2026-11-24T10:00:00Z"
+    }
+  ],
+  "attachments": [
+    { "id": "AT1", "paperId": "P1", "assetId": "A1", "role": "fulltext", "version": "", "createdAt": "2026-11-24T10:00:00Z" },
+    { "id": "AT2", "paperId": "P2", "assetId": "A2", "role": "fulltext", "version": "", "createdAt": "2026-11-24T10:00:00Z" }
+  ],
+  "cards": [
+    {
+      "id": "C1", "assetId": "A1", "paperId": "P1",
+      "rawText": "Enzymatic degradation was favored at acidic pH, elevated temperature, and high amount of laccase, with optimal performance observed at pH 5 and 40 °C.",
+      "locator": { "sectionQuote": "3.2 Enzymatic degradation of BTB" },
+      "extracted": { "fields": { "optimal_pH": "5", "optimal_temp": "40" }, "units": ["°C"], "conditions": ["pH 5", "40 °C"] },
+      "unknowns": [], "secondaryCitation": false, "audit": "confirm", "importance": "high", "note": "", "reason": "人工核对摘要原句",
+      "extraction": "ai", "kind": "data", "scope": "BTB / 漆酶 enzymatic treatment",
+      "interpretation": "作者解释为酸性 pH 与升温共同促进漆酶对 BTB 的降解。", "revision": 1,
+      "knowledgeItemIds": ["KI1"], "history": [], "createdAt": "2026-11-24T10:00:00Z", "updatedAt": "2026-11-24T10:00:00Z"
+    },
+    {
+      "id": "C2", "assetId": "A2", "paperId": "P2",
+      "rawText": "研究对象：小型漆酶 SLAC 催化 ABTS 氧化为 ABTS 自由基；考察 pH 3–5.5、温度 25–45°C。",
+      "locator": { "sectionQuote": "研究对象" },
+      "extracted": { "fields": { "pH_range": "3–5.5", "temp_range": "25–45" }, "units": ["°C"], "conditions": ["pH 3–5.5", "25–45 °C"] },
+      "unknowns": ["最适 pH／温度未在该节选给出"], "secondaryCitation": false, "audit": "need_info", "importance": "medium", "note": "", "reason": "待人工复核",
+      "extraction": "ai", "kind": "method", "scope": "SLAC / ABTS 动力学", "revision": 1,
+      "knowledgeItemIds": ["KI2"], "history": [], "createdAt": "2026-11-24T10:00:00Z", "updatedAt": "2026-11-24T10:00:00Z"
+    }
+  ],
+  "comparisons": [
+    {
+      "id": "CMP1", "topicId": "TP1", "subquestionId": "SQ1",
+      "snapshot": { "dataRevision": "fixture", "filters": ["仅漆酶"], "conversions": [], "exclusions": [], "mappingIds": [], "pinnedAt": "2026-11-24T10:00:00Z" },
+      "groups": [
+        {
+          "name": "漆酶最适／考察条件",
+          "divergence": "conditions_diff",
+          "entries": [
+            { "cardId": "C1", "cardRevision": 1, "originalName": "Laccase (Trametes versicolor)", "mappedName": "漆酶", "value": "pH 5 / 40 °C", "unit": "—", "conditions": ["BTB 底物", "enzymatic treatment"] },
+            { "cardId": "C2", "cardRevision": 1, "originalName": "Small laccase (SLAC)", "mappedName": "漆酶", "value": "pH 3–5.5 / 25–45 °C（区间）", "unit": "°C", "conditions": ["ABTS 底物", "kinetic assay"] }
+          ],
+          "unresolved": ["两文献底物不同（BTB vs ABTS），条件不可直接横比"]
+        }
+      ],
+      "reviewFlags": [], "note": "跨文献条件比较：底物与测定口径不同，只作条件差异对照，不作效力排序。", "createdAt": "2026-11-24T10:00:00Z"
+    }
+  ],
+  "protocols": [
+    {
+      "id": "PR1", "topicId": "TP1", "name": "SLAC 动力学测定（文献重构）", "sourceKind": "reconstructed", "sourceAssetId": "A2",
+      "revision": 1,
+      "revisions": [
+        {
+          "revision": 1, "at": "2026-11-24T10:00:00Z", "reason": "从 protocol-source.md 重构（逐条对应原文列表）",
+          "purpose": "按原作者 notebook 记录测定 SLAC 催化 ABTS 氧化的动力学条件序列。",
+          "inputs": ["Small laccase (SLAC)", "ABTS 标准溶液", "缓冲液（pH 3–5.5）"],
+          "steps": [
+            { "id": "S1", "op": "配置 ABTS 标准曲线", "params": { "wavelength": "340/420 nm" }, "note": "每种 pH/温度条件记录标准曲线与吸收光谱", "durationMin": 15, "estimated": false, "branch": null, "observeEnd": "标准曲线线性区" },
+            { "id": "S2", "op": "加酶启动反应", "params": { "enzyme": "SLAC 0.0739 µM" }, "note": "每个初始底物浓度有不加酶的对照", "durationMin": 15, "estimated": false, "branch": null, "observeEnd": "吸光度低于 3.2" },
+            { "id": "S3", "op": "同步跟踪底物与产物", "params": { "channels": "340 / 420 nm" }, "note": "测量 15 分钟", "durationMin": 15, "estimated": false, "branch": null, "observeEnd": "15 min 结束" }
+          ],
+          "conditions": ["pH 3–5.5", "温度 25–45 °C", "ABTS 0–200 µM"],
+          "criteria": "仅使用吸光度低于 3.2 的点；限定标准曲线范围内换算浓度以避免外推。",
+          "unknowns": ["原作者 notebook 完整输出与质量平衡结论未在节选中给出"],
+          "sourceFragments": ["protocol-source.md · 研究对象与实验设计"]
+        }
+      ],
+      "createdAt": "2026-11-24T10:00:00Z", "updatedAt": "2026-11-24T10:00:00Z"
+    }
+  ],
+  "executions": [
+    {
+      "id": "EX1", "topicId": "TP1", "protocolId": "PR1", "protocolRevision": 1,
+      "phase": "recording", "status": "done", "origin": "reconstructed", "sourceAssetId": "A2",
+      "preparation": {
+        "baseRevision": 1, "adjustments": [], "notes": "文献重构执行：条件取自原作者记录，非本地实测。", "confirmedAt": "2026-11-24T10:00:00Z",
+        "snapshot": {
+          "revision": 1, "at": "2026-11-24T10:00:00Z", "reason": "本次执行快照",
+          "purpose": "按原作者 notebook 记录测定 SLAC 催化 ABTS 氧化的动力学条件序列。", "inputs": ["Small laccase (SLAC)", "ABTS 标准溶液"],
+          "steps": [
+            { "id": "S1", "op": "配置 ABTS 标准曲线", "params": { "wavelength": "340/420 nm" }, "note": "", "durationMin": 15, "estimated": false, "branch": null, "observeEnd": "标准曲线线性区" },
+            { "id": "S2", "op": "加酶启动反应", "params": { "enzyme": "SLAC 0.0739 µM" }, "note": "", "durationMin": 15, "estimated": false, "branch": null, "observeEnd": "吸光度低于 3.2" },
+            { "id": "S3", "op": "同步跟踪底物与产物", "params": { "channels": "340 / 420 nm" }, "note": "", "durationMin": 15, "estimated": false, "branch": null, "observeEnd": "15 min 结束" }
+          ],
+          "conditions": ["pH 3–5.5", "温度 25–45 °C"], "criteria": "仅用吸光度低于 3.2 的点。", "unknowns": ["不应外推至标准曲线范围外"], "sourceFragments": ["protocol-source.md"]
+        }
+      },
+      "events": [
+        { "id": "EV1", "at": "2026-11-24T10:00:00Z", "recordedAt": "2026-11-24T10:00:00Z", "backfilled": false, "kind": "start", "text": "按重构方案开始（文献记录）", "actual": {}, "revision": 1, "history": [] },
+        { "id": "EV2", "at": "2026-11-24T10:05:00Z", "recordedAt": "2026-11-24T10:05:00Z", "backfilled": false, "kind": "step", "stepId": "S1", "text": "配置 ABTS 标准曲线", "actual": { "amount": "", "durationMin": 15 }, "revision": 1, "history": [] },
+        { "id": "EV3", "at": "2026-11-24T10:20:00Z", "recordedAt": "2026-11-24T10:20:00Z", "backfilled": false, "kind": "step", "stepId": "S3", "text": "同步跟踪底物与产物", "actual": { "durationMin": 15 }, "revision": 1, "history": [] },
+        { "id": "EV4", "at": "2026-11-24T10:22:00Z", "recordedAt": "2026-11-24T10:22:00Z", "backfilled": false, "kind": "deviation", "stepId": "S2", "text": "意外：某高浓度点吸光度超过 3.2，按方案剔除", "actual": {}, "revision": 1, "history": [] }
+      ],
+      "createdAt": "2026-11-24T10:00:00Z", "updatedAt": "2026-11-24T10:30:00Z"
+    }
+  ],
+  "samples": [
+    { "id": "SP1", "topicId": "TP1", "executionId": "EX1", "shortName": "SL1", "displayName": "SLAC + ABTS（pH 3.0）", "origin": "reconstructed",
+      "states": [{ "revision": 1, "at": "2026-11-24T10:00:00Z", "amount": { "value": "0.0739", "unit": "µM", "estimated": false }, "handling": "加酶启动", "use": "动力学测定", "note": "" }],
+      "createdAt": "2026-11-24T10:00:00Z" }
+  ],
+  "measurements": [
+    { "id": "M1", "topicId": "TP1", "sampleId": "SP1", "sampleStateRevision": 1, "time": "2026-11-24T10:20:00Z", "method": "分光光度法（340 nm）", "instrument": "UV-Vis", "value": "0.42", "unit": "AU", "origin": "reconstructed",
+      "cellRef": { "tableId": "T1", "row": 2, "col": 2 }, "note": "接线夹具 · 取自样表头部", "revision": 1, "history": [], "createdAt": "2026-11-24T10:00:00Z" }
+  ],
+  "tables": [
+    { "id": "T1", "assetId": "A3", "name": "SLAC pH3 动力学（节选）", "columns": ["Experiment ID", "Type", "Protein", "Initial concentration", "Unit", "Reactant"],
+      "rows": [
+        ["0", "Absorption", "Small laccase (SLAC)", "0.07393872680094507", "umole / l", "ABTS"],
+        ["0", "Absorption", "Small laccase (SLAC)", "0", "umole / l", "ABTS control"]
+      ],
+      "markerRows": [], "origin": "public", "columnMeta": [
+        { "name": "Experiment ID", "unit": "", "decision": "confirm" }, { "name": "Type", "unit": "", "decision": "confirm" },
+        { "name": "Protein", "unit": "", "decision": "confirm" }, { "name": "Initial concentration", "unit": "umole / l", "decision": "confirm" },
+        { "name": "Unit", "unit": "", "decision": "confirm" }, { "name": "Reactant", "unit": "", "decision": "confirm" }
+      ], "note": "节选自公开 CSV 头部；单位按原表。", "revision": 1, "history": [], "createdAt": "2026-11-24T10:00:00Z", "updatedAt": "2026-11-24T10:00:00Z" }
+  ],
+  "analysisTasks": [
+    { "id": "AN1", "topicId": "TP1", "subquestionId": "SQ1", "title": "pH3 下 ABTS 消耗与条件的上下文核对",
+      "core": [{ "kind": "table", "id": "T1" }, { "kind": "measurement", "id": "M1" }, { "kind": "execution", "id": "EX1" }, { "kind": "protocol", "id": "PR1" }],
+      "optional": [{ "ref": { "kind": "card", "id": "C1" }, "included": true }, { "ref": { "kind": "card", "id": "C2" }, "included": false }],
+      "snapshot": { "at": "2026-11-24T10:00:00Z", "purpose": "核对 pH3 条件下底物消耗趋势与文献条件的可对照性。", "summary": "表 T1 + 测量 M1 + 执行 EX1 + 方案 PR1 + 卡 C1", "model": "fixture（模拟）", "promptVersion": "fixture", "hash": "fixturehash0000000000",
+        "fragments": [
+          { "ref": { "kind": "table", "id": "T1" }, "label": "SLAC pH3 动力学（节选）", "version": "第1版", "excerpt": "Experiment ID,Type,Protein,..." },
+          { "ref": { "kind": "measurement", "id": "M1" }, "label": "测量 M1", "version": "第1版", "excerpt": "0.42 AU @340nm" }
+        ] },
+      "resultIds": ["R1"], "createdAt": "2026-11-24T10:00:00Z", "updatedAt": "2026-11-24T10:00:00Z" }
+  ],
+  "analysisResults": [
+    { "id": "R1", "taskId": "AN1", "topicId": "TP1", "method": "双指数衰减拟合（外部工具）", "params": "拟合区间 0–15 min；初值 k1=0.1,k2=0.01", "reason": "", "note": "接线夹具 · 数值与结论均为占位，非真实结果", "assetIds": ["A3"], "reproducible": false, "missing": ["未附原始脚本"], "adoptedRecommendation": "", "revision": 1, "history": [], "createdAt": "2026-11-24T10:00:00Z", "updatedAt": "2026-11-24T10:00:00Z" }
+  ],
+  "reports": [
+    { "id": "REP1", "topicId": "TP1", "taskId": "AN1", "pinned": { "taskId": "AN1", "resultIds": ["R1"], "snapshotHash": "fixturehash0000000000" },
+      "blocks": [
+        { "id": "B1", "order": 0, "nature": "observation", "text": "本次重构执行在 pH3 条件下按方案完成标准曲线与同步跟踪；一处高浓度点因吸光度超过 3.2 被剔除。", "refs": [{ "kind": "execution", "id": "EX1", "version": "第1版", "label": "执行 EX1" }, { "kind": "table", "id": "T1", "version": "第1版", "label": "表 T1" }], "draft": false, "history": [] },
+        { "id": "B2", "order": 1, "nature": "to_verify", "text": "底物消耗趋势与文献最适条件是否一致，尚待补齐原始脚本与更多条件点后再判定。", "refs": [{ "kind": "result", "id": "R1", "version": "第1版", "label": "结果 R1" }, { "kind": "card", "id": "C1", "version": "第1版", "label": "卡 C1" }], "draft": true, "history": [] }
+      ],
+      "revision": 1, "history": [], "createdAt": "2026-11-24T10:00:00Z", "updatedAt": "2026-11-24T10:00:00Z" }
+  ],
+  "chats": [
+    { "id": "CH1", "topicId": "TP1", "subquestionId": "SQ1", "scope": [{ "kind": "card", "id": "C1" }, { "kind": "table", "id": "T1" }],
+      "messages": [
+        { "id": "CM1", "role": "user", "content": "这批数据的条件与文献最适条件能直接比较吗？", "status": "done", "proposals": [], "sources": [], "at": "2026-11-24T10:00:00Z" },
+        { "id": "CM2", "role": "assistant", "content": "不能直接横比：本执行底物为 ABTS 且为文献重构，卡 C1 的条件来自 BTB／enzymatic treatment；可比指标目前只有“漆酶”这一命名映射，温度与底物口径不同，需先补同口径条件点。", "status": "done", "proposals": [], "sources": ["card:C1", "table:T1"], "at": "2026-11-24T10:00:00Z" }
+      ],
+      "createdAt": "2026-11-24T10:00:00Z", "updatedAt": "2026-11-24T10:00:00Z" }
+  ],
+  "knowledge": {
+    "schemaVersion": 9,
+    "items": [
+      { "id": "KI1", "revision": 1, "createdAt": "2026-11-24T10:00:00Z", "updatedAt": "2026-11-24T10:00:00Z",
+        "payload": { "topicIds": ["TP1"], "subquestionIds": ["SQ1"], "contentType": "observation", "nature": "observation",
+          "text": "漆酶（Trametes versicolor）对 BTB 的酶降解在 pH 5、40 °C 表现最优。",
+          "subject": { "raw": "Laccase (Trametes versicolor)" }, "predicate": { "raw": "optimal condition" },
+          "value": { "kind": "category", "raw": "pH 5 / 40 °C", "label": "pH 5 / 40 °C" },
+          "contextRefs": [{ "kind": "context", "id": "CTX1", "revision": 1 }],
+          "evidenceRefs": [{ "ref": { "kind": "evidence", "id": "EVD1", "revision": 1 }, "fieldPaths": ["text"] }],
+          "sourceRefs": [{ "kind": "asset", "id": "A1" }],
+          "origin": { "sourceClass": "literature_report", "createdBy": "model", "secondaryCitation": false },
+          "scopeText": "BTB / enzymatic treatment", "unknowns": [],
+          "review": { "status": "confirmed", "reviewedAt": "2026-11-24T10:00:00Z", "basis": "人工核对摘要原句" }, "cardId": "C1" },
+        "history": [] },
+      { "id": "KI2", "revision": 1, "createdAt": "2026-11-24T10:00:00Z", "updatedAt": "2026-11-24T10:00:00Z",
+        "payload": { "topicIds": ["TP1"], "subquestionIds": ["SQ1"], "contentType": "method", "nature": "to_verify",
+          "text": "SLAC 动力学的考察条件为 pH 3–5.5、25–45 °C（节选未给出最适值）。",
+          "subject": { "raw": "Small laccase (SLAC)" }, "predicate": { "raw": "tested condition range" },
+          "value": { "kind": "range", "raw": "pH 3–5.5 / 25–45 °C", "lower": "3", "upper": "5.5", "unit": "°C" },
+          "contextRefs": [{ "kind": "context", "id": "CTX2", "revision": 1 }],
+          "evidenceRefs": [{ "ref": { "kind": "evidence", "id": "EVD2", "revision": 1 }, "fieldPaths": ["text"] }],
+          "sourceRefs": [{ "kind": "asset", "id": "A2" }],
+          "origin": { "sourceClass": "literature_report", "createdBy": "model", "secondaryCitation": false },
+          "scopeText": "SLAC / ABTS 动力学", "unknowns": [],
+          "review": { "status": "pending" }, "cardId": "C2" },
+        "history": [] }
+    ],
+    "contexts": [
+      { "id": "CTX1", "revision": 1, "createdAt": "2026-11-24T10:00:00Z", "updatedAt": "2026-11-24T10:00:00Z",
+        "payload": { "topicIds": ["TP1"], "subquestionIds": ["SQ1"], "researchUnitId": "RU1", "subject": "Laccase / BTB", "groupLabel": "enzymatic treatment", "stage": "enzymatic degradation", "methodRefs": [],
+          "conditions": [
+            { "id": "CD1", "field": { "raw": "pH" }, "value": { "kind": "scalar", "raw": "5", "value": "5", "unit": null }, "appliesTo": { "subject": "Laccase", "stage": "enzymatic" }, "evidenceRefs": [], "obtainedBy": "source_explicit", "review": { "status": "confirmed" } },
+            { "id": "CD2", "field": { "raw": "temperature" }, "value": { "kind": "scalar", "raw": "40", "value": "40", "unit": "°C" }, "appliesTo": { "subject": "Laccase", "stage": "enzymatic" }, "evidenceRefs": [], "obtainedBy": "source_explicit", "review": { "status": "confirmed" } }
+          ], "unknowns": [], "review": { "status": "confirmed" } },
+        "history": [] },
+      { "id": "CTX2", "revision": 1, "createdAt": "2026-11-24T10:00:00Z", "updatedAt": "2026-11-24T10:00:00Z",
+        "payload": { "topicIds": ["TP1"], "subquestionIds": ["SQ1"], "researchUnitId": "RU2", "subject": "SLAC / ABTS", "groupLabel": "kinetic assay", "stage": "kinetic characterization", "methodRefs": [],
+          "conditions": [
+            { "id": "CD3", "field": { "raw": "pH" }, "value": { "kind": "range", "raw": "3–5.5", "lower": "3", "upper": "5.5", "unit": null }, "appliesTo": { "subject": "SLAC", "stage": "assay" }, "evidenceRefs": [], "obtainedBy": "source_explicit", "review": { "status": "pending" } }
+          ], "unknowns": [], "review": { "status": "pending" } },
+        "history": [] }
+    ],
+    "evidence": [
+      { "id": "EVD1", "revision": 1, "createdAt": "2026-11-24T10:00:00Z", "updatedAt": "2026-11-24T10:00:00Z",
+        "payload": { "topicIds": ["TP1"], "subquestionIds": [], "sourceRef": { "kind": "asset", "id": "A1" },
+          "quote": "optimal performance observed at pH 5 and 40 °C", "locator": { "type": "text", "start": 812 }, "candidates": [], "locationStatus": "located", "review": { "status": "confirmed" } },
+        "history": [] },
+      { "id": "EVD2", "revision": 1, "createdAt": "2026-11-24T10:00:00Z", "updatedAt": "2026-11-24T10:00:00Z",
+        "payload": { "topicIds": ["TP1"], "subquestionIds": [], "sourceRef": { "kind": "asset", "id": "A2" },
+          "quote": "考察 pH 3–5.5、温度 25–45°C", "locator": { "type": "text", "start": 60 }, "candidates": [], "locationStatus": "located", "review": { "status": "pending" } },
+        "history": [] }
+    ],
+    "relations": [
+      { "id": "RL1", "revision": 1, "payload": { "topicIds": ["TP1"], "from": { "kind": "item", "id": "KI1", "revision": 1 }, "to": { "kind": "item", "id": "KI2", "revision": 1 }, "relationType": "same_metric", "note": "同属“漆酶条件”，口径不同" }, "history": [] }
+    ],
+    "themes": [], "mappings": [], "datasets": [], "comparisons": [], "sourcePolicies": [], "snapshots": [], "sourceVersions": [],
+    "extractionRuns": [
+      { "id": "RUN1", "status": "completed", "purpose": "文献语义提取", "createdAt": "2026-11-24T10:00:00Z", "updatedAt": "2026-11-24T10:00:00Z", "total": 2, "done": 2, "created": 2, "chunks": [], "chunkErrors": [], "cancelled": false }
+    ]
+  },
+  "demo": {
+    "fixture": true,
+    "mainTopicId": "TP1",
+    "mainProtocolId": "PR1",
+    "mainExecutionId": "EX1",
+    "mainTaskId": "AN1",
+    "mainChatId": "CH1",
+    "zip": { "fileName": "LOCUS_公开样本_B接线夹具.zip", "sha256": "", "sizeBytes": 0, "url": null, "fixture": true },
+    "sources": {
+      "A1": { "originalUrl": "https://www.ebi.ac.uk/europepmc/webservices/rest/PMC13566542/fullTextXML", "license": "CC BY 4.0", "provenance": "Europe PMC PMC13566542", "access": "external" },
+      "A2": { "license": "CC BY 4.0", "provenance": "DaRUS DOI 10.18419/DARUS-3337（站内节选）", "access": "public" },
+      "A3": { "license": "CC BY 4.0", "provenance": "DaRUS DOI 10.18419/DARUS-3337（站内节选）", "access": "public" }
+    },
+    "contextMaps": {
+      "AN1": {
+        "ok": true,
+        "scope": { "topicId": "TP1", "subquestionId": "SQ1", "taskId": "AN1", "frozen": true },
+        "nodes": [
+          { "key": "table:T1", "kind": "table", "id": "T1", "label": "SLAC pH3 动力学（节选）", "version": "第1版", "role": "core", "selectable": true, "gaps": [] },
+          { "key": "measurement:M1", "kind": "measurement", "id": "M1", "label": "测量 M1 · 0.42 AU", "version": "第1版", "role": "core", "selectable": true, "gaps": [] },
+          { "key": "sample:SP1", "kind": "sample", "id": "SP1", "label": "SLAC + ABTS（pH 3.0）", "role": "core", "selectable": false, "gaps": [] },
+          { "key": "execution:EX1", "kind": "execution", "id": "EX1", "label": "执行 EX1", "version": "第1版", "role": "core", "selectable": true, "gaps": [] },
+          { "key": "protocol:PR1", "kind": "protocol", "id": "PR1", "label": "SLAC 动力学测定（文献重构）", "version": "第1版", "role": "core", "selectable": true, "gaps": [] },
+          { "key": "card:C1", "kind": "card", "id": "C1", "label": "卡 C1 · pH 5 / 40 °C", "version": "第1版", "role": "selected", "selectable": true, "gaps": [] },
+          { "key": "card:C2", "kind": "card", "id": "C2", "label": "卡 C2 · pH 3–5.5 / 25–45 °C", "version": "第1版", "role": "optional", "selectable": true, "gaps": [] }
+        ],
+        "edges": [
+          { "from": "table:T1", "to": "measurement:M1", "edgeKind": "cell_ref", "establishedBy": "measurement.cellRef" },
+          { "from": "measurement:M1", "to": "sample:SP1", "edgeKind": "measured_on", "establishedBy": "measurement.sampleId" },
+          { "from": "sample:SP1", "to": "execution:EX1", "edgeKind": "in_execution", "establishedBy": "sample.executionId" },
+          { "from": "execution:EX1", "to": "protocol:PR1", "edgeKind": "follows_protocol", "establishedBy": "execution.protocolId" }
+        ],
+        "gaps": [], "truncated": false
+      }
+    },
+    "suggestions": [
+      { "id": "SG1", "title": "先补齐同口径条件点再谈可比性", "text": "按文献最适条件（pH 5 / 40 °C）补做同底物条件下的对照点，再与卡 C1 比较。",
+        "basis": { "divergence": ["卡 C1 为 BTB／pH5，卡 C2 为 ABTS／pH3–5.5，底物与测定口径不同"], "dataGaps": ["缺同底物（ABTS）下的最适 pH／温度点", "缺原始拟合脚本"], "distinguishing": ["若同底物最适接近 pH5/40°C，支持“条件一致”解释", "若明显偏移，则支持“底物决定条件”解释"], "uncertainty": ["节选未给出 SLAC 最适值，尚不能定论"] },
+        "reviewed": true, "aiPreset": true },
+      { "id": "SG2", "title": "把比较口径写进记录模板", "text": "在记录模板中固定“底物 + 温度口径”两个字段，避免后续跨文献比较再次失配。",
+        "basis": { "divergence": [], "dataGaps": ["模板未含底物口径字段"], "distinguishing": ["加入口径字段后，比较分组可直接按口径对齐"], "uncertainty": ["是否所有文献都报告同一口径仍未知"] },
+        "reviewed": true, "aiPreset": true }
+    ],
+    "preset": { "ai": true, "model": "fixture（模拟，非真实调用）", "generatedAt": "2026-11-24T10:00:00Z", "reviewedBy": "人工核对（接线夹具）" },
+    "figures": {}
+  }
+}

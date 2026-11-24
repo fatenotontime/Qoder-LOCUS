@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="paper">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="color-scheme" content="light" />
+  <title>LOCUS · 公开展示（只读）</title>
+  <link rel="stylesheet" href="../styles.css" />
+  <link rel="stylesheet" href="./demo.css" />
+</head>
+<body>
+  <div id="locus-demo-root" data-demo-auto data-data-base="../demo-data"></div>
+  <script type="module">
+    import { initDemo } from "./demo-app.js";
+    import { loadASnapshot } from "./a-snapshot.js";
+    const root = document.getElementById("locus-demo-root");
+    const base = new URLSearchParams(location.search).get("base") || root.dataset.dataBase || "../demo-data";
+    initDemo({ root, loader: () => loadASnapshot({ baseUrl: base, zipUrl: `${base}/locus-demo-public.zip` }) });
+  </script>
+</body>
+</html>
