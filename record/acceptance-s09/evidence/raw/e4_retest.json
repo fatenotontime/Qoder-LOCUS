@@ -1,0 +1,570 @@
+{
+  "reqs": [
+    {
+      "url": "http://127.0.0.1:5280/",
+      "method": "GET"
+    },
+    {
+      "url": "http://me.kis.v2.scr.kaspersky-labs.com/FD126C42-EBFA-4E12-B309-BB3FDD723AC1/main.js?attr=eSDBS0tyl7-6CgUVse87Vbrdb7z1gr41ZDYYMXJzQ6ebfiwJWIy9ncMu-R-PUm1v",
+      "method": "GET"
+    },
+    {
+      "url": "http://127.0.0.1:5280/styles.css",
+      "method": "GET"
+    },
+    {
+      "url": "http://127.0.0.1:5280/knowledge-stage.css",
+      "method": "GET"
+    },
+    {
+      "url": "http://127.0.0.1:5280/splash.css",
+      "method": "GET"
+    },
+    {
+      "url": "http://127.0.0.1:5280/site-shim.js",
+      "method": "GET"
+    },
+    {
+      "url": "http://127.0.0.1:5280/settings/settings-fan.css",
+      "method": "GET"
+    },
+    {
+      "url": "http://127.0.0.1:5280/app.js",
+      "method": "GET"
+    },
+    {
+      "url": "http://127.0.0.1:5280/splash.js",
+      "method": "GET"
+    },
+    {
+      "url": "http://127.0.0.1:5280/settings/settings-fan.js",
+      "method": "GET"
+    },
+    {
+      "url": "http://me.kis.v2.scr.kaspersky-labs.com/7D8B79A2-8974-4D7B-A76A-F4F29624C06BnRJ1v6Ns5EKx21WAOXWggksjNEktHLJWGjjCL4cKLDTWENTUc-4AOM7Y_MLJ2Et-Lx1LjifUVuGp-q7Da7HHqQ/init?data=eyJ1cmwiOiJodHRwOi8vMTI3LjAuMC4xOjUyODAvIiwicGx1Z2lucyI6IndudCZ3c20mdnMmdWEmY2ImeGhyX2NvbnRlbnQiLCJkYXRhIjp7ImRhdGEiOlt7InBsdWdpbiI6IndudCIsInBhcmFtZXRlcnMiOiJ7XCJyZWZlcnJlclwiOlwiXCJ9In0seyJwbHVnaW4iOiJ3c20iLCJwYXJhbWV0ZXJzIjoie1wicmVmZXJyZXJcIjpcIlwiLFwic3R1YklkXCI6XCJcIn0ifSx7InBsdWdpbiI6InVhIiwicGFyYW1ldGVycyI6Int9In0seyJwbHVnaW4iOiJ4aHJfY29udGVudCIsInBhcmFtZXRlcnMiOiJ7XCJyZWZlcnJlclwiOlwiXCJ9In1dfSwiaXNUb3BMZXZlbCI6dHJ1ZSwicGFnZVN0YXJ0VGltZSI6MCwibmF2aWdhdGlvblN0YXJ0VGltZSI6MTc5NTU5ODc4MTU3Nn0%3D&nocache=1da0a&tm=2026-11-25T09%3A26%3A21.637Z",
+      "method": "GET"
+    },
+    {
+      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/ACBB19DD-1457-4B03-884C-E471B333F4DD/to/wsm.sessionActivated?tm=2026-11-25T09%3A26%3A21.649Z",
+      "method": "POST"
+    },
+    {
+      "url": "http://127.0.0.1:5280/lib/api.js",
+      "method": "GET"
+    },
+    {
+      "url": "http://127.0.0.1:5280/lib/lanes.js",
+      "method": "GET"
+    },
+    {
+      "url": "http://127.0.0.1:5280/lib/format.js",
+      "method": "GET"
+    },
+    {
+      "url": "http://127.0.0.1:5280/lib/refs.js",
+      "method": "GET"
+    },
+    {
+      "url": "http://127.0.0.1:5280/lib/views.js",
+      "method": "GET"
+    },
+    {
+      "url": "http://127.0.0.1:5280/lib/pages/knowledge.js",
+      "method": "GET"
+    },
+    {
+      "url": "http://127.0.0.1:5280/lib/pages/analysis.js",
+      "method": "GET"
+    },
+    {
+      "url": "http://127.0.0.1:5280/lib/pages/knowledge-stage.js",
+      "method": "GET"
+    },
+    {
+      "url": "http://127.0.0.1:5280/assets/paper/ink-mountains-strip.png",
+      "method": "GET"
+    },
+    {
+      "url": "http://127.0.0.1:5280/assets/paper/plum-corner.png",
+      "method": "GET"
+    },
+    {
+      "url": "http://127.0.0.1:5280/assets/paper/corner-tl.svg",
+      "method": "GET"
+    },
+    {
+      "url": "http://127.0.0.1:5280/assets/paper/corner-tr.svg",
+      "method": "GET"
+    },
+    {
+      "url": "http://127.0.0.1:5280/assets/paper/corner-bl.svg",
+      "method": "GET"
+    },
+    {
+      "url": "http://127.0.0.1:5280/assets/paper/corner-br.svg",
+      "method": "GET"
+    },
+    {
+      "url": "http://127.0.0.1:5280/assets/paper/ink-cloud-line.png",
+      "method": "GET"
+    },
+    {
+      "url": "http://127.0.0.1:5280/assets/paper/ink-bank-pavilion.png",
+      "method": "GET"
+    },
+    {
+      "url": "http://127.0.0.1:5280/assets/paper/bamboo-stalk.png",
+      "method": "GET"
+    },
+    {
+      "url": "http://127.0.0.1:5280/assets/paper/paper-fiber-tile.png",
+      "method": "GET"
+    },
+    {
+      "url": "http://127.0.0.1:5280/assets/fonts/font-kai.subset.woff2",
+      "method": "GET"
+    },
+    {
+      "url": "http://127.0.0.1:5280/assets/fonts/font-display.subset.woff2",
+      "method": "GET"
+    },
+    {
+      "url": "http://127.0.0.1:5280/display/display-api.js",
+      "method": "GET"
+    },
+    {
+      "url": "http://127.0.0.1:5280/demo/a-snapshot.js",
+      "method": "GET"
+    },
+    {
+      "url": "http://127.0.0.1:5280/demo/snapshot-adapter.js",
+      "method": "GET"
+    },
+    {
+      "url": "http://127.0.0.1:5280/demo-data/snapshot/state.json",
+      "method": "GET"
+    },
+    {
+      "url": "http://127.0.0.1:5280/demo-data/snapshot/knowledge.json",
+      "method": "GET"
+    },
+    {
+      "url": "http://127.0.0.1:5280/demo-data/snapshot/context-map.json",
+      "method": "GET"
+    },
+    {
+      "url": "http://127.0.0.1:5280/demo-data/snapshot/references.json",
+      "method": "GET"
+    },
+    {
+      "url": "http://127.0.0.1:5280/demo-data/snapshot/ai-products.json",
+      "method": "GET"
+    },
+    {
+      "url": "http://127.0.0.1:5280/demo-data/snapshot/next-steps.json",
+      "method": "GET"
+    },
+    {
+      "url": "http://127.0.0.1:5280/demo-data/snapshot/manifest.json",
+      "method": "GET"
+    },
+    {
+      "url": "http://127.0.0.1:5280/demo-data/SHA256SUMS.txt",
+      "method": "GET"
+    },
+    {
+      "url": "http://127.0.0.1:5280/demo-data/snapshot/state.json",
+      "method": "GET"
+    },
+    {
+      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/ACBB19DD-1457-4B03-884C-E471B333F4DD/from?get&nocache=1a527&tm=2026-11-25T09%3A26%3A23.651Z",
+      "method": "GET"
+    },
+    {
+      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/ACBB19DD-1457-4B03-884C-E471B333F4DD/from?get&nocache=117b3&tm=2026-11-25T09%3A26%3A24.155Z",
+      "method": "GET"
+    },
+    {
+      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/ACBB19DD-1457-4B03-884C-E471B333F4DD/from?get&nocache=1535f&tm=2026-11-25T09%3A26%3A24.656Z",
+      "method": "GET"
+    },
+    {
+      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/ACBB19DD-1457-4B03-884C-E471B333F4DD/from?get&nocache=1d7c6&tm=2026-11-25T09%3A26%3A25.157Z",
+      "method": "GET"
+    },
+    {
+      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/ACBB19DD-1457-4B03-884C-E471B333F4DD/from?get&nocache=10fdb&tm=2026-11-25T09%3A26%3A25.660Z",
+      "method": "GET"
+    },
+    {
+      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/ACBB19DD-1457-4B03-884C-E471B333F4DD/from?get&nocache=1a16c&tm=2026-11-25T09%3A26%3A26.321Z",
+      "method": "GET"
+    },
+    {
+      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/ACBB19DD-1457-4B03-884C-E471B333F4DD/from?get&nocache=14683&tm=2026-11-25T09%3A26%3A26.823Z",
+      "method": "GET"
+    },
+    {
+      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/ACBB19DD-1457-4B03-884C-E471B333F4DD/from?get&nocache=1cafe&tm=2026-11-25T09%3A26%3A27.326Z",
+      "method": "GET"
+    },
+    {
+      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/ACBB19DD-1457-4B03-884C-E471B333F4DD/from?get&nocache=1c356&tm=2026-11-25T09%3A26%3A27.829Z",
+      "method": "GET"
+    },
+    {
+      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/ACBB19DD-1457-4B03-884C-E471B333F4DD/from?get&nocache=17ec0&tm=2026-11-25T09%3A26%3A28.333Z",
+      "method": "GET"
+    },
+    {
+      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/ACBB19DD-1457-4B03-884C-E471B333F4DD/from?get&nocache=17285&tm=2026-11-25T09%3A26%3A28.844Z",
+      "method": "GET"
+    },
+    {
+      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/ACBB19DD-1457-4B03-884C-E471B333F4DD/from?get&nocache=16e8d&tm=2026-11-25T09%3A26%3A29.350Z",
+      "method": "GET"
+    },
+    {
+      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/ACBB19DD-1457-4B03-884C-E471B333F4DD/from?get&nocache=1c09e&tm=2026-11-25T09%3A26%3A29.857Z",
+      "method": "GET"
+    },
+    {
+      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/ACBB19DD-1457-4B03-884C-E471B333F4DD/from?get&nocache=1d456&tm=2026-11-25T09%3A26%3A30.369Z",
+      "method": "GET"
+    },
+    {
+      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/ACBB19DD-1457-4B03-884C-E471B333F4DD/from?get&nocache=1eb61&tm=2026-11-25T09%3A26%3A30.875Z",
+      "method": "GET"
+    },
+    {
+      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/ACBB19DD-1457-4B03-884C-E471B333F4DD/from?get&nocache=11659&tm=2026-11-25T09%3A26%3A31.380Z",
+      "method": "GET"
+    },
+    {
+      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/ACBB19DD-1457-4B03-884C-E471B333F4DD/from?get&nocache=1031e&tm=2026-11-25T09%3A26%3A31.892Z",
+      "method": "GET"
+    },
+    {
+      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/ACBB19DD-1457-4B03-884C-E471B333F4DD/from?get&nocache=1f186&tm=2026-11-25T09%3A26%3A33.901Z",
+      "method": "GET"
+    },
+    {
+      "url": "http://127.0.0.1:5280/",
+      "method": "GET"
+    },
+    {
+      "url": "http://me.kis.v2.scr.kaspersky-labs.com/FD126C42-EBFA-4E12-B309-BB3FDD723AC1/main.js?attr=eSDBS0tyl7-6CgUVse87Vbrdb7z1gr41ZDYYMXJzQ6ebfiwJWIy9ncMu-R-PUm1v",
+      "method": "GET"
+    },
+    {
+      "url": "http://127.0.0.1:5280/styles.css",
+      "method": "GET"
+    },
+    {
+      "url": "http://127.0.0.1:5280/knowledge-stage.css",
+      "method": "GET"
+    },
+    {
+      "url": "http://127.0.0.1:5280/splash.css",
+      "method": "GET"
+    },
+    {
+      "url": "http://127.0.0.1:5280/site-shim.js",
+      "method": "GET"
+    },
+    {
+      "url": "http://127.0.0.1:5280/settings/settings-fan.css",
+      "method": "GET"
+    },
+    {
+      "url": "http://127.0.0.1:5280/app.js",
+      "method": "GET"
+    },
+    {
+      "url": "http://127.0.0.1:5280/splash.js",
+      "method": "GET"
+    },
+    {
+      "url": "http://127.0.0.1:5280/settings/settings-fan.js",
+      "method": "GET"
+    },
+    {
+      "url": "http://me.kis.v2.scr.kaspersky-labs.com/7D8B79A2-8974-4D7B-A76A-F4F29624C06Bm69wL3DJ5VFp0H_8AsicKKIX5EFSwJS02xOm2thDfgSx6ZS_W3ZR2d3w_T5IOO3sJhBrMDks8BRiTl7s0sCVZg/init?data=eyJ1cmwiOiJodHRwOi8vMTI3LjAuMC4xOjUyODAvIiwicGx1Z2lucyI6IndudCZ3c20mdnMmdWEmY2ImeGhyX2NvbnRlbnQiLCJkYXRhIjp7ImRhdGEiOlt7InBsdWdpbiI6IndudCIsInBhcmFtZXRlcnMiOiJ7XCJyZWZlcnJlclwiOlwiXCJ9In0seyJwbHVnaW4iOiJ3c20iLCJwYXJhbWV0ZXJzIjoie1wicmVmZXJyZXJcIjpcIlwiLFwic3R1YklkXCI6XCJcIn0ifSx7InBsdWdpbiI6InVhIiwicGFyYW1ldGVycyI6Int9In0seyJwbHVnaW4iOiJ4aHJfY29udGVudCIsInBhcmFtZXRlcnMiOiJ7XCJyZWZlcnJlclwiOlwiXCJ9In1dfSwiaXNUb3BMZXZlbCI6dHJ1ZSwicGFnZVN0YXJ0VGltZSI6MCwibmF2aWdhdGlvblN0YXJ0VGltZSI6MTc5NTU5ODc5NDAwM30%3D&nocache=139ed&tm=2026-11-25T09%3A26%3A34.144Z",
+      "method": "GET"
+    },
+    {
+      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/4114335E-ECD4-461D-80C9-026F06A4CF20/to/wsm.sessionActivated?tm=2026-11-25T09%3A26%3A34.158Z",
+      "method": "POST"
+    },
+    {
+      "url": "http://127.0.0.1:5280/assets/fonts/font-kai.subset.woff2",
+      "method": "GET"
+    },
+    {
+      "url": "http://127.0.0.1:5280/assets/fonts/font-display.subset.woff2",
+      "method": "GET"
+    },
+    {
+      "url": "http://127.0.0.1:5280/assets/paper/ink-mountains-strip.png",
+      "method": "GET"
+    },
+    {
+      "url": "http://127.0.0.1:5280/assets/paper/plum-corner.png",
+      "method": "GET"
+    },
+    {
+      "url": "http://127.0.0.1:5280/assets/paper/corner-tl.svg",
+      "method": "GET"
+    },
+    {
+      "url": "http://127.0.0.1:5280/assets/paper/corner-tr.svg",
+      "method": "GET"
+    },
+    {
+      "url": "http://127.0.0.1:5280/assets/paper/corner-bl.svg",
+      "method": "GET"
+    },
+    {
+      "url": "http://127.0.0.1:5280/assets/paper/corner-br.svg",
+      "method": "GET"
+    },
+    {
+      "url": "http://127.0.0.1:5280/assets/paper/ink-cloud-line.png",
+      "method": "GET"
+    },
+    {
+      "url": "http://127.0.0.1:5280/assets/paper/ink-bank-pavilion.png",
+      "method": "GET"
+    },
+    {
+      "url": "http://127.0.0.1:5280/assets/paper/bamboo-stalk.png",
+      "method": "GET"
+    },
+    {
+      "url": "http://127.0.0.1:5280/assets/paper/paper-fiber-tile.png",
+      "method": "GET"
+    },
+    {
+      "url": "http://127.0.0.1:5280/lib/api.js",
+      "method": "GET"
+    },
+    {
+      "url": "http://127.0.0.1:5280/lib/lanes.js",
+      "method": "GET"
+    },
+    {
+      "url": "http://127.0.0.1:5280/lib/format.js",
+      "method": "GET"
+    },
+    {
+      "url": "http://127.0.0.1:5280/lib/refs.js",
+      "method": "GET"
+    },
+    {
+      "url": "http://127.0.0.1:5280/lib/views.js",
+      "method": "GET"
+    },
+    {
+      "url": "http://127.0.0.1:5280/lib/pages/knowledge.js",
+      "method": "GET"
+    },
+    {
+      "url": "http://127.0.0.1:5280/lib/pages/analysis.js",
+      "method": "GET"
+    },
+    {
+      "url": "http://127.0.0.1:5280/lib/pages/knowledge-stage.js",
+      "method": "GET"
+    },
+    {
+      "url": "http://127.0.0.1:5280/display/display-api.js",
+      "method": "GET"
+    },
+    {
+      "url": "http://127.0.0.1:5280/demo/a-snapshot.js",
+      "method": "GET"
+    },
+    {
+      "url": "http://127.0.0.1:5280/demo/snapshot-adapter.js",
+      "method": "GET"
+    },
+    {
+      "url": "http://127.0.0.1:5280/demo-data/snapshot/state.json",
+      "method": "GET"
+    },
+    {
+      "url": "http://127.0.0.1:5280/demo-data/snapshot/knowledge.json",
+      "method": "GET"
+    },
+    {
+      "url": "http://127.0.0.1:5280/demo-data/snapshot/context-map.json",
+      "method": "GET"
+    },
+    {
+      "url": "http://127.0.0.1:5280/demo-data/snapshot/references.json",
+      "method": "GET"
+    },
+    {
+      "url": "http://127.0.0.1:5280/demo-data/snapshot/ai-products.json",
+      "method": "GET"
+    },
+    {
+      "url": "http://127.0.0.1:5280/demo-data/snapshot/next-steps.json",
+      "method": "GET"
+    },
+    {
+      "url": "http://127.0.0.1:5280/demo-data/snapshot/manifest.json",
+      "method": "GET"
+    },
+    {
+      "url": "http://127.0.0.1:5280/demo-data/SHA256SUMS.txt",
+      "method": "GET"
+    },
+    {
+      "url": "http://127.0.0.1:5280/demo-data/snapshot/state.json",
+      "method": "GET"
+    },
+    {
+      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/4114335E-ECD4-461D-80C9-026F06A4CF20/from?get&nocache=1d7e0&tm=2026-11-25T09%3A26%3A36.166Z",
+      "method": "GET"
+    },
+    {
+      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/4114335E-ECD4-461D-80C9-026F06A4CF20/from?get&nocache=1b945&tm=2026-11-25T09%3A26%3A36.681Z",
+      "method": "GET"
+    },
+    {
+      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/4114335E-ECD4-461D-80C9-026F06A4CF20/from?get&nocache=1a6a1&tm=2026-11-25T09%3A26%3A37.194Z",
+      "method": "GET"
+    },
+    {
+      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/4114335E-ECD4-461D-80C9-026F06A4CF20/from?get&nocache=1767c&tm=2026-11-25T09%3A26%3A37.707Z",
+      "method": "GET"
+    },
+    {
+      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/4114335E-ECD4-461D-80C9-026F06A4CF20/from?get&nocache=15cff&tm=2026-11-25T09%3A26%3A38.221Z",
+      "method": "GET"
+    },
+    {
+      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/4114335E-ECD4-461D-80C9-026F06A4CF20/from?get&nocache=16d01&tm=2026-11-25T09%3A26%3A38.736Z",
+      "method": "GET"
+    },
+    {
+      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/4114335E-ECD4-461D-80C9-026F06A4CF20/from?get&nocache=1df64&tm=2026-11-25T09%3A26%3A39.246Z",
+      "method": "GET"
+    },
+    {
+      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/4114335E-ECD4-461D-80C9-026F06A4CF20/from?get&nocache=1c825&tm=2026-11-25T09%3A26%3A39.758Z",
+      "method": "GET"
+    },
+    {
+      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/4114335E-ECD4-461D-80C9-026F06A4CF20/from?get&nocache=171cb&tm=2026-11-25T09%3A26%3A40.272Z",
+      "method": "GET"
+    },
+    {
+      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/4114335E-ECD4-461D-80C9-026F06A4CF20/from?get&nocache=19071&tm=2026-11-25T09%3A26%3A40.787Z",
+      "method": "GET"
+    },
+    {
+      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/4114335E-ECD4-461D-80C9-026F06A4CF20/from?get&nocache=1e6e2&tm=2026-11-25T09%3A26%3A41.294Z",
+      "method": "GET"
+    },
+    {
+      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/4114335E-ECD4-461D-80C9-026F06A4CF20/from?get&nocache=15731&tm=2026-11-25T09%3A26%3A41.805Z",
+      "method": "GET"
+    },
+    {
+      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/4114335E-ECD4-461D-80C9-026F06A4CF20/from?get&nocache=1d06b&tm=2026-11-25T09%3A26%3A42.313Z",
+      "method": "GET"
+    },
+    {
+      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/4114335E-ECD4-461D-80C9-026F06A4CF20/from?get&nocache=1bdb4&tm=2026-11-25T09%3A26%3A42.822Z",
+      "method": "GET"
+    },
+    {
+      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/4114335E-ECD4-461D-80C9-026F06A4CF20/from?get&nocache=16895&tm=2026-11-25T09%3A26%3A43.331Z",
+      "method": "GET"
+    },
+    {
+      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/4114335E-ECD4-461D-80C9-026F06A4CF20/from?get&nocache=1366f&tm=2026-11-25T09%3A26%3A43.840Z",
+      "method": "GET"
+    },
+    {
+      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/4114335E-ECD4-461D-80C9-026F06A4CF20/from?get&nocache=18f6e&tm=2026-11-25T09%3A26%3A44.352Z",
+      "method": "GET"
+    },
+    {
+      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/4114335E-ECD4-461D-80C9-026F06A4CF20/from?get&nocache=1f78d&tm=2026-11-25T09%3A26%3A46.367Z",
+      "method": "GET"
+    },
+    {
+      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/4114335E-ECD4-461D-80C9-026F06A4CF20/from?get&nocache=10294&tm=2026-11-25T09%3A26%3A48.385Z",
+      "method": "GET"
+    },
+    {
+      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/4114335E-ECD4-461D-80C9-026F06A4CF20/from?get&nocache=13377&tm=2026-11-25T09%3A26%3A50.395Z",
+      "method": "GET"
+    },
+    {
+      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/4114335E-ECD4-461D-80C9-026F06A4CF20/from?get&nocache=16c82&tm=2026-11-25T09%3A26%3A52.407Z",
+      "method": "GET"
+    },
+    {
+      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/4114335E-ECD4-461D-80C9-026F06A4CF20/from?get&nocache=124e5&tm=2026-11-25T09%3A26%3A54.412Z",
+      "method": "GET"
+    }
+  ],
+  "e4": {
+    "suggestionCount": 2,
+    "panel": {
+      "hasNextSteps": true,
+      "count": 2,
+      "titles": [
+        "1. 在真实海浪/干湿交替条件下复测同一批物种的漂浮时长 待验证",
+        "2. 补齐原文条件与样本清单，区分差异来自物种组成还是实验条件 待验证"
+      ],
+      "dump": [
+        "证据分歧/缺口 作者自述海浪条件下漂浮时间应更短，但静水实验未给出波浪折扣量；马滕斯真实海水数据物种不同。要补什么数据 对达尔文 94 株同批物种，在真实海水/干湿交替箱体中测漂浮天数与浸后萌发（Martens 式装置）。能区分哪个解释 「静水估计可直接外推」 vs 「海浪条件需下修」两种解释。仍有什么不确定 下修幅度未知；盐度、温度、容器条件仍未量化。可回查 card:card_a56d5514-40… card:card_7012e88a-b0…",
+        "证据分歧/缺口 原文未写明海水盐度/温度/容器；94 种植物清单缺失；马滕斯句参与计数种子数缺字。要补什么数据 原文若含附录清单/条件记录则补录；否则设计受控复现实验并记录盐度/温度/容器与物种清单。能区分哪个解释 结果差异来自「物种/果实类型组成」 vs 「盐度/温度/容器等条件」。仍有什么不确定 原文未提供之处无法回溯；受控复现与 1859 条件未必一致。可回查 card:card_b2405e44-46… card:card_709a3cb3-58…"
+      ],
+      "hasUnti": false,
+      "hasRefBack": 4
+    },
+    "refBack": {
+      "n": 2,
+      "filled": [
+        "知识卡 作者自述：暴露于海浪者漂浮时间应短于静水实验 → 传播估计或、干燥后榛子漂浮 90 天，随后种植萌发（新鲜时立即下沉）。、芦笋带熟果：新鲜漂 23 天；干燥后 85 天，种子随后萌发、Helosciadium 熟种：2 天沉；干燥后漂浮 >90、作者据稀少事实推断：约 1"
+      ]
+    }
+  },
+  "e1": {
+    "info": {
+      "url": "http://127.0.0.1:5280/",
+      "theme": "paper",
+      "displayMode": "on",
+      "badge": "展示课题 · 只读",
+      "curtopic": "当前课题种子经海水漂流后的萌发（达尔文 1859）",
+      "navItems": [
+        "topic",
+        "papers",
+        "knowledge",
+        "protocol",
+        "record",
+        "analysis",
+        "chat",
+        "library"
+      ]
+    }
+  },
+  "e5": {
+    "href": "http://127.0.0.1:5280/demo-data/locus-demo-public.zip",
+    "bytes": 26204,
+    "sha256": "785b468908b0f0246b4e0cafb407a8f4e66d2fbb4db31ed6599fba9f68f4312b"
+  },
+  "e6trial": {
+    "displayCfg": false,
+    "theme": "tech",
+    "bodyClass": "booted theme-tech"
+  },
+  "api": [],
+  "total": 128
+}
