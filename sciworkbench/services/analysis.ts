@@ -192,12 +192,16 @@ export function resolveFragment(state: LocusState, ref: ObjectRef): ContextFragm
 
 export function createAnalysisTask(
   state: LocusState,
-  input: { topicId: string; subquestionId?: string; title: string; core: unknown[]; optional?: unknown[] },
+  input: { topicId: string; subquestionId?: string; title: string; core: unknown[]; optional?: unknown[]; enforceSubquestion?: boolean },
 ): { state: LocusState; task: AnalysisTaskRecord } {
   requireTopic(state, input.topicId);
   const title = str(input.title);
   if (!title) throw new AppError(422, "分析任务标题不能为空。");
   const subquestionId = str(input.subquestionId) || undefined;
+  // 工作台入口：子问题必须选（既有调用方不带此标记，行为不变；旧任务历史仍可查看）。
+  if (input.enforceSubquestion && !subquestionId) {
+    throw new AppError(422, "新建分析任务必须先选子问题。", { code: "subquestion_required" });
+  }
   if (subquestionId) {
     const q = state.subquestions.find((x) => x.id === subquestionId);
     if (!q) throw new AppError(404, `子问题不存在：${subquestionId}`);
@@ -236,6 +240,102 @@ export function setTaskCandidates(
     return item;
   });
   const task: AnalysisTaskRecord = { ...cur, optional: list, updatedAt: now() };
+  return { state: { ...state, analysisTasks: state.analysisTasks.map((t) => (t.id === taskId ? task : t)) }, task };
+}
+
+/** 引用对象的当前可校验版本（工作台入口改版检测；读不到返回 null=不可校验）。 */
+export function referenceVersion(state: LocusState, ref: ObjectRef): string | null {
+  switch (ref.kind) {
+    case "item": return ref.revision ? `r${ref.revision}` : null;
+    case "execution": { const e = state.executions.find((x) => x.id === ref.id); return e ? `e${e.protocolRevision}@${e.updatedAt}` : null; }
+    case "measurement": { const m = state.measurements.find((x) => x.id === ref.id); return m ? `r${m.revision}` : null; }
+    case "table": { const t = state.tables.find((x) => x.id === ref.id); return t ? `r${t.revision}` : null; }
+    case "protocol": { const p = state.protocols.find((x) => x.id === ref.id); return p ? `r${p.revision}` : null; }
+    case "card": { const c = state.cards.find((x) => x.id === ref.id); return c ? `r${c.revision}` : null; }
+    case "asset": { const a = state.assets.find((x) => x.id === ref.id); return a ? `h${a.hash}` : null; }
+    case "subquestion": { const q = state.subquestions.find((x) => x.id === ref.id); return q ? `k${q.kind}` : null; }
+    default: return null;
+  }
+}
+
+/** 引用对象所属课题（工作台入口跨课题校验；查不到返回空数组=不判定归属）。 */
+export function referenceTopicIds(state: LocusState, ref: ObjectRef): string[] {
+  const one = (v: string | undefined): string[] => (v ? [v] : []);
+  switch (ref.kind) {
+    case "subquestion": return one(state.subquestions.find((x) => x.id === ref.id)?.topicId);
+    case "execution": return one(state.executions.find((x) => x.id === ref.id)?.topicId);
+    case "protocol": return one(state.protocols.find((x) => x.id === ref.id)?.topicId);
+    case "measurement": return one(state.measurements.find((x) => x.id === ref.id)?.topicId);
+    case "table": { const t = state.tables.find((x) => x.id === ref.id); return one(t ? state.assets.find((a) => a.id === t.assetId)?.topicId : undefined); }
+    case "card": { const c = state.cards.find((x) => x.id === ref.id); return one(c ? state.assets.find((a) => a.id === c.assetId)?.topicId : undefined); }
+    case "asset": return one(state.assets.find((x) => x.id === ref.id)?.topicId);
+    case "item": { const env = state.knowledge.items.find((x) => x.id === ref.id); return env ? ((env.payload as ItemPayload).topicIds ?? []) : []; }
+    default: return [];
+  }
+}
+
+export interface WorkspaceSelectionInput {
+  readonly topicId?: string;
+  readonly subquestionId?: string;
+  readonly core?: unknown[];
+  readonly optional?: unknown[];
+  /** 客户端观察到的版本：refKey → version（可选；给了才校验，不符即计入 stale）。 */
+  readonly versions?: Record<string, string>;
+}
+
+export interface CleanedSelection {
+  readonly subquestionId: string;
+  readonly core: ObjectRef[];
+  readonly optional: { ref: ObjectRef; included: boolean }[];
+  /** 提交期间已改版、需复核的对象（非空时调用方应拒绝本次提交，保留用户选择）。 */
+  readonly stale: { refKey: string; ref: ObjectRef; expected: string; current: string | null }[];
+}
+
+/**
+ * 工作台入口：在同一次请求内校验课题/对象/版本，产出可用选择。
+ * 课题须与任务一致；子问题必选且属本课题；核心/候选对象须存在、可用、且属本课题；
+ * versions 给了的逐条比对当前版本，不符归入 stale（不在此抛错，由调用方决定阻断）。
+ */
+export function validateWorkspaceSelection(state: LocusState, task: AnalysisTaskRecord, input: WorkspaceSelectionInput): CleanedSelection {
+  if (input.topicId !== undefined && str(input.topicId) !== task.topicId) {
+    throw new AppError(422, `提交的课题与任务不符（任务属课题 ${task.topicId}）。`, { code: "topic_mismatch" });
+  }
+  const subquestionId = str(input.subquestionId);
+  if (!subquestionId) throw new AppError(422, "推荐前必须先选子问题。", { code: "subquestion_required" });
+  const q = state.subquestions.find((x) => x.id === subquestionId);
+  if (!q) throw new AppError(404, `子问题不存在：${subquestionId}`);
+  if (q.topicId !== task.topicId) throw new AppError(422, "子问题不属于该课题。", { code: "topic_mismatch" });
+  const core = (input.core ?? []).map(cleanRef);
+  if (!core.length) throw new AppError(422, "分析任务须至少挂一个核心对象（执行/测量/数据表）。", { code: "core_required" });
+  const assertOwned = (r: ObjectRef) => {
+    resolveFragment(state, r);
+    assertSelectable(state, r);
+    const topics = referenceTopicIds(state, r);
+    if (topics.length && !topics.includes(task.topicId)) {
+      throw new AppError(422, `${r.kind}:${r.id} 不属于本课题——不得跨课题混入。`, { code: "ref_cross_topic", refKey: refKeyOf(r) });
+    }
+  };
+  for (const r of core) assertOwned(r);
+  const coreKeys = new Set(core.map(refKeyOf));
+  const optional = (input.optional ?? []).map((v) => cleanOptionalItem(state, v)).filter((o) => !coreKeys.has(refKeyOf(o.ref)));
+  for (const o of optional) if (o.included) assertOwned(o.ref);
+  const versions = input.versions ?? {};
+  const stale: CleanedSelection["stale"] = [];
+  for (const r of [...core, ...optional.filter((o) => o.included).map((o) => o.ref)]) {
+    const key = refKeyOf(r);
+    const expected = versions[key];
+    if (expected === undefined) continue;
+    const current = referenceVersion(state, r);
+    if (current !== expected) stale.push({ refKey: key, ref: r, expected, current });
+  }
+  return { subquestionId, core, optional, stale };
+}
+
+/** 把校验后的选择原子写回任务（模型失败也保留用户当前选择）。 */
+export function applyTaskSelection(state: LocusState, taskId: string, sel: CleanedSelection): { state: LocusState; task: AnalysisTaskRecord } {
+  const cur = state.analysisTasks.find((t) => t.id === taskId);
+  if (!cur) throw new AppError(404, `分析任务不存在：${taskId}`);
+  const task: AnalysisTaskRecord = { ...cur, subquestionId: sel.subquestionId, core: sel.core, optional: sel.optional, updatedAt: now() };
   return { state: { ...state, analysisTasks: state.analysisTasks.map((t) => (t.id === taskId ? task : t)) }, task };
 }
 

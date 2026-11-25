@@ -142,6 +142,31 @@ export async function createDisplayApi({ baseUrl = DEFAULT_BASE_URL, topicId, zi
       if (!list.length) throw new DemoMissingError("demo.suggestions", "快照未提供下一步指导（A 需导出 next-steps.json）");
       return list;
     },
+
+    // ── 展示增量（S10-C：图形 / 90 天贯通链 / 导出）──
+    /** 某方案的示意图；无即缺项（不现场合成）。 */
+    async protocolFigure(protocolId) { return data.protocolFigure(protocolId); },
+
+    /** 某表的图表；无即缺项。 */
+    async tableChart(tableId) { return data.tableChart(tableId); },
+
+    /** 「90 天」贯通链（报告块→结果→测量→表/执行→原件，含固定版本）；无即缺项。 */
+    async chain90() { return data.chain90(); },
+
+    /** 导出文件元信息 { docx:{fileName,sha256,url}, trace:{...} }；url 指向站内静态导出目录。 */
+    async exports() { return data.exportsInfo(); },
+
+    // ── 局部引用「重试」：直接重读静态文件（旁路启动缓存），供区域失败后恢复 ──
+    async reloadFigures() {
+      const j = await loadJson("snapshot/figures.json");
+      if (!j || (typeof j !== "object")) throw new DemoMissingError("snapshot/figures.json", "图形文件不可读");
+      return j;
+    },
+    async reloadChain90() {
+      const j = await loadJson("snapshot/chain-90d.json");
+      if (!j?.hops?.length) throw new DemoMissingError("snapshot/chain-90d.json", "贯通链文件不可读或为空");
+      return j;
+    },
   };
 
   return Object.freeze(api);

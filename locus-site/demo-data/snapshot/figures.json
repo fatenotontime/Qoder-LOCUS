@@ -1,0 +1,99 @@
+{
+  "note": "图形由既有方案步骤与表行数值生成（不新增事实）。protocolFigures 按 protocolId 索引；charts 按 tableId 索引。",
+  "protocolFigures": {
+    "proto_2b4f1e2f-92f4-4503-99d0-0990a3fd907e": {
+      "id": "fig_proto_flow",
+      "kind": "flow",
+      "title": "海水浸泡萌发试验（干燥 vs 新鲜） · 步骤",
+      "caption": "据方案 r1 的步骤生成（示意流程图，非实测照片）；条件未知项沿原文标注。",
+      "protocolId": "proto_2b4f1e2f-92f4-4503-99d0-0990a3fd907e",
+      "revision": 1,
+      "nodes": [
+        {
+          "id": "s1",
+          "label": "采集 94 种带熟果的茎枝与果实",
+          "note": ""
+        },
+        {
+          "id": "s2",
+          "label": "干燥部分茎枝（保留新鲜组作对照）",
+          "note": ""
+        },
+        {
+          "id": "s3",
+          "label": "置于海水浸泡并计时",
+          "note": "盐度/温度原文未写明"
+        },
+        {
+          "id": "s4",
+          "label": "取出后种植并观察萌发",
+          "note": ""
+        }
+      ],
+      "edges": [
+        {
+          "from": "s1",
+          "to": "s2"
+        },
+        {
+          "from": "s2",
+          "to": "s3"
+        },
+        {
+          "from": "s3",
+          "to": "s4"
+        }
+      ],
+      "unknowns": [
+        "海水盐度未写明",
+        "温度未写明",
+        "浸泡容器未写明"
+      ]
+    }
+  },
+  "charts": {
+    "tbl_3c626067-1f9e-41f0-a168-00ebba478810": {
+      "id": "chart_flotation_fresh_vs_dried",
+      "kind": "bar",
+      "title": "漂浮天数：新鲜 vs 干燥",
+      "caption": "据 darwin-flotation.csv 前三行数值绘制；天数取自原文陈述（非本地实测）。",
+      "tableId": "tbl_3c626067-1f9e-41f0-a168-00ebba478810",
+      "revision": 1,
+      "series": [
+        {
+          "key": "fresh",
+          "label": "新鲜",
+          "color": "#8c7a63"
+        },
+        {
+          "key": "dried",
+          "label": "干燥",
+          "color": "#a63f2e"
+        }
+      ],
+      "rows": [
+        {
+          "item": "榛子",
+          "fresh": 0,
+          "dried": 90,
+          "note": "新鲜=立即下沉"
+        },
+        {
+          "item": "芦笋",
+          "fresh": 23,
+          "dried": 85
+        },
+        {
+          "item": "Helosciadium",
+          "fresh": 2,
+          "dried": 90,
+          "note": "干燥原文为「>90 天」，按不小于 90 绘"
+        }
+      ],
+      "notes": [
+        "柱高仅为原文陈述天数的直观呈现，非本次实测。",
+        "Helosciadium 干燥值原文为「>90」，绘图取下限 90。"
+      ]
+    }
+  }
+}

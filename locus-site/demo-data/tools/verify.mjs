@@ -16,7 +16,7 @@ const ok = (m) => console.log("PASS  " + m);
 const bad = (m) => { fail++; console.log("FAIL  " + m); };
 
 // 1) JSON 可解析
-const jsonFiles = ["fixture.json", "snapshot/state.json", "snapshot/manifest.json", "snapshot/context-map.json", "snapshot/references.json", "snapshot/knowledge.json", "snapshot/ai-products.json", "snapshot/next-steps.json"];
+const jsonFiles = ["fixture.json", "snapshot/state.json", "snapshot/manifest.json", "snapshot/context-map.json", "snapshot/references.json", "snapshot/knowledge.json", "snapshot/ai-products.json", "snapshot/next-steps.json", "snapshot/figures.json", "snapshot/chain-90d.json"];
 const J = {};
 for (const f of jsonFiles) { try { J[f] = readJson(join(OUT, f)); ok(`JSON 可解析: ${f}`); } catch (e) { bad(`JSON 无法解析: ${f} (${e.message})`); } }
 
@@ -84,6 +84,58 @@ dangling.length === 0 ? ok(`state 引用无悬空（cards ${state.cards?.length 
   kk.length === 0 ? ok(`knowledge 条目/比较引用无悬空（items ${knowledge.items?.length ?? 0}，comparisons ${knowledge.comparisons?.length ?? 0}）`) : bad("knowledge 悬空:\n  " + kk.join("\n  "));
 }
 
+// 5.5) 图形与 90 天贯通链引用可解析
+{
+  const figures = J["snapshot/figures.json"] ?? {};
+  const chain = J["snapshot/chain-90d.json"] ?? {};
+  const gg = [];
+  for (const [pid, fig] of Object.entries(figures.protocolFigures ?? {})) {
+    if (!has("protocols", pid)) gg.push(`figure protocolId ${pid}`);
+    if (!Array.isArray(fig.nodes) || !fig.nodes.length) gg.push(`figure ${pid} 无节点`);
+  }
+  for (const [tid, ch] of Object.entries(figures.charts ?? {})) {
+    if (!has("tables", tid)) gg.push(`chart tableId ${tid}`);
+    for (const r of ch.rows ?? []) if (r.fresh === null && r.dried === null) gg.push(`chart ${tid} 行无数值`);
+  }
+  const collOf = { block: "reports", result: "analysisResults", measurement: "measurements", table: "tables", execution: "executions", asset: "assets" };
+  for (const h of chain.hops ?? []) {
+    const coll = collOf[h.kind];
+    if (!coll) { gg.push(`chain 未知 kind ${h.kind}`); continue; }
+    if (h.kind === "block") {
+      const rep = (state.reports ?? []).find((r) => r.id === h.reportId);
+      if (!rep || !(rep.blocks ?? []).some((b) => b.id === h.id)) gg.push(`chain block ${h.id} 不在报告 ${h.reportId}`);
+    } else if (!has(coll, h.id)) gg.push(`chain ${h.kind}:${h.id}`);
+  }
+  gg.length === 0 ? ok(`图形与 90 天链引用可解析（protocolFigures ${Object.keys(figures.protocolFigures ?? {}).length}，charts ${Object.keys(figures.charts ?? {}).length}，hops ${(chain.hops ?? []).length}）`) : bad("图形/贯通链悬空:\n  " + gg.join("\n  "));
+}
+
+// 5.6) 导出文件：存在、类型正确、追溯包内引用版本与报告一致
+{
+  const ee = [];
+  const docxPath = join(OUT, "snapshot/exports/report.docx");
+  const tracePath = join(OUT, "snapshot/exports/traceability.zip");
+  if (!existsSync(docxPath)) ee.push("缺 exports/report.docx");
+  else {
+    const b = readFileSync(docxPath);
+    if (b.length < 4 || b.readUInt32LE(0) !== 0x04034b50) ee.push("report.docx 非 ZIP/OOXML（PK 头缺失）");
+  }
+  if (!existsSync(tracePath)) ee.push("缺 exports/traceability.zip");
+  else {
+    const zb = readFileSync(tracePath);
+    if (zb.length < 4 || zb.readUInt32LE(0) !== 0x04034b50) ee.push("traceability.zip 非 ZIP");
+    // 读中央目录名，确认含 report.docx 与 versions.json
+    let names = [];
+    let eocd = -1; for (let i = zb.length - 22; i >= 0; i--) if (zb.readUInt32LE(i) === 0x06054b50) { eocd = i; break; }
+    if (eocd >= 0) {
+      const total = zb.readUInt16LE(eocd + 10); let off = zb.readUInt32LE(eocd + 16);
+      for (let i = 0; i < total; i++) { if (zb.readUInt32LE(off) !== 0x02014b50) break; const n = zb.readUInt16LE(off + 28); names.push(zb.slice(off + 46, off + 46 + n).toString("utf8")); off += 46 + n + zb.readUInt16LE(off + 30) + zb.readUInt16LE(off + 32); }
+    }
+    if (!names.includes("report.docx")) ee.push("追溯包缺 report.docx");
+    if (!names.includes("versions.json")) ee.push("追溯包缺 versions.json");
+  }
+  ee.length === 0 ? ok("导出文件存在且类型正确（report.docx OOXML、traceability.zip 含 report.docx/versions.json）") : bad("导出文件校验失败:\n  " + ee.join("\n  "));
+}
+
 // 6) 原件 SHA-256 复算
 {
   let n = 0, e = 0;
@@ -115,7 +167,7 @@ const addSum = (rel) => { const p = join(OUT, rel); if (existsSync(p)) sums.push
 const walkRel = (dir) => { for (const name of readdirSync(dir).sort()) { const p = join(dir, name); statSync(p).isDirectory() ? walkRel(p) : addSum(relative(OUT, p).split(sep).join(posix.sep)); } };
 addSum("fixture.json");
 walkRel(join(OUT, "originals"));
-for (const f of ["state.json", "manifest.json", "context-map.json", "references.json", "knowledge.json", "ai-products.json", "next-steps.json", "report-snippet.md"]) addSum(`snapshot/${f}`);
+for (const f of ["state.json", "manifest.json", "context-map.json", "references.json", "knowledge.json", "ai-products.json", "next-steps.json", "report-snippet.md", "figures.json", "chain-90d.json", "exports/report.docx", "exports/traceability.zip"]) addSum(`snapshot/${f}`);
 addSum("locus-demo-public.zip");
 writeFileSync(join(OUT, "SHA256SUMS.txt"), sums.join("\n") + "\n", "utf8");
 ok(`SHA256SUMS.txt 已生成（${sums.length} 行）`);

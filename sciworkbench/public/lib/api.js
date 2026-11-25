@@ -33,6 +33,8 @@ export const api = {
   async confirmPreparation(execId) { return json(`/api/executions/${encodeURIComponent(execId)}/confirm-preparation`, {}); },
   async saveExecutionAsProtocol(execId, name) { return json(`/api/executions/${encodeURIComponent(execId)}/save-as-protocol`, { name }); },
   async appendEvent(execId, input) { return json(`/api/executions/${encodeURIComponent(execId)}/events`, input); },
+  // R03：一次行保存同时含「步骤+偏差」时，两条事件放在一次后端保存（需服务端接受 events 数组；见 docs/patch-proposals/server-events-batch.md）。
+  async appendEvents(execId, events) { return json(`/api/executions/${encodeURIComponent(execId)}/events`, { events }); },
   async editEvent(execId, eventId, patch) { return json(`/api/executions/${encodeURIComponent(execId)}/events/${encodeURIComponent(eventId)}/edit`, patch); },
   async pauseAssist(execId) { return json(`/api/executions/${encodeURIComponent(execId)}/pause-assist`, {}); },
   async pauseExecution(execId, input) { return json(`/api/executions/${encodeURIComponent(execId)}/pause`, input); },
@@ -63,7 +65,7 @@ export const api = {
   // ── 5E：分析任务 / 方法推荐 / 结果提交 / 初步报告 / 上下文对话 ──
   async createAnalysisTask(input) { return json("/api/analysis/tasks", input); },
   async setTaskCandidates(id, optional) { return json(`/api/analysis/tasks/${encodeURIComponent(id)}/candidates`, { optional }); },
-  async recommendMethods(id, purpose) { return json(`/api/analysis/tasks/${encodeURIComponent(id)}/recommend`, { purpose }); },
+  async recommendMethods(id, purpose, extra) { return json(`/api/analysis/tasks/${encodeURIComponent(id)}/recommend`, { purpose, ...(extra ?? {}) }); },
   async submitResult(taskId, input) { return json(`/api/analysis/tasks/${encodeURIComponent(taskId)}/result`, input); },
   async editResult(id, patch) { return json(`/api/analysis/results/${encodeURIComponent(id)}/edit`, patch); },
   async createReport(topicId, taskId) { return json("/api/reports", { topicId, taskId }); },

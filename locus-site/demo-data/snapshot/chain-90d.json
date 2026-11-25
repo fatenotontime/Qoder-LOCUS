@@ -1,0 +1,72 @@
+{
+  "note": "以报告数值「90 天」（榛子干燥后漂浮天数）为贯通点，逐跳给出引用与固定版本；每跳可点、可返回。缺直接引用边处精确写出经由对象。",
+  "value": "90",
+  "unit": "days",
+  "subject": "榛子（干燥后漂浮）",
+  "hops": [
+    {
+      "hop": 1,
+      "kind": "block",
+      "id": "rblk_0d95f9d5-b406-48bf-990d-2b5b6880cf07",
+      "reportId": "rep_f69e24f7-e4d7-4097-ab26-0ff74e165170",
+      "version": "r3",
+      "label": "分析初稿块#2（「榛子 0→90 天」）",
+      "edge": "has_block",
+      "direct": true
+    },
+    {
+      "hop": 2,
+      "kind": "result",
+      "id": "ares_806d9047-755c-4d33-bf22-4d8b77da8cad",
+      "version": "r1",
+      "label": "结果 · 表格统计（按新鲜/干燥分组）",
+      "edge": "refs",
+      "direct": true
+    },
+    {
+      "hop": 3,
+      "kind": "measurement",
+      "id": "meas_28204d07-e9ec-4f56-8404-6c873a07c0e8",
+      "version": "r1",
+      "label": "处理输入 · 测量 90 days（榛子·干燥）",
+      "edge": "任务核心输入",
+      "direct": false,
+      "via": "task:atask_9cf2587e-9818-447d-9f63-9111eb090fa8",
+      "note": "结果与测量之间无直接引用边，经由分析任务核心输入相连。"
+    },
+    {
+      "hop": 4,
+      "kind": "table",
+      "id": "tbl_3c626067-1f9e-41f0-a168-00ebba478810",
+      "revision": 1,
+      "rowIndex": 0,
+      "version": "r1",
+      "label": "原始表 darwin-flotation.csv 第 1 行（dried=90）",
+      "edge": "任务核心输入",
+      "direct": false,
+      "via": "task:atask_9cf2587e-9818-447d-9f63-9111eb090fa8",
+      "note": "表为该任务的另一核心输入；测量与表行之间无直接边，同经任务相连。"
+    },
+    {
+      "hop": 5,
+      "kind": "execution",
+      "id": "exec_8eddd772-b298-42eb-b8b6-6f114bd27b3f",
+      "version": "r1",
+      "label": "执行（文献重构补记，非本地实测）",
+      "edge": "样品所属执行",
+      "direct": false,
+      "via": "sample:smp_efeed827-56a0-4c7c-8a36-e67b82cb0bbb",
+      "note": "测量→样品→执行；执行与表之间无直接边。"
+    },
+    {
+      "hop": 6,
+      "kind": "asset",
+      "id": "ast_46e6463a-a10b-4c85-9d3d-b38ab2bf1dd0",
+      "version": "sha256:ebdc1366ebbd",
+      "label": "原件 darwin-flotation.csv（Public Domain）",
+      "edge": "from_asset",
+      "direct": true
+    }
+  ],
+  "deeper": "最深可回查层：原件 ast_46e6463a…（darwin-flotation.csv）。第 3–5 跳之间无直接引用边，均经由对象相连，已逐跳写明。"
+}

@@ -13,6 +13,7 @@ import {
   submitResult, editResult, archiveResultFile, createReport,
   previewReportEdit, applyReportEdit, confirmReportBlock, draftReportBlocks,
   createChat, chatScopeSnapshot, appendChatTurn, applyChatResponse, cancelChat, retryChat, adoptProposal, recoverInterruptedChats,
+  validateWorkspaceSelection, applyTaskSelection, referenceVersion, referenceTopicIds,
 } from "../services/analysis.ts";
 import { emptyState, MemoryStore, type LocusState } from "../store.ts";
 import { clearAiConfig } from "../services/ai.ts";
@@ -444,4 +445,127 @@ test("6A-1 路由：报告块 preview→apply（409 并发）→confirm；draft 
     // 非法块
     assert.equal((await post(`/api/reports/${rid}/preview`, { blocks: [{ nature: "bogus", text: "x" }] })).status, 422);
   } finally { app.close(); }
+});
+// ── S10-T1 工作台入口：选择校验（子问题必选 / 跨课题 / 改版 stale）与原子保留选择 ──
+
+test("S10-A1 工作台选择校验：子问题必选、跨课题拒绝、改版 stale、applyTaskSelection 保留", async () => {
+  const w = await world();
+  const r = createAnalysisTask(w.s, {
+    topicId: w.topicId, subquestionId: w.subqId, title: "t",
+    core: [{ kind: "table", id: w.tableId }], optional: [{ ref: { kind: "card", id: w.cardId }, included: true }],
+  });
+  const s = r.state;
+  const task = r.task;
+  const keyOf = (kind: string, id: string) => `${kind}:${id}`;
+
+  // 子问题必选
+  assert.throws(() => validateWorkspaceSelection(s, task, { core: [{ kind: "table", id: w.tableId }] }), /必须先选子问题/);
+  // 课题不一致
+  assert.throws(() => validateWorkspaceSelection(s, task, { topicId: "topic_ghost", subquestionId: w.subqId, core: [{ kind: "table", id: w.tableId }] }), /课题与任务不符/);
+  // 常规：取消一张卡 → 选择生效（included:false），并写入任务
+  const sel = validateWorkspaceSelection(s, task, {
+    topicId: w.topicId, subquestionId: w.subqId,
+    core: [{ kind: "table", id: w.tableId }],
+    optional: [{ ref: { kind: "card", id: w.cardId }, included: false }],
+    versions: { [keyOf("table", w.tableId)]: referenceVersion(s, { kind: "table", id: w.tableId })! },
+  });
+  assert.equal(sel.stale.length, 0);
+  const applied = applyTaskSelection(s, task.id, sel);
+  const snap = buildSnapshot(applied.state, applied.task, "p", "m", "analysis_recommend/v1");
+  assert.equal(snap.fragments.some((f) => f.ref.kind === "card"), false); // 取消的卡不入快照
+  assert.equal(applied.task.optional.find((o) => o.ref.id === w.cardId)!.included, false);
+
+  // 改版 stale：伪造表版本
+  const stale = validateWorkspaceSelection(s, task, {
+    subquestionId: w.subqId, core: [{ kind: "table", id: w.tableId }],
+    versions: { [keyOf("table", w.tableId)]: "r999" },
+  });
+  assert.equal(stale.stale.length, 1);
+  assert.equal(stale.stale[0].refKey, keyOf("table", w.tableId));
+
+  // 跨课题：另一课题的卡不得混入
+  const t2 = createTopic(s, { name: "另一课题", researchQuestion: "?" });
+  const lit2 = await importLiterature(t2.state, { name: "x.md", text: "跨课题正文", mode: "draft", topicId: t2.topic.id });
+  let s2 = lit2.state;
+  for (const c of s2.cards) s2 = reviewCard(s2, c.id, { audit: "confirm" });
+  const otherCard = s2.cards.find((c) => c.assetId === lit2.asset.id)!.id;
+  assert.throws(
+    () => validateWorkspaceSelection(s2, s2.analysisTasks[0], { subquestionId: w.subqId, core: [{ kind: "table", id: w.tableId }], optional: [{ ref: { kind: "card", id: otherCard }, included: true }] }),
+    /不属于本课题/,
+  );
+  assert.deepEqual(referenceTopicIds(s2, { kind: "table", id: w.tableId }), [w.topicId]);
+});
+
+test("S10-A2 新建任务：工作台入口要求子问题；既有调用方兼容", async () => {
+  const w = await world();
+  assert.throws(
+    () => createAnalysisTask(w.s, { topicId: w.topicId, title: "x", core: [{ kind: "table", id: w.tableId }], enforceSubquestion: true }),
+    /必须先选子问题/,
+  );
+  // 未带标记：兼容（历史任务/旧调用方仍可建）
+  assert.equal(createAnalysisTask(w.s, { topicId: w.topicId, title: "x", core: [{ kind: "table", id: w.tableId }] }).task.subquestionId, undefined);
+});
+
+test("S10-A3 路由：工作台推荐带选择冻结快照（取消卡不入输入）；改版 409；空子问题 422；job 带课题归属", async () => {
+  const { createApp } = await import("../server.ts");
+  const ai = await fakeAi(120);
+  const app = await createApp(new MemoryStore());
+  await new Promise<void>((r) => app.listen(0, "127.0.0.1", () => r()));
+  const base = `http://127.0.0.1:${(app.address() as import("node:net").AddressInfo).port}`;
+  const post = async (p: string, b: unknown) => {
+    const res = await fetch(`${base}${p}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(b) });
+    return { status: res.status, data: await res.json() as Record<string, never> };
+  };
+  const get = async (p: string) => (await fetch(`${base}${p}`)).json() as Promise<Record<string, never>>;
+  const poll = async (jobId: unknown) => { let j: Record<string, never> = {}; for (let i = 0; i < 100; i++) { j = await get(`/api/jobs/${jobId}`); if (j.status === "done" || j.status === "error") break; await new Promise((r) => setTimeout(r, 30)); } return j; };
+  try {
+    await post("/api/ai/config", { baseUrl: `http://127.0.0.1:${ai.port}`, model: "fake", key: "k" });
+    const topicId = (await post("/api/topics", { name: "S10", researchQuestion: "Q" })).data.topicId as string;
+    const subqId = (await post(`/api/topics/${topicId}/subquestions`, { question: "最适条件？" })).data.subquestionId as string;
+    const pid = (await post("/api/protocols", { topicId, name: "方案", steps: [{ id: "s1", op: "孵育", durationMin: 30 }] })).data.protocolId as string;
+    const eid = (await post("/api/executions", { topicId, protocolId: pid })).data.executionId as string;
+    await post(`/api/executions/${eid}/confirm-preparation`, {});
+    await post("/api/import/literature", { name: "lit.md", text: "结论一\n\n结论二", mode: "draft", topicId });
+    let st = await get("/api/state");
+    const cardId = (st.cards as { id: string }[])[0].id;
+    await post(`/api/cards/${cardId}/review`, { audit: "confirm" });
+
+    const tid = (await post("/api/analysis/tasks", { topicId, subquestionId: subqId, title: "分析", core: [{ kind: "execution", id: eid }], optional: [{ ref: { kind: "card", id: cardId }, included: true }] })).data.taskId as string;
+    st = await get("/api/state");
+    const tbl = (st as unknown as { analysisTasks: { id: string; optional: { ref: { id: string } }[] }[] });
+    void tbl;
+
+    // 工作台推荐：取消卡
+    const rec = await post(`/api/analysis/tasks/${tid}/recommend`, {
+      purpose: "估计", workspace: true, topicId, subquestionId: subqId,
+      core: [{ kind: "execution", id: eid }],
+      optional: [{ ref: { kind: "card", id: cardId }, included: false }],
+    });
+    assert.equal(rec.status, 202);
+    assert.equal(rec.data.topicId, topicId);
+    assert.equal(rec.data.subquestionId, subqId);
+    const j1 = await poll(rec.data.jobId);
+    assert.equal(j1.status, "done");
+    assert.equal(j1.topicId, topicId);
+    st = await get("/api/state");
+    const task = (st.analysisTasks as { id: string; snapshot: { fragments: { ref: { kind: string } }[] }; optional: { ref: { id: string }; included: boolean }[] }[])[0];
+    assert.equal(task.optional.find((o) => o.ref.id === cardId)!.included, false); // 选择已持久化
+    assert.equal(task.snapshot.fragments.some((f) => f.ref.kind === "card"), false); // 取消卡不入冻结快照
+
+    // 改版 → 409 selection_stale，选择不被覆盖
+    const stale = await post(`/api/analysis/tasks/${tid}/recommend`, {
+      purpose: "x", workspace: true, topicId, subquestionId: subqId,
+      core: [{ kind: "execution", id: eid }],
+      versions: { [`execution:${eid}`]: "e999@fake" },
+    });
+    assert.equal(stale.status, 409);
+    assert.equal((stale.data as { code: string }).code, "selection_stale");
+
+    // 空子问题新建：工作台拦、旧调用方兼容
+    assert.equal((await post("/api/analysis/tasks", { topicId, title: "空", core: [{ kind: "execution", id: eid }], workspace: true })).status, 422);
+    assert.equal((await post("/api/analysis/tasks", { topicId, title: "旧", core: [{ kind: "execution", id: eid }] })).status, 200);
+  } finally {
+    await new Promise<void>((r) => app.close(() => r()));
+    await new Promise<void>((r) => ai.server.close(() => r()));
+  }
 });

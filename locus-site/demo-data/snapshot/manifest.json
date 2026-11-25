@@ -3,7 +3,7 @@
   "fixtureVersion": "s08-a-fixture-1",
   "sourceCommit": "8120986",
   "projectId": "topic_f6bff443-3f74-4677-810d-0c15c7d06bf0",
-  "generatedAt": "2026-11-24T10:26:37.139Z",
+  "generatedAt": "2026-11-25T12:55:40.531Z",
   "generator": "locus-site/demo-data/tools/build-demo.mjs",
   "verificationStatus": "verified-local",
   "counts": {
@@ -104,13 +104,17 @@
     }
   ],
   "files": {
-    "snapshot/state.json": "128e936c7d4b94877b13fbedd5cceaed9991b691c0d7f156f2fa2e629d449e99",
+    "snapshot/state.json": "096d93d82c5f5d25f3250f3507dc868a69b745bc411f54cd6885969655b1010f",
     "snapshot/context-map.json": "8b88469f523c126a916840f10596ba6bd5f12f22381eef3f55dd049739204946",
     "snapshot/references.json": "18869fd6676ad5890211a19401ff363507108969fbc5749f6004f06e33b62973",
     "snapshot/knowledge.json": "33d92f7c2bc9913e524b29bb76ae03747f2164238eb3700ec880cb91d7d501b5",
-    "snapshot/ai-products.json": "cc4db8100f3d389cd9a4c3e893ff5f029dc2c42c9df7b41c6e943b67053f58da",
+    "snapshot/ai-products.json": "2f9f3428931e4252956bd2c74969fe8eb3a6a63f6f03601b5fd32817f59e284a",
     "snapshot/next-steps.json": "4d051c7939514832b9b795d88210990a237936a73b46a2fc34fefa210db5be33",
-    "snapshot/report-snippet.md": "ef0b56d35ab319552a1f52013cac4cd7007be2fe01b147bf1fb9311a7b148628"
+    "snapshot/report-snippet.md": "ef0b56d35ab319552a1f52013cac4cd7007be2fe01b147bf1fb9311a7b148628",
+    "snapshot/figures.json": "dc2342d02c05d6b75ef4696124e2220b4399bc8500839c3921790298f1033710",
+    "snapshot/chain-90d.json": "6405c372646d93751098e7e201d0f51d2f96a05b0c2573213b8e5a8a7eafb0f1",
+    "snapshot/exports/report.docx": "baed200b94486eca4f088a51fdb996e6025910060e4f7438a4f33aa356daf975",
+    "snapshot/exports/traceability.zip": "6b3c90792befa05be2ebac15596ede6d8c1270dda2494f62ba1ceadac65261ed"
   },
   "caveats": [
     "comparison.independenceStatus=未具备：两项数据同页转引，非独立两篇文献。",

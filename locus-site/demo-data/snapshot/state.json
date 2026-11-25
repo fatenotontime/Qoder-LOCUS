@@ -1582,10 +1582,78 @@
               }
             ]
           }
+        },
+        {
+          "id": "msg_curated_q1",
+          "role": "user",
+          "content": "干燥处理到底把哪些物种的漂浮时长延长了？请只依据已冻结的对象回答。",
+          "status": "done",
+          "proposals": [],
+          "sources": [],
+          "at": "2026-11-20T07:45:33.136Z",
+          "curated": true
+        },
+        {
+          "id": "msg_curated_a1",
+          "role": "assistant",
+          "content": "依据已冻结的 8 个对象（3 张分组证据卡＋马滕斯/作者修正＋推断/装置卡）：干燥显著延长漂浮时长——成熟榛子由「立即下沉」延长到 90 天、芦笋由 23 天到 85 天、Helosciadium 由 2 天沉没到超过 90 天，且三者浸后均能萌发。94 株干燥植物中 18 株漂浮超过 28 天。这些天数均为达尔文 1859 原文陈述，非本地实测；海水盐度、温度、容器条件原文未写明。",
+          "status": "done",
+          "proposals": [],
+          "sources": [
+            "碎片 1 · 榛子卡",
+            "碎片 2 · 芦笋卡",
+            "碎片 3 · Helosciadium 卡",
+            "碎片 8 · 94 株总述卡"
+          ],
+          "at": "2026-11-20T07:45:33.136Z",
+          "snapshot": {
+            "at": "2026-11-20T07:45:33.136Z",
+            "purpose": "干燥对漂浮时长的影响",
+            "model": null,
+            "promptVersion": "display-curated/v1",
+            "summary": "展示补录：人工依冻结碎片整理，非模型生成",
+            "hash": "curated-display-no-model-hash",
+            "fragments": []
+          },
+          "curated": true
+        },
+        {
+          "id": "msg_curated_q2",
+          "role": "user",
+          "content": "这些结论能直接外推到真实海浪条件吗？",
+          "status": "done",
+          "proposals": [],
+          "sources": [],
+          "at": "2026-11-20T07:45:33.136Z",
+          "curated": true
+        },
+        {
+          "id": "msg_curated_a2",
+          "role": "assistant",
+          "content": "不能直接外推。依据卡 a56d5514 与卡 7012e88a：作者自述暴露于海浪者漂浮时间应短于静水实验（估计或需下修），而马滕斯真实海水（干湿交替）试验物种不同、且未预先干燥并偏选大型果与近海植物，存在方向相反的两处偏倚。因此两种条件不可直接合并统计，需在同一批物种上做受控复测。",
+          "status": "done",
+          "proposals": [],
+          "sources": [
+            "碎片 5 · 马滕斯实测卡",
+            "碎片 6 · 作者修正意见卡"
+          ],
+          "at": "2026-11-20T07:45:33.136Z",
+          "snapshot": {
+            "at": "2026-11-20T07:45:33.136Z",
+            "purpose": "外推可行性",
+            "model": null,
+            "promptVersion": "display-curated/v1",
+            "summary": "展示补录：人工依冻结碎片整理，非模型生成",
+            "hash": "curated-display-no-model-hash",
+            "fragments": []
+          },
+          "curated": true
         }
       ],
       "createdAt": "2026-11-20T07:43:25.819Z",
-      "updatedAt": "2026-11-20T07:45:33.136Z"
+      "updatedAt": "2026-11-20T07:45:33.136Z",
+      "displayNote": "原始记录为历史问候（模型 mimo-v2.6-flash，未复核）。以下补录段落为展示人工整理（依冻结碎片），非模型生成，不冒充运行结果。",
+      "subquestionId": "subq_744874b8-3948-4514-bfd6-87a8a16dd8ae"
     }
   ],
   "knowledge": {
