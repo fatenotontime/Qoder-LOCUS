@@ -68,3 +68,26 @@
 - 共享文献沿用现有关联判断：`state.papers.topicIds.includes(nextId)` 已覆盖。
 - lib 侧 `kzJobMatches(ui, topicId, paperId)` 已保证即使有迟到 job，也不会渲染到不属于它的课题；
   本提案的 job 回调课题校验是第二道防线（防止把 job 结果 refresh 进当前课题）。
+
+@@ 关键：ui.paperId 从不按课题重验 —— 这是 leaksA 的直接原因
+@@ 行 786（refresh 内，paperId 有效性）
+-  if (ui.paperId && !state.papers.some((p) => p.id === ui.paperId)) { ui.paperId = null; ui.attId = null; }
++  if (ui.paperId) { const pp = state.papers.find((p) => p.id === ui.paperId); if (!pp || (ui.topicId && !(pp.topicIds ?? []).includes(ui.topicId))) { ui.paperId = null; ui.attId = null; } }
+
+@@ 行 967-971（renderShell：进入知识/文献页自动选文献）
+   if (kz && !ui.paperId && state.papers.length) ui.paperId = state.papers[0].id;
+-  if (ui.nav === "papers" && !ui.paperId) {
+-    const pool = state.papers.filter((p) => !ui.topicId || p.topicIds.includes(ui.topicId) || !p.topicIds.length);
+-    if (pool.length) ui.paperId = pool[0].id;
+-  }
++  if (kz && !ui.paperId) { const inT = state.papers.filter((p) => !ui.topicId || (p.topicIds ?? []).includes(ui.topicId)); if (inT.length) ui.paperId = inT[0].id; }
++  if (ui.nav === "papers" && !ui.paperId) {
++    const pool = state.papers.filter((p) => !ui.topicId || (p.topicIds ?? []).includes(ui.topicId));
++    if (pool.length) ui.paperId = pool[0].id;
++  }
+
+补充：切换课题需按新课题重验「文献/附件/卡片/方案/执行/分析/报告/会话」。
+方案/执行/分析/报告/会话已由 switchTopic 按 topicId 恢复或清空；文献/附件在此 hunk 兜底。
+知识视图（左栏原文、文献下拉、卡片/舞台/队列）已在 lib 侧按 topicId 作用域，无需 app.js 再改；
+本 hunk 只补 ui.paperId 这个「选择」本身的失效清空。
+
