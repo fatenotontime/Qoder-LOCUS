@@ -1131,8 +1131,15 @@ function renderMiddle() {
     const mount = $("#lv-mount");
     // 只读嵌入视图：按需动态加载，缺该资源时只影响本页，不影响其它卷。
     import("/library/library-view.js")
-      .then((m) => m.renderLibraryPane(mount, { baseUrl: "/demo-data" }))
-      .catch(() => { mount.innerHTML = `<p class="hint">文献库模块未随本次构建提供（/library），或预置快照缺失。</p>`; });
+      .then((m) => {
+        // 展示模式：读站点静态快照（配置 baseUrl）。个人/在线模式：**不得**写死 /demo-data，
+        // 用当前课题的在内存 state 构造等形快照，随课题切换在内存渲染（不触达 /demo-data）。
+        if (DISPLAY_CFG) return m.renderLibraryPane(mount, { baseUrl: DISPLAY_CFG.baseUrl });
+        const tid = ui.topicId || state.topics[0]?.id;
+        const snapshot = { ...state, mainTopicId: tid, knowledge: state.knowledge, demo: { mainTopicId: tid } };
+        return m.renderLibraryPane(mount, { snapshot, topicId: tid });
+      })
+      .catch((e) => { mount.innerHTML = `<p class="hint">个人课题的文献库视图待接入（本视图当前仅支持展示快照）：${esc(String(e?.message ?? e))}</p>`; });
     return;
   }
   note.hidden = true;
