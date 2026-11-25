@@ -16,6 +16,8 @@ let state = { topics: [], subquestions: [], assets: [], papers: [], attachments:
 // 展示模式：公开构建在 index.html 注入 window.__LOCUS_DISPLAY__；无此配置时对既有行为零影响。
 const DISPLAY_CFG = (typeof window !== "undefined" && window.__LOCUS_DISPLAY__) || null;
 let displayMode = false;
+let displaySuggestions = null; // 展示模式预取：下一步指导（B 交付 suggestions()）
+let displayZip = null;         // 展示模式预取：样本 ZIP 元信息（B 交付 zipInfo()）
 const ui = { nav: "topic", topicId: "", assetId: null, paperId: null, attId: null, tableId: null, highlight: null, cell: null, dirty: false, busy: false, cardFilter: "all", groupSel: new Set(), batch: null, ack: false, protocolId: null, executionId: null, stepSel: null, viewRev: null, editEventId: null, pauseSuggest: null, prepExtra: 0, taskId: null, chatId: null, reportId: null, reportWorking: {}, navCollapsed: false, kzTab: "todo", kzPanel: "cards", cardOpen: null, kzJob: null, kzStruct: null, kiView: null, suppressRecheck: null };
 let lastAction = null; // { label, run }
 function setDirty(value) {
@@ -606,9 +608,10 @@ function bootFailure(e) {
   setStatus("读取失败");
 }
 // ── 展示模式接线：读取走静态快照适配器，写接口全部拦截 ──────
-// 冻结接口：/display/display-api.js 导出 createDisplayApi({ baseUrl }) → 只读对象，
-// 含 getState/getSource/backtrace/knowledgeItem/aiStatus/getJob。其余方法在展示模式一律只读。
-const DISPLAY_READS = ["getState", "getSource", "backtrace", "knowledgeItem", "aiStatus", "getJob"];
+// 冻结接口：/display/display-api.js 导出 createDisplayApi({ baseUrl }) → 只读对象。
+// 基础读：getState/getSource/backtrace/knowledgeItem/aiStatus/getJob；
+// 扩展读（B 交付）：contextMap/zipInfo/suggestions。其余方法在展示模式一律只读。
+const DISPLAY_READS = ["getState", "getSource", "backtrace", "knowledgeItem", "aiStatus", "getJob", "contextMap", "zipInfo", "suggestions"];
 function displayReadonlyError() {
   const e = new Error("展示模式 · 只读：该操作在公开展示中不开放，请进入在线试玩。");
   e.readonly = true;
@@ -628,6 +631,9 @@ async function installDisplayMode() {
       throw displayReadonlyError();
     };
   }
+  // 扩展读的预取缓存（缺项则保持 null，渲染层显示「缺项」提示，不现场合成）。
+  if (typeof dapi.suggestions === "function") displaySuggestions = await dapi.suggestions().catch(() => null);
+  if (typeof dapi.zipInfo === "function") displayZip = await dapi.zipInfo().catch(() => null);
   displayMode = true;
 }
 // 新增 DOM：头部「展示课题 · 只读」标识；并隐藏冷色切换入口（仅隐藏，不改既有结构）。
@@ -647,6 +653,67 @@ function markDisplayUi() {
     const el = document.querySelector(sel);
     if (el) el.hidden = true;
   }
+}
+// E4：实跑上下文图（数据来自 contextMap(taskId)，缺失显示缺项，不现场合成）。
+function displayContextMapHtml(map) {
+  const nodes = map?.nodes ?? [], edges = map?.edges ?? [];
+  if (!nodes.length) return `<p class="hint">实跑上下文地图为空。</p>`;
+  const depth = new Map(nodes.map((n) => [n.key, 0]));
+  for (let i = 0; i < nodes.length; i++)
+    for (const e of edges) if (depth.has(e.from) && depth.has(e.to)) depth.set(e.to, Math.max(depth.get(e.to), (depth.get(e.from) ?? 0) + 1));
+  const cols = [];
+  for (const n of nodes) { const d = depth.get(n.key) ?? 0; (cols[d] ??= []).push(n); }
+  const W = 200, H = 60, GX = 72, GY = 18, PAD = 14;
+  const ncol = cols.length || 1, maxRows = Math.max(1, ...cols.map((c) => c.length));
+  const width = PAD * 2 + ncol * W + (ncol - 1) * GX;
+  const height = PAD * 2 + maxRows * H + (maxRows - 1) * GY;
+  const pos = new Map();
+  cols.forEach((col, ci) => col.forEach((n, ri) => pos.set(n.key, { x: PAD + ci * (W + GX), y: PAD + ri * (H + GY) })));
+  const roleColor = { core: "#a63f2e", selected: "#3f7d5a", optional: "#8c7a63", context: "#796a58" };
+  const edgePaths = edges.map((e) => {
+    const a = pos.get(e.from), b = pos.get(e.to); if (!a || !b) return "";
+    return `<path d="M${a.x + W},${a.y + H / 2} C${a.x + W + 40},${a.y + H / 2} ${b.x - 40},${b.y + H / 2} ${b.x},${b.y + H / 2}" fill="none" stroke="#c9b79b" stroke-width="1.4" marker-end="url(#dcm-arrow)"/>`;
+  }).join("");
+  const boxes = nodes.map((n) => {
+    const p = pos.get(n.key); if (!p) return "";
+    const c = roleColor[n.role] ?? "#796a58";
+    return `<g><rect x="${p.x}" y="${p.y}" width="${W}" height="${H}" rx="8" fill="#fbf6ec" stroke="${c}" stroke-width="1.4"/><rect x="${p.x}" y="${p.y}" width="4" height="${H}" rx="2" fill="${c}"/><text x="${p.x + 14}" y="${p.y + 25}" font-size="13" fill="#3a3128">${esc(String(n.label ?? n.id ?? "").slice(0, 22))}</text><text x="${p.x + 14}" y="${p.y + 45}" font-size="11" fill="#8c7a63">${esc(fmtKind(n.kind))}${n.role ? " · " + esc(n.role) : ""}</text></g>`;
+  }).join("");
+  return `<svg viewBox="0 0 ${width} ${height}" width="100%" role="img" aria-label="实跑上下文地图" style="max-height:360px"><defs><marker id="dcm-arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 Z" fill="#c9b79b"/></marker></defs>${edgePaths}${boxes}</svg>`;
+}
+async function renderDisplayContextMap(host, taskId) {
+  const card = document.createElement("div");
+  card.className = "item";
+  const head = `<p class="hint" style="font-weight:600">上下文地图 · 实跑生成</p>`;
+  card.innerHTML = `${head}<p class="hint">读取中…</p>`;
+  host.prepend(card);
+  if (typeof api.contextMap !== "function") { card.innerHTML = `${head}<p class="hint">缺项：展示适配器未提供 contextMap。</p>`; return; }
+  try {
+    const map = await api.contextMap(taskId);
+    card.innerHTML = head + displayContextMapHtml(map);
+  } catch (e) {
+    card.innerHTML = `${head}<p class="hint">快照未提供该任务的实跑上下文地图（缺项：demo.contextMaps[${esc(taskId)}]）。不现场合成图。</p>`;
+  }
+}
+// E4 下一步指导 + E5 样本 ZIP：展示课题右栏新增区（不改既有结构，仅追加）。
+function displayRightExtraHtml() {
+  let h = `<details class="mini" open><summary>下一步指导 · 预生成</summary>`;
+  if (Array.isArray(displaySuggestions) && displaySuggestions.length) {
+    h += displaySuggestions.map((s, i) => `<div class="item"><b>${i + 1}. ${esc(s.direction ?? "")}</b>
+      <p class="hint">依据：${esc(s.basis?.text ?? "（未提）")}</p>
+      <p class="hint">要补数据：${esc(s.needData ?? "（未提）")}</p>
+      <p class="hint">能区分：${esc(s.distinguishes ?? "（未提）")}</p>
+      <p class="hint">仍不确定：${esc(s.stillUncertain ?? "（未提）")}</p></div>`).join("");
+  } else {
+    h += `<p class="hint">快照未提供下一步指导（缺项：demo.suggestions）。</p>`;
+  }
+  h += `</details>`;
+  const z = displayZip;
+  h += `<div class="item"><p class="hint" style="font-weight:600">样本与来源</p>
+    <p class="hint">${z?.fileName ? esc(z.fileName) : "样本 ZIP（含来源与许可清单）"}${z?.sizeBytes ? ` · ${(z.sizeBytes / 1024).toFixed(1)} KB` : ""}</p>
+    ${z?.sha256 ? `<p class="hint">SHA-256：<code>${esc(z.sha256)}</code></p>` : ""}
+    <a href="${esc(DISPLAY_CFG.zipUrl)}" download style="display:inline-block;margin-top:4px;padding:4px 12px;border:1px solid currentColor;border-radius:999px;font-size:13px">下载样本 ZIP</a></div>`;
+  return h;
 }
 async function init() {
   if (DISPLAY_CFG && !displayMode) {
@@ -1008,6 +1075,8 @@ function renderMiddle() {
       : "未冻结：推荐时按核心＋候选＋目的冻结发送内容。";
     content.innerHTML = contextMapHtml(state, ui, t);
     content.classList.add("rich");
+    // 展示模式：在既有分析页入口顶部注入实跑上下文图（数据源换成静态快照，缺项不合成）。
+    if (DISPLAY_CFG) renderDisplayContextMap(content, t.id);
     return;
   }
   if (ui.nav === "chat") {
@@ -1037,7 +1106,7 @@ function renderMiddle() {
   content.textContent = "在左栏选择工作对象。";
 }
 function renderRight() {
-  if (ui.nav === "topic") { $("#right-title").textContent = "下一步与待办"; $("#right-content").innerHTML = nextStepHtml(state, ui) + topicTodosHtml(state, ui); return; }
+  if (ui.nav === "topic") { $("#right-title").textContent = "下一步与待办"; $("#right-content").innerHTML = (DISPLAY_CFG ? displayRightExtraHtml() : "") + nextStepHtml(state, ui) + topicTodosHtml(state, ui); return; }
   if (ui.nav === "papers") { $("#right-title").textContent = "条目与附件"; $("#right-content").innerHTML = paperHtml(); return; }
   if (ui.nav === "knowledge") {
     $("#right-title").textContent = "审阅队列";
