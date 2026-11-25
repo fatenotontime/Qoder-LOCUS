@@ -104,11 +104,9 @@ if (MODE === "public") {
   if (!html.includes("settings-fan.css")) {
     html = html.replace(/<\/head>/i, `  <link rel="stylesheet" href="/settings/settings-fan.css" />\n</head>`);
   }
-  const entry =
-    `\n  <button id="settings-open" class="modelbtn" type="button" style="position:fixed;left:16px;bottom:16px;z-index:60" aria-haspopup="dialog" aria-controls="settings-fan" aria-expanded="false">设置</button>\n` +
-    `  <script type="module" src="/settings/settings-fan.js"></script>\n`;
+  // 入口按钮在源 index.html 左栏底部（#settings-open），此处只注入模块脚本，不再注入悬浮按钮。
   if (!html.includes("settings-fan.js")) {
-    html = html.replace(/<\/body>/i, `${entry}</body>`);
+    html = html.replace(/<\/body>/i, `\n  <script type="module" src="/settings/settings-fan.js"></script>\n</body>`);
   }
 
   demoSummary = `demo-data 已打包：manifest.sourceCommit=${manifest.sourceCommit} · projectId=${manifest.projectId} · fixture=${manifest.fixtureVersion} · ZIP sha256=${zipHash.slice(0, 16)}…；settings/ 已作为新增入口挂到既有首页`;
