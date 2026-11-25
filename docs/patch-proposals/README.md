@@ -25,3 +25,19 @@
 - R02：切到空课题 B 后，`kzq-task` 显示「(无任务)」、舞台 `data-state=idle`（不再串入 A 的回执）。
 - R04：刷新知识页后由运行记录恢复 `kzstage` 与队列（`failed`/计数按 run 回填）。
 - 迹芽：`pose=reading` 时 5 图层、容器 48px；`prefers-reduced-motion` 下图层 `display:none`、静态图 `block`；舞台无 `<img>`（沿用「不回显外部文本」测试）。
+
+## 落地状态（executor-i，分支 `feat/s10-integration`，commit 55faf47）
+
+| 提案 | 状态 | 落地位置（`sciworkbench/public/app.js` / `index.html`） |
+| --- | --- | --- |
+| `index-html.diff` | 已落地 | `index.html` 在 `knowledge-stage.css` 后引入 `/lib/s10-workbench.css`；中栏新增 `#detail-back[data-back]` |
+| `app-js-r04-kzjob-leave.diff` | 部分 | `renderShell` 已删「离开知识页清 `ui.kzJob`」；`kzLeaveGuard` 未由 lib 导出 → 本次跳过该调用（见待依赖） |
+| `app-js-r02-topic-switch.diff` | 已落地（有偏差） | 新增 `switchTopic(nextId)`，收口 `#topic-select` / `.material[data-topicpick]` / `.goto[data-topic]` 三入口。**按集成指令不清 `kzJob`**（原提案置 null），归属改由 lib `kzJobMatches` 过滤 |
+| `app-js-r03-row-drafts.diff` | 已落地 | `ui.stepDrafts` + `captureStepDraft` 委托；`stepsTableHtml` 草稿回填；行保存改一次 `api.appendEvents`，成功只清该行草稿、失败就地 `.rowerr` |
+| `app-js-entries-routing.diff` | 已落地（有加强） | `DETAIL_ID_FIELD/routeHash/pushDetailRoute/applyRoute/backToList/detailExists` + `popstate`；列表→详情入历史、返回按钮 `[data-back]`、刷新失效详情回落列表。`pushDetailRoute` 打开详情前先 `replaceState` 列表 URL，保证浏览器后退回到该模块列表 |
+| `server-events-batch.md` | 未处理（A 负责） | 服务端仍只接受单事件；见待依赖 |
+
+### 待依赖
+- **lib 导出 `kzLeaveGuard`**：`lib/pages/knowledge.js` 现仅有内部 `kzDropDraft()`；app.js 侧离开知识页前的未提交核对内容确认暂缺（本次未自造导出）。
+- **服务端 `POST /api/executions/:id/events` 接受 `{events:[...]}`**：A 未就绪前，前端已发 `{events:[...]}`；R03 成功路径的端到端验证以拦截转发逐条单事件模拟该端点完成。
+- 路由对 `papers` 详情：该页 `renderShell` 会默认选中首篇论文，浏览器后退回落列表后仍自动选中首项（非本轮验收点，未改）。
