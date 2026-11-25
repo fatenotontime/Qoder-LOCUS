@@ -9,7 +9,7 @@ import {
   topbarTopicHtml, emptyTopicGuideHtml, navHtml, navChar, panelErrorHtml, sidebarListHtml,
   topicOverviewHtml, topicFlowHtml, topicTodosHtml, subqBlockHtml, nextStepHtml, NAV_ITEMS,
 } from "./lib/views.js";
-import { knowledgeLeftHtml, knowledgeWorkspaceHtml, knowledgeQueueHtml, renderKnowledgeForm, bindKnowledge } from "./lib/pages/knowledge.js";
+import { knowledgeLeftHtml, knowledgeWorkspaceHtml, knowledgeQueueHtml, renderKnowledgeForm, bindKnowledge, kzLeaveGuard } from "./lib/pages/knowledge.js";
 import { renderAnalysisForm, currentTask, contextMapHtml, analysisRightHtml, snapshotHtml, bindAnalysis } from "./lib/pages/analysis.js";
 
 let state = { topics: [], subquestions: [], assets: [], papers: [], attachments: [], cards: [], tables: [], adoptions: [], mappings: [], comparisons: [], protocols: [], templates: [], executions: [], samples: [], measurements: [], impacts: [], ocrs: [], analysisTasks: [], analysisResults: [], reports: [], chats: [] };
@@ -986,6 +986,7 @@ function switchTopic(nextId) {
 
 async function activateNav(kind) {
   if (kind === ui.nav || !guardLeave()) return;
+  if (ui.nav === "knowledge" && kind !== "knowledge" && !kzLeaveGuard()) return; // 离开知识页先确认未提交的核对内容
   const id = ++navTransitionId;
   const panes = navPanes();
   saveNavScroll();
@@ -2066,6 +2067,7 @@ document.addEventListener("click", (ev) => {
   const bk = ev.target.closest("[data-back]"); if (bk) { ev.preventDefault(); backToList(); return; }
   const b = ev.target.closest(".goto"); if (!b) return;
   if (!guardLeave()) return;
+  if (ui.nav === "knowledge" && b.dataset.goto !== "knowledge" && !kzLeaveGuard()) return; // 离开知识页先确认未提交的核对内容
   if (b.dataset.topic) { switchTopic(b.dataset.topic); }
   if (b.dataset.paper) ui.paperId = b.dataset.paper;
   ui.nav = b.dataset.goto; ui.highlight = null; ui.cell = null; ui.groupSel.clear(); ui.batch = null; ui.ack = false;
