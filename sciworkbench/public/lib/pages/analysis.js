@@ -24,18 +24,32 @@ export function selOf(ui, t) {
 }
 export function resetSel(ui, t) { if (ui.anSel) delete ui.anSel[t.id]; }
 
-/** 引用对象的可校验版本：能取到版本/更新时间的对象带版本，缺则不带（服务端按最新校验）。 */
-function refVersion(state, r) {
-  if (r.kind === "measurement" || r.kind === "table") return state.measurements?.find((x) => x.id === r.id)?.revision ?? state.tables?.find((x) => x.id === r.id)?.revision ?? null;
-  if (r.kind === "execution") return state.executions?.find((x) => x.id === r.id)?.updatedAt ?? null;
-  if (r.kind === "protocol") return state.protocols?.find((x) => x.id === r.id)?.revision ?? null;
-  if (r.kind === "card") return state.cards?.find((x) => x.id === r.id)?.revision ?? null;
-  return null;
+/** 去重键：与后端 services/analysis.ts 的 refKeyOf 同构（item 带 revision）。 */
+const refKeyOf = (r) => (r.kind === "item" ? `item:${r.id}@r${r.revision ?? 0}` : `${r.kind}:${r.id}`);
+
+/** 版本字符串：与后端 referenceVersion 逐字同构，否则 versions 校验会误判 stale。 */
+export function refVersionOf(state, ref) {
+  switch (ref.kind) {
+    case "item": return ref.revision ? `r${ref.revision}` : null;
+    case "execution": { const e = state.executions?.find((x) => x.id === ref.id); return e ? `e${e.protocolRevision}@${e.updatedAt}` : null; }
+    case "measurement": { const m = state.measurements?.find((x) => x.id === ref.id); return m ? `r${m.revision}` : null; }
+    case "table": { const t = state.tables?.find((x) => x.id === ref.id); return t ? `r${t.revision}` : null; }
+    case "protocol": { const p = state.protocols?.find((x) => x.id === ref.id); return p ? `r${p.revision}` : null; }
+    case "card": { const c = state.cards?.find((x) => x.id === ref.id); return c ? `r${c.revision}` : null; }
+    case "asset": { const a = state.assets?.find((x) => x.id === ref.id); return a ? `h${a.hash}` : null; }
+    case "subquestion": { const q = state.subquestions?.find((x) => x.id === ref.id); return q ? `k${q.kind}` : null; }
+    default: return null;
+  }
 }
-function selectionVersions(state, t, optional) {
-  const out = {};
-  for (const r of [...t.core, ...optional.map((o) => o.ref)]) { const v = refVersion(state, r); if (v != null) out[`${r.kind}:${r.id}`] = v; }
-  return out;
+const refForSend = (r) => ({ kind: r.kind, id: r.id, ...(r.kind === "item" && r.revision ? { revision: r.revision } : {}) });
+
+/** 组装工作台推荐请求（A 契约）：workspace/topicId/subquestionId/core/optional/versions。 */
+export function workspaceSelection(state, t, sel) {
+  const core = t.core.map((r) => { const v = refVersionOf(state, r); return { ...refForSend(r), ...(v ? { version: v } : {}) }; });
+  const optional = sel.map((o) => { const v = refVersionOf(state, o.ref); return { ref: refForSend(o.ref), included: !!o.included, ...(v ? { version: v } : {}) }; });
+  const versions = {};
+  for (const r of [...t.core, ...sel.filter((o) => o.included).map((o) => o.ref)]) { const v = refVersionOf(state, r); if (v) versions[refKeyOf(r)] = v; }
+  return { workspace: true, topicId: t.topicId, subquestionId: t.subquestionId, core, optional, versions };
 }
 
 // ── 中栏「＋新建」：分析任务表单 ────────────────────────────
@@ -87,7 +101,7 @@ export function renderAnalysisForm(box) {
       ...[...$$(".an-opt2:checked")].map((x) => ({ ref: { kind: x.dataset.kind, id: x.dataset.id }, included: true })),
       ...[...$$(".an-def:not(:checked)")].map((x) => ({ ref: { kind: "card", id: x.dataset.id }, included: false })),
     ];
-    const r = await ctx.api.createAnalysisTask({ topicId: ui.topicId, subquestionId: subqVal, title: $("#an-title").value, core, optional });
+    const r = await ctx.api.createAnalysisTask({ workspace: true, topicId: ui.topicId, subquestionId: subqVal, title: $("#an-title").value, core, optional });
     ui.taskId = r.taskId; await ctx.refresh(); ctx.setStatus("分析任务已创建：必选数据已锁定（含关联执行/方案）");
   }));
 }
@@ -345,23 +359,22 @@ export function bindAnalysis(c) {
         if (!purpose) { ctx.notify("right", "推荐须写明研究目的。"); return; }
         const sel = selOf(ui, t);
         const originTopic = t.topicId;                 // 绑定发起时课题；迟到回执按此归属
+        const payload = workspaceSelection(ctx.getState(), t, sel);
         await runJob(ev.target, "方法推荐", async () => {
           let r;
           try {
-            r = await api.recommendMethods(t.id, purpose, {
-              subquestionId: t.subquestionId,
-              optional: sel.map((o) => ({ ref: o.ref, included: o.included })),
-              versions: selectionVersions(ctx.getState(), t, sel),
-            });
+            r = await api.recommendMethods(t.id, purpose, payload);
           } catch (e) {
             const code = String(e?.details?.code ?? "");
-            if (e?.status === 409 || /version|stale|conflict|改版|recheck/.test(code)) {
-              const objs = e?.details?.objects ?? e?.details?.conflicts ?? [];
+            if (e?.status === 409 && code === "selection_stale") {
+              const stale = e?.details?.stale ?? [];
               ui.anRecheck = t.id;
-              ui.anRecheckList = objs.map((x) => (typeof x === "string" ? x : x.label ?? `${x.kind}:${x.id}`));
+              ui.anRecheckList = stale.map((s) => (s?.ref ? `${s.ref.kind}:${s.ref.id}` : String(s?.refKey ?? "")));
               ctx.renderRight(); ctx.setStatus("范围已变：本次推荐已阻止，当前选择已保留");
               return;
             }
+            if (e?.status === 409) { ctx.notify("right", "该任务已有推荐在运行，请等待完成。"); return; }
+            if (e?.status === 422) { ctx.notify("right", e.message || "本次选择不被接受：请复核后重试。"); return; }
             throw e;
           }
           ui.anRecheck = null; ui.anRecheckList = null;
@@ -503,7 +516,15 @@ export function bindAnalysis(c) {
     if (t.id === "an-recheck") {
       const task = currentTask(ctx.getState(), ui); if (!task?.snapshot) return;
       const originTopic = task.topicId;
-      runJob(t, "重新推荐", async () => { const r = await api.recommendMethods(task.id, task.snapshot.purpose); await ctx.pollJob(r.jobId, "方法推荐"); if (originTopic !== ui.topicId) return; ui.suppressRecheck = null; await refreshAfterJob(); ctx.setStatus("已按新快照重新推荐"); });
+      const sel = task.optional.map((o) => ({ ref: o.ref, included: !!o.included }));
+      const payload = workspaceSelection(ctx.getState(), task, sel);
+      runJob(t, "重新推荐", async () => {
+        let r;
+        try { r = await api.recommendMethods(task.id, task.snapshot.purpose, payload); }
+        catch (e) { if (e?.status === 422) { ctx.notify("right", e.message || "复核后重试：选择不被接受。"); return; } throw e; }
+        await ctx.pollJob(r.jobId, "方法推荐");
+        if (originTopic !== ui.topicId) return; ui.suppressRecheck = null; await refreshAfterJob(); ctx.setStatus("已按新快照重新推荐");
+      });
       return;
     }
     if (t.id === "an-keep") { const task = currentTask(ctx.getState(), ui); ui.suppressRecheck = task?.id ?? null; ctx.renderRight(); ctx.setStatus("保留旧快照（已忽略复核提示）"); return; }

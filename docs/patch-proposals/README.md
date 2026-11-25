@@ -16,7 +16,7 @@
 ## 已在 lib 落地、无需集成方改动的部分
 - `lib/pages/knowledge-stage.js`：迹芽五图层读卷 / 静态图（减少动态）/ 抬头·盖印脉冲；`kzJobMatches` 归属判断；舞台计数按课题+文献范围。
 - `lib/pages/knowledge.js`：`recoverJobFromRuns` 由 `state.knowledge.extractionRuns` 按归属找回任务，并用 `api.knowledgeRun(runId)` 复核实时状态、有在跑 job 则续轮询；轮询只更右栏队列；新卡/归入触发迹芽事件并去重；左栏原文、文献下拉、卡片/舞台/队列全部按 topicId 作用域（切课题不再串 A 的内容）；备注 `kz-note` 草稿记于 `ui.kzNoteDraft` 并纳入未保存守卫（切页返回不丢）；导出 `kzLeaveGuard(): boolean` 供 app.js 在离开知识页前调用。
-- `lib/pages/analysis.js`：每任务当前选择 `selOf`；图/列表同源；子问题必选；「确认范围并推荐」携带 `subquestionId + optional + versions`；版本冲突（409/code 含 version/stale/conflict）阻止并保留选择；展示态试选只留本页；结果可回看固定快照；缺关联显示「待补」。
+- `lib/pages/analysis.js`：每任务当前选择 `selOf`；图/列表同源；子问题必选；「确认范围并推荐/重新推荐」按 A 契约发 `{workspace:true, topicId, subquestionId, core:[{kind,id,version?}], optional:[{ref,included,version?}], versions:{"kind:id":"…"}}`（版本串与后端 `referenceVersion` 同构：表/测量/方案/卡=`r{n}`、执行=`e{rev}@{updatedAt}`、原件=`h{hash}`、子问题=`k{kind}`、知识项=`r{rev}`）；`selection_stale`(409) 阻止并保留选择、标注复核对象；展示态试选只留本页；结果可回看固定快照；缺关联显示「待补」。建任务带 `workspace:true`（服务端据此强制子问题）。
 - `lib/api.js`：`recommendMethods(id,purpose,extra)` 透传选择与版本；新增 `appendEvents(execId, events)`（前端已就绪，待服务端支持）。
 - `lib/s10-workbench.css`：迹芽素材样式与窄屏补充（需 `index-html.diff` 引入）。
 
