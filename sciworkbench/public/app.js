@@ -18,7 +18,7 @@ const DISPLAY_CFG = (typeof window !== "undefined" && window.__LOCUS_DISPLAY__) 
 let displayMode = false;
 let displaySuggestions = null; // 展示模式预取：下一步指导（B 交付 suggestions()）
 let displayZip = null;         // 展示模式预取：样本 ZIP 元信息（B 交付 zipInfo()）
-const ui = { nav: "topic", topicId: "", assetId: null, paperId: null, attId: null, tableId: null, highlight: null, cell: null, dirty: false, busy: false, cardFilter: "all", groupSel: new Set(), batch: null, ack: false, protocolId: null, executionId: null, stepSel: null, viewRev: null, editEventId: null, pauseSuggest: null, prepExtra: 0, taskId: null, chatId: null, reportId: null, reportWorking: {}, navCollapsed: false, kzTab: "todo", kzPanel: "cards", cardOpen: null, kzJob: null, kzStruct: null, kiView: null, suppressRecheck: null };
+const ui = { nav: "topic", topicId: "", assetId: null, paperId: null, attId: null, tableId: null, highlight: null, cell: null, dirty: false, busy: false, cardFilter: "all", groupSel: new Set(), batch: null, ack: false, protocolId: null, executionId: null, stepSel: null, viewRev: null, editEventId: null, pauseSuggest: null, prepExtra: 0, taskId: null, chatId: null, reportId: null, reportWorking: {}, navCollapsed: false, kzTab: "todo", kzPanel: "cards", cardOpen: null, kzJob: null, kzStruct: null, kiView: null, suppressRecheck: null, stepDrafts: {}, topicViews: {} };
 let lastAction = null; // { label, run }
 function setDirty(value) {
   const next = Boolean(value);
@@ -764,7 +764,7 @@ async function init() {
 }
 async function bootstrap() {
   setStatus("读取卷宗…");
-  try { await refresh(); clearError("mid"); clearBootState(); setStatus("就绪"); }
+  try { await refresh(); clearError("mid"); clearBootState(); setStatus("就绪"); if (location.hash.startsWith("#/")) applyRoute(); }
   catch (e) { bootFailure(e); }
 }
 
@@ -793,6 +793,8 @@ async function refresh() {
   if (ui.kzStruct && !state.cards.some((c) => c.id === ui.kzStruct)) ui.kzStruct = null;
   if (ui.cardOpen && !state.cards.some((c) => c.id === ui.cardOpen)) ui.cardOpen = null;
   renderAll();
+  // 刷新后已失效的详情回落到该模块列表
+  { const f = DETAIL_ID_FIELD[ui.nav]; if (f && ui[f] && !detailExists(ui.nav, ui[f])) ui[f] = null; }
   clearBootState();
 }
 
@@ -924,6 +926,58 @@ function restoreNavScroll() {
   const positions = navScrollPositions.get(ui.nav);
   navPanes().forEach((el, i) => { el.scrollTop = positions?.[i] ?? 0; });
 }
+// ── 路由（哈希）：卷目列表页 ↔ 详情页，共用同一套对象校验 ──────────────
+const NAVS = ["topic", "papers", "knowledge", "protocol", "record", "analysis", "chat", "library"];
+// 卷目 → 详情 id 的 ui 字段名（与 material-list 的 data-* 对应）
+const DETAIL_ID_FIELD = { papers: "paperId", protocol: "protocolId", record: "executionId", analysis: "taskId", chat: "chatId", library: "assetId" };
+function currentDetailId() { const f = DETAIL_ID_FIELD[ui.nav]; return f ? (ui[f] || null) : null; }
+function routeHash() { const id = currentDetailId(); return `#/${ui.nav}${id ? "/" + encodeURIComponent(id) : ""}`; }
+function pushDetailRoute() {
+  const listHash = `#/${ui.nav}`;
+  if (location.hash !== listHash) history.replaceState({ nav: ui.nav, id: null }, "", listHash);
+  const h = routeHash();
+  if (location.hash !== h) history.pushState({ nav: ui.nav, id: currentDetailId() }, "", h);
+}
+function detailExists(nav, id) {
+  const pool = { papers: state.papers, protocol: state.protocols, record: state.executions, analysis: state.analysisTasks, chat: state.chats, library: state.assets }[nav];
+  return Array.isArray(pool) && pool.some((o) => o.id === id);
+}
+function applyRoute() {
+  const m = location.hash.match(/^#\/([\w-]+)(?:\/(.+))?$/);
+  const nav = m && NAVS.includes(m[1]) ? m[1] : "topic";
+  const id = m ? decodeURIComponent(m[2] || "") : "";
+  if (nav !== ui.nav) { if (guardLeave()) activateNav(nav); }
+  const f = DETAIL_ID_FIELD[nav];
+  if (f) ui[f] = id || null;
+  renderAll();
+}
+function backToList() {
+  const f = DETAIL_ID_FIELD[ui.nav]; if (!f) return;
+  if (/^#\/[\w-]+\/.+/.test(location.hash)) { history.back(); return; }
+  ui[f] = null; renderAll();
+}
+window.addEventListener("popstate", applyRoute);
+
+// ── 课题切换唯一入口：记录/恢复视图，按新课题校验失效选择 ────────────────
+function switchTopic(nextId) {
+  if (nextId === ui.topicId) return;
+  if (!guardLeave()) { renderShell(); return; }
+  (ui.topicViews ??= {})[ui.topicId] = { nav: ui.nav, paperId: ui.paperId, protocolId: ui.protocolId, executionId: ui.executionId, taskId: ui.taskId, chatId: ui.chatId };
+  clearAllErrors();
+  ui.topicId = nextId;
+  const keep = ui.topicViews[nextId] ?? {};
+  ui.assetId = null; ui.attId = null; ui.highlight = null; ui.cell = null; ui.groupSel.clear(); ui.batch = null; ui.ack = false;
+  ui.paperId = state.papers.some((p) => p.id === keep.paperId && (!nextId || (p.topicIds ?? []).includes(nextId))) ? keep.paperId : null;
+  ui.protocolId = state.protocols.some((p) => p.id === keep.protocolId && p.topicId === nextId) ? keep.protocolId : null;
+  ui.executionId = state.executions.some((e) => e.id === keep.executionId && e.topicId === nextId) ? keep.executionId : null;
+  ui.taskId = state.analysisTasks.some((t) => t.id === keep.taskId && t.topicId === nextId) ? keep.taskId : null;
+  ui.chatId = state.chats.some((c) => c.id === keep.chatId && c.topicId === nextId) ? keep.chatId : null;
+  ui.reportId = null; ui.stepSel = null; ui.viewRev = null;
+  // 不清 kzJob：任务按课题/文献归属在 lib（kzJobMatches）中过滤；离开/返回由 run 记录找回。
+  if (ui.anSel) ui.anSel = {};
+  renderAll();
+}
+
 async function activateNav(kind) {
   if (kind === ui.nav || !guardLeave()) return;
   const id = ++navTransitionId;
@@ -963,7 +1017,7 @@ function renderAll() {
 function renderShell() {
   $("#curtopic").innerHTML = topbarTopicHtml(state, ui);
   const kz = ui.nav === "knowledge";
-  if (!kz) ui.kzJob = null;
+  // 不清 kzJob：任务按课题/文献归属在 lib（kzJobMatches）中过滤，离开/返回由 run 记录找回。
   if (kz && !ui.paperId && state.papers.length) ui.paperId = state.papers[0].id;
   if (ui.nav === "papers" && !ui.paperId) {
     const pool = state.papers.filter((p) => !ui.topicId || p.topicIds.includes(ui.topicId) || !p.topicIds.length);
@@ -985,6 +1039,8 @@ function renderShell() {
   $("#sec-materials").hidden = kz;
   $("#materials-title").textContent = ui.nav === "topic" ? "课题目录" : ({ papers: "论文条目", protocol: "方案", record: "执行", analysis: "分析任务", chat: "对话会话" }[ui.nav] ?? "材料");
   $("#material-list").innerHTML = kz ? "" : sidebarListHtml(state, ui);
+  const backBtn = $("#detail-back");
+  if (backBtn) backBtn.hidden = !currentDetailId();
   renderCreateArea();
   renderErrors();
 }
@@ -1738,17 +1794,18 @@ function stepsTableHtml(e, snap) {
   const hasDev = (sid) => e.events.some((ev) => ev.kind === "deviation" && ev.stepId === sid);
   const rows = steps.map((s) => {
     const last = lastStepEv(s.id);
+    const dr = ui.stepDrafts?.[e.id]?.[s.id];
     const plan = s.durationMin === null ? `<span class="dbar unknown">时长未知</span>` : `<span class="dbar ${s.estimated ? "est" : "fixed"}">${s.durationMin}min${s.estimated ? "·估" : ""}</span>`;
     const others = steps.filter((x) => x.id !== s.id);
     const dev = hasDev(s.id);
     return `<tr data-step="${s.id}" data-op="${esc(s.op)}">
       <td>${esc(s.op)}${s.branch ? ` <span class="hint">支路:${esc(s.branch)}</span>` : ""}</td>
       <td>${plan}</td>
-      <td><input data-f="amount" value="${esc(last?.actual.amount ?? "")}" placeholder="用量" /></td>
-      <td><input data-f="dur" type="number" min="0" value="${last?.actual.durationMin ?? ""}" placeholder="分" /></td>
-      <td><label class="hint"><input type="checkbox" data-f="incident" ${dev ? "checked" : ""}/> 意外</label>
-        <div class="devtargets">${others.map((x) => `<label class="hint"><input type="checkbox" data-f="target" value="${x.id}" data-op="${esc(x.op)}"/> 影响:${esc(x.op)}</label>`).join("") || `<span class="hint">（无其它步骤）</span>`}</div></td>
-      <td><button class="steptbl-save">${last ? "更新" : "记录"}</button>${dev ? ` <span class="hint warn">已标意外</span>` : ""}</td>
+      <td><input data-f="amount" value="${esc(dr ? (dr.amount ?? "") : (last?.actual.amount ?? ""))}" placeholder="用量" /></td>
+      <td><input data-f="dur" type="number" min="0" value="${esc(dr ? (dr.dur ?? "") : (last?.actual.durationMin ?? ""))}" placeholder="分" /></td>
+      <td><label class="hint"><input type="checkbox" data-f="incident" ${(dr ? dr.incident : dev) ? "checked" : ""}/> 意外</label>
+        <div class="devtargets">${others.map((x) => `<label class="hint"><input type="checkbox" data-f="target" value="${x.id}" data-op="${esc(x.op)}" ${dr?.targets?.includes(x.id) ? "checked" : ""}/> 影响:${esc(x.op)}</label>`).join("") || `<span class="hint">（无其它步骤）</span>`}</div></td>
+      <td><button class="steptbl-save">${last ? "更新" : "记录"}</button>${dev ? ` <span class="hint warn">已标意外</span>` : ""}<span class="rowerr hint warn" hidden></span></td>
     </tr>`;
   }).join("");
   return `<div class="tablewrap"><table class="grid steptbl"><thead><tr><th>步骤（计划）</th><th>计划时长</th><th>实际用量</th><th>实际时长</th><th>意外/影响</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
@@ -2000,9 +2057,10 @@ function renderRecordTools(box) {
 // ── 事件 ────────────────────────────────────────────────────
 /** 工作区跳转（课题首页/待办/条目页的入口按钮）。 */
 document.addEventListener("click", (ev) => {
+  const bk = ev.target.closest("[data-back]"); if (bk) { ev.preventDefault(); backToList(); return; }
   const b = ev.target.closest(".goto"); if (!b) return;
   if (!guardLeave()) return;
-  if (b.dataset.topic) ui.topicId = b.dataset.topic;
+  if (b.dataset.topic) { switchTopic(b.dataset.topic); }
   if (b.dataset.paper) ui.paperId = b.dataset.paper;
   ui.nav = b.dataset.goto; ui.highlight = null; ui.cell = null; ui.groupSel.clear(); ui.batch = null; ui.ack = false;
   renderAll();
@@ -2026,9 +2084,7 @@ $("#nav").addEventListener("click", (ev) => {
 // 页头「当前课题」（容器 #curtopic 常驻，用委托）
 $("#curtopic").addEventListener("change", (e) => {
   if (e.target.id !== "topic-select") return;
-  if (!guardLeave()) { renderShell(); return; }
-  clearAllErrors();
-  ui.topicId = e.target.value; ui.assetId = null; ui.highlight = null; ui.groupSel.clear(); ui.batch = null; ui.protocolId = null; ui.executionId = null; ui.stepSel = null; ui.viewRev = null; ui.taskId = null; ui.chatId = null; ui.reportId = null; renderAll();
+  switchTopic(e.target.value);
 });
 // 创建课题 / 子问题（中间区随渲染重建，用委托）
 document.addEventListener("click", (ev) => {
@@ -2122,16 +2178,28 @@ document.addEventListener("click", (ev) => {
   const stepBtn = t.closest(".steptbl-save");
   if (stepBtn) {
     const row = stepBtn.closest("tr"); const sid = row.dataset.step; const opText = row.dataset.op || "步骤";
-    const amount = row.querySelector('[data-f="amount"]').value.trim();
-    const durRaw = row.querySelector('[data-f="dur"]').value.trim();
-    const incident = row.querySelector('[data-f="incident"]').checked;
-    const targetEls = [...row.querySelectorAll('[data-f="target"]:checked')];
-    const targetOps = targetEls.map((el) => el.dataset.op).filter(Boolean);
+    const execId = ui.executionId;
+    const draft = ui.stepDrafts?.[execId]?.[sid];
+    const amount = String(draft ? (draft.amount ?? "") : row.querySelector('[data-f="amount"]').value).trim();
+    const durRaw = String(draft ? (draft.dur ?? "") : row.querySelector('[data-f="dur"]').value).trim();
+    const incident = draft ? Boolean(draft.incident) : row.querySelector('[data-f="incident"]').checked;
+    const opOf = {}; row.querySelectorAll('[data-f="target"]').forEach((x) => { opOf[x.value] = x.dataset.op; });
+    const targetKeys = draft ? (draft.targets ?? []) : [...row.querySelectorAll('[data-f="target"]:checked')].map((el) => el.value);
+    const targetOps = targetKeys.map((v) => opOf[v]).filter(Boolean);
+    const errEl = row.querySelector(".rowerr"); if (errEl) { errEl.hidden = true; errEl.textContent = ""; }
     runBusy(stepBtn, "记录步骤", async () => {
-      await api.appendEvent(ui.executionId, { kind: "step", stepId: sid, text: opText, actual: { ...(amount ? { amount } : {}), ...(durRaw !== "" ? { durationMin: Number(durRaw) } : {}) } });
-if (incident && targetOps.length) await api.appendEvent(ui.executionId, { kind: "deviation", stepId: sid, text: `意外：影响到${targetOps.map((o) => `「${o}」`).join("")}` });
-      setDirty(false); await refresh(); setStatus("步骤已记录（实际值入本次执行，不改源方案）");
-    }); return;
+      const events = [{ kind: "step", stepId: sid, text: opText, actual: { ...(amount ? { amount } : {}), ...(durRaw !== "" ? { durationMin: Number(durRaw) } : {}) } }];
+      if (incident && targetOps.length) events.push({ kind: "deviation", stepId: sid, text: `意外：影响到${targetOps.map((o) => `「${o}」`).join("")}` });
+      await api.appendEvents(execId, events);
+      if (ui.stepDrafts[execId]) { delete ui.stepDrafts[execId][sid]; if (!Object.keys(ui.stepDrafts[execId]).length) delete ui.stepDrafts[execId]; }
+      setDirty(Boolean(ui.stepDrafts[execId]));
+      await refresh(); setStatus("步骤已记录（实际值入本次执行，不改源方案）");
+    }).then((ok) => {
+      if (ok) return;
+      const el = row.querySelector(".rowerr");
+      if (el) { el.hidden = false; el.textContent = "未保存，请重试"; }
+    });
+    return;
   }
   const smpRename = t.closest(".smp-rename");
   if (smpRename) {
@@ -2251,41 +2319,42 @@ $("#navdrawer").addEventListener("click", (ev) => {
 $("#material-list").addEventListener("click", (ev) => {
   const el = ev.target.closest(".material"); if (!el) return;
   if (el.dataset.topicpick) {
-    if (el.dataset.topicpick === ui.topicId) return;
-    if (!guardLeave()) return;
-    clearAllErrors();
-    ui.topicId = el.dataset.topicpick; ui.assetId = null; ui.highlight = null; ui.groupSel.clear(); ui.batch = null;
-    ui.protocolId = null; ui.executionId = null; ui.stepSel = null; ui.viewRev = null; ui.taskId = null; ui.chatId = null; ui.reportId = null;
-    renderAll(); return;
+    switchTopic(el.dataset.topicpick); return;
   }
   if (el.dataset.paperid) {
     if (el.dataset.paperid === ui.paperId) return;
     if (!guardLeave()) return;
-    ui.paperId = el.dataset.paperid; ui.attId = null; ui.assetId = null; ui.highlight = null; ui.groupSel.clear(); ui.batch = null; ui.ack = false; renderAll(); return;
+    saveNavScroll();
+    ui.paperId = el.dataset.paperid; ui.attId = null; ui.assetId = null; ui.highlight = null; ui.groupSel.clear(); ui.batch = null; ui.ack = false; renderAll(); pushDetailRoute(); return;
   }
   if (el.dataset.pid) {
     if (el.dataset.pid === ui.protocolId) return;
     if (!guardLeave()) return;
-    ui.protocolId = el.dataset.pid; ui.stepSel = null; ui.viewRev = null; ui.highlight = null; renderAll(); return;
+    saveNavScroll();
+    ui.protocolId = el.dataset.pid; ui.stepSel = null; ui.viewRev = null; ui.highlight = null; renderAll(); pushDetailRoute(); return;
   }
   if (el.dataset.eid) {
     if (el.dataset.eid === ui.executionId) return;
     if (!guardLeave()) return;
-    ui.executionId = el.dataset.eid; ui.editEventId = null; ui.pauseSuggest = null; ui.prepExtra = 0; ui.assetId = null; renderAll(); return;
+    saveNavScroll();
+    ui.executionId = el.dataset.eid; ui.editEventId = null; ui.pauseSuggest = null; ui.prepExtra = 0; ui.assetId = null; renderAll(); pushDetailRoute(); return;
   }
   if (el.dataset.atid) {
     if (el.dataset.atid === ui.taskId) return;
     if (!guardLeave()) return;
-    ui.taskId = el.dataset.atid; ui.reportId = null; renderAll(); return;
+    saveNavScroll();
+    ui.taskId = el.dataset.atid; ui.reportId = null; renderAll(); pushDetailRoute(); return;
   }
   if (el.dataset.cid) {
     if (el.dataset.cid === ui.chatId) return;
     if (!guardLeave()) return;
-    ui.chatId = el.dataset.cid; renderAll(); return;
+    saveNavScroll();
+    ui.chatId = el.dataset.cid; renderAll(); pushDetailRoute(); return;
   }
   if (el.dataset.id === ui.assetId) return;
   if (!guardLeave()) return;
-  ui.assetId = el.dataset.id; ui.highlight = null; ui.cell = null; ui.tableId = null; ui.groupSel.clear(); ui.batch = null; ui.ack = false; renderAll();
+  saveNavScroll();
+  ui.assetId = el.dataset.id; ui.highlight = null; ui.cell = null; ui.tableId = null; ui.groupSel.clear(); ui.batch = null; ui.ack = false; renderAll(); pushDetailRoute();
 });
 $("#mid-content").addEventListener("click", async (ev) => {
   if (ev.target.classList.contains("tbl-open")) { openTableMax(ev.target.dataset.tid); return; }
@@ -2350,6 +2419,21 @@ function trackMidDirty(ev) {
 }
 document.addEventListener("input", trackMidDirty);
 document.addEventListener("change", trackMidDirty);
+// R03：行草稿按 (执行ID, 步骤ID) 存放，refresh 不丢；未保存标记由草稿驱动。
+function captureStepDraft(ev) {
+  const row = ev.target.closest?.(".steptbl tbody tr"); if (!row) return;
+  const f = ev.target.dataset?.f; if (!f) return;
+  const execId = ui.executionId; if (!execId) return;
+  const m = (ui.stepDrafts[execId] ??= {});
+  const d = (m[row.dataset.step] ??= { amount: null, dur: null, incident: false, targets: [] });
+  if (f === "amount") d.amount = row.querySelector('[data-f="amount"]').value;
+  else if (f === "dur") d.dur = row.querySelector('[data-f="dur"]').value;
+  else if (f === "incident") d.incident = ev.target.checked;
+  else if (f === "target") d.targets = [...row.querySelectorAll('[data-f="target"]:checked')].map((x) => x.value);
+  setDirty(true);
+}
+document.addEventListener("input", captureStepDraft);
+document.addEventListener("change", captureStepDraft);
 $("#right-content").addEventListener("click", async (ev) => {
   const item = ev.target.closest(".item");
   const val = (f) => item?.querySelector(`[data-field="${f}"]`)?.value ?? "";
