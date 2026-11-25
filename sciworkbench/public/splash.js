@@ -21,7 +21,7 @@
 
   var $ = function (id) { return document.getElementById(id); };
   var overlay = $("overlay"), stage = $("stage");
-  var uiBrand = document.querySelector(".brand");
+  var uiBrand = document.getElementById("theme-seal");
   var el = {
     closed: $("scroll-closed"), scrollMain: $("scroll-main"),
     paper: $("paper"), paperInner: $("paper-inner"), scrollShadow: $("scroll-shadow"),
@@ -191,8 +191,7 @@
       L.targetBox = { x: b.x, y: b.y, w: Math.max(b.width, 1), h: Math.max(b.height, 1) };
     }
     var box = L.targetBox;
-    var host = el.sealArt || uiBrand;
-    var r = host ? host.getBoundingClientRect() : { left: 0, top: 0, width: 72, height: 72 };
+    var r = (el.sealArt || uiBrand).getBoundingClientRect();
     var slotW = Math.max(r.width || 72, 1), slotH = Math.max(r.height || 72, 1);
     var m = null, s = 1;
     try { m = el.stage.getScreenCTM(); s = m.a || 1; } catch (e) {}

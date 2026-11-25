@@ -3,7 +3,7 @@
 //   <publicDir> 例：F:/Qoder dev competition/sciworkbench/public
 //   [outDir]   默认本目录下的 web/
 //   --mode=trial   线上试玩/既有发布：注入 shim（默认，行为不变）
-//   --mode=public  静态公开展示：落地页=演示页，打包 demo-data/demo/settings，剥离冷色素材与自测件
+//   --mode=public  公开展示：打包 demo-data，并把设置折扇作为新增入口挂到既有首页（不改首页结构与既有入口）
 import { cpSync, existsSync, readFileSync, writeFileSync, copyFileSync, rmSync, mkdirSync } from "node:fs";
 import { join, resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -76,56 +76,31 @@ if (MODE === "public") {
   }
   const manifest = JSON.parse(readFileSync(join(dst, "snapshot", "manifest.json"), "utf8"));
 
-  // 2b) demo 展示模块：只发布运行必需文件，剔除 README/READ_PATHS/dev-serve/tests/fixture。
-  const demoOut = join(out, "demo");
-  cpSync(join(HERE, "web-overlay", "demo"), demoOut, { recursive: true });
-  for (const rel of ["README.md", "READ_PATHS.md", "dev-serve.mjs"]) rmSync(join(demoOut, rel), { force: true });
-  rmSync(join(demoOut, "tests"), { recursive: true, force: true });
-  rmSync(join(demoOut, "fixture"), { recursive: true, force: true });
-
-  // 2c) settings 折扇：只发布 settings-fan.js / settings-fan.css。
+  // 2b) settings 折扇：只发布 settings-fan.js / settings-fan.css（新增入口，不改既有界面）。
   const setOut = join(out, "settings");
   mkdirSync(setOut, { recursive: true });
   copyFileSync(join(HERE, "web-overlay", "settings", "settings-fan.js"), join(setOut, "settings-fan.js"));
   copyFileSync(join(HERE, "web-overlay", "settings", "settings-fan.css"), join(setOut, "settings-fan.css"));
 
-  // 2d) 把设置折扇挂到演示页：head 加 CSS link + 构建版本注入，body 末加静态入口 + module 脚本。
-  const demoHtmlPath = join(demoOut, "demo.html");
-  let demoHtml = readFileSync(demoHtmlPath, "utf8");
-  if (!demoHtml.includes("settings-fan.css")) {
-    demoHtml = demoHtml.replace(/<\/head>/i, `  <link rel="stylesheet" href="/settings/settings-fan.css" />\n</head>`);
-  }
-  if (!demoHtml.includes("locus-build-version")) {
+  // 2c) 把设置折扇挂到既有首页：head 加 CSS link + 构建版本注入，body 末加静态入口 + module 脚本。
+  //     不改首页结构、不删既有入口；模型状态读取既有 #ai-state。
+  if (!html.includes("locus-build-version")) {
     const buildMeta =
       `  <meta name="locus-build-version" content="${BUILD_VERSION}" />\n` +
       `  <script>window.__LOCUS_BUILD__=${JSON.stringify({ version: BUILD_VERSION, commit: BUILD_COMMIT })};</script>\n`;
-    demoHtml = demoHtml.replace(/<\/head>/i, `${buildMeta}</head>`);
+    html = html.replace(/<\/head>/i, `${buildMeta}</head>`);
+  }
+  if (!html.includes("settings-fan.css")) {
+    html = html.replace(/<\/head>/i, `  <link rel="stylesheet" href="/settings/settings-fan.css" />\n</head>`);
   }
   const entry =
-    `\n  <button id="settings-open" class="modelbtn" type="button" style="position:fixed;left:16px;bottom:16px;z-index:60" aria-haspopup="dialog" aria-controls="settings-fan" aria-expanded="false">设置 <span class="hint" id="ai-state">预生成</span></button>\n` +
+    `\n  <button id="settings-open" class="modelbtn" type="button" style="position:fixed;left:16px;bottom:16px;z-index:60" aria-haspopup="dialog" aria-controls="settings-fan" aria-expanded="false">设置</button>\n` +
     `  <script type="module" src="/settings/settings-fan.js"></script>\n`;
-  if (!demoHtml.includes("settings-fan.js")) {
-    demoHtml = demoHtml.replace(/<\/body>/i, `${entry}</body>`);
+  if (!html.includes("settings-fan.js")) {
+    html = html.replace(/<\/body>/i, `${entry}</body>`);
   }
-  writeFileSync(demoHtmlPath, demoHtml);
 
-  // 2e) 落地页 = 演示页（评委匿名打开 Site 直达暖色预置课题，无需后端）。
-  html = `<!doctype html>
-<html lang="zh-CN" data-theme="paper">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <meta http-equiv="refresh" content="0; url=/demo/demo.html" />
-  <title>LOCUS · 公开展示</title>
-  <script>location.replace("/demo/demo.html");</script>
-</head>
-<body>
-  <noscript>请打开 <a href="/demo/demo.html">LOCUS 公开展示</a>。</noscript>
-</body>
-</html>
-`;
-
-  demoSummary = `demo-data 已打包：manifest.sourceCommit=${manifest.sourceCommit} · projectId=${manifest.projectId} · fixture=${manifest.fixtureVersion} · ZIP sha256=${zipHash.slice(0, 16)}…；demo/ + settings/ 已接入，落地页→/demo/demo.html`;
+  demoSummary = `demo-data 已打包：manifest.sourceCommit=${manifest.sourceCommit} · projectId=${manifest.projectId} · fixture=${manifest.fixtureVersion} · ZIP sha256=${zipHash.slice(0, 16)}…；settings/ 已作为新增入口挂到既有首页`;
 }
 
 writeFileSync(join(out, "index.html"), html);
