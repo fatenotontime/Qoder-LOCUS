@@ -47,6 +47,17 @@ if (!html.includes("site-shim.js")) {
   html = injected;
 }
 
+// ── 1b) 文献库嵌入视图：trial 与 public 两种模式都发布运行必需文件到 web/library/
+//      只复制运行必需文件；tests/ 与夹具不进入产物。
+{
+  const libSrc = join(HERE, "web-overlay", "library");
+  const libOut = join(out, "library");
+  mkdirSync(libOut, { recursive: true });
+  for (const f of ["library-view.js", "library-view.css", "a-snapshot.js", "snapshot-adapter.js"]) {
+    copyFileSync(join(libSrc, f), join(libOut, f));
+  }
+}
+
 // ── 2) 公开展示模式 ─────────────────────────────────────────
 const ZIP_URL = "/demo-data/locus-demo-public.zip";
 let demoSummary = "";

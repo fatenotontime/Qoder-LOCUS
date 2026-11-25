@@ -11,12 +11,13 @@ const topicName = (state, id) => state.topics.find((t) => t.id === id)?.name;
 export const NAV_ITEMS = [
   ["topic", "课题"], ["papers", "文献"], ["knowledge", "知识"],
   ["protocol", "方案"], ["record", "记录"], ["analysis", "分析"], ["chat", "对话"],
+  ["library", "文献库"],
 ];
 
 /** 书脊与封面共用的一字印。 */
 export const NAV_CHARS = {
   topic: "课", papers: "文", knowledge: "知", protocol: "案",
-  record: "行", analysis: "析", chat: "谈",
+  record: "行", analysis: "析", chat: "谈", library: "库",
 };
 
 export function navChar(kind) { return NAV_CHARS[kind] ?? "课"; }
@@ -30,6 +31,7 @@ const NAV_ICONS = {
   record: `<rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4V2.8h6V4"/><path d="m9 13 2 2 4-4"/>`,
   analysis: `<path d="M4 20V4"/><path d="M4 20h16"/><path d="M8 16v-5M12 16V7M16 16v-3"/>`,
   chat: `<path d="M21 12a8 8 0 0 1-8 8H5l-2 2V12a8 8 0 0 1 8-8h2a8 8 0 0 1 8 8z"/><path d="M8 12h8M8 15.5h5"/>`,
+  library: `<path d="M4 4h5v16H4z"/><path d="M9 4h5v16H9z"/><path d="m15.2 4.6 4.3 1.2-3.5 14.6-4.3-1.2z"/>`,
 };
 
 export function navIcon(kind, size = 18) {

@@ -49,7 +49,7 @@ function restoreUi() {
   try {
     const s = JSON.parse(localStorage.getItem(UI_KEY) ?? "null");
     if (!s) return;
-    if (["topic", "papers", "knowledge", "protocol", "record", "analysis", "chat"].includes(s.nav)) ui.nav = s.nav;
+    if (["topic", "papers", "knowledge", "protocol", "record", "analysis", "chat", "library"].includes(s.nav)) ui.nav = s.nav;
     if (s.cardFilter === "all" || s.cardFilter === "pending" || s.cardFilter === "reviewed") ui.cardFilter = s.cardFilter;
     if (state.topics.some((t) => t.id === s.topicId)) ui.topicId = s.topicId;
     if (state.assets.some((a) => a.id === s.assetId)) ui.assetId = s.assetId;
@@ -953,6 +953,18 @@ function renderMiddle() {
     note.textContent = `范围：${c.subquestionId ? "子问题 ＋ " : ""}${c.scope.length} 对象；发送即冻结快照。讨论不改对象；采纳需确认。`;
     content.innerHTML = chatHtml(c);
     content.classList.add("rich");
+    return;
+  }
+  if (ui.nav === "library") {
+    $("#mid-title").textContent = "文献库";
+    note.hidden = true;
+    content.innerHTML = `<div id="lv-mount" class="lv-mount"></div>`;
+    content.classList.add("rich");
+    const mount = $("#lv-mount");
+    // 只读嵌入视图：按需动态加载，缺该资源时只影响本页，不影响其它卷。
+    import("/library/library-view.js")
+      .then((m) => m.renderLibraryPane(mount, { baseUrl: "/demo-data" }))
+      .catch(() => { mount.innerHTML = `<p class="hint">文献库模块未随本次构建提供（/library），或预置快照缺失。</p>`; });
     return;
   }
   note.hidden = true;
