@@ -780,6 +780,12 @@ async function refresh() {
   // 展示模式：固定选中预存课题（忽略 localStorage 覆盖）。
   if (DISPLAY_CFG) {
     ui.topicId = state.topics.some((t) => t.id === DISPLAY_CFG.topicId) ? DISPLAY_CFG.topicId : (state.topics[0]?.id ?? "");
+    // C 交付：展示态自动落选预存方案/执行/对话/任务，消除首屏「空卷」（用户浏览后不覆盖其选择）。
+    const dm = state.demo ?? {};
+    if (!ui.protocolId && dm.mainProtocolId && state.protocols.some((p) => p.id === dm.mainProtocolId)) ui.protocolId = dm.mainProtocolId;
+    if (!ui.executionId && dm.mainExecutionId && state.executions.some((e) => e.id === dm.mainExecutionId)) ui.executionId = dm.mainExecutionId;
+    if (!ui.chatId && dm.mainChatId && state.chats.some((c) => c.id === dm.mainChatId)) ui.chatId = dm.mainChatId;
+    if (!ui.taskId && dm.mainTaskId && state.analysisTasks.some((t) => t.id === dm.mainTaskId)) ui.taskId = dm.mainTaskId;
   }
   if (ui.protocolId && !state.protocols.some((p) => p.id === ui.protocolId)) ui.protocolId = null;
   if (ui.executionId && !state.executions.some((e) => e.id === ui.executionId)) ui.executionId = null;
