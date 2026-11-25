@@ -620,7 +620,7 @@ function displayReadonlyError() {
 async function installDisplayMode() {
   const mod = await import("/display/display-api.js");
   if (typeof mod.createDisplayApi !== "function") throw new Error("展示适配器缺少 createDisplayApi");
-  const dapi = await mod.createDisplayApi({ baseUrl: DISPLAY_CFG.baseUrl });
+  const dapi = await mod.createDisplayApi({ baseUrl: DISPLAY_CFG.baseUrl, topicId: DISPLAY_CFG.topicId, zipUrl: DISPLAY_CFG.zipUrl });
   for (const m of DISPLAY_READS) {
     if (typeof dapi[m] === "function") api[m] = (...args) => dapi[m](...args);
   }

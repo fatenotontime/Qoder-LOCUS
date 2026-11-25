@@ -89,9 +89,15 @@ if (MODE === "public") {
   const manifest = JSON.parse(readFileSync(join(dst, "snapshot", "manifest.json"), "utf8"));
 
   // 2b) 旧展示链接兼容页（/demo/demo.html）：只做跳转，进入原工作台的展示模式。
-  //     不再复制 demo-app.js / demo.css / a-snapshot.js，也不再渲染独立 demo 页面。
+  //     不再复制 demo-app.js / demo.css，也不再渲染独立 demo 页面；
+  //     但保留数据层模块 a-snapshot.js / snapshot-adapter.js（供 /display/display-api.js import）。
   const demoOut = join(out, "demo");
   mkdirSync(demoOut, { recursive: true });
+  for (const f of ["a-snapshot.js", "snapshot-adapter.js"]) {
+    const from = join(HERE, "web-overlay", "demo", f);
+    if (existsSync(from)) copyFileSync(from, join(demoOut, f));
+    else console.warn(`  [warn] public 模式缺 web-overlay/demo/${f}（展示适配器依赖）`);
+  }
   const compatHtml = `<!doctype html>
 <html lang="zh-CN" data-theme="paper">
 <head>
