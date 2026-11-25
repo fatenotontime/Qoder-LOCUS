@@ -634,6 +634,7 @@ async function installDisplayMode() {
   // 扩展读的预取缓存（缺项则保持 null，渲染层显示「缺项」提示，不现场合成）。
   if (typeof dapi.suggestions === "function") displaySuggestions = await dapi.suggestions().catch(() => null);
   if (typeof dapi.zipInfo === "function") displayZip = await dapi.zipInfo().catch(() => null);
+  bindDisplayExtra();
   displayMode = true;
 }
 // 新增 DOM：头部「展示课题 · 只读」标识；并隐藏冷色切换入口（仅隐藏，不改既有结构）。
@@ -696,14 +697,28 @@ async function renderDisplayContextMap(host, taskId) {
   }
 }
 // E4 下一步指导 + E5 样本 ZIP：展示课题右栏新增区（不改既有结构，仅追加）。
+// 依据字段以适配器实际输出形状为准（web-overlay/demo/a-snapshot.js 的 suggestions）：
+//   { id, title, basis:{ divergence[], dataGaps[], distinguishing[], uncertainty[] }, refs[], status }
+function displaySuggestionElements(s) {
+  const b = s?.basis ?? {};
+  const arrOf = (a) => (Array.isArray(a) ? a.filter(Boolean) : []);
+  const elem = (label, a) => arrOf(a).length
+    ? `<p class="hint"><b>${label}</b> ${arrOf(a).map(esc).join("；")}</p>`
+    : `<p class="hint"><b>${label}</b> 缺项：快照未导出该要素。</p>`;
+  const refs = Array.isArray(s?.refs) ? s.refs : [];
+  const refHtml = refs.length
+    ? `<p class="hint"><b>可回查</b> ${refs.map((r) => {
+        const kind = r && typeof r === "object" ? (r.kind ?? "card") : "card";
+        const id = r && typeof r === "object" ? r.id : r;
+        return `<button type="button" class="demo-ref-back" data-kind="${esc(kind)}" data-id="${esc(id)}">${esc(kind)}:${esc(String(id).slice(0, 16))}…</button>`;
+      }).join(" ")}</p><div class="refnet-body"></div>`
+    : `<p class="hint">（无回查引用）</p>`;
+  return `${elem("证据分歧/缺口", b.divergence)}${elem("要补什么数据", b.dataGaps)}${elem("能区分哪个解释", b.distinguishing)}${elem("仍有什么不确定", b.uncertainty)}${refHtml}`;
+}
 function displayRightExtraHtml() {
   let h = `<details class="mini" open><summary>下一步指导 · 预生成</summary>`;
   if (Array.isArray(displaySuggestions) && displaySuggestions.length) {
-    h += displaySuggestions.map((s, i) => `<div class="item"><b>${i + 1}. ${esc(s.direction ?? "")}</b>
-      <p class="hint">依据：${esc(s.basis?.text ?? "（未提）")}</p>
-      <p class="hint">要补数据：${esc(s.needData ?? "（未提）")}</p>
-      <p class="hint">能区分：${esc(s.distinguishes ?? "（未提）")}</p>
-      <p class="hint">仍不确定：${esc(s.stillUncertain ?? "（未提）")}</p></div>`).join("");
+    h += displaySuggestions.map((s, i) => `<details class="mini"><summary>${i + 1}. ${esc(s.title ?? s.direction ?? "")}${s.status ? ` <span class="badge warn">${esc(fmtEnum(s.status))}</span>` : ""}</summary><div class="item">${displaySuggestionElements(s)}</div></details>`).join("");
   } else {
     h += `<p class="hint">快照未提供下一步指导（缺项：demo.suggestions）。</p>`;
   }
@@ -714,6 +729,25 @@ function displayRightExtraHtml() {
     ${z?.sha256 ? `<p class="hint">SHA-256：<code>${esc(z.sha256)}</code></p>` : ""}
     <a href="${esc(DISPLAY_CFG.zipUrl)}" download style="display:inline-block;margin-top:4px;padding:4px 12px;border:1px solid currentColor;border-radius:999px;font-size:13px">下载样本 ZIP</a></div>`;
   return h;
+}
+// 展示态建议的「回查」：点击 demo-ref-back 调适配器 backtrace，结果填入同卡 .refnet-body。
+function bindDisplayExtra() {
+  document.addEventListener("click", async (ev) => {
+    const b = ev.target.closest?.(".demo-ref-back");
+    if (!b) return;
+    const box = b.closest("details")?.querySelector(".refnet-body");
+    if (!box) return;
+    box.innerHTML = `<p class="hint">回查中…</p>`;
+    try {
+      const r = await api.backtrace(b.dataset.kind, b.dataset.id, "both");
+      const byKind = {};
+      for (const n of r.nodes) (byKind[n.kind] ??= []).push(n.label);
+      const rows = Object.entries(byKind).map(([k, arr]) => `<p class="hint"><b>${esc(fmtKind(k))}</b> ${arr.map(esc).join("、")}</p>`).join("");
+      box.innerHTML = `<div class="diffbox">${rows || `<p class="hint">无节点。</p>`}${(r.pending ?? []).length ? `<p class="hint">缺项：${r.pending.map(esc).join("；")}</p>` : ""}</div>`;
+    } catch (e) {
+      box.innerHTML = `<p class="hint">回查失败：${esc(String(e?.message ?? e))}</p>`;
+    }
+  });
 }
 async function init() {
   if (DISPLAY_CFG && !displayMode) {
