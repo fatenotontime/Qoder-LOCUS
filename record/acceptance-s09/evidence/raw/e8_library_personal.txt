@@ -1,0 +1,8 @@
+lib mid: 文献库模块未随本次构建提供（/library），或预置快照缺失。
+lib mount: <p class="hint">文献库模块未随本次构建提供（/library），或预置快照缺失。</p>
+demo-data reqs: 8 [
+  'http://127.0.0.1:5190/demo-data/snapshot/state.json',
+  'http://127.0.0.1:5190/demo-data/snapshot/knowledge.json',
+  'http://127.0.0.1:5190/demo-data/snapshot/context-map.json',
+  'http://127.0.0.1:5190/demo-data/snapshot/references.json'
+]

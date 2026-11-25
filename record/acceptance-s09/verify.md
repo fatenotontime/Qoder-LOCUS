@@ -2,8 +2,8 @@
 
 - 轮次：`Turn: S09-T22` ／ 验收者：`executor-e2`（独立会话，业务代码只读）
 - 验收对象：候选 = 集成分支 `feat/s08-public-demo`（首轮 `a1f07ef`；**复验候选 `83e6996`**，修复 `d9b9072`）
-- 结论速览：**E1/E2/E3/E4/E5/E6/E7 通过；E8 未测。**
-- 发布判定：**E4 已修复复验通过**；可提交用户确认发布（E8 待有上传环境补测）。
+- 结论速览：**E1–E8 全部通过（E8 本地补验通过）；另见非阻断缺陷 D2。**
+- 发布判定：**E4 已修复复验通过**；可提交用户确认发布（D2 建议随手修，生产 Site 函数链仍走部署线验证）。
 
 ---
 
@@ -36,7 +36,7 @@
 | **E5** | ✅ 通过 | 页面链接下载 ZIP：`href=/demo-data/locus-demo-public.zip`；取回 26204 字节，sha256 与 `SHA256SUMS.txt` 一致；解包 13 项，含 `README.md`、`docs/五步走查.md`、`docs/来源与许可.md`、`docs/站内映射.md`、`originals/**`（许可与指引齐全）。 |
 | **E6** | ✅ 通过 | 展示构建：左栏底部 `#settings-open` 开折扇（题签 外观/模型/关于）；四视口降级正确——1440×900、1280×720、1024×768 `data-fan-sheet=false`（折扇），**390×800 `data-fan-sheet=true`（底部抽屉，圆角顶、贴底，height=min(86dvh,680)）**；改疏密/字号后 `locus.density.v1`/`locus.fontsize.v1` 持久、刷新保留；`Esc` 关闭且焦点归还 `#settings-open`；`prefers-reduced-motion:reduce` 生效；「模型」签**无密钥/地址/保存/测试控件**（password=0），显示「结果为预生成 · 公开版不连模型」；「关于」用构建注入版本。**trial 构建**：`__LOCUS_DISPLAY__` 不存在、默认纸色，`#theme-seal`/`#replay-theme`/`#ai-open` 均在，点 `#theme-seal` → `data-theme=tech`、`body.theme-tech`（冷色可用）。 |
 | **E7** | ✅ 通过 | 公开主线请求记录（323 条）**零 `/api/`、零 `/functions/`**；无外部模型/业务接口调用；发布目录扫描**无** `*key*/*secret*/.env*/ai-config*/*.pem/*token*`，无 `test-packages`/私有目录，正文无 `SITE_SERVER_TOKEN/BACKEND_BASE_URL/LOCUS_AI_KEY/PRIVATE KEY`；应用自身无写方法请求（唯一的 POST 来自卡巴斯基 AV 注入脚本，见 §4 说明）。 |
-| **E8** | ⚠️ 未测 | 本轮**未启动**任何本地/已授权私网后端，无「上传并入库的个人课题」环境，故不测、不凭静态截图宣称两源一致。 |
+| **E8** | ✅ 通过（补验，本地） | 预存源（断网展示）+ 个人源（本地后端 5189 + 反代 5190）并测：两构建 `app.js` **字节一致**（sha256 `7323a5fc…`）、加载同一 `lib/pages/*`、各视图类名词汇一致、导航一致；表格 / 报告回查 / 知识卡区 / 文献卡右栏布局与动作一致；差异仅限只读、预生成标识、可写与数据内容；核心视图个人源 **`/demo-data` 命中 0**、预存源 **`/api` 命中 0**。**另发现缺陷 D2（个人源「文献库」硬编码 `/demo-data`）**，详见 `e8.md`。 |
 
 **回归抽检（复验候选 `83e6996`）**：E1 —— `data-theme=paper`、无重定向、默认选中预存课题、挂只读标识、8 导航俱全、**业务 API 请求 0**；E5 —— 页面 ZIP 链接 26204 字节、sha256 `785b4689…` 与清单一致；E6-trial —— `__LOCUS_DISPLAY__` 不存在、点 `#theme-seal` → `data-theme=tech`。均未回归。✅
 
@@ -64,7 +64,7 @@
 ## 4. 证据位置（均在 `record/acceptance-s09/`）
 
 - 结构化结果：`evidence/raw/accept.json`（首轮 E1–E7）、`evidence/raw/e1.json`、`evidence/raw/e6_probe.json`（四视口+三签）、**`evidence/raw/e4_retest.json`（E4 复验 + E1/E5/E6-trial 回归抽检）**。
-- 请求记录：`evidence/requests/public-static.log`（323 条，`/api/`+`/functions/` = 0）、`trial-static.log`、`broken-static.log`。
+- 请求记录：`evidence/requests/public-static.txt`（323 条，`/api/`+`/functions/` = 0）、`trial-static.txt`、`broken-static.txt`。
 - 下载物：`evidence/raw/downloaded.zip`（sha256 `785b4689…`，13 项）。
 - 截图：`evidence/screens/e1_root.png`、`e1_legacy.png`、`e2_cards.png`、`e2_locate.png`、`e2_compare.png`、`e2_backtrace.png`、`e3_analysis.png`、`e3_table.png`、`e4_contextmap.png`、`e4_topic_right.png`、`e4_chat.png`、**`e4_retest_topic.png`**、`e6_fan_open.png`、`e6_narrow_drawer.png`、`e6_trial_theme.png`、`e6_after_reload.png` 等。
 - 脚本：`scripts/serve.py`（静态托管+请求日志）、`scripts/e1.mjs`、`scripts/accept.mjs`（首轮 E1–E7）、**`scripts/e4_retest.mjs`（E4 复验）**。
@@ -79,5 +79,6 @@
 1. 原工作台「双数据源」展示接线在断 Node 下成立：`/` 不重定向、暖色只读、零业务 API；**经修复后 E1–E7 全部通过**，trial 冷色与个人模式入口未被破坏。
 2. **E4 阻断缺陷 D1 已修复（`d9b9072`）并在候选 `83e6996` 复验通过**；复验同时抽检 E1（暖色/无重定向/零 `/api`）、E5（ZIP sha256 一致）、E6-trial（点 `#theme-seal`→冷色）**均未回归**。
 3. **可提交用户确认发布**；发布替换仍由用户确认。
-4. E8 因无上传环境未测，需在具备本地/私网后端时补做；不以静态截图代替。
+4. E8 已本地补验通过（同一套达尔文公开材料：断网展示 vs 本地后端个人源），详见 `e8.md`；生产 Site 函数链与上传/Cookie/下载字节一致性仍走部署线。
 5. 本地验收结论与 Qoder 发布环境分开记。
+6. 遗留非阻断缺陷 **D2**：个人源「文献库」硬编码 `/demo-data`（`app.js:1100`），建议 D 随手修（仅展示模式下用 `/demo-data`）。
