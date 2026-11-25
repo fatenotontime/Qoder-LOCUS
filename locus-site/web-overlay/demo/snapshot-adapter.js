@@ -274,6 +274,32 @@ export function createDemoData(snapshot, options = {}) {
   function presetInfo() { return demo.preset ?? { ai: true, model: "未标注", generatedAt: snapshot.generatedAt ?? "" }; }
   function extractionRuns() { return arr(snapshot.knowledge?.extractionRuns); }
   function figures() { return demo.figures ?? {}; }
+  /** 某方案的示意图；无即缺项（不现场合成）。 */
+  function protocolFigure(protocolId) {
+    const pid = protocolId || demo.mainProtocolId || listProtocols(mainTopicId)[0]?.id;
+    const f = demo.figures?.protocolFigures?.[pid];
+    need(f, `figures.protocolFigures[${pid ?? "(main)"}]`, "快照未提供该方案的示意图（A 需导出 figures.json）");
+    return f;
+  }
+  /** 某表的图表；无即缺项。 */
+  function tableChart(tableId) {
+    const t = tableId || snapshot.tables?.[0]?.id;
+    const c = demo.figures?.charts?.[t];
+    need(c, `figures.charts[${t ?? "(main)"}]`, "快照未提供该表的图表（A 需导出 figures.json）");
+    return c;
+  }
+  /** 「90 天」贯通链；无即缺项。 */
+  function chain90() {
+    const c = demo.chain90;
+    need(c && Array.isArray(c.hops) && c.hops.length, "chain90", "快照未提供贯通链（A 需导出 chain-90d.json）");
+    return c;
+  }
+  /** 导出文件元信息 { docx:{fileName,sha256,url}, trace:{...} }；无即缺项。 */
+  function exportsInfo() {
+    const e = demo.exports;
+    need(e && e.docx && e.trace, "demo.exports", "快照未提供导出文件（A 需导出 exports/）");
+    return e;
+  }
   function isFixture() { return snapshot.fixture === true || demo.fixture === true; }
   function meta() {
     return {
@@ -399,7 +425,7 @@ export function createDemoData(snapshot, options = {}) {
     listProtocols, getProtocol, getProtocolRevision,
     listExecutions, getExecution, executionSteps, executionDeviations, listSamples, listMeasurements, listTables, getTable,
     listAnalysisTasks, getAnalysisTask, getContextMap, listResults, listReports, getReport,
-    listChats, getChat, listSuggestions, zipInfo, presetInfo, figures, backtrace,
+    listChats, getChat, listSuggestions, zipInfo, presetInfo, figures, protocolFigure, tableChart, chain90, exportsInfo, backtrace,
   };
   return Object.freeze(api);
 }

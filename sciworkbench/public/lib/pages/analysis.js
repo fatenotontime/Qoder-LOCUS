@@ -344,6 +344,7 @@ export function bindAnalysis(c) {
         const purpose = $("#an-purpose").value.trim();
         if (!purpose) { ctx.notify("right", "推荐须写明研究目的。"); return; }
         const sel = selOf(ui, t);
+        const originTopic = t.topicId;                 // 绑定发起时课题；迟到回执按此归属
         await runJob(ev.target, "方法推荐", async () => {
           let r;
           try {
@@ -366,6 +367,7 @@ export function bindAnalysis(c) {
           ui.anRecheck = null; ui.anRecheckList = null;
           ctx.setStatus(`快照已冻结 ${r.snapshotHash.slice(0, 12)}…`);
           await ctx.pollJob(r.jobId, "方法推荐");
+          if (originTopic !== ui.topicId) return;       // 迟到：数据已落库，但不渲染/改动当前课题
           resetSel(ui, t);
           await refreshAfterJob(); ctx.setStatus("方法推荐完成（含验收项）");
         }); return;
@@ -500,7 +502,8 @@ export function bindAnalysis(c) {
     const t = ev.target;
     if (t.id === "an-recheck") {
       const task = currentTask(ctx.getState(), ui); if (!task?.snapshot) return;
-      runJob(t, "重新推荐", async () => { const r = await api.recommendMethods(task.id, task.snapshot.purpose); await ctx.pollJob(r.jobId, "方法推荐"); ui.suppressRecheck = null; await refreshAfterJob(); ctx.setStatus("已按新快照重新推荐"); });
+      const originTopic = task.topicId;
+      runJob(t, "重新推荐", async () => { const r = await api.recommendMethods(task.id, task.snapshot.purpose); await ctx.pollJob(r.jobId, "方法推荐"); if (originTopic !== ui.topicId) return; ui.suppressRecheck = null; await refreshAfterJob(); ctx.setStatus("已按新快照重新推荐"); });
       return;
     }
     if (t.id === "an-keep") { const task = currentTask(ctx.getState(), ui); ui.suppressRecheck = task?.id ?? null; ctx.renderRight(); ctx.setStatus("保留旧快照（已忽略复核提示）"); return; }

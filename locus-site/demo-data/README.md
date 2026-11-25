@@ -18,8 +18,11 @@
 | `snapshot/ai-products.json` | AI 产物登记：`modelRunThisSession=false`，逐项 `unverified/incomplete/curated`。 |
 | `snapshot/next-steps.json` | 下一步方向 2 条，每条含「分歧/缺口→补什么→区分什么解释→仍不确定」。 |
 | `snapshot/report-snippet.md` | 可回查报告片段（按 nature 分列，回链到卡片→原件）。 |
+| `snapshot/figures.json` | 展示增量（S10-C）：方案流程示意图（据方案 r1 步骤）+ 结果柱状图（据表行数值）。 |
+| `snapshot/chain-90d.json` | 「90 天」贯通链（报告块→结果→测量→表/执行→原件），逐跳固定版本与缺边说明。 |
+| `snapshot/exports/` | 站内导出：`report.docx`（报告 Word）与 `traceability.zip`（追溯包，同版）。 |
 | `originals/` | 可再分发原件：`origin-1859-p371-373.md`、`sources/page-369..373.wiki`、`data/*.csv`。全部 Public Domain。 |
-| `docs/` | `来源与许可.md`、`五步走查.md`、`站内映射.md`。 |
+| `docs/` | `来源与许可.md`、`五步走查.md`、`站内映射.md`、`公开快照对应表.md`。 |
 | `tools/build-demo.mjs` | 生成器（读私有输入 → 写快照，纯本地）。 |
 | `tools/build-judge-zip.mjs` | 打包评委 ZIP（纯 Node，STORED，确定性）。 |
 | `tools/verify.mjs` | 复核 + 生成 `SHA256SUMS.txt`。 |
@@ -55,9 +58,12 @@ B 在 `web-overlay/demo/` 按**明确路径匹配**把上述只读路径适配�
 ```bash
 # 生成快照（读 worktree 内 gitignore 的私有输入，纯本地）
 node locus-site/demo-data/tools/build-demo.mjs
+# 并行 worktree 内无私有输入时，可用环境变量指向只读外部副本：
+#   LOCUS_ACCEPTANCE_INPUT=<path>/acceptance-darwin.json LOCUS_SEED_DIR=<path>/darwin-seed-saltwater \
+#     node locus-site/demo-data/tools/build-demo.mjs
 # 打包评委 ZIP（纯 Node，无网络）
 node locus-site/demo-data/tools/build-judge-zip.mjs
-# 复核 + 生成 SHA256SUMS.txt
+# 复核 + 生成 SHA256SUMS.txt（含图形/贯通链/导出文件校验）
 node locus-site/demo-data/tools/verify.mjs
 ```
 

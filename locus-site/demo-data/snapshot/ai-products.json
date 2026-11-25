@@ -43,8 +43,8 @@
       "objectRefs": [
         "chat_4df55716-afe9-40c6-a408-8584c38e9c34"
       ],
-      "reviewStatus": "已展示，未复核",
-      "note": "历史对话记录（模型名取自记录）；授权状态未核实。"
+      "reviewStatus": "历史问候未复核；展示补录段为人工整理",
+      "note": "历史对话记录（模型名取自记录，未复核）；开头问候为历史记录，随后两轮科研问答为展示人工整理补录（model=null，非模型生成），见 state.chats[0].displayNote。"
     },
     {
       "id": "ai_impact",

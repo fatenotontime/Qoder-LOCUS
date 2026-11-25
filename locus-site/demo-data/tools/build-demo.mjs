@@ -8,12 +8,17 @@ import { fileURLToPath } from "node:url";
 import { buildContextMap } from "../../../sciworkbench/services/context-map.ts";
 import { buildNetwork } from "../../../sciworkbench/services/references.ts";
 import { emptyKnowledge } from "../../../sciworkbench/domain/knowledge.ts";
+import { buildReportDocx, buildTraceabilityPackage } from "../../../sciworkbench/services/export.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const OUT = resolve(HERE, "..");                 // locus-site/demo-data
 const ROOT = resolve(HERE, "../../..");          // 仓库根
-const SEED = join(ROOT, "test-packages/darwin-seed-saltwater");
-const ACC = join(ROOT, "sciworkbench/data/acceptance-darwin.json");
+// 私有输入默认在仓库根；可用环境变量指向只读的外部副本（并行 worktree 内无私有输入时）。
+const SEED = process.env.LOCUS_SEED_DIR || join(ROOT, "test-packages/darwin-seed-saltwater");
+const ACC_OVERRIDE = process.env.LOCUS_ACCEPTANCE_INPUT || "";
+const ACC = ACC_OVERRIDE ? resolve(ACC_OVERRIDE) : join(ROOT, "sciworkbench/data/acceptance-darwin.json");
+const REPORT_DOCX = join(OUT, "snapshot/exports/report.docx");
+const REPORT_TRACE = join(OUT, "snapshot/exports/traceability.zip");
 const SOURCE_COMMIT = "8120986";
 const FIXTURE_VERSION = "s08-a-fixture-1";
 const SCHEMA_VERSION = 1;
@@ -220,7 +225,7 @@ const aiProducts = {
   items: [
     { id: "ai_lit_extract_cards", kind: "literature_extract", label: "unverified", model: null, contextRef: { assetId: "ast_907d8227-cbc3-45ba-8e2e-dd8a7d286c28" }, objectRefs: ["card_b2405e44-467f-46d7-ada5-a31b7c2fa3a1", "card_709a3cb3-589b-4e54-bf52-38b080eaa180", "card_8abc19d0-2813-4d0e-a0b0-87ab2fff76c7"], reviewStatus: "混合：1 张已人工核对，2 张待审", note: "历史 AI 抽取卡（extraction=ai）；模型与授权路径未核实，按未核实标注。" },
     { id: "ai_protocol_parse", kind: "protocol_parse", label: "unverified", model: null, contextRef: { assetId: "ast_907d8227-cbc3-45ba-8e2e-dd8a7d286c28" }, objectRefs: [PROTO], reviewStatus: "已人工确认（revision 1）", note: "方案为文献重构，来源与条件未知项已明示；解析模型未核实。" },
-    { id: "ai_context_chat", kind: "context_chat", label: "unverified", model: "mimo-v2.6-flash", contextRef: { hash: "c311daf7b4985c582b9d3c7e996aed6fc7e26bf19b8a1d7703fb9a511aa95458" }, objectRefs: [state.chats[0].id], reviewStatus: "已展示，未复核", note: "历史对话记录（模型名取自记录）；授权状态未核实。" },
+    { id: "ai_context_chat", kind: "context_chat", label: "unverified", model: "mimo-v2.6-flash", contextRef: { hash: "c311daf7b4985c582b9d3c7e996aed6fc7e26bf19b8a1d7703fb9a511aa95458" }, objectRefs: [state.chats[0].id], reviewStatus: "历史问候未复核；展示补录段为人工整理", note: "历史对话记录（模型名取自记录，未复核）；开头问候为历史记录，随后两轮科研问答为展示人工整理补录（model=null，非模型生成），见 state.chats[0].displayNote。" },
     { id: "ai_impact", kind: "impact_assess", label: "incomplete", model: null, contextRef: { executionId: EXEC }, objectRefs: [], reviewStatus: "未完成", note: "原验收记录为「AI 未配置」失败（status=failed），语义影响未分析；未作为正式结论纳入快照。" },
     { id: "cur_next_steps", kind: "next_step_guidance", label: "curated", model: null, contextRef: { taskId: TASK }, objectRefs: [], reviewStatus: "人工整理（非模型调用）", note: "下一步方向由人工依据证据分歧整理，供展示；非模型生成。" },
     { id: "cur_report", kind: "report", label: "curated", model: null, contextRef: { reportId: REPORT }, objectRefs: [REPORT], reviewStatus: "人工整理并复核", note: "报告块为人工撰写/复核，非模型生成。" },
@@ -284,11 +289,123 @@ jwrite(join(OUT, "snapshot/next-steps.json"), nextSteps);
   writeFileSync(join(OUT, "snapshot/report-snippet.md"), lines.join("\n"), "utf8");
 }
 
+// ── 8.5 展示补录：给预存对话补一段有科研内容的问答（人工整理，非模型生成）──
+//      保留历史问候记录，追加一问一答；新增回答显式标 model=null 并注明「人工整理补录」。
+{
+  const chat = state.chats[0];
+  chat.displayNote = "原始记录为历史问候（模型 mimo-v2.6-flash，未复核）。以下补录段落为展示人工整理（依冻结碎片），非模型生成，不冒充运行结果。";
+  const CURATED = "display-curated/v1";
+  chat.messages.push(
+    {
+      id: "msg_curated_q1", role: "user", content: "干燥处理到底把哪些物种的漂浮时长延长了？请只依据已冻结的对象回答。",
+      status: "done", proposals: [], sources: [], at: chat.updatedAt, curated: true,
+    },
+    {
+      id: "msg_curated_a1", role: "assistant",
+      content: "依据已冻结的 8 个对象（3 张分组证据卡＋马滕斯/作者修正＋推断/装置卡）：干燥显著延长漂浮时长——成熟榛子由「立即下沉」延长到 90 天、芦笋由 23 天到 85 天、Helosciadium 由 2 天沉没到超过 90 天，且三者浸后均能萌发。94 株干燥植物中 18 株漂浮超过 28 天。这些天数均为达尔文 1859 原文陈述，非本地实测；海水盐度、温度、容器条件原文未写明。",
+      status: "done", proposals: [],
+      sources: ["碎片 1 · 榛子卡", "碎片 2 · 芦笋卡", "碎片 3 · Helosciadium 卡", "碎片 8 · 94 株总述卡"],
+      at: chat.updatedAt,
+      snapshot: { at: chat.updatedAt, purpose: "干燥对漂浮时长的影响", model: null, promptVersion: CURATED, summary: "展示补录：人工依冻结碎片整理，非模型生成", hash: "curated-display-no-model-hash", fragments: [] },
+      curated: true,
+    },
+    {
+      id: "msg_curated_q2", role: "user", content: "这些结论能直接外推到真实海浪条件吗？",
+      status: "done", proposals: [], sources: [], at: chat.updatedAt, curated: true,
+    },
+    {
+      id: "msg_curated_a2", role: "assistant",
+      content: "不能直接外推。依据卡 a56d5514 与卡 7012e88a：作者自述暴露于海浪者漂浮时间应短于静水实验（估计或需下修），而马滕斯真实海水（干湿交替）试验物种不同、且未预先干燥并偏选大型果与近海植物，存在方向相反的两处偏倚。因此两种条件不可直接合并统计，需在同一批物种上做受控复测。",
+      status: "done", proposals: [],
+      sources: ["碎片 5 · 马滕斯实测卡", "碎片 6 · 作者修正意见卡"],
+      at: chat.updatedAt,
+      snapshot: { at: chat.updatedAt, purpose: "外推可行性", model: null, promptVersion: CURATED, summary: "展示补录：人工依冻结碎片整理，非模型生成", hash: "curated-display-no-model-hash", fragments: [] },
+      curated: true,
+    },
+  );
+  chat.subquestionId = state.subquestions[0].id;
+  chat.updatedAt = chat.messages[chat.messages.length - 1].at;
+}
+
 // ── 9. 写 state.json（前端消费格式）──
 jwrite(join(OUT, "snapshot/state.json"), state);
 
+// ── 9.1 图形（方案流程图 + 结果柱状图；据既有步骤/表行数值生成，不新增事实）──
+{
+  const rev0 = proto.revisions[0];
+  const figProto = {
+    id: "fig_proto_flow",
+    kind: "flow",
+    title: `${proto.name} · 步骤`,
+    caption: "据方案 r1 的步骤生成（示意流程图，非实测照片）；条件未知项沿原文标注。",
+    protocolId: PROTO,
+    revision: rev0.revision,
+    nodes: rev0.steps.map((s) => ({ id: s.id, label: s.op, note: s.note || "" })),
+    edges: rev0.steps.slice(1).map((s, i) => ({ from: rev0.steps[i].id, to: s.id })),
+    unknowns: rev0.unknowns,
+  };
+  const tRows = state.tables[0].rows;
+  const num = (v) => { const m = String(v).match(/\d+/); return m ? Number(m[0]) : null; };
+  const chart = {
+    id: "chart_flotation_fresh_vs_dried",
+    kind: "bar",
+    title: "漂浮天数：新鲜 vs 干燥",
+    caption: "据 darwin-flotation.csv 前三行数值绘制；天数取自原文陈述（非本地实测）。",
+    tableId: state.tables[0].id,
+    revision: state.tables[0].revision,
+    series: [{ key: "fresh", label: "新鲜", color: "#8c7a63" }, { key: "dried", label: "干燥", color: "#a63f2e" }],
+    rows: [
+      { item: "榛子", fresh: num(tRows[0][1]), dried: num(tRows[0][2]), note: "新鲜=立即下沉" },
+      { item: "芦笋", fresh: num(tRows[1][1]), dried: num(tRows[1][2]) },
+      { item: "Helosciadium", fresh: num(tRows[2][1]), dried: num(tRows[2][2]), note: "干燥原文为「>90 天」，按不小于 90 绘" },
+    ],
+    notes: ["柱高仅为原文陈述天数的直观呈现，非本次实测。", "Helosciadium 干燥值原文为「>90」，绘图取下限 90。"],
+  };
+  jwrite(join(OUT, "snapshot/figures.json"), {
+    note: "图形由既有方案步骤与表行数值生成（不新增事实）。protocolFigures 按 protocolId 索引；charts 按 tableId 索引。",
+    protocolFigures: { [PROTO]: figProto },
+    charts: { [state.tables[0].id]: chart },
+  });
+}
+
+// ── 9.2 「90 天」贯通链（逐跳引用与固定版本；缺跳精确写出）──
+{
+  const ANCHOR_BLOCK = "rblk_0d95f9d5-b406-48bf-990d-2b5b6880cf07";
+  const chain = {
+    note: "以报告数值「90 天」（榛子干燥后漂浮天数）为贯通点，逐跳给出引用与固定版本；每跳可点、可返回。缺直接引用边处精确写出经由对象。",
+    value: "90",
+    unit: "days",
+    subject: "榛子（干燥后漂浮）",
+    hops: [
+      { hop: 1, kind: "block", id: ANCHOR_BLOCK, reportId: REPORT, version: `r${state.reports[0].revision}`, label: "分析初稿块#2（「榛子 0→90 天」）", edge: "has_block", direct: true },
+      { hop: 2, kind: "result", id: state.analysisResults[0].id, version: `r${state.analysisResults[0].revision}`, label: "结果 · 表格统计（按新鲜/干燥分组）", edge: "refs", direct: true },
+      { hop: 3, kind: "measurement", id: "meas_28204d07-e9ec-4f56-8404-6c873a07c0e8", version: "r1", label: "处理输入 · 测量 90 days（榛子·干燥）", edge: "任务核心输入", direct: false, via: `task:${TASK}`, note: "结果与测量之间无直接引用边，经由分析任务核心输入相连。" },
+      { hop: 4, kind: "table", id: state.tables[0].id, revision: 1, rowIndex: 0, version: "r1", label: "原始表 darwin-flotation.csv 第 1 行（dried=90）", edge: "任务核心输入", direct: false, via: `task:${TASK}`, note: "表为该任务的另一核心输入；测量与表行之间无直接边，同经任务相连。" },
+      { hop: 5, kind: "execution", id: EXEC, version: "r1", label: "执行（文献重构补记，非本地实测）", edge: "样品所属执行", direct: false, via: "sample:smp_efeed827-56a0-4c7c-8a36-e67b82cb0bbb", note: "测量→样品→执行；执行与表之间无直接边。" },
+      { hop: 6, kind: "asset", id: "ast_46e6463a-a10b-4c85-9d3d-b38ab2bf1dd0", version: `sha256:${(state.assets.find((a) => a.id === "ast_46e6463a-a10b-4c85-9d3d-b38ab2bf1dd0")?.hash ?? "").slice(0, 12)}`, label: "原件 darwin-flotation.csv（Public Domain）", edge: "from_asset", direct: true },
+    ],
+    deeper: `最深可回查层：原件 ast_46e6463a…（darwin-flotation.csv）。第 3–5 跳之间无直接引用边，均经由对象相连，已逐跳写明。`,
+  };
+  jwrite(join(OUT, "snapshot/chain-90d.json"), chain);
+}
+
+// ── 9.3 导出：报告 Word 与追溯包（复用后端现有导出能力，同一固定版本）──
+{
+  mkdirSync(join(OUT, "snapshot/exports"), { recursive: true });
+  const rep = state.reports[0];
+  writeFileSync(REPORT_DOCX, buildReportDocx(state, rep));
+  const trace = buildTraceabilityPackage(state, rep.id);
+  writeFileSync(REPORT_TRACE, trace.buffer);
+  console.log("导出已生成：", {
+    docx: REPORT_DOCX.replace(ROOT + "\\", "").replace(ROOT + "/", ""),
+    docxBytes: readFileSync(REPORT_DOCX).length,
+    traceBytes: trace.buffer.length,
+    excluded: trace.excludedAttachments.length,
+  });
+}
+
 // ── 10. manifest（固定字段 + 文件/原件 SHA-256）──
-const snapFiles = ["state.json", "context-map.json", "references.json", "knowledge.json", "ai-products.json", "next-steps.json", "report-snippet.md"];
+const snapFiles = ["state.json", "context-map.json", "references.json", "knowledge.json", "ai-products.json", "next-steps.json", "report-snippet.md", "figures.json", "chain-90d.json", "exports/report.docx", "exports/traceability.zip"];
 const files = {};
 for (const f of snapFiles) files[`snapshot/${f}`] = sha256(readFileSync(join(OUT, "snapshot", f)));
 const manifest = {
