@@ -34,7 +34,10 @@ const browser = await chromium.launch({ channel: "msedge", headless: true, args:
 const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 }, acceptDownloads: true });
 const page = await ctx.newPage();
 page.on("pageerror", (e) => console.log("[pageerror]", e.message));
-page.on("request", (r) => R.reqs.push({ url: r.url(), method: r.method() }));
+page.on("request", (r) => {
+  R.reqs.push({ url: r.url(), method: r.method() });
+  if (/recommend|\/events/.test(r.url())) { try { R.apiBodies = (R.apiBodies || []).concat({ url: r.url(), method: r.method(), post: r.postData() }); } catch {} }
+});
 const gotoBase = async (url) => {
   await page.goto(url + "/", { waitUntil: "networkidle", timeout: 30000 });
   await page.waitForTimeout(3500);
@@ -78,26 +81,29 @@ try {
   await page.waitForTimeout(7000);
   R.r01.statusAfter = await page.evaluate(() => (document.querySelector("#status")?.textContent || "").trim().slice(0, 120));
   const recReq = stubRead().slice(stubBefore).find((x) => x.task === "analysis_recommend");
-  const snapSummary = await page.evaluate(() => (document.querySelector("#right-content")?.textContent.match(/冻结上下文快照[^\n]*?碎片[^\n]*/) || [])[0] || "");
-  const candCount = (snapSummary.match(/候选\s*(\d+)/) || [])[1];
-  R.r01.snapshot = {
-    summary: snapSummary.slice(0, 120),
-    candidateCountInSnapshot: candCount != null ? Number(candCount) : null,
-    uiChecked: R.r01.cancelled.uiCheckedAfterCancel,
-    consistent: candCount != null ? Number(candCount) === R.r01.cancelled.uiCheckedAfterCancel : null,
-  };
   R.r01.stubRequest = recReq ? { task: recReq.task, userLen: recReq.userLen, userHead: recReq.user.slice(0, 300) } : null;
+  const snapCand = recReq ? Number(((recReq.user.match(/候选\s*(\d+)/) || [])[1] ?? NaN)) : NaN;
+  R.r01.snapshot = { snapshotCandidateCount: Number.isFinite(snapCand) ? snapCand : null, uiChecked: R.r01.cancelled.uiCheckedAfterCancel, consistent: Number.isFinite(snapCand) ? snapCand === R.r01.cancelled.uiCheckedAfterCancel : null };
+  const recBody = (R.apiBodies || []).filter((b) => /recommend/.test(b.url)).slice(-1)[0];
+  let recJson = null; try { recJson = recBody ? JSON.parse(recBody.post) : null; } catch {}
+  R.r01.recommendBody = recJson ? { keys: Object.keys(recJson), workspace: recJson.workspace ?? null, topicId: recJson.topicId ?? null, subquestionId: recJson.subquestionId ?? null, hasOptional: Array.isArray(recJson.optional), optionalCount: Array.isArray(recJson.optional) ? recJson.optional.length : null, optionalIncludedCount: Array.isArray(recJson.optional) ? recJson.optional.filter((o) => o.included).length : null, hasVersions: !!recJson.versions } : { raw: recBody?.post?.slice(0, 200) ?? null };
   R.r01.snapshotHashShown = await page.evaluate(() => (document.body.textContent.match(/快照已冻结\s*([0-9a-f]{6,})/) || [])[1] || null);
   await page.screenshot({ path: `${OUT}/screens/r01_recommend.png` });
 } catch (e) { R.r01.error = String(e).slice(0, 300); }
 
 try {
-  // 空子问题：经 API 直接建任务（无 subquestionId），观察是否被拦
+  // 空子问题：① 服务端契约（workspace:true 应 422 subquestion_required）② 不带 workspace（既有调用方，行为不变）
   const st0 = await api(`/api/state`);
   const topicId = (st0.json?.topics || [])[0]?.id;
   const tbl = (st0.json?.tables || [])[0];
-  const emptySubq = await api("/api/analysis/tasks", { method: "POST", body: JSON.stringify({ topicId, title: "验收·空子问题", core: tbl ? [{ kind: "table", id: tbl.id }] : [], optional: [] }) });
-  R.r01.emptySubqCreate = { status: emptySubq.status, body: emptySubq.json };
+  const core = tbl ? [{ kind: "table", id: tbl.id }] : [];
+  R.r01.emptySubq = {
+    withWorkspace: await api("/api/analysis/tasks", { method: "POST", body: JSON.stringify({ workspace: true, topicId, title: "验收·空子问题(ws)", core, optional: [] }) }),
+    withoutWorkspace: await api("/api/analysis/tasks", { method: "POST", body: JSON.stringify({ topicId, title: "验收·空子问题(旧)", core, optional: [] }) }),
+  };
+  // 版本冲：core 带一个不存在的版本 → 期望 409 selection_stale
+  const existing = (st0.json?.analysisTasks || [])[0];
+  R.r01.staleProbe = existing ? await api(`/api/analysis/tasks/${existing.id}/recommend`, { method: "POST", body: JSON.stringify({ purpose: "版本冲验证", workspace: true, topicId: existing.topicId, subquestionId: existing.subquestionId, core: existing.core, optional: (existing.optional || []).map((o) => ({ ref: o.ref, included: o.included })), versions: Object.fromEntries((existing.core || []).map((r) => [`${r.kind}:${r.id}`, "999999"])) }) }) : null;
 } catch (e) { R.r01.emptySubqErr = String(e).slice(0, 300); }
 
 // ═══════════════ R02：A 启动提取 → 切 B → 等 → 回 A ═══════════════
@@ -165,32 +171,41 @@ try {
   const exec0 = (evBefore.executions || [])[0];
   R.r03.eventsBefore = exec0?.events?.length ?? null;
   if (rows.length >= 2) {
-    await rows[0].$eval('[data-f="amount"]', (el) => { el.value = "R03-ROW1"; el.dispatchEvent(new Event("input", { bubbles: true })); });
-    await rows[1].$eval('[data-f="amount"]', (el) => { el.value = "R03-ROW2"; el.dispatchEvent(new Event("input", { bubbles: true })); });
-    await rows[0].$eval(".steptbl-save", (b) => b.click());
+    const typeRow = (i, val) => page.evaluate(([i, val]) => {
+      const tr = document.querySelectorAll(".steptbl tbody tr")[i];
+      const el = tr.querySelector('[data-f="amount"]'); el.value = val; el.dispatchEvent(new Event("input", { bubbles: true }));
+    }, [i, val]);
+    const clickSave = (i) => page.evaluate((i) => document.querySelectorAll(".steptbl tbody tr")[i].querySelector(".steptbl-save").click(), i);
+    await typeRow(0, "R03-ROW1"); await typeRow(1, "R03-ROW2");
+    await clickSave(0);
     await page.waitForTimeout(2500);
     R.r03.afterSaveRow1 = await page.evaluate(() => {
       const rs = [...document.querySelectorAll(".steptbl tbody tr")];
       return { row1: rs[0]?.querySelector('[data-f="amount"]')?.value, row2: rs[1]?.querySelector('[data-f="amount"]')?.value, status: (document.querySelector("#status")?.textContent || "").slice(0, 100) };
     });
-    const evAfter = (await api("/api/state")).json;
-    R.r03.eventsAfter = (evAfter.executions || [])[0]?.events?.length ?? null;
-    // 失败：拦截 events POST
-    await page.route("**/api/executions/*/events", (route) => route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ error: "验收注入：503" }) }));
-    await rows[0].$eval('[data-f="amount"]', (el) => { el.value = "R03-FAIL"; el.dispatchEvent(new Event("input", { bubbles: true })); });
-    await rows[0].$eval(".steptbl-save", (b) => b.click());
-    await page.waitForTimeout(2500);
+    R.r03.eventsAfter = ((await api("/api/state")).json.executions || [])[0]?.events?.length ?? null;
+    // 失败：拦截 events POST（trial shim 把 /api → /functions/v1/app/api，故用宽松匹配）
+    await page.route("**/executions/*/events", (route) => route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ error: "验收注入：503" }) }));
+    await typeRow(0, "R03-FAIL");
+    await clickSave(0);
+    await page.waitForTimeout(3000);
     R.r03.afterFail = await page.evaluate(() => {
+      const rr = document.querySelector(".steptbl tbody tr .rowerr");
       return {
         row1Input: document.querySelectorAll(".steptbl tbody tr")[0]?.querySelector('[data-f="amount"]')?.value,
-        inlineErrorNearRow: !!document.querySelector(".steptbl tbody tr .err, .steptbl tbody tr .error, .steptbl tbody tr .badge.warn"),
-        anyErrorNode: document.querySelectorAll("[data-err], .error, .err, .inline-error, .rerr").length,
+        rowerrText: rr ? (rr.hidden ? "(hidden)" : rr.textContent.trim()) : null,
+        rowerrVisible: rr ? !rr.hidden : false,
         status: (document.querySelector("#status")?.textContent || "").slice(0, 120),
-        rightText: (document.querySelector("#right-content")?.textContent || "").replace(/\s+/g, " ").slice(0, 160),
       };
     });
     await page.screenshot({ path: `${OUT}/screens/r03_fail.png` });
-    await page.unroute("**/api/executions/*/events");
+    // 取消拦截 → 重试 → 事件只追加一次
+    await page.unroute("**/executions/*/events");
+    const evB = (await api("/api/state")).json.executions[0].events.length;
+    await clickSave(0);
+    await page.waitForTimeout(2500);
+    const evA = (await api("/api/state")).json.executions[0].events.length;
+    R.r03.retry = { eventsBefore: evB, eventsAfter: evA, delta: evA - evB, rowerrAfter: await page.evaluate(() => { const rr = document.querySelector(".steptbl tbody tr .rowerr"); return rr ? (!rr.hidden ? rr.textContent.trim() : "(hidden)") : null; }) };
   }
 } catch (e) { R.r03.error = String(e).slice(0, 300); }
 

@@ -1,9 +1,10 @@
 {
   "env": {
     "PUBLIC": "http://127.0.0.1:5380",
-    "TRIAL": "http://127.0.0.1:5281",
+    "TRIAL": "http://127.0.0.1:5581",
+    "NODE": "http://127.0.0.1:5284",
     "candidate": {
-      "topics": 2
+      "topics": 5
     }
   },
   "r05": {
@@ -22,36 +23,187 @@
         "library"
       ]
     },
-    "navReachable": 8,
+    "views": {
+      "library": {
+        "midLen": 6659,
+        "rightLen": 10
+      },
+      "protocol": {
+        "midLen": 500,
+        "rightLen": 5844
+      },
+      "record": {
+        "midLen": 623,
+        "rightLen": 1513
+      },
+      "analysis": {
+        "midLen": 664,
+        "rightLen": 2300
+      },
+      "chat": {
+        "midLen": 2419,
+        "rightLen": 643
+      },
+      "papers": {
+        "midLen": 5565,
+        "rightLen": 486
+      }
+    },
+    "analysis": {
+      "hasChain": true,
+      "chainTitle": "数值贯通链：「榛子（干燥后漂浮） = 90 days」",
+      "hops": 6,
+      "hopTexts": [
+        "1. 分析初稿块#2（「榛子 0→90 天」） r3",
+        "2. 结果 · 表格统计（按新鲜/干燥分组） r1",
+        "3. 处理输入 · 测量 90 days（榛子·干燥） r1 （经 task:a",
+        "4. 原始表 darwin-flotation.csv 第 1 行（dried=",
+        "5. 执行（文献重构补记，非本地实测） r1 （经 sample:smp_efe",
+        "6. 原件 darwin-flotation.csv（Public Domain"
+      ],
+      "exportLinks": 2
+    },
+    "protocolFig": {
+      "region": true,
+      "figbox": true
+    },
     "req": {
-      "total": 77,
+      "total": 109,
       "api": 0,
-      "demoData": 17,
+      "demoData": 47,
       "external": 0
     },
-    "status": "PARTIAL(api=0；对象级断言 TODO)"
+    "pageerrors": [],
+    "status": "PASS"
   },
   "r06": {
-    "status": "TODO"
+    "chain": {
+      "title": "数值贯通链：「榛子（干燥后漂浮） = 90 days」",
+      "hops": [
+        "1. 分析初稿块#2（「榛子 0→90 天」） r3",
+        "2. 结果 · 表格统计（按新鲜/干燥分组） r1",
+        "3. 处理输入 · 测量 90 days（榛子·干燥） r1 （经 task:a",
+        "4. 原始表 darwin-flotation.csv 第 1 行（dried=",
+        "5. 执行（文献重构补记，非本地实测） r1 （经 sample:smp_efe",
+        "6. 原件 darwin-flotation.csv（Public Domain"
+      ]
+    },
+    "afterHopClick": {
+      "anyPanel": true,
+      "rightHead": "方案示意图 · 据方案步骤生成海水浸泡萌发试验（干燥 vs 新鲜） · 步骤采集 94 种带熟果的茎枝与果实干燥部分茎枝（保留新鲜组作对照）置于海水浸泡并计时盐度/温度原文未写明取出后种植并观察萌发据方案 r1 的步骤生成（示意流程图，非实"
+    },
+    "word": {
+      "found": true,
+      "file": "F:/qoder-dev-tmp/s10-e3-1345ab2/r06-report.docx",
+      "bytes": 1863,
+      "ext": "docx",
+      "sha256": "baed200b94486eca",
+      "suggested": "report.docx"
+    },
+    "trace": {
+      "found": true,
+      "file": "F:/qoder-dev-tmp/s10-e3-1345ab2/r06-traceability.zip",
+      "bytes": 6378,
+      "ext": "zip",
+      "sha256": "6b3c90792befa05b",
+      "suggested": "traceability.zip"
+    },
+    "sampleZip": {
+      "found": true,
+      "file": "F:/qoder-dev-tmp/s10-e3-1345ab2/r06-sample.zip",
+      "bytes": 33855,
+      "ext": "zip",
+      "sha256": "5362d30267b23a98",
+      "suggested": "locus-demo-public.zip"
+    },
+    "status": "PASS"
   },
   "r07": {
-    "status": "TODO"
+    "region": {
+      "fail": true,
+      "retry": true,
+      "warn": "该区域暂时加载失败（引用文件不可读）。"
+    },
+    "sampleZipWhileFail": {
+      "found": true,
+      "file": "F:/qoder-dev-tmp/s10-e3-1345ab2/r07-sample.zip",
+      "bytes": 33855,
+      "ext": "zip",
+      "sha256": "5362d30267b23a98",
+      "suggested": "locus-demo-public.zip"
+    },
+    "afterRetry": {
+      "hasChain": true,
+      "hops": 6
+    },
+    "status": "PASS"
   },
   "r08": {
-    "settingsBtn": true,
-    "settingsOpen": false,
-    "narrowScrollX": {
-      "docW": 390,
-      "winW": 390,
-      "overflow": false
+    "public": {
+      "present": true,
+      "open": true,
+      "tabs": [
+        "外观",
+        "模型",
+        "关于",
+        "外观",
+        "模型",
+        "关于"
+      ],
+      "focusAfterEsc": "settings-open",
+      "narrow": {
+        "docW": 511,
+        "winW": 390,
+        "overflow": true
+      }
     },
-    "status": "PARTIAL(设置按钮/窄屏横向宽度已测；列表恢复断言 TODO)"
+    "trial": {
+      "present": true,
+      "open": true,
+      "tabs": [
+        "外观",
+        "模型",
+        "关于",
+        "外观",
+        "模型",
+        "关于"
+      ],
+      "focusAfterEsc": "settings-open",
+      "narrow": {
+        "docW": 390,
+        "winW": 390,
+        "overflow": false
+      }
+    },
+    "node": {
+      "present": true,
+      "open": true,
+      "tabs": [
+        "外观",
+        "模型",
+        "关于",
+        "外观",
+        "模型",
+        "关于"
+      ],
+      "focusAfterEsc": "settings-open",
+      "narrow": {
+        "docW": 390,
+        "winW": 390,
+        "overflow": false
+      }
+    },
+    "status": "PASS(设置三入口；列表恢复断言待补)"
   },
   "r09": {
-    "status": "TODO(P8 五步：文献/数据导入→重复原件拒绝→方案引用→执行追加→地图选择/对话核对)"
+    "topicCreate": {
+      "status": 200,
+      "topicId": "topic_93966f10-7f4a-4d09-ba0d-0b59d83b8146"
+    },
+    "status": "部分：可写课题创建可用；P8 五步完整走查待 P8 脚本（sciworkbench/scripts/acceptance-darwin.ts 预导入）+ 浏览器复跑"
   },
   "r10": {
-    "status": "TODO(文献卡/表格/实验图/结果/回查逐项比较；个人态请求应属自己课题，预存态只读快照)"
-  },
-  "reqs": []
+    "note": "预存态：/api=0 且 /demo-data>0（R05）；写态：经 /functions/v1/app/api（trial 反代）。逐项（文献卡/表格/实验图/结果/回查）同视图比较待补。",
+    "status": "部分"
+  }
 }
