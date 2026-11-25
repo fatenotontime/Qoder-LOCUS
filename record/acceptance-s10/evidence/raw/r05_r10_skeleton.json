@@ -1,0 +1,57 @@
+{
+  "env": {
+    "PUBLIC": "http://127.0.0.1:5380",
+    "TRIAL": "http://127.0.0.1:5281",
+    "candidate": {
+      "topics": 2
+    }
+  },
+  "r05": {
+    "boot": {
+      "theme": "paper",
+      "displayMode": "on",
+      "badge": "展示课题 · 只读",
+      "navItems": [
+        "topic",
+        "papers",
+        "knowledge",
+        "protocol",
+        "record",
+        "analysis",
+        "chat",
+        "library"
+      ]
+    },
+    "navReachable": 8,
+    "req": {
+      "total": 77,
+      "api": 0,
+      "demoData": 17,
+      "external": 0
+    },
+    "status": "PARTIAL(api=0；对象级断言 TODO)"
+  },
+  "r06": {
+    "status": "TODO"
+  },
+  "r07": {
+    "status": "TODO"
+  },
+  "r08": {
+    "settingsBtn": true,
+    "settingsOpen": false,
+    "narrowScrollX": {
+      "docW": 390,
+      "winW": 390,
+      "overflow": false
+    },
+    "status": "PARTIAL(设置按钮/窄屏横向宽度已测；列表恢复断言 TODO)"
+  },
+  "r09": {
+    "status": "TODO(P8 五步：文献/数据导入→重复原件拒绝→方案引用→执行追加→地图选择/对话核对)"
+  },
+  "r10": {
+    "status": "TODO(文献卡/表格/实验图/结果/回查逐项比较；个人态请求应属自己课题，预存态只读快照)"
+  },
+  "reqs": []
+}
