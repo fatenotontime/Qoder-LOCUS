@@ -42,3 +42,35 @@
 .dx-dl:hover { background: #f3ead8; }
 .dx-view { /* 展示态：写按钮换成查看 */ }
 .dx-card-item { border-left: 3px solid #d8b98a; }
+
+/* ── 窄屏不产生横向滚动（仅展示构建注入；不改外壳标记，只做展示态样式约束）──
+   1) 顶栏「展示课题 · 只读」徽标在窄屏收起（1440 下仍显示，不影响只读标识本身）。
+   2) 长不可断内容（如 SHA-256 code、对象 ID、路径）允许换行，避免撑破容器。
+   3) 展示增量面板/长链/对话允许收缩换行；宽表在自身容器内局部横向滚动。 */
+@media (max-width: 720px) {
+  html[data-display-mode="on"] #display-badge { display: none; }
+}
+html[data-display-mode="on"] #right-content code,
+html[data-display-mode="on"] #right-content pre,
+html[data-display-mode="on"] #mid-content code,
+html[data-display-mode="on"] #mid-content pre,
+html[data-display-mode="on"] .dx-body code,
+html[data-display-mode="on"] .dx-body pre {
+  word-break: break-all; overflow-wrap: anywhere; white-space: normal;
+}
+html[data-display-mode="on"] .dx-body,
+html[data-display-mode="on"] .dx-card-item,
+html[data-display-mode="on"] .dx-hops,
+html[data-display-mode="on"] .dx-blocks,
+html[data-display-mode="on"] .dx-thread,
+html[data-display-mode="on"] .dx-msg,
+html[data-display-mode="on"] .dx-figbox,
+html[data-display-mode="on"] .dx-chain { min-width: 0; overflow-wrap: anywhere; }
+html[data-display-mode="on"] .dx-ref { max-width: 100%; overflow-wrap: anywhere; }
+html[data-display-mode="on"] .dx-dl { max-width: 100%; overflow-wrap: anywhere; }
+/* 宽表：局部横向滚动，不撑破页面 */
+html[data-display-mode="on"] #mid-content table,
+html[data-display-mode="on"] #right-content table,
+html[data-display-mode="on"] .dx-body table { display: block; max-width: 100%; overflow-x: auto; }
+html[data-display-mode="on"] #mid-content,
+html[data-display-mode="on"] #right-content { min-width: 0; }
