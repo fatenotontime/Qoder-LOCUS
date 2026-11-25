@@ -1,7 +1,20 @@
 # 设置折扇 · 公开版交接组件（C 交付）
 
-> 需求：施工手册 **C.1–C.4**。几何与交互以《设置页折扇_原型.html》v2 为准；内容差异（无卷面切换、模型只读、关于走构建注入）以手册为准。
+> 需求：施工手册 **C.1–C.4**。几何与交互以《设置页折扇_原型.html》v2 为准；内容差异（模型只读、关于走构建注入）以手册为准。
 > 发布物只有两个文件：`settings-fan.js`、`settings-fan.css`。其余为本目录开发自测件，**不进发布包**。
+
+## 0. 主题门控（C.3，2026-11-25 起）
+
+**同一份组件服务两种模式，行为按环境自动分流**，无需两套代码：
+
+| 模式 | 判定 | 加载时的主题行为 | 冷色切换/入口 |
+| --- | --- | --- | --- |
+| **展示模式** | `window.__LOCUS_DISPLAY__` 为对象（公开展示构建注入） | 固定暖色：置 `<html data-theme="paper">`、移除 `body.theme-tech`；**不读不写** `locus.theme.v1` | 由 D 在展示构建中删除（见 §7） |
+| **常规模式** | 无 `window.__LOCUS_DISPLAY__`（本地 / trial / 个人模式） | **不改主题**：不置 `data-theme`、不删 `theme-tech`、**不读不写** `locus.theme.v1` | 原样保留，冷色可用 |
+
+- 观测点：`<html data-settings-mode="display|normal">`，运行时 `window.LocusSettings.isDisplayMode()`。
+- 门控只碰 `data-theme` 与 `body.theme-tech` 两处 DOM，**从不触碰任何主题存储键**；外观键（§4）照常读写。
+- `forcePaper` 覆盖该自动判定：`"auto"`（默认，按上表）/ `true`（始终固定暖色）/ `false`（从不固定）。
 
 ## 1. 文件角色
 
@@ -16,6 +29,7 @@
 
 ## 2. D 的接入步骤（最小）
 
+0. **主题门控前提**：公开展示构建需在加载本模块前注入 `window.__LOCUS_DISPLAY__ = { baseUrl, zipUrl, topicId, label }`（协调者已冻结该契约）。有此对象 → 展示态（自动暖色）；无 → 常规态（完整保留冷色）。**同一构建既支持在线试玩又要求展示暖色时，两者用不同注入决定**，不要靠删本模块的主题代码来分流。
 1. 构建时把 `web-overlay/settings/settings-fan.js`、`settings-fan.css` 复制到 `web/settings/`（其余文件不要复制）。
 2. `index.html` 的 `<head>` 末尾（`styles.css` 之后）加：
    ```html
@@ -48,7 +62,7 @@
 | --- | --- | --- |
 | `entrySelector` | `"#settings-open"` | 左栏入口；用于扇钉对准与焦点归还 |
 | `adoptLegacyEntry` | `false` | 过渡期允许识别尚未改名的 `#ai-open`（须同时移除旧监听，否则双开） |
-| `forcePaper` | `true` | 加载即把 `data-theme` 置回 `paper`、移除 `body.theme-tech`；**不写存储**。开发分支可设 `false` |
+| `forcePaper` | `"auto"` | 主题门控：`"auto"`＝仅展示模式（存在 `window.__LOCUS_DISPLAY__`）固定暖色；`true`＝始终固定；`false`＝从不固定。见 §0 |
 | `defaultTab` | `"appearance"` | 初次打开的签 |
 | `version` | `null` | 字符串或函数；留空依次读 `window.__LOCUS_BUILD__`（`{version, commit}`）、`<meta name="locus-build-version">`、`<html data-build-version>`，都没有显示「—」 |
 | `beforeOpen` | `null` | 打开前回调（关卷目抽屉等） |
@@ -96,6 +110,7 @@
 
 ## 7. 冷色剔除清单（交 D 执行；行号基于基线 `8120986`）
 
+> **仅适用于公开展示构建（展示态）。** 手册 C.3 要求保留源码、trial 及个人模式的冷色功能与资源：若公开包仍支持进入在线工作台，则该工作台实际需用的冷色资源必须保留，且本节删除不得波及常规模式。本组件已按 §0 自动分流，D 只需保证展示构建与常规构建的注入不同。
 > 原则：先核对 JS 引用再删 DOM，避免 `null.addEventListener` 中断整站。改完执行 §7.H 的 grep 必须零结果。
 
 **A. `sciworkbench/public/index.html`**
@@ -168,10 +183,12 @@ node cdp-run.mjs                                                                
 ```
 
 - 截图：`_evidence/fan-1440x900.png`、`fan-1280x720.png`、`fan-1024x768-models.png`、`fan-390x800-sheet.png`（底部抽屉）、`fan-reduced-1024x768.png`、`fan-seedtech-1024x768.png`；原始读数在 `_evidence/report.json`。
-- 页内 `__fanSelfTest()` 23 项全过：开合、分区切换、快速重开不误关、Tab 正反向循环、遮罩/Esc 关闭与焦点归还、偏好即时生效与存储、强制 paper、动效状态同步。
+- 页面自测：`preview.html?display=1` 预置 `window.__LOCUS_DISPLAY__` 模拟展示态；`preview.html?seedtech=1` 预存 `locus.theme.v1=tech` 且把 `html`/`body` 置为冷色，用于常规态反证。
+- `__fanSelfTest()`：开合、分区切换、快速重开不误关、Tab 正反向循环、遮罩/Esc 关闭与焦点归还、偏好即时生效与存储、门控两态断言、动效状态同步。
 - 减少动效（`locus.motion.v1=reduced`）：`data-motion=reduced`、开关 `aria-checked=false`、骨 `transform: matrix(1,0,0,1,0,0)`、`transition-duration: 0s`、蒙版 `88deg`。
 - 偏好刷新保留：刷新后 `density=compact / fontsize=lg / motion=reduced`，按钮态与存储一致。
-- 预存 `locus.theme.v1=tech` 后加载：`data-theme=paper`，存储值保持 `tech` 未被覆写，页面无 `[data-theme="tech"]` 节点、无冷色入口。
+- **展示态**（`?display=1&seedtech=1`）：`data-settings-mode=display`、`data-theme=paper`、无 `body.theme-tech`，存储 `locus.theme.v1` 仍为 `tech`（未被读取/覆盖）。
+- **常规态**（`?seedtech=1`，无注入）：`data-settings-mode=normal`、`data-theme` 保持 `tech`、`body.theme-tech` 保留，存储 `tech` 未被改写。
 
 ## 9. 已知限制
 
