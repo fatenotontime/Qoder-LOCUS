@@ -1,0 +1,55 @@
+{
+  "personal": {
+    "tag": "personal",
+    "errs": [],
+    "demoDataHits": 0,
+    "apiHits": 2,
+    "total": 53,
+    "dom": {
+      "mount": "<div class=\"lv-wrap\">\n      <header class=\"lv-head\">\n        <div class=\"lv-headl\"><span class=\"lv-seal\" aria-hidden=\"tr",
+      "papers": 1,
+      "cards": 0,
+      "miss": false,
+      "hint": "",
+      "tabs": [
+        "原文定位",
+        "证据卡",
+        "两端对照",
+        "引用回查"
+      ]
+    }
+  },
+  "public": {
+    "tag": "public",
+    "errs": [],
+    "demoDataHits": 17,
+    "apiHits": 0,
+    "total": 73,
+    "dom": {
+      "mount": "<div class=\"lv-wrap\">\n      <header class=\"lv-head\">\n        <div class=\"lv-headl\"><span class=\"lv-seal\" aria-hidden=\"tr",
+      "papers": 1,
+      "cards": 0,
+      "miss": false,
+      "hint": "",
+      "tabs": [
+        "原文定位",
+        "证据卡",
+        "两端对照",
+        "引用回查"
+      ]
+    }
+  },
+  "e1": {
+    "url": "http://127.0.0.1:5280/",
+    "theme": "paper",
+    "displayMode": "on",
+    "badge": true,
+    "navItems": 8
+  },
+  "e5": {
+    "href": "http://127.0.0.1:5280/demo-data/locus-demo-public.zip",
+    "bytes": 26204,
+    "sha256": "785b468908b0f0246b4e0cafb407a8f4e66d2fbb4db31ed6599fba9f68f4312b"
+  },
+  "e1ApiHits": 0
+}

@@ -2,8 +2,8 @@
 
 - 轮次：`Turn: S09-T22` ／ 验收者：`executor-e2`（独立会话，业务代码只读）
 - 验收对象：候选 = 集成分支 `feat/s08-public-demo`（首轮 `a1f07ef`；**复验候选 `83e6996`**，修复 `d9b9072`）
-- 结论速览：**E1–E8 全部通过（E8 本地补验通过）；另见非阻断缺陷 D2。**
-- 发布判定：**E4 已修复复验通过**；可提交用户确认发布（D2 建议随手修，生产 Site 函数链仍走部署线验证）。
+- 结论速览：**E1–E8 全部通过（E8 本地补验通过）；D1、D2 均已修复并复验关闭。**
+- 发布判定：**E4 已修复复验通过；D2 已修复复验通过**；可提交用户确认发布（生产 Site 函数链仍走部署线验证）。
 
 ---
 
@@ -11,7 +11,7 @@
 
 | 项 | 值 |
 | --- | --- |
-| 候选 commit | 首轮 `a1f07ef382e277f4cb1006c70279065d84cbdfb8`；**复验候选：`feat/s08-public-demo`=`83e6996`（修复 `d9b9072`），并入 e2 后 HEAD `470f127`** |
+| 候选 commit | 首轮 `a1f07ef382e277f4cb1006c70279065d84cbdfb8`；E4 复验候选 `83e6996`（修复 `d9b9072`），并入 e2 后 HEAD `470f127`；**D2 复验候选 `7f5a8f8`（修复 `5425c7e`），并入 e2 后 HEAD `606d2ef`（构建版本 `s08-public-606d2ef`）** |
 | 验收分支 | `feat/s09-acceptance`（worktree `.worktrees/e2`；复验用 `git merge` 并入集成分支） |
 | 构建版本注入 | 首轮 `s08-public-a1f07ef`；**复验 `s08-public-470f127`**（`<meta name=locus-build-version>`，设置「关于」同值） |
 | 快照 manifest | schemaVersion=1 · fixtureVersion=`s08-a-fixture-1` · sourceCommit=`8120986` · projectId=`topic_f6bff443-3f74-4677-810d-0c15c7d06bf0` · verificationStatus=`verified-local` |
@@ -36,15 +36,19 @@
 | **E5** | ✅ 通过 | 页面链接下载 ZIP：`href=/demo-data/locus-demo-public.zip`；取回 26204 字节，sha256 与 `SHA256SUMS.txt` 一致；解包 13 项，含 `README.md`、`docs/五步走查.md`、`docs/来源与许可.md`、`docs/站内映射.md`、`originals/**`（许可与指引齐全）。 |
 | **E6** | ✅ 通过 | 展示构建：左栏底部 `#settings-open` 开折扇（题签 外观/模型/关于）；四视口降级正确——1440×900、1280×720、1024×768 `data-fan-sheet=false`（折扇），**390×800 `data-fan-sheet=true`（底部抽屉，圆角顶、贴底，height=min(86dvh,680)）**；改疏密/字号后 `locus.density.v1`/`locus.fontsize.v1` 持久、刷新保留；`Esc` 关闭且焦点归还 `#settings-open`；`prefers-reduced-motion:reduce` 生效；「模型」签**无密钥/地址/保存/测试控件**（password=0），显示「结果为预生成 · 公开版不连模型」；「关于」用构建注入版本。**trial 构建**：`__LOCUS_DISPLAY__` 不存在、默认纸色，`#theme-seal`/`#replay-theme`/`#ai-open` 均在，点 `#theme-seal` → `data-theme=tech`、`body.theme-tech`（冷色可用）。 |
 | **E7** | ✅ 通过 | 公开主线请求记录（323 条）**零 `/api/`、零 `/functions/`**；无外部模型/业务接口调用；发布目录扫描**无** `*key*/*secret*/.env*/ai-config*/*.pem/*token*`，无 `test-packages`/私有目录，正文无 `SITE_SERVER_TOKEN/BACKEND_BASE_URL/LOCUS_AI_KEY/PRIVATE KEY`；应用自身无写方法请求（唯一的 POST 来自卡巴斯基 AV 注入脚本，见 §4 说明）。 |
-| **E8** | ✅ 通过（补验，本地） | 预存源（断网展示）+ 个人源（本地后端 5189 + 反代 5190）并测：两构建 `app.js` **字节一致**（sha256 `7323a5fc…`）、加载同一 `lib/pages/*`、各视图类名词汇一致、导航一致；表格 / 报告回查 / 知识卡区 / 文献卡右栏布局与动作一致；差异仅限只读、预生成标识、可写与数据内容；核心视图个人源 **`/demo-data` 命中 0**、预存源 **`/api` 命中 0**。**另发现缺陷 D2（个人源「文献库」硬编码 `/demo-data`）**，详见 `e8.md`。 |
+| **E8** | ✅ 通过（补验，本地） | 预存源（断网展示）+ 个人源（本地后端 5189 + 反代 5190）并测：两构建 `app.js` **字节一致**（sha256 `7323a5fc…`→修复后 `913fe2a8…`）、加载同一 `lib/pages/*`、各视图类名词汇一致、导航一致；表格 / 报告回查 / 知识卡区 / 文献卡右栏布局与动作一致；差异仅限只读、预生成标识、可写与数据内容；核心视图个人源 **`/demo-data` 命中 0**、预存源 **`/api` 命中 0**。原发现的缺陷 **D2（个人源「文献库」硬编码 `/demo-data`）已修复（`5425c7e`）并复验关闭**（详见 `e8.md`）。 |
 
 **回归抽检（复验候选 `83e6996`）**：E1 —— `data-theme=paper`、无重定向、默认选中预存课题、挂只读标识、8 导航俱全、**业务 API 请求 0**；E5 —— 页面 ZIP 链接 26204 字节、sha256 `785b4689…` 与清单一致；E6-trial —— `__LOCUS_DISPLAY__` 不存在、点 `#theme-seal` → `data-theme=tech`。均未回归。✅
+
+**回归抽检（D2 复验候选 `606d2ef`）**：E1 —— `/`、`data-theme=paper`、`data-display-mode=on`、badge、8 导航、`/api`=0；E5 —— ZIP 26204 字节、sha256 `785b4689…` 一致。均未回归。✅
 
 **断引用复测**：复制公开生成物 → 改断一张卡的原件引用（`card_8a4e4db2…` 的 `assetId` 改为不存在）→ 文献库显示「本栏读取缺项 · 路径：asset:ast_DOES_NOT_EXIST · 原因：原件不存在」（不补造）；对**未改动候选**复验：10 张卡、可正常展开详情。✅
 
 ---
 
-## 2. 缺陷（1 项，已修复并复验关闭）
+## 2. 缺陷（均已被修复并复验关闭）
+
+> D1（E4）见下；D2（E8 个人源「文献库」写死 `/demo-data`）另见 `e8.md` §4，已修复（`5425c7e`）并复验关闭。
 
 **D1 · E4 下一步指导字段全部丢失（依据不可回查）—— 已修复（`d9b9072`）并复验通过**
 - 现象（首轮）：断 Node 打开 `/` →「课题」页右栏「下一步指导 · 预生成」显示 `1. 依据：（未提） 要补数据：（未提） 能区分：（未提） 仍不确定：（未提）`。
@@ -81,4 +85,4 @@
 3. **可提交用户确认发布**；发布替换仍由用户确认。
 4. E8 已本地补验通过（同一套达尔文公开材料：断网展示 vs 本地后端个人源），详见 `e8.md`；生产 Site 函数链与上传/Cookie/下载字节一致性仍走部署线。
 5. 本地验收结论与 Qoder 发布环境分开记。
-6. 遗留非阻断缺陷 **D2**：个人源「文献库」硬编码 `/demo-data`（`app.js:1100`），建议 D 随手修（仅展示模式下用 `/demo-data`）。
+6. 遗留缺陷 **D2 已修复（`5425c7e`）并复验关闭**：个人源「文献库」不再写死 `/demo-data`（个人态命中 0、改内存 state 渲染；展示态读 `DISPLAY_CFG.baseUrl`）。复验候选并入后 HEAD `606d2ef`，构建版本 `s08-public-606d2ef`。
