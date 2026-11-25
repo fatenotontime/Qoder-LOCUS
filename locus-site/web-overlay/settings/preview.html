@@ -15,10 +15,15 @@
     window.addEventListener("unhandledrejection", function (e) { window.__errs.push("unhandled: " + String(e.reason)); });
     var q = new URLSearchParams(location.search);
     try {
+      // 主题门控自测：?display=1 模拟公开展示构建注入的 window.__LOCUS_DISPLAY__
+      if (q.get("display")) window.__LOCUS_DISPLAY__ = {
+        baseUrl: "./demo-data/", zipUrl: "./demo.zip", topicId: "demo-topic", label: "展示课题 · 只读"
+      };
       if (q.get("seedtech")) localStorage.setItem("locus.theme.v1", "tech");
       if (q.get("seedmotion")) localStorage.setItem("locus.motion.v1", q.get("seedmotion"));
       if (q.get("seeddensity")) localStorage.setItem("locus.density.v1", q.get("seeddensity"));
       if (q.get("seedfont")) localStorage.setItem("locus.fontsize.v1", q.get("seedfont"));
+      // 模拟“评委机上仍带 tech 偏好”的既有页面：html 已被写成 tech
       if (q.get("seedtech")) document.documentElement.dataset.theme = "tech";
     } catch (e) {}
   })();
@@ -32,6 +37,7 @@
 </style>
 </head>
 <body>
+  <script>if (new URLSearchParams(location.search).get("seedtech")) document.body.classList.add("theme-tech");</script>
   <div class="preview-spine" aria-hidden="true"></div>
   <div class="preview-mark">设置折扇 · 预览</div>
   <div class="preview-left">
@@ -155,11 +161,21 @@
         ok("prefs.motion-toggle", sw.getAttribute("aria-checked") !== before);
         ok("prefs.motion-attr", document.documentElement.dataset.motion === "reduced" || document.documentElement.dataset.motion === "full");
 
-        // 8) 暖色固定：无论存储里是否有 tech，加载后都是 paper，且不覆写存储
-        ok("theme.forced-paper", document.documentElement.dataset.theme === "paper");
-        ok("theme.storage-untouched", (() => {
-          try { return localStorage.getItem("locus.theme.v1") !== "paper" || !new URLSearchParams(location.search).get("seedtech"); } catch { return false; }
-        })(), "seedtech 时存储应仍是 tech");
+        // 8) 主题门控按模式断言（展示态固定暖色；常规态不读不写、保留既有 tech）
+        const display = window.LocusSettings.isDisplayMode();
+        const seeded = !!new URLSearchParams(location.search).get("seedtech");
+        const storedTheme = (() => { try { return localStorage.getItem("locus.theme.v1"); } catch { return "err"; } })();
+        if (display) {
+          ok("gate.mode", document.documentElement.dataset.settingsMode === "display");
+          ok("theme.display-paper", document.documentElement.dataset.theme === "paper");
+          ok("theme.display-no-tech-class", !document.body.classList.contains("theme-tech"));
+          ok("theme.display-storage-untouched", !seeded || storedTheme === "tech", "存储应仍是 tech");
+        } else {
+          ok("gate.mode", document.documentElement.dataset.settingsMode === "normal");
+          ok("theme.normal-not-forced", !seeded || document.documentElement.dataset.theme === "tech", "常规态不固定 paper");
+          ok("theme.normal-keeps-tech-class", !seeded || document.body.classList.contains("theme-tech"));
+          ok("theme.normal-storage-untouched", !seeded || storedTheme === "tech");
+        }
         const hint = fan.querySelector("[data-motion-hint]");
         ok("motion.ui-synced", sw.getAttribute("aria-checked") === String(!(document.documentElement.dataset.motion === "reduced")));
         ok("motion.hint", !!hint?.textContent, hint?.textContent);

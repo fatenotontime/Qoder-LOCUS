@@ -1,8 +1,11 @@
 // LOCUS 设置折扇 · 公开版（独立交接组件）
 // 几何与交互取自《设置页折扇_原型.html》v2；公开版内容差异以施工手册 C 为准：
-//   - 固定宣纸（paper），不提供卷面切换，不读取/初始化旧 tech 存储值
 //   - 外观 = 动效 / 疏密 / 字号；模型 = 只读状态 + 「结果为预生成」；关于 = 构建注入版本
 //   - 自带 Esc / 遮罩 / Tab 焦点限制 / 关闭归还焦点 / 快速开合取消过期关窗计时
+// 主题门控（手册 C.3）：只在「展示模式」固定暖色（paper）。
+//   - 展示模式 = 公开展示构建注入 window.__LOCUS_DISPLAY__（对象）；此时置 data-theme=paper 并移除 body.theme-tech。
+//   - 常规模式（无该对象）= 本地 / trial / 个人模式：不读不写 locus.theme.v1，不动 data-theme，
+//     不删 theme-tech；冷色切换与既有入口照常可用。
 // 公共接线（左栏入口按钮、窄屏卷目入口、旧 AI 面板删除）由 D 负责，见同目录 README.md。
 
 const KEY = {
@@ -14,7 +17,7 @@ const KEY = {
 const DEFAULT_CONFIG = {
   entrySelector: "#settings-open",
   adoptLegacyEntry: false, // 过渡期可设 true 复用尚未改名的 #ai-open（需同时移除旧监听）
-  forcePaper: true,
+  forcePaper: "auto", // "auto"＝仅展示模式固定暖色；true＝始终固定；false＝从不固定
   defaultTab: "appearance",
   version: null, // string 或 () => string；留空则读 window.__LOCUS_BUILD__ / meta
   beforeOpen: null, // () => void，用于先关闭卷目抽屉等
@@ -129,6 +132,25 @@ function syncModelStatus() {
   if (!aside) return;
   const el = aside.querySelector("[data-model-status]");
   if (el) el.textContent = "模型 · " + modelStatusText();
+}
+
+// ── 主题门控：展示模式 vs 常规模式 ───────────────────────
+// 展示模式由公开展示构建注入 window.__LOCUS_DISPLAY__（对象）标识；常规模式无此对象。
+function isDisplayMode() {
+  const d = window.__LOCUS_DISPLAY__;
+  return !!d && typeof d === "object";
+}
+function shouldForcePaper() {
+  if (cfg.forcePaper === true) return true; // 显式强制（开发/预览可用）
+  if (cfg.forcePaper === false) return false; // 显式关闭
+  return isDisplayMode(); // "auto"：只在展示模式固定暖色
+}
+// 仅展示模式调用：置 data-theme=paper 并移除 body.theme-tech。不读也不写任何主题存储键。
+function applyDisplayTheme() {
+  if (document.documentElement.dataset.theme !== "paper") {
+    document.documentElement.dataset.theme = "paper";
+  }
+  document.body?.classList.remove("theme-tech");
 }
 
 // ── 折扇几何（箱体 760） ─────────────────────────────────
@@ -480,13 +502,8 @@ function bootstrap(options) {
   }
 
   applyPreferences();
-  if (cfg.forcePaper) {
-    // 公开版固定宣纸：不读取、不沿用旧 tech 存储值；也不会写入存储
-    if (document.documentElement.dataset.theme !== "paper") {
-      document.documentElement.dataset.theme = "paper";
-    }
-    document.body?.classList.remove("theme-tech");
-  }
+  if (shouldForcePaper()) applyDisplayTheme();
+  document.documentElement.dataset.settingsMode = isDisplayMode() ? "display" : "normal";
 
   aside = document.createElement("aside");
   aside.className = "settings-fan";
@@ -534,6 +551,7 @@ function bootstrap(options) {
     toggle,
     setTab: (t) => { setTab(t); },
     isOpen: () => state.open,
+    isDisplayMode,
     refresh: () => { syncModelStatus(); syncAbout(); syncAppearanceUi(); },
     applyPreferences,
     mountEntry,

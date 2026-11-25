@@ -214,21 +214,36 @@ try {
   });
   console.log("PERSIST", JSON.stringify(report.persist));
 
-  // 预存 tech 的独立校验（通过 CDP initScript 在页面脚本前写入）
-  const seed = await withPage({
-    url: `${BASE}?still=1`,
-    width: 1024, height: 768,
-    initScript: "try{localStorage.setItem('locus.theme.v1','tech');}catch(e){}",
+  // 主题门控两态校验：常规态（无 __LOCUS_DISPLAY__）应保留既有 tech；展示态应固定 paper 且不动存储
+  const GATE_READ = `(() => ({
+    settingsMode: document.documentElement.dataset.settingsMode,
+    display: window.LocusSettings?.isDisplayMode?.(),
+    theme: document.documentElement.dataset.theme,
+    bodyTech: document.body.classList.contains('theme-tech'),
+    stored: (()=>{try{return localStorage.getItem('locus.theme.v1')}catch(e){return 'err'}})(),
+    techCssNodes: document.querySelectorAll('[data-theme="tech"]').length,
+  }))()`;
+
+  report.gate = {};
+  report.gate.normal = await withPage({
+    url: `${BASE}?still=1&seedtech=1`, width: 1024, height: 768, initScript: CLEAN,
+  }, (cdp) => cdp.evaluate(GATE_READ));
+  console.log("GATE normal", JSON.stringify(report.gate.normal));
+
+  report.gate.display = await withPage({
+    url: `${BASE}?still=1&seedtech=1&display=1`, width: 1024, height: 768, initScript: CLEAN,
+  }, (cdp) => cdp.evaluate(GATE_READ));
+  console.log("GATE display", JSON.stringify(report.gate.display));
+
+  // 展示态完整自测（含门控断言）
+  report.testsDisplay = await withPage({
+    url: `${BASE}?still=1&display=1&seedtech=1`, width: 1280, height: 720, initScript: CLEAN,
   }, async (cdp) => {
-    return cdp.evaluate(`(() => ({
-      theme: document.documentElement.dataset.theme,
-      stored: (()=>{try{return localStorage.getItem('locus.theme.v1')}catch(e){return 'err'}})(),
-      techNodes: document.querySelectorAll('[data-theme="tech"]').length,
-      hasColdEntry: !!document.querySelector('#theme-seal, #replay-theme')
-    }))()`);
+    const res = await cdp.evaluate("window.__fanSelfTest()");
+    report.errors.push(...cdp.errors);
+    return res;
   });
-  report.seedtech = seed;
-  console.log("SEEDTECH", JSON.stringify(seed));
+  console.log("SELFTEST display", JSON.stringify(report.testsDisplay));
 } finally {
   proc.kill();
   writeFileSync(resolve(OUT, "report.json"), JSON.stringify(report, null, 2));
