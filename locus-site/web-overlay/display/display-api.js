@@ -60,10 +60,11 @@ function backtraceResponse(r) {
  * @param {object} opts
  * @param {string} [opts.baseUrl] 静态快照目录（默认 "../demo-data"，由 D 改为站点路径如 "/demo-data"）
  * @param {string} [opts.topicId] 固定主课题 ID（覆盖 manifest.projectId）
+ * @param {string} [opts.zipUrl] 样本 ZIP 的下载地址（覆盖快照内置 url；供 zipInfo() 使用）
  * @param {typeof fetch} [opts.fetch] 注入 fetch（单测用；默认全局 fetch）
  * @returns {Promise<Readonly<object>>}
  */
-export async function createDisplayApi({ baseUrl = DEFAULT_BASE_URL, topicId, fetch: fetchImpl = fetch } = {}) {
+export async function createDisplayApi({ baseUrl = DEFAULT_BASE_URL, topicId, zipUrl, fetch: fetchImpl = fetch } = {}) {
   const loadJson = async (rel) => {
     const url = `${baseUrl}/${rel}`;
     const res = await fetchImpl(url, { headers: { accept: "application/json" }, cache: "no-store" });
@@ -123,6 +124,23 @@ export async function createDisplayApi({ baseUrl = DEFAULT_BASE_URL, topicId, fe
     async getJob(id) {
       // 展示模式不提供后台任务，也不请求后端；返回终态错误让任何轮询立即停止，不伪造进度。
       return { id, status: "error", error: "展示模式不提供后台任务（只读）", message: "展示模式" };
+    },
+
+    // ── 展示增量（E4 上下文图/下一步、E5 样本 ZIP）──
+    /** 返回该分析任务实跑生成的上下文图；未导出即缺项，不现场合成。 */
+    async contextMap(taskId) { return data.getContextMap(taskId); },
+
+    /** 样本 ZIP 元信息 {fileName, sha256, url}；下载地址优先用注入配置的 zipUrl。 */
+    async zipInfo() {
+      const z = data.zipInfo(); // 缺 fileName/sha256 时抛缺项
+      return { fileName: z.fileName, sha256: z.sha256, url: zipUrl ?? z.url };
+    },
+
+    /** 下一步指导（最多 2 条）；快照未提供即缺项。 */
+    async suggestions() {
+      const list = data.listSuggestions();
+      if (!list.length) throw new DemoMissingError("demo.suggestions", "快照未提供下一步指导（A 需导出 next-steps.json）");
+      return list;
     },
   };
 

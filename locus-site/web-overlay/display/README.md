@@ -23,7 +23,7 @@ locus-site/web-overlay/display/
 
 ```js
 export function displayConfig(win = window)   // 解析 window.__LOCUS_DISPLAY__ → 对象 | null
-export async function createDisplayApi({ baseUrl, topicId, fetch } = {})
+export async function createDisplayApi({ baseUrl, topicId, zipUrl, fetch } = {})
 ```
 
 `createDisplayApi` 返回**已冻结**的只读对象，方法名/签名对齐 `sciworkbench/public/lib/api.js` 读接口子集：
@@ -36,6 +36,11 @@ export async function createDisplayApi({ baseUrl, topicId, fetch } = {})
 | `knowledgeItem(id, revision, topicId?)` | `{ ok, id, revision, payload, availableRevisions[] }` | `knowledge.json` 严格按 `version` 读取 |
 | `aiStatus()` | `{ configured:false, baseUrl:"", model:"预生成", timeoutMs:0 }` | 固定占位，**不请求后端** |
 | `getJob(id)` | `{ id, status:"error", error:"展示模式不提供后台任务（只读）", message:"展示模式" }` | 固定占位，**不请求后端** |
+| `contextMap(taskId)` | 该任务实跑上下文图（含 `scope/nodes/edges/gaps`） | `context-map.json` 的 `mapTask`（按 `scope.taskId` 归位） |
+| `zipInfo()` | `{ fileName, sha256, url }`，`url` 优先注入的 `zipUrl` | `manifest/SHA256SUMS` 派生的 `state.demo.zip` |
+| `suggestions()` | 下一步指导数组（1~2 条，含 `basis`） | `next-steps.json` 派生的 `state.demo.suggestions` |
+
+> 三个展示增量方法缺项时一律抛 `DemoMissingError`：`contextMap` 无该任务、`zipInfo` 无文件名/校验、`suggestions` 为空。
 
 - 任一处缺项一律抛 `DemoMissingError`（`code:"DEMO_MISSING"`，带 `path`/`reason`），**不补造数据**。
 - 任何方法都不请求 `/api/...`；只读 `baseUrl` 下的静态文件（单测断言开启）。
@@ -48,7 +53,7 @@ export async function createDisplayApi({ baseUrl, topicId, fetch } = {})
 | `snapshot/knowledge.json` | 知识条目扁平结构 | 派生为带 `payload` 的知识信封 → `state.knowledge.items`；`knowledgeItem()` 严格按版本 |
 | `snapshot/references.json` | 真实引用网络 `nodes/edges` | `backtrace()` 起点与可达节点 |
 | `snapshot/manifest.json` | `projectId/schemaVersion/fixtureVersion/sourceCommit/generatedAt` | `display.*` 元信息、固定主课题 |
-| `snapshot/context-map.json` / `next-steps.json` / `ai-products.json` / `SHA256SUMS.txt` | 上下文图、下一步、AI 产物登记、ZIP 校验 | 由 `a-snapshot.js` 装入 `state.demo`（本接口未单独暴露，见「已知缺项」） |
+| `snapshot/context-map.json` / `next-steps.json` / `ai-products.json` / `SHA256SUMS.txt` | 上下文图、下一步、AI 产物登记、ZIP 校验 | 由 `a-snapshot.js` 装入 `state.demo`；`contextMap()` / `suggestions()` / `zipInfo()` 分别暴露，`state.demo` 仍完整保留 |
 
 `state.display` 附加字段：`{ mode:"display", readOnly:true, mainTopicId, topicId, schemaVersion, fixtureVersion, sourceCommit, projectId, generatedAt }`。
 
@@ -79,13 +84,13 @@ import { api as onlineApi } from "./lib/api.js";
 
 const cfg = displayConfig(); // 公开展示构建注入 window.__LOCUS_DISPLAY__ 才有值；本地/trial 为 null
 const api = cfg
-  ? await createDisplayApi({ baseUrl: cfg.baseUrl ?? "/demo-data", topicId: cfg.topicId })
+  ? await createDisplayApi({ baseUrl: cfg.baseUrl ?? "/demo-data", topicId: cfg.topicId, zipUrl: cfg.zipUrl })
   : onlineApi;
 // 之后 bootstrap()/refresh() 等一律走 api
 ```
 
-> `app.js` 现以 `import { api }` 单例调用读接口。若不便改 import，D 可在启动时把这六个读方法覆盖到现有 `api` 对象上：
-> `{ getState, getSource, backtrace, knowledgeItem, aiStatus, getJob }` 来自 `await createDisplayApi(...)`。
+> `app.js` 现以 `import { api }` 单例调用读接口。若不便改 import，D 可在启动时把这些只读方法覆盖到现有 `api` 对象上：
+> `{ getState, getSource, backtrace, knowledgeItem, aiStatus, getJob, contextMap, zipInfo, suggestions }` 来自 `await createDisplayApi(...)`。
 
 **配置对象 `window.__LOCUS_DISPLAY__` 字段**：
 
@@ -93,6 +98,7 @@ const api = cfg
 window.__LOCUS_DISPLAY__ = {
   baseUrl: "/demo-data",          // 静态快照目录（站点路径）；默认 "../demo-data"
   topicId: "topic_f6bff443-…",    // 可选：固定预存课题；缺省用 manifest.projectId
+  zipUrl: "/demo-data/locus-demo-public.zip", // 可选：zipInfo().url 覆盖；缺省用快照内置 url
   label: "展示课题 · 只读",        // 可选：UI 文案（由 D 渲染，本模块不画 UI）
   mode: "display",                // 可选：信息字段
   readOnly: true,                 // 可选：信息字段
@@ -105,7 +111,7 @@ window.__LOCUS_DISPLAY__ = {
 
 - **只实现读子集**：`api.js` 里的写/上传/解析/对话/保存等方法本模块不提供。展示模式下 D 需收起或禁用这些入口（手册 §B.5）。
 - **`getJob` 为固定终态错误**，不提供任何进度；展示模式不触发后台任务。
-- **`state.demo` 里的上下文图 / 下一步 / ZIP 校验**已随 `a-snapshot.js` 装入 `state.demo`，但**不在本冻结接口的 6 个方法内**。若页面要展示「下一步指导 / 下载 ZIP」，D 需另行读取 `state.demo`（或在经协调者批准后扩展接口）。
+- **上下文图 / 下一步 / ZIP** 已由 `contextMap(taskId)`、`suggestions()`、`zipInfo()` 暴露（接口扩展经协调者批准）；`getState()` 仍完整保留 `state.demo`，D 可从二者任一取 E4/E5 所需数据。
 - **`ocrs / mappings / impacts / adoptions`** 取自 `state.json`，当前快照为空数组；非补造，A 导出若有则原样带上。
 - **原件外部链接**：`state.json` 的 `assets[].text` 优先内嵌原文；外链由 `manifest.originals` 提供（在 `state.demo.sources`）。
 - **旧展示链接兼容**（`/demo/demo.html` 重定向到原工作台）：属 D 的公共入口接线，不在本模块范围。

@@ -23,6 +23,21 @@ const fakeFetch = async (url) => {
 const api = await createDisplayApi({ baseUrl: "../demo-data", fetch: fakeFetch });
 const state = await api.getState();
 
+// 可对个别快照文件做替换（验证缺项分支），其余仍读真实 demo-data。
+const makeFetch = (overrides = {}) => async (url) => {
+  const rel = String(url).replace(/^\.\.\/demo-data\//, "");
+  if (Object.prototype.hasOwnProperty.call(overrides, rel)) {
+    const v = overrides[rel];
+    return { ok: true, status: 200, json: async () => JSON.parse(JSON.stringify(v)), text: async () => JSON.stringify(v) };
+  }
+  try {
+    const body = readFileSync(resolve(ROOT, rel));
+    return { ok: true, status: 200, json: async () => JSON.parse(body.toString("utf8")), text: async () => body.toString("utf8") };
+  } catch {
+    return { ok: false, status: 404, json: async () => ({}), text: async () => "" };
+  }
+};
+
 const STATE_COLLECTIONS = [
   "topics", "subquestions", "assets", "papers", "attachments", "cards", "tables", "adoptions",
   "mappings", "comparisons", "templates", "protocols", "executions", "samples", "measurements",
@@ -130,4 +145,39 @@ test("displayConfig：解析 window.__LOCUS_DISPLAY__ 的对象 / JSON / null", 
   assert.deepEqual(displayConfig({ __LOCUS_DISPLAY__: { baseUrl: "/demo-data" } }), { baseUrl: "/demo-data" });
   assert.deepEqual(displayConfig({ __LOCUS_DISPLAY__: '{"topicId":"t1"}' }), { topicId: "t1" });
   assert.equal(displayConfig({ __LOCUS_DISPLAY__: "{坏 json" }), null);
+});
+
+// ── 展示增量接口（E4/E5）──
+
+test("contextMap：返回该任务实跑上下文图（nodes/edges），缺任务抛缺项", async () => {
+  const taskId = state.analysisTasks[0].id;
+  assert.ok(state.demo.contextMaps?.[taskId], "state.demo 仍带 contextMaps（getState 保留 demo 块）");
+  const map = await api.contextMap(taskId);
+  assert.equal(map.scope.taskId, taskId);
+  assert.ok(Array.isArray(map.nodes) && map.nodes.length > 0);
+  assert.ok(Array.isArray(map.edges));
+  await assert.rejects(() => api.contextMap("atask_不存在"), (e) => e instanceof DemoMissingError && e.code === "DEMO_MISSING");
+});
+
+test("zipInfo：返回 {fileName, sha256, url}，url 可被注入配置覆盖", async () => {
+  const z = await api.zipInfo();
+  assert.equal(z.fileName, "locus-demo-public.zip");
+  assert.match(z.sha256, /^[0-9a-f]{64}$/);
+  assert.ok(z.url.endsWith("/locus-demo-public.zip"));
+  const api2 = await createDisplayApi({ baseUrl: "../demo-data", zipUrl: "/downloads/locus.zip", fetch: fakeFetch });
+  assert.equal((await api2.zipInfo()).url, "/downloads/locus.zip", "注入 zipUrl 覆盖快照内置 url");
+});
+
+test("suggestions：返回下一步指导（1~2 条，含依据），缺则抛缺项", async () => {
+  const list = await api.suggestions();
+  assert.ok(list.length >= 1 && list.length <= 2, "只给 1~2 条");
+  for (const s of list) {
+    assert.ok(s.id && s.title, "有 id 与标题");
+    assert.ok(s.basis && typeof s.basis === "object", "带依据（分歧/待补/可区分/不确定）");
+  }
+  const apiEmpty = await createDisplayApi({
+    baseUrl: "../demo-data",
+    fetch: makeFetch({ "snapshot/next-steps.json": { note: "无", items: [] } }),
+  });
+  await assert.rejects(() => apiEmpty.suggestions(), (e) => e instanceof DemoMissingError && e.code === "DEMO_MISSING");
 });
