@@ -27,9 +27,9 @@
 | R05 | 公开·1345ab2（无 Node） | 打开首页，遍历 library/papers/protocol/record/analysis/chat | `theme=paper`、`displayMode=on`、badge「展示课题·只读」、8 导航；分析页数值贯通链「榛子（干燥后漂浮）=90 days」6 跳 + 2 导出链接；全程 **`/api`=0、`/demo-data`=47、外链=0** | ✅ 通过 |
 | R06 | 公开·1345ab2 | 点第一跳；下载 Word/追溯包/样本 ZIP | 首跳可点（右栏出方案示意图）；下载成功：`report.docx` 1863B、`traceability.zip` 6378B、`locus-demo-public.zip` 33855B（sha256 前16 `5362d30267b23a98`，与构建一致） | ✅ 通过 |
 | R07 | 公开·1345ab2 | 拦 `chain-90d.json` 返回 404 后重载 → 打开样本 ZIP → 取消拦截重试 | 受影响区域出 `.dx-fail`「该区域暂时加载失败（引用文件不可读）。」+ 重试按钮；样本 ZIP 仍下载 33855B；重试后链恢复 6 跳 | ✅ 通过 |
-| R08 | 三入口·1345ab2 | 公开/ trial / 原生 Node 各开设置；Esc 关闭；390×800 窄屏 | 三入口设置均可打开（外观/模型/关于）、Esc 后焦点归还 `settings-open`；窄屏 **公开态横向溢出（docW 511 > 390）**，trial/Node 无溢出 | ⚠️ 部分（设置与焦点通过；公开窄屏溢出为缺陷；列表→详情→返回/后退/刷新 断言未实现） |
-| R09 | 可写·1345ab2 | 可写课题导入公开材料，走 P8 五步 | 仅取证：可写课题创建可用（`POST /api/topics` 200）；**P8 五步完整走查未跑**（需 P8 脚本 + 达尔文预导入） | ⚠️ 部分 |
-| R10 | 公开 vs 可写·1345ab2 | 两源同套材料逐项比较 | 仅取证：预存态 `/api`=0、`/demo-data`>0；写态经 `/functions/v1/app/api`。逐项（文献卡/表格/实验图/结果/回查）同视图比较未跑 | ⚠️ 部分 |
+| R08 | 三入口·1345ab2 | 三入口各开设置；Esc 关闭；390×800 窄屏；列表→详情→返回/浏览器后退/刷新（`r08_navigation.mjs`，可写源 5582/5286） | 三入口设置均可开（外观/模型/关于）、Esc 后焦点归还 `settings-open`；**protocol/record：点开详情→哈希 `#/nav/id`→返回按钮→浏览器后退→刷新恢复 全通过**；papers/analysis 进入即自动选中首个对象（不写详情哈希，刷新靠 localStorage 回到同卷，非阻断）；窄屏 **公开态横向溢出（docW 511 > 390）**，trial/Node 无溢出 | ⚠️ 部分（核心导航与设置通过；公开窄屏溢出待 C 修） |
+| R09 | 可写·1345ab2（+达尔文预导入实例 5286） | 新建可写课题导入公开材料，走 P8 五步（`r09_p8.mjs`） | ①文献导入（**UI**：开卷表单建条目＋导入附件）→ papers 页见条目与原文；②表格导入（**API**：本构建无表格导入 UI）首导 7 行、**同字节二导 409「已导入相同内容…已拒收」**；③方案重构来源绑定原件（API）；④执行事件 2 条追加＋样品状态 2 版＋测量（API）；⑤知识卡确认定位后**采纳落库**＋建对话（API）；五步闭环，UI 复核各页可见对象 | ✅ 通过（①UI，②–⑤ API；模型未调用，真实模型待授权） |
+| R10 | 公开 vs 可写·1345ab2 | 两源同套材料逐视图比较（`r10_compare.mjs`；可写=5286 达尔文预导入课题） | 导航 8 项一致、方案主要点击路径一致（点开进详情）；**papers/protocol/record 三核心视图类名集合严格同构**；隔离成立：预存态 `/api`=0 且 `/demo-data`=37，可写态 `/demo-data`=0 且经 `/functions.../api`、选中课题为可写自己课题；其余差异为展示增量(`dx-*`)或数据内容（预存快照有知识卡/会话，可写 seed 无） | ✅ 通过（核心三视图同构＋隔离成立） |
 
 ## 2. 单元测试（`npm --prefix sciworkbench test`，实跑）
 
@@ -74,14 +74,15 @@ python record/acceptance-s09/scripts/serve_proxy.py "$AUD/web-trial" 5581 5284 "
 
 ## 6. 未测项 / 下一依赖
 
-- R09（P8 五步）、R10（两源逐项比较）：仅取证级，未跑完整走查；依赖 P8 脚本（`F:/LOCUS_方案/P8_五步走验收.md`）+ 达尔文预导入（`sciworkbench/scripts/acceptance-darwin.ts`，需内部夹具 `test-packages/darwin-seed-saltwater`）。
-- R08 列表→详情→返回/浏览器后退/刷新恢复 的逐项断言未实现（骨架待补）。
-- R04 用替身造卡（非真实模型）；真实模型质量不在本轮范围。
-- 单测 1 失败为内部夹具缺失，非候选缺陷。
+- R09 经 **API 完成 ②–⑤**（本构建无表格导入 UI 入口；测量/样品/采纳/对话的 UI 表单自动化受限）；**真实模型待授权**（本脚本未触发模型调用）；P8 完整 UI 走查（全表单）待授权后补。
+- R10 的 analysis/knowledge/chat 差异为**展示增量(`dx-*`)与数据内容**（预存快照含知识卡/会话，可写 seed 无），非组件差异；如需严格同数据对比，另建同内容两源。
+- R08 公开态窄屏横向溢出（docW 511>390）待 C 修后复验。
+- 单测 1 失败为内部夹具缺失（`test-packages/darwin-seed-saltwater` 在本 worktree 已临时提供后用于 R09，未入库），非候选缺陷。
+- 内部夹具 `sciworkbench/data/acceptance-darwin.json`、`test-packages/` 属 gitignore 私有包，**未入库**；R09 用其生成临时可写实例（`F:/qoder-dev-tmp/s10-e3-r0910/darwin-writable.json`）。
 
 ## 7. 证据位置
 
-- `evidence/raw/baseline_r01_r04.json`（R01–R04）、`evidence/raw/r05_r10_skeleton.json`（R05–R10）。
-- `evidence/screens/r01_recommend.png`、`r02_onB.png`、`r02_backA.png`、`r03_fail.png`、`r04_reload.png`、`r05_public_analysis.png`、`r06_downloads.png`、`r07_regionfail.png`、`r05_public.png`、`r08_narrow.png`。
-- 请求日志：`F:/qoder-dev-tmp/s10-e3-1345ab2/logs/{public-http,trial-http,stub}.txt|jsonl`。
-- 脚本：`scripts/{stub-model,baseline_r01_r04,r05_r10_skeleton}.mjs`、`scripts/README.md`。
+- `evidence/raw/`：`baseline_r01_r04.json`（R01–R04）、`r05_r10_skeleton.json`（R05–R07）、`r08_navigation.json`（R08 导航）、`r09_p8.json`（R09 五步）、`r10_compare.json`（R10 两源）。
+- `evidence/screens/`：`r01_recommend.png`、`r02_onB.png`、`r02_backA.png`、`r03_fail.png`、`r04_reload.png`、`r05_public_analysis.png`、`r06_downloads.png`、`r07_regionfail.png`、`r08_{protocol,record,auto_papers,auto_analysis}.png`、`r09_ui.png`。
+- 请求日志：`F:/qoder-dev-tmp/s10-e3-1345ab2/logs/`（公开/trial/stub）、`F:/qoder-dev-tmp/s10-e3-r0910/logs/`（可写实例 trial-5286）。
+- 脚本：`scripts/{stub-model,baseline_r01_r04,r05_r10_skeleton,r08_navigation,r09_p8,r10_compare}.mjs`、`scripts/README.md`。

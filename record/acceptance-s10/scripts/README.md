@@ -66,7 +66,10 @@ node record/acceptance-s10/scripts/r05_r10_skeleton.mjs
 | --- | --- |
 | `stub-model.mjs` | 本机 OpenAI 兼容替身：按 system 判任务；`knowledge_struct` 延迟 8s 返回 1 张合法卡；`analysis_recommend` 返回固定方法；记录输入正文与请求次数到 jsonl |
 | `baseline_r01_r04.mjs` | R01–R04 实测（可用） |
-| `r05_r10_skeleton.mjs` | R05–R10 可重跑骨架（选择器/断言按新入口补全） |
+| `r05_r10_skeleton.mjs` | R05–R08 实测（断网公开对象/下载/引用失败/三入口设置）＋ R09/R10 取证 |
+| `r08_navigation.mjs` | R08 导航：列表→详情→返回/浏览器后退/刷新恢复（`#/nav/id` 哈希路由；每卷独立 context） |
+| `r09_p8.mjs` | R09：可写课题导入公开材料并走 P8 五步（①UI，②–⑤API；模型未调用） |
+| `r10_compare.mjs` | R10：预存源 vs 可写源逐视图类名同构、同导航同点击路径、请求隔离 |
 
 ## 5. 注意
 

@@ -1,0 +1,193 @@
+{
+  "base": "http://127.0.0.1:5582",
+  "listDetail": {
+    "protocol": {
+      "list": {
+        "hash": "",
+        "nav": "protocol",
+        "backVisible": false,
+        "mid": "实验方案",
+        "listCount": 1,
+        "active": 0
+      },
+      "afterOpen": {
+        "hash": "#/protocol/proto_e8e359e2-4b9e-415e-bf4b-c23376ceb762",
+        "nav": "protocol",
+        "backVisible": true,
+        "mid": "实验图",
+        "listCount": 1,
+        "active": 1
+      },
+      "afterBackBtn": {
+        "hash": "#/protocol",
+        "nav": "protocol",
+        "backVisible": false,
+        "mid": "实验方案",
+        "listCount": 1,
+        "active": 0
+      },
+      "afterBrowserBack": {
+        "hash": "#/protocol",
+        "nav": "protocol",
+        "backVisible": false,
+        "mid": "实验方案",
+        "listCount": 1,
+        "active": 0
+      },
+      "beforeReload": {
+        "hash": "#/protocol/proto_e8e359e2-4b9e-415e-bf4b-c23376ceb762",
+        "nav": "protocol",
+        "backVisible": true,
+        "mid": "实验图",
+        "listCount": 1,
+        "active": 1
+      },
+      "afterReload": {
+        "hash": "#/protocol/proto_e8e359e2-4b9e-415e-bf4b-c23376ceb762",
+        "nav": "protocol",
+        "backVisible": true,
+        "mid": "实验图",
+        "listCount": 1,
+        "active": 1
+      },
+      "openHashOk": true,
+      "backBtnOk": true,
+      "browserBackOk": true,
+      "reloadOk": true,
+      "pass": true
+    },
+    "record": {
+      "list": {
+        "hash": "",
+        "nav": "record",
+        "backVisible": false,
+        "mid": "执行记录",
+        "listCount": 1,
+        "active": 0
+      },
+      "afterOpen": {
+        "hash": "#/record/exec_258f31b5-920f-4b49-b9c1-afe63d6e0dbd",
+        "nav": "record",
+        "backVisible": true,
+        "mid": "步骤记录表",
+        "listCount": 1,
+        "active": 1
+      },
+      "afterBackBtn": {
+        "hash": "#/record",
+        "nav": "record",
+        "backVisible": false,
+        "mid": "执行记录",
+        "listCount": 1,
+        "active": 0
+      },
+      "afterBrowserBack": {
+        "hash": "#/record",
+        "nav": "record",
+        "backVisible": false,
+        "mid": "执行记录",
+        "listCount": 1,
+        "active": 0
+      },
+      "beforeReload": {
+        "hash": "#/record/exec_258f31b5-920f-4b49-b9c1-afe63d6e0dbd",
+        "nav": "record",
+        "backVisible": true,
+        "mid": "步骤记录表",
+        "listCount": 1,
+        "active": 1
+      },
+      "afterReload": {
+        "hash": "#/record/exec_258f31b5-920f-4b49-b9c1-afe63d6e0dbd",
+        "nav": "record",
+        "backVisible": true,
+        "mid": "步骤记录表",
+        "listCount": 1,
+        "active": 1
+      },
+      "openHashOk": true,
+      "backBtnOk": true,
+      "browserBackOk": true,
+      "reloadOk": true,
+      "pass": true
+    }
+  },
+  "autoSelect": {
+    "papers": {
+      "entered": {
+        "hash": "",
+        "nav": "papers",
+        "backVisible": true,
+        "mid": "文献原文 · origin-1859-p371-373.md",
+        "listCount": 1,
+        "active": 1
+      },
+      "autoSelected": true,
+      "hashInSync": false,
+      "afterClick": {
+        "hash": "",
+        "nav": "papers",
+        "backVisible": true,
+        "mid": "文献原文 · origin-1859-p371-373.md",
+        "listCount": 1,
+        "active": 1
+      },
+      "afterReload": {
+        "hash": "",
+        "nav": "papers",
+        "backVisible": true,
+        "mid": "文献原文 · origin-1859-p371-373.md",
+        "listCount": 1,
+        "active": 1
+      },
+      "reloadSameNav": true
+    },
+    "analysis": {
+      "entered": {
+        "hash": "",
+        "nav": "analysis",
+        "backVisible": true,
+        "mid": "上下文地图 · 传播量级与漂浮时长（干燥 vs 新鲜）",
+        "listCount": 1,
+        "active": 1
+      },
+      "autoSelected": true,
+      "hashInSync": false,
+      "afterClick": {
+        "hash": "",
+        "nav": "analysis",
+        "backVisible": true,
+        "mid": "上下文地图 · 传播量级与漂浮时长（干燥 vs 新鲜）",
+        "listCount": 1,
+        "active": 1
+      },
+      "afterReload": {
+        "hash": "",
+        "nav": "analysis",
+        "backVisible": true,
+        "mid": "上下文地图 · 传播量级与漂浮时长（干燥 vs 新鲜）",
+        "listCount": 1,
+        "active": 1
+      },
+      "reloadSameNav": true
+    }
+  },
+  "summary": {
+    "listDetail": {
+      "protocol": "PASS",
+      "record": "PASS"
+    },
+    "autoSelect": {
+      "papers": {
+        "autoSelected": true,
+        "hashInSync": false,
+        "reloadSameNav": true
+      },
+      "analysis": {
+        "autoSelected": true,
+        "hashInSync": false,
+        "reloadSameNav": true
+      }
+    }
+  }
+}
