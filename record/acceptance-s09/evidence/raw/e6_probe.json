@@ -1,0 +1,77 @@
+{
+  "viewports": [
+    {
+      "w": 1440,
+      "h": 900,
+      "sheet": "false",
+      "isOpen": true,
+      "rect": {
+        "x": 139,
+        "y": -13,
+        "w": 900,
+        "h": 900
+      }
+    },
+    {
+      "w": 1280,
+      "h": 720,
+      "sheet": "false",
+      "isOpen": true,
+      "rect": {
+        "x": 148,
+        "y": -23,
+        "w": 720,
+        "h": 720
+      }
+    },
+    {
+      "w": 1024,
+      "h": 768,
+      "sheet": "false",
+      "isOpen": true,
+      "rect": {
+        "x": 146,
+        "y": -20,
+        "w": 768,
+        "h": 768
+      }
+    },
+    {
+      "w": 390,
+      "h": 800,
+      "sheet": "true",
+      "isOpen": true,
+      "rect": {
+        "x": 0,
+        "y": 120,
+        "w": 390,
+        "h": 680
+      }
+    }
+  ],
+  "tabs": {
+    "appearance": {
+      "text": " 外观模型关于 设置 合拢 ✕ 外观模型关于 动画效果跟随系统 疏密 宽松 紧凑 字号 小 中 大 模型 · 状态未提供 结果为预生成 公开版不连模型 名称LOCUS · 科研上下文工作台 版本s08-public-a1f07ef · a1f07ef 数据预生成 · 只读 ",
+      "keyInputs": 0,
+      "hasAddress": false
+    },
+    "models": {
+      "text": " 外观模型关于 设置 合拢 ✕ 外观模型关于 动画效果跟随系统 疏密 宽松 紧凑 字号 小 中 大 模型 · 状态未提供 结果为预生成 公开版不连模型 名称LOCUS · 科研上下文工作台 版本s08-public-a1f07ef · a1f07ef 数据预生成 · 只读 ",
+      "keyInputs": 0,
+      "hasAddress": false
+    },
+    "about": {
+      "text": " 外观模型关于 设置 合拢 ✕ 外观模型关于 动画效果跟随系统 疏密 宽松 紧凑 字号 小 中 大 模型 · 状态未提供 结果为预生成 公开版不连模型 名称LOCUS · 科研上下文工作台 版本s08-public-a1f07ef · a1f07ef 数据预生成 · 只读 ",
+      "keyInputs": 0,
+      "hasAddress": false
+    }
+  },
+  "suggestions": {
+    "summary": "下一步指导 · 预生成",
+    "items": [
+      "1. 依据：（未提） 要补数据：（未提） 能区分：（未提） 仍不确定：（未提）",
+      "2. 依据：（未提） 要补数据：（未提） 能区分：（未提） 仍不确定：（未提）",
+      "样本与来源 locus-demo-public.zip SHA-256：785b468908b0f0246b4e0cafb407a8f4e66d2fbb4db31ed6599fba9f68f4312b 下载样本 ZIP"
+    ]
+  }
+}
