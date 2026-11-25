@@ -51,16 +51,14 @@
 @@ 行 2005（.goto[data-topic]）
 -  if (b.dataset.topic) ui.topicId = b.dataset.topic;
 +  if (b.dataset.topic) { switchTopic(b.dataset.topic); }
-@@ 异步回执归属：job 完成/轮询时校验发起课题（示例：recommend、chat、knowledge）
-@@ analysis.js 已在发起时带 taskId，前端只需在完成回调里比对课题：
--          ui.anRecheck = null; ui.anRecheckList = null;
--          ctx.setStatus(`快照已冻结 ${r.snapshotHash.slice(0, 12)}…`);
--          await ctx.pollJob(r.jobId, "方法推荐");
--          await refreshAfterJob(); ctx.setStatus("方法推荐完成（含验收项）");
-+          const originTopic = t.topicId;
-+          await ctx.pollJob(r.jobId, "方法推荐");
-+          if (originTopic !== ui.topicId) return;   // 迟到：数据已落库，但不渲染到当前课题
-+          resetSel(ui, t); await refreshAfterJob(); ctx.setStatus("方法推荐完成（含验收项）");
+@@ 异步回执归属：job 完成/轮询时校验发起课题
+@@ ✅ 已在 lib 落地（本轮提交，集成侧无需再改 analysis.js）：
+@@   lib/pages/analysis.js 的 an-recommend 与 an-recheck 回调均已加：
+   const originTopic = t.topicId;
+   await ctx.pollJob(r.jobId, "方法推荐");
+   if (originTopic !== ui.topicId) return;   // 迟到：数据已落库，但不渲染/改动当前课题
+   resetSel(ui, t); await refreshAfterJob(); …
+@@ 其余异步入口（chat / knowledge）同理：在各自完成回调比对发起课题。
 
 说明：
 - 课题内对象的有效性清空 + 空态显示由 `refresh()`（行 775-794）已有逻辑兜底；本提案补的是

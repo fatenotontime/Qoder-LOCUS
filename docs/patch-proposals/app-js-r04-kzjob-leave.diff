@@ -21,10 +21,13 @@ lib 侧已提供按持久 run 找回（`lib/pages/knowledge.js` 的 `recoverJobF
 +  if (kind === ui.nav || !guardLeave()) return;
 +  if (ui.nav === "knowledge" && kind !== "knowledge" && !kzLeaveGuard()) return;  // 未提交审阅内容（依据/值/备注）离开前确认
 
-@@ lib 导出 kzLeaveGuard（knowledge.js 已可加，或复用现有 kzDropDraft）
+@@ 导入处追加 kzLeaveGuard
+-import { knowledgeLeftHtml, knowledgeWorkspaceHtml, knowledgeQueueHtml, renderKnowledgeForm, bindKnowledge } from "./lib/pages/knowledge.js";
++import { knowledgeLeftHtml, knowledgeWorkspaceHtml, knowledgeQueueHtml, renderKnowledgeForm, bindKnowledge, kzLeaveGuard } from "./lib/pages/knowledge.js";
+
 说明：
-- 现有 `kzDropDraft()` 只在知识页内部面板/文献切换时调用；本提案把「离开知识页（切卷目）」
-  也纳入同一确认，避免静默丢弃正在核对的依据/值/主题名。
-- 卡片备注 `kz-note` 走 focusout 即存（`api.reviewCard(cardId,{note})`），无需额外保护；
-  本提案只补「未提交的核对内容」这一档。
+- `kzLeaveGuard(): boolean` 已从 `lib/pages/knowledge.js` 导出（本轮提交）。语义：`ui.dirty` 为真时
+  `confirm` 询问，返回是否可离开；未提交的核对内容（依据/值/条件/主题名/**备注 `kz-note`**）
+  一律不静默丢弃。集成侧只需在「离开知识页」前 `if (!kzLeaveGuard()) return;`。
+- 知识页内部的面板/文献切换仍由 lib 自身调用同一守卫，行为一致。
 - 任务控制按钮（暂停/继续/取消/重试）保留在 lib，无需 app.js 改动。

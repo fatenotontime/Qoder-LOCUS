@@ -534,10 +534,15 @@ function kzBasis(scope, sel) {
 const KZ_DRAFT = ".ki-basis, .ki-raw, .ki-num, .ki-unit, .ki-scope, .kc-basis, .kz-quote, .kz-note, .kcf-field, .kcf-raw, .kcf-num, .kcf-unit, .ks-quote, .ks-text, .ks-raw, .ks-num, .ks-unit, .ks-cond, .kt-name, .kt-def, .kn-name, .kn-def";
 function kzDropDraft() {
   if (!ctx.ui.dirty) return true;
-  if (!confirm("有未提交的审阅内容（依据／值／条件／主题名），切换会丢弃。确定继续？")) return false;
+  if (!confirm("有未提交的审阅内容（依据／值／条件／主题名／备注），切换会丢弃。确定继续？")) return false;
   ctx.setDirty(false);
   return true;
 }
+
+/** 供 app.js 在「离开知识页」前调用：返回 true=可离开，false=用户取消。
+ *  签名：kzLeaveGuard(): boolean
+ *  依据 ui.dirty（含 .kz-note 备注、依据/值/条件/主题草稿）决定是否弹确认；未提交则不静默丢弃。 */
+export function kzLeaveGuard() { return kzDropDraft(); }
 
 export function bindKnowledge(c) {
   ctx = c;
