@@ -59,6 +59,29 @@ if (!html.includes("site-shim.js")) {
   }
 }
 
+// ── 1c) 设置折扇：接到普通静态源——trial 与 public 两种模式都发布并注入（新增入口，不改既有界面）。
+//      仅当存在 window.__LOCUS_DISPLAY__ 时固定暖色；trial/常规态沿用各自已保存主题（见 settings-fan.js）。
+{
+  const setSrc = join(HERE, "web-overlay", "settings");
+  const setOut = join(out, "settings");
+  mkdirSync(setOut, { recursive: true });
+  copyFileSync(join(setSrc, "settings-fan.js"), join(setOut, "settings-fan.js"));
+  copyFileSync(join(setSrc, "settings-fan.css"), join(setOut, "settings-fan.css"));
+
+  if (!html.includes("locus-build-version")) {
+    const buildMeta =
+      `  <meta name="locus-build-version" content="${BUILD_VERSION}" />\n` +
+      `  <script>window.__LOCUS_BUILD__=${JSON.stringify({ version: BUILD_VERSION, commit: BUILD_COMMIT })};</script>\n`;
+    html = html.replace(/<\/head>/i, `${buildMeta}</head>`);
+  }
+  if (!html.includes("settings-fan.css")) {
+    html = html.replace(/<\/head>/i, `  <link rel="stylesheet" href="/settings/settings-fan.css" />\n</head>`);
+  }
+  if (!html.includes("settings-fan.js")) {
+    html = html.replace(/<\/body>/i, `\n  <script type="module" src="/settings/settings-fan.js"></script>\n</body>`);
+  }
+}
+
 // ── 2) 公开展示模式 ─────────────────────────────────────────
 const ZIP_URL = "/demo-data/locus-demo-public.zip";
 let demoSummary = "";
@@ -116,11 +139,7 @@ if (MODE === "public") {
 `;
   writeFileSync(join(demoOut, "demo.html"), compatHtml);
 
-  // 2c) settings 折扇：只发布 settings-fan.js / settings-fan.css（新增入口，不改既有界面）。
-  const setOut = join(out, "settings");
-  mkdirSync(setOut, { recursive: true });
-  copyFileSync(join(HERE, "web-overlay", "settings", "settings-fan.js"), join(setOut, "settings-fan.js"));
-  copyFileSync(join(HERE, "web-overlay", "settings", "settings-fan.css"), join(setOut, "settings-fan.css"));
+  // 2c) settings 折扇：已在 1c 统一发布并注入（trial 与 public 共用）。
 
   // 2d) 展示适配器（B 交付）：复制 /display 运行必需文件，供 app.js 动态 import。
   const dispSrc = join(HERE, "web-overlay", "display");
@@ -134,20 +153,13 @@ if (MODE === "public") {
     console.warn("  [warn] public 模式缺 web-overlay/display/display-api.js：展示适配器未打包（B 交付后重跑构建）");
   }
 
-  // 2e) 把设置折扇挂到既有首页：head 加 CSS link + 构建版本注入，body 末加静态入口 + module 脚本。
-  //     不改首页结构、不删既有入口；模型状态读取既有 #ai-state。
-  if (!html.includes("locus-build-version")) {
-    const buildMeta =
-      `  <meta name="locus-build-version" content="${BUILD_VERSION}" />\n` +
-      `  <script>window.__LOCUS_BUILD__=${JSON.stringify({ version: BUILD_VERSION, commit: BUILD_COMMIT })};</script>\n`;
-    html = html.replace(/<\/head>/i, `${buildMeta}</head>`);
+  // 2e) 设置折扇的注入已在 1c 完成（build 版本 meta、CSS link、module 脚本）。
+  // 2e-2) 展示增量叠加层（S10-C）：CSS link + module 脚本，自举，不改首页结构。仅公开展示构建注入。
+  if (!html.includes("display-extras.css")) {
+    html = html.replace(/<\/head>/i, `  <link rel="stylesheet" href="/display/display-extras.css" />\n</head>`);
   }
-  if (!html.includes("settings-fan.css")) {
-    html = html.replace(/<\/head>/i, `  <link rel="stylesheet" href="/settings/settings-fan.css" />\n</head>`);
-  }
-  // 入口按钮在源 index.html 左栏底部（#settings-open），此处只注入模块脚本，不再注入悬浮按钮。
-  if (!html.includes("settings-fan.js")) {
-    html = html.replace(/<\/body>/i, `\n  <script type="module" src="/settings/settings-fan.js"></script>\n</body>`);
+  if (!html.includes("display-extras.js")) {
+    html = html.replace(/<\/body>/i, `\n  <script type="module" src="/display/display-extras.js"></script>\n</body>`);
   }
   // 2f) 注入展示配置：app.js 在首次 getState 前读取；topicId 取快照 projectId，避免写死。
   //     仅在存在 __LOCUS_DISPLAY__ 时 app.js 才进入展示模式；trial 不注入，行为不变。
@@ -162,6 +174,35 @@ if (MODE === "public") {
   }
 
   demoSummary = `demo-data 已打包：manifest.sourceCommit=${manifest.sourceCommit} · projectId=${manifest.projectId} · fixture=${manifest.fixtureVersion} · ZIP sha256=${zipHash.slice(0, 16)}…；展示配置已注入首页（app.js 展示模式）；settings/ 已作为新增入口挂到既有首页；/demo/demo.html 已改为跳转兼容页`;
+
+  // 2g) 展示增量（S10-C）：校验图形/贯通链/导出文件存在且类型正确；挂接展示增强叠加层。
+  {
+    const errs = [];
+    const needJson = (rel, check) => {
+      const p = join(dst, rel);
+      if (!existsSync(p)) { errs.push(`缺 demo-data/${rel}`); return null; }
+      try { const j = JSON.parse(readFileSync(p, "utf8")); const m = check?.(j); if (m) errs.push(`demo-data/${rel} ${m}`); return j; }
+      catch (e) { errs.push(`demo-data/${rel} 解析失败：${e.message}`); return null; }
+    };
+    needJson("snapshot/figures.json", (j) => (j.protocolFigures && Object.keys(j.protocolFigures).length ? "" : "缺 protocolFigures"));
+    needJson("snapshot/chain-90d.json", (j) => (Array.isArray(j.hops) && j.hops.length ? "" : "缺 hops"));
+    const pk = (rel, wantName) => {
+      const p = join(dst, rel);
+      if (!existsSync(p)) { errs.push(`缺 demo-data/${rel}`); return; }
+      const b = readFileSync(p);
+      if (b.length < 4 || b.readUInt32LE(0) !== 0x04034b50) errs.push(`demo-data/${rel} 非 ZIP/OOXML（PK 头缺失）`);
+      if (wantName) {
+        let eocd = -1; for (let i = b.length - 22; i >= 0; i--) if (b.readUInt32LE(i) === 0x06054b50) { eocd = i; break; }
+        if (eocd < 0) { errs.push(`demo-data/${rel} 无 EOCD`); return; }
+        const total = b.readUInt16LE(eocd + 10); let off = b.readUInt32LE(eocd + 16); const names = [];
+        for (let i = 0; i < total; i++) { if (b.readUInt32LE(off) !== 0x02014b50) break; const n = b.readUInt16LE(off + 28); names.push(b.slice(off + 46, off + 46 + n).toString("utf8")); off += 46 + n + b.readUInt16LE(off + 30) + b.readUInt16LE(off + 32); }
+        if (!names.includes(wantName)) errs.push(`demo-data/${rel} 缺条目 ${wantName}`);
+      }
+    };
+    pk("snapshot/exports/report.docx");
+    pk("snapshot/exports/traceability.zip", "report.docx");
+    if (errs.length) { console.error("展示增量校验失败：\n  " + errs.join("\n  ")); process.exit(1); }
+  }
 }
 
 writeFileSync(join(out, "index.html"), html);

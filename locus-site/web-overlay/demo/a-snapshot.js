@@ -29,7 +29,8 @@ export async function loadASnapshot({ baseUrl = "../demo-data", fetch: fetchImpl
     const res = await fetchImpl(url, { cache: "no-store" });
     return res.ok ? res.text() : "";
   };
-  const [state, knowledge, contextMap, references, aiProducts, nextSteps, manifest, sums] = await Promise.all([
+  const getJsonOpt = async (rel) => { try { return await getJson(rel); } catch { return null; } };
+  const [state, knowledge, contextMap, references, aiProducts, nextSteps, manifest, sums, figures, chain90] = await Promise.all([
     getJson("snapshot/state.json"),
     getJson("snapshot/knowledge.json"),
     getJson("snapshot/context-map.json"),
@@ -38,11 +39,25 @@ export async function loadASnapshot({ baseUrl = "../demo-data", fetch: fetchImpl
     getJson("snapshot/next-steps.json"),
     getJson("snapshot/manifest.json"),
     getText("SHA256SUMS.txt"),
+    // 图形与贯通链为可选展示增量：缺文件不阻断工作台启动（对应区域显示加载失败与重试）。
+    getJsonOpt("snapshot/figures.json"),
+    getJsonOpt("snapshot/chain-90d.json"),
   ]);
   const zipSha = (sums.split(/\r?\n/).find((l) => l.trim().endsWith(ZIP_FILE)) ?? "").trim().split(/\s+/)[0] ?? "";
+  // 导出文件（Word/追溯包）哈希取自 manifest.files；URL 指向站内静态导出目录。
+  const fh = manifest?.files ?? {};
+  const exportFile = (rel, fileName) => ({
+    fileName,
+    sha256: (fh[`snapshot/${rel}`] ?? "").slice(0, 64),
+    url: `${baseUrl}/snapshot/${rel}`,
+  });
   return composeASnapshot({
-    state, knowledge, contextMap, references, aiProducts, nextSteps, manifest,
+    state, knowledge, contextMap, references, aiProducts, nextSteps, manifest, figures, chain90,
     zip: { fileName: ZIP_FILE, sha256: zipSha, url: zipUrl ?? `${baseUrl}/${ZIP_FILE}`, sizeBytes: 0 },
+    exports: {
+      docx: exportFile("exports/report.docx", "report.docx"),
+      trace: exportFile("exports/traceability.zip", "traceability.zip"),
+    },
     baseUrl,
   });
 }
@@ -59,7 +74,7 @@ function fieldsText(fields) {
   return Object.entries(fields ?? {}).map(([k, v]) => `${k}：${v}`).join("；");
 }
 
-export function composeASnapshot({ state, knowledge, contextMap, references, aiProducts, nextSteps, manifest, zip, baseUrl = "" }) {
+export function composeASnapshot({ state, knowledge, contextMap, references, aiProducts, nextSteps, manifest, figures, chain90, exports, zip, baseUrl = "" }) {
   const topicId = manifest?.projectId ?? state.topics?.[0]?.id;
   if (!topicId || !state.topics?.some((t) => t.id === topicId)) throw new DemoMissingError("manifest.projectId", "A 数据的主课题与 state.topics 不一致");
 
@@ -182,6 +197,9 @@ export function composeASnapshot({ state, knowledge, contextMap, references, aiP
       references: references?.nodes?.length ? { nodes: references.nodes, edges: references.edges } : null,
       comparison: knowledge.comparisons?.[0] ?? null,
       suggestions,
+      figures: figures ?? null,
+      chain90: chain90 ?? null,
+      exports: exports ?? null,
       preset: {
         ai: !!aiProducts?.modelRunThisSession,
         model: aiProducts?.modelRunThisSession ? "见 ai-products.json" : "未调用（未授权）",

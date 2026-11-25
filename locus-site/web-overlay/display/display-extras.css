@@ -1,0 +1,44 @@
+/* 公开展示增强叠加层样式（S10-C）。暖色，与工作台宣纸风格一致；仅展示构建注入。 */
+#locus-dx-panel { position: fixed; inset: 0; z-index: 60; }
+#locus-dx-panel[hidden] { display: none; }
+.dx-scrim { position: absolute; inset: 0; background: rgba(40, 32, 24, .38); }
+.dx-card {
+  position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+  width: min(760px, 92vw); max-height: 84vh; overflow: auto;
+  background: #fbf6ec; color: #3a3128; border: 1px solid #cbb99a; border-radius: 12px;
+  box-shadow: 0 18px 48px rgba(40, 32, 24, .3); padding: 0 0 14px;
+}
+.dx-head { display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-bottom: 1px solid #e4d8c2; position: sticky; top: 0; background: #fbf6ec; }
+.dx-head strong { font-size: 15px; }
+.dx-badge { font-size: 12px; opacity: .72; padding: 2px 8px; border: 1px solid currentColor; border-radius: 999px; }
+.dx-x { margin-left: auto; background: none; border: 1px solid #cbb99a; color: inherit; border-radius: 999px; padding: 3px 12px; cursor: pointer; }
+.dx-body { padding: 12px 16px; }
+.dx-k { font-weight: 600; margin: 10px 0 4px; }
+.dx-v { margin: 0 0 6px; font-size: 15px; }
+.dx-hint { color: #7a6f5e; font-size: 12.5px; margin: 3px 0; line-height: 1.6; }
+.dx-note { color: #8c7a63; font-size: 12px; margin: 8px 0 0; font-style: italic; }
+.dx-warn { color: #a63f2e; font-size: 13px; margin: 6px 0; }
+.dx-ref { font: inherit; font-size: 12px; background: #f3ead8; border: 1px solid #d8c6a4; color: #5c5140; border-radius: 8px; padding: 2px 8px; margin: 2px 4px 2px 0; cursor: pointer; }
+.dx-ref:hover { background: #ecdfc6; }
+.dx-ver { color: #a63f2e; font-size: 11px; }
+.dx-blocks { margin: 4px 0; padding-left: 18px; }
+.dx-blocks li { margin: 6px 0; line-height: 1.6; }
+.dx-thread { margin: 6px 0; }
+.dx-msg { margin: 8px 0; padding: 8px 10px; border-radius: 8px; background: #f3ead8; }
+.dx-msg.assistant { background: #eef2e6; }
+.dx-role { font-size: 12px; font-weight: 600; color: #6b5f4e; margin-right: 6px; }
+.dx-msg p { margin: 4px 0 0; line-height: 1.65; }
+.dx-tag { display: inline-block; margin-top: 4px; font-size: 11px; color: #8c7a63; border: 1px dashed #cbb99a; border-radius: 6px; padding: 0 6px; }
+.dx-figbox { margin: 6px 0 12px; }
+.dx-figcap { font-weight: 600; font-size: 13px; margin: 0 0 6px; }
+.dx-chain { margin: 6px 0; }
+.dx-hops { padding-left: 18px; }
+.dx-hops li { margin: 7px 0; line-height: 1.7; }
+.dx-region { margin: 4px 0; }
+.dx-fail { border: 1px dashed #c69a86; border-radius: 8px; padding: 8px 10px; background: #faf0ea; }
+.dx-retry { margin-top: 6px; background: none; border: 1px solid #a63f2e; color: #a63f2e; border-radius: 999px; padding: 3px 12px; cursor: pointer; }
+.dx-exports-row, .dx-exports { margin-top: 8px; }
+.dx-dl { display: inline-block; margin: 4px 8px 0 0; padding: 4px 12px; border: 1px solid #8c7a63; border-radius: 999px; color: #5c5140; text-decoration: none; font-size: 13px; }
+.dx-dl:hover { background: #f3ead8; }
+.dx-view { /* 展示态：写按钮换成查看 */ }
+.dx-card-item { border-left: 3px solid #d8b98a; }
