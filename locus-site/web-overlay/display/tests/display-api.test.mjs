@@ -181,3 +181,60 @@ test("suggestions：返回下一步指导（1~2 条，含依据），缺则抛�
   });
   await assert.rejects(() => apiEmpty.suggestions(), (e) => e instanceof DemoMissingError && e.code === "DEMO_MISSING");
 });
+
+// ── 展示增量接口（S10-C：图形 / 90 天链 / 导出）──
+
+test("protocolFigure：返回方案示意图，protocolId 落在 state.protocols，节点非空", async () => {
+  const fig = await api.protocolFigure();
+  assert.ok(state.protocols.some((p) => p.id === fig.protocolId), "方案图归属真实方案");
+  assert.ok(Array.isArray(fig.nodes) && fig.nodes.length > 0, "有步骤节点");
+  const ids = new Set(fig.nodes.map((n) => n.id));
+  for (const e of fig.edges ?? []) { assert.ok(ids.has(e.from) && ids.has(e.to), "流程边不悬空"); }
+});
+
+test("tableChart：返回结果图，tableId 落在 state.tables，行含数值", async () => {
+  const ch = await api.tableChart();
+  assert.ok(state.tables.some((t) => t.id === ch.tableId), "图表归属真实表");
+  assert.ok(Array.isArray(ch.rows) && ch.rows.length > 0, "有数据行");
+  assert.ok(ch.rows.some((r) => typeof r.fresh === "number" || typeof r.dried === "number"), "行含数值");
+});
+
+test("chain90：报告块→结果→…→原件逐跳可解析，版本齐全", async () => {
+  const c = await api.chain90();
+  assert.ok(Array.isArray(c.hops) && c.hops.length >= 5, "至少 5 跳");
+  const collOf = { block: "reports", result: "analysisResults", measurement: "measurements", table: "tables", execution: "executions", asset: "assets" };
+  for (const h of c.hops) {
+    const coll = collOf[h.kind];
+    assert.ok(coll, `已知 kind：${h.kind}`);
+    if (h.kind === "block") {
+      assert.ok(state.reports.some((r) => r.id === h.reportId && r.blocks.some((b) => b.id === h.id)), "块在报告内");
+    } else {
+      assert.ok(state[coll].some((x) => x.id === h.id), `${h.kind}:${h.id} 存在`);
+    }
+    assert.ok(h.version || h.revision, "每跳标固定版本");
+  }
+  assert.equal(c.hops[c.hops.length - 1].kind, "asset", "最深一层为原件");
+  assert.equal(c.value, "90", "贯通点数值为 90");
+});
+
+test("exports：Word 与追溯包指向站内文件，含 sha256", async () => {
+  const ex = await api.exports();
+  assert.ok(ex.docx.url.endsWith("/snapshot/exports/report.docx"));
+  assert.ok(ex.trace.url.endsWith("/snapshot/exports/traceability.zip"));
+  for (const f of [ex.docx, ex.trace]) { assert.match(f.sha256, /^[0-9a-f]{64}$/, "sha256 与 manifest 一致"); }
+});
+
+test("reloadFigures/reloadChain90：重试时确实重读静态文件（旁路启动缓存）", async () => {
+  const before = calls.length;
+  await api.reloadFigures();
+  await api.reloadChain90();
+  const added = calls.slice(before);
+  assert.ok(added.some((u) => u.includes("figures.json")) && added.some((u) => u.includes("chain-90d.json")), "重试重新读取对应文件");
+  assert.ok(added.every((u) => !u.includes("/api/")), "重试不触达 /api");
+});
+
+test("图形缺文件时：启动不阻断，协议图抛缺项（供区域显示失败与重试）", async () => {
+  const apiNoFig = await createDisplayApi({ baseUrl: "../demo-data", fetch: makeFetch({ "snapshot/figures.json": null }) });
+  assert.equal((await apiNoFig.getState()).topics.length >= 1, true, "工作台仍可启动");
+  await assert.rejects(() => apiNoFig.protocolFigure(), (e) => e instanceof DemoMissingError);
+});

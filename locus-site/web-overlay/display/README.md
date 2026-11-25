@@ -116,3 +116,41 @@ window.__LOCUS_DISPLAY__ = {
 - **原件外部链接**：`state.json` 的 `assets[].text` 优先内嵌原文；外链由 `manifest.originals` 提供（在 `state.demo.sources`）。
 - **旧展示链接兼容**（`/demo/demo.html` 重定向到原工作台）：属 D 的公共入口接线，不在本模块范围。
 - **未做浏览器端联调**：本模块只交付数据层并以单测验证；真实工作台渲染由 D 接线后由 E 走查。
+
+---
+
+# display-extras.js · 展示增强叠加层（C 交付，S10-C）
+
+**自举模块，不改 `app.js` / `index.html` 结构**（类比 `settings-fan.js`）。仅当 `window.__LOCUS_DISPLAY__`
+存在（公开展示构建）时启用；trial/原生 Node 不注入，行为零影响。构建由 `build-web.mjs` 在 `--mode=public`
+注入 `<link>` 与 `<script type="module" src="/display/display-extras.js">`。
+
+## 职责与实现
+
+| 手册 | 行为 | 实现要点 |
+| --- | --- | --- |
+| §5.3 | 展示态把「生成/发送」换成「查看已有内容」 | 对 `#an-recommend`/`#res-submit`/`#rep-create`/`.rep-draft`/`#chat-send` 换文案为「查看已有…」并置 `.dx-view`；**捕获阶段**拦截点击，弹出共用详情面板（ID `#locus-dx-panel`）显示既有产物与**真正采用的上下文**（任务核心/已选候选、报告块与钉住结果、对话范围与消息）。可写态不注入，走原写流程 |
+| §6.2 | Word 与追溯包指向站内文件 | 报告自带 `.rep-docx`/`.rep-trace` 置 `.dx-download`，点击下载 `GET /demo-data/snapshot/exports/*`（不请求 `/api`）；分析页另设「导出（同一固定版本 · 站内文件）」链接 |
+| §5.4 / §6.1 | 方案图、结果图、90 天贯通链 | 协议页注入方案示意图；分析页注入「数值贯通链」（逐跳可点、缺边写明）与结果柱状图 |
+| §6.3 | 局部引用失败可恢复 | 图形/贯通链为可选增量：文件缺失不阻断启动；区域显示「该区域暂时加载失败」＋「重试读取该区域」，点击**重新读取文件**（`reloadFigures/reloadChain90`） |
+| §3.3 邻接 | 展示态自动选中预存对象 | 切到协议/记录/对话页时，驱动既有左栏首个 `[data-pid]/[data-eid]/[data-cid]` 点击，复现「预存课题直接可看」 |
+
+**新增只读方法（display-api.js）**：`protocolFigure(protocolId)`、`tableChart(tableId)`、`chain90()`、`exports()`，
+以及重试用的 `reloadFigures()`、`reloadChain90()`（旁路启动缓存，直接重读静态文件）。
+
+## 与集成负责人的接线点（`app.js` / `index.html`，本模块不越界修改）
+
+以下项**满足可直接使用**已于本轮实现于叠加层；如需并入 `app.js` 以获得更稳的交互，请按下表接入：
+
+| # | 需求 | 现状（叠加层已做） | 建议并入 app.js 的点 |
+| --- | --- | --- | --- |
+| 1 | 展示态收起写入口 | 叠加层换文案+拦截 | `app.js:620 installDisplayMode` 已把非读方法包为只读报错；可将 `#an-recommend`/`#res-submit`/`#rep-create`/`.rep-draft`/`#chat-send` 在 display 分支改为「查看已有内容」并调 `createDisplayApi` 详情 |
+| 2 | Word/追溯包站内下载 | `.rep-docx`/`.rep-trace` 改 `.dx-download` | `lib/pages/analysis.js:365-366` 的 `download("/api/reports/...")` 在 display 分支改指向 `exports()` 的 url |
+| 3 | 折扇接入普通静态源（**含原生 Node**） | trial/public 构建已发布并注入 `settings/`（本轮） | **原生 Node 直服务 `sciworkbench/public/`，无构建注入**：需在 `index.html` 增 `<script type="module" src="/settings/settings-fan.js">`＋CSS link，并在该静态根下提供 `settings/settings-fan.js/.css`（或由 `server.ts` 映射 `/settings/*` 至 `locus-site/web-overlay/settings/`）。`#settings-open` 按钮已存在但当前为死链 |
+| 4 | 旧顶部/左下/手机卷目入口清理 | 未做（属公共入口） | 按 `F:/LOCUS_方案/设置页设计规格_古风折扇_v2.md` 清理，`settings-fan.js` 已支持 `adoptLegacyEntry` 过渡 |
+| 5 | 自动选中预存方案/执行/对话 | 叠加层点左栏项实现 | 更稳做法：`app.js:784-789 refresh()` 在 display 分支用 `state.demo.mainProtocolId/mainExecutionId/mainChatId` 自动落选（与 `mainTaskId` 同法） |
+
+## 独立验收探测
+
+`window.__LOCUS_DX__` 暴露：`isDisplayMode()`、`relabel()`、`inject()`、`downloads()`、`hasPanel()`。
+
