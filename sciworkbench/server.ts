@@ -95,6 +95,16 @@ import type { ExtractionRunRecord, ExtractionRunStatus, SourceKind, SourceRef } 
 
 const HERE = fileURLToPath(new URL(".", import.meta.url));
 const PUBLIC_DIR = join(HERE, "public");
+/**
+ * 原生 Node 直服务 `public`（不走构建）时的叠加静态映射：这些文件由构建期注入到产物，public 里没有。
+ * 单一来源（不复制）：直接只读映射 `locus-site/web-overlay/` 下的文件；白名单精确到文件，杜绝目录穿越与多余暴露。
+ * 目录不存在（部署副本未带 locus-site）时静默 404，不影响其余静态资源。
+ */
+const OVERLAY_ADMIN_DIR = resolve(HERE, "..", "locus-site", "web-overlay");
+const OVERLAY_FILES: Record<string, string> = {
+  "/settings/settings-fan.js": join(OVERLAY_ADMIN_DIR, "settings", "settings-fan.js"),
+  "/settings/settings-fan.css": join(OVERLAY_ADMIN_DIR, "settings", "settings-fan.css"),
+};
 const DATA_PATH = process.env.LOCUS_DATA ?? join(HERE, "data", "state.json");
 const AUDIT_DIR = join(dirname(DATA_PATH), "audit");
 /** AI 配置落盘位置：随数据目录（`sciworkbench/data/` 已被 .gitignore 覆盖）。含 Key，不入库。 */
@@ -489,6 +499,13 @@ export async function createApp(store: Store, opts: { aiConfigPath?: string } = 
   };
 
   const serveStatic = (res: ServerResponse, urlPath: string) => {
+    // 叠加静态映射（白名单精确匹配，只读单一来源）：原生 Node 下提供构建期才注入的设置折扇文件。
+    const overlay = OVERLAY_FILES[urlPath];
+    if (overlay) {
+      if (!existsSync(overlay) || !statSync(overlay).isFile()) { send(res, 404, "Not Found", "text/plain; charset=utf-8"); return; }
+      send(res, 200, readFileSync(overlay), MIME[extname(overlay)] ?? "application/octet-stream");
+      return;
+    }
     const rel = urlPath === "/" ? "index.html" : decodeURIComponent(urlPath.replace(/^\/+/, ""));
     const target = resolve(PUBLIC_DIR, normalize(rel));
     if (!target.startsWith(PUBLIC_DIR) || !existsSync(target) || !statSync(target).isFile()) {
