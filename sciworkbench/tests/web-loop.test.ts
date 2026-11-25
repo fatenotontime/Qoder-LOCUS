@@ -560,3 +560,26 @@ test("HTTP：网页配置 AI → 状态可见、Key 不回显、可清除", asyn
     await new Promise<void>((r) => app.close(() => r()));
   }
 });
+
+// S10-T1：原生 Node 直服务 public 时，构建期才注入的设置折扇文件按白名单只读映射（单一来源，不复制）
+test("S10-A5 叠加静态映射：/settings/settings-fan.{js,css} 只读可服务；白名单外与穿越 404；既有静态不受影响", async () => {
+  const app = await createApp(new MemoryStore());
+  await new Promise<void>((r) => app.listen(0, "127.0.0.1", () => r()));
+  const base = `http://127.0.0.1:${(app.address() as AddressInfo).port}`;
+  try {
+    const js = await fetch(`${base}/settings/settings-fan.js`);
+    assert.equal(js.status, 200);
+    assert.match(js.headers.get("content-type") ?? "", /javascript/);
+    assert.ok((await js.text()).length > 1000);
+    const css = await fetch(`${base}/settings/settings-fan.css`);
+    assert.equal(css.status, 200);
+    assert.match(css.headers.get("content-type") ?? "", /text\/css/);
+    // 白名单外（同目录的 README 不暴露）与目录穿越均 404
+    assert.equal((await fetch(`${base}/settings/README.md`)).status, 404);
+    assert.equal((await fetch(`${base}/settings/../display/display-api.js`)).status, 404);
+    // 既有 public 静态不受影响
+    assert.equal((await fetch(`${base}/app.js`)).status, 200);
+  } finally {
+    await new Promise<void>((r) => app.close(() => r()));
+  }
+});
