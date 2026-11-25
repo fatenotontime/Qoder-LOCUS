@@ -49,7 +49,20 @@
 3. **去掉**：`--mode=public` 中把首页重定向到 `/demo/demo.html` 的改写（#13）；公开构建只做资源打包与新增入口注入。
 4. 版本发布：线上当前仍是本次展示版；旧版字节级冻结包已定位（`artifactSha256=05bae069…`、`indexSha256=14a3d3ad…`），可在确认后原样回退。
 
-## 五、证据命令
+## 六、处置执行（2026-11-24，按用户决定）
+
+用户决定：**全恢复既有前端 + 设置折扇与文献库作为新增；文献库嵌入现有前端；立即回退线上**。
+
+已执行：
+1. **线上回退**：从本地发布状态目录取回旧版冻结包（`artifactSha256=05bae069…`、`indexSha256=14a3d3ad…`，与替换前描述符一致），按同一 project 重新发布。线上核验：首页恢复原工作台（含 `theme-seal`/`replay-theme`/`ai-drawer`）、`/assets/tech/*` 200、`/demo/demo.html` 404。线上响应体与本地冻结包字节不同（平台注入），故按特征标记而非字节哈希判定。
+2. **源码恢复**（提交 `1f9d470`）：`git checkout 8120986 -- sciworkbench/public/{index.html,app.js,styles.css,knowledge-stage.css,splash.js} sciworkbench/public/assets/tech`，即还原上表 #1–#12 全部删除项；`sciworkbench/public` 相对基线现已无差异。
+3. **构建层去掉首页替换**（同提交）：`--mode=public` 不再重定向到 `/demo/demo.html`、不再打包独立 demo 页；仅在既有首页注入 settings 折扇（CSS/入口/模块）与构建版本，不动既有入口与布局（上表 #13 已处理）。
+4. **回归与冒烟**：`npm --prefix sciworkbench test` 353/353；离屏 Edge 冒烟——`#settings-open` 可展开扇面（900×900）、Esc 关闭、无页面异常（仅静态服务下 `/api` 404 属预期）。
+5. 未发布新的恢复版；线上保持旧版，待文献库嵌入视图完成后再一并出候选。
+
+待办：把 B 的文献库可视化从独立页改为**嵌入现有前端的视图/面板**（下一步）。
+
+## 七、复现证据命令
 
 ```bash
 git diff --stat 8120986..HEAD -- sciworkbench/public locus-site/build-web.mjs locus-site/functions
