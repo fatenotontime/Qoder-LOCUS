@@ -42,14 +42,14 @@
 - 后端 `sciworkbench/server.ts`、服务层、领域层与测试。
 - 暖色（paper）主题本身：样式与素材保留。
 
-## 四、处置建议（待用户确认，未执行）
+## 四、处置建议（用户已拍板：全恢复既有前端 + 设置与文献库作新增）
 
 1. **恢复**：`styles.css`/`knowledge-stage.css` 的冷色规则、`assets/tech/*`、`index.html` 的 `#theme-seal`/`#replay-theme`/首屏主题脚本/`#ai-drawer`/`#ai-open`/`data-open-ai`、`app.js` 对应逻辑、`splash.js` 锚点。
 2. **保留**：C 的设置折扇（作为**新增**入口，不改动既有入口）、B 的文献库可视化（建议改为接入现有前端的一个视图/面板，而不是独立 `demo.html` 整页）。
 3. **去掉**：`--mode=public` 中把首页重定向到 `/demo/demo.html` 的改写（#13）；公开构建只做资源打包与新增入口注入。
 4. 版本发布：线上当前仍是本次展示版；旧版字节级冻结包已定位（`artifactSha256=05bae069…`、`indexSha256=14a3d3ad…`），可在确认后原样回退。
 
-## 六、处置执行（2026-11-24，按用户决定）
+## 五、处置执行（2026-11-24）
 
 用户决定：**全恢复既有前端 + 设置折扇与文献库作为新增；文献库嵌入现有前端；立即回退线上**。
 
@@ -62,7 +62,7 @@
 
 待办：把 B 的文献库可视化从独立页改为**嵌入现有前端的视图/面板**（下一步）。
 
-## 七、复现证据命令
+## 六、复现证据命令
 
 ```bash
 git diff --stat 8120986..HEAD -- sciworkbench/public locus-site/build-web.mjs locus-site/functions
