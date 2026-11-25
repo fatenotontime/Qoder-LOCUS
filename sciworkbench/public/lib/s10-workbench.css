@@ -72,3 +72,7 @@
 .panelerr .msg { overflow-wrap: anywhere; }
 .material .m-title,
 .kzstage-heading b { overflow-wrap: anywhere; }
+
+/* 步骤行保存的就地错误（配合 app-js-r03-row-drafts.diff 的 .rowerr） */
+.rowerr { display: block; margin-top: 4px; color: var(--danger); font-size: 12px; }
+.rowerr[hidden] { display: none; }

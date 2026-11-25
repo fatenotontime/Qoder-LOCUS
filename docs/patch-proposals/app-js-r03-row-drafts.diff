@@ -73,24 +73,29 @@
 +    const durRaw = (draft ? (draft.dur ?? "") : row.querySelector('[data-f="dur"]').value).trim();
 +    const incident = draft ? draft.incident : row.querySelector('[data-f="incident"]').checked;
 +    const targetKeys = draft ? (draft.targets ?? []) : [...row.querySelectorAll('[data-f="target"]:checked')].map((el) => el.value);
-+    const targetOps = targetKeys.map((v) => stepsOpsOf(execId)[v]).filter(Boolean);
-+    const errEl = row.querySelector(".rowerr"); if (errEl) errEl.hidden = true;
++    const opOfKey = (key) => row.querySelector(`[data-f="target"][value="${CSS.escape(key)}"]`)?.dataset.op || key;
++    const targetOps = targetKeys.map(opOfKey);
++    const errEl = row.querySelector(".rowerr"); if (errEl) { errEl.hidden = true; errEl.textContent = ""; }
 +    runBusy(stepBtn, "记录步骤", async () => {
 +      const events = [{ kind: "step", stepId: sid, text: opText, actual: { ...(amount ? { amount } : {}), ...(durRaw !== "" ? { durationMin: Number(durRaw) } : {}) } }];
 +      if (incident && targetOps.length) events.push({ kind: "deviation", stepId: sid, text: `意外：影响到${targetOps.map((o) => `「${o}」`).join("")}` });
-+      await api.appendEvents(execId, events);        // 一次后端保存；需服务端接受 {events:[...]}（见 server-events-batch.md）
++      try {
++        await api.appendEvents(execId, events);      // 一次后端保存；需服务端接受 {events:[...]}（见 server-events-batch.md）
++      } catch (e) {
++        const h = humanError(e);
++        if (errEl) { errEl.textContent = `保存失败：${h.message}`; errEl.hidden = false; }  // 错误就在行旁
++        throw e;                                     // runBusy 同步状态栏「记录步骤失败」与分区报错 → 滚到底也能看见
++      }
 +      if (ui.stepDrafts[execId]) { delete ui.stepDrafts[execId][sid]; if (!Object.keys(ui.stepDrafts[execId]).length) delete ui.stepDrafts[execId]; }
 +      setDirty(Boolean(ui.stepDrafts[execId]));      // 其余行草稿仍在 → 仍标未保存
 +      await refresh(); setStatus("步骤已记录（实际值入本次执行，不改源方案）");
 +    });
-+    // 失败：runBusy 已就地报错；草稿与其余行输入保留，行旁也提示一次
-+    if (row.querySelector(".rowerr")) { /* 失败提示由 runBusy 的 panelerr 提供；此处保留滚动位置 */ }
 +    return;
    }
 
 说明 / 依赖：
-- `stepsOpsOf(execId)` 取该执行的快照步骤 id→op 映射（用于把 targetKeys 还原成操作名）；
-  可直接从 `currentExecution()` 与快照步骤构造，或在 rows 渲染时把 op 存进 `data-op`（本提案
-  的 target 复选框已带 `data-op`，实现时可优先读 DOM 的 data-op，避免新增函数）。
-- 双击/慢请求去重：`runBusy` 已有 `ui.busy` 单飞与按钮禁用，覆盖「慢请求期间双击只提交一次」。
-- 偏差事件「只追加一次」：改为单次 `appendEvents` 后天然满足；重试走 runBusy 的 retry（重复当前动作）。
+- 「行旁就地错误」：stepsTableHtml 的保存单元格新增 `<span class="rowerr" hidden></span>`（见上一 hunk），
+  失败时写入并显示；样式 `.rowerr` 已加入 `lib/s10-workbench.css`（B 已在分支提交），需 `index-html.diff` 引入该表。
+- 慢请求双击：`runBusy` 的 `ui.busy` 单飞 + 按钮禁用覆盖「慢请求期间只提交一次」。
+- 偏差「只追加一次」：改用单次 `appendEvents`；失败整体不入库（见 server-events-batch.md 的事务要求），
+  重试走 runBusy 的 retry（重复当前动作）。
