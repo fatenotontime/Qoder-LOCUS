@@ -13,6 +13,31 @@ const topicName = (state, id) => state.topics.find((t) => t.id === id)?.name;
 
 export function currentTask(state, ui) { return state.analysisTasks.find((t) => t.id === ui.taskId) ?? null; }
 
+// ── 当前选择（本次未保存的工作副本）：图与列表绑定同一份 ──────
+const isDisplay = () => (typeof document !== "undefined" && document.documentElement.dataset.displayMode === "on");
+
+/** 每个任务一份当前选择；首次从库内已存候选克隆，之后切换节点/勾选框即时同步。 */
+export function selOf(ui, t) {
+  const m = (ui.anSel ??= {});
+  if (!m[t.id]) m[t.id] = t.optional.map((o) => ({ ref: o.ref, included: !!o.included }));
+  return m[t.id];
+}
+export function resetSel(ui, t) { if (ui.anSel) delete ui.anSel[t.id]; }
+
+/** 引用对象的可校验版本：能取到版本/更新时间的对象带版本，缺则不带（服务端按最新校验）。 */
+function refVersion(state, r) {
+  if (r.kind === "measurement" || r.kind === "table") return state.measurements?.find((x) => x.id === r.id)?.revision ?? state.tables?.find((x) => x.id === r.id)?.revision ?? null;
+  if (r.kind === "execution") return state.executions?.find((x) => x.id === r.id)?.updatedAt ?? null;
+  if (r.kind === "protocol") return state.protocols?.find((x) => x.id === r.id)?.revision ?? null;
+  if (r.kind === "card") return state.cards?.find((x) => x.id === r.id)?.revision ?? null;
+  return null;
+}
+function selectionVersions(state, t, optional) {
+  const out = {};
+  for (const r of [...t.core, ...optional.map((o) => o.ref)]) { const v = refVersion(state, r); if (v != null) out[`${r.kind}:${r.id}`] = v; }
+  return out;
+}
+
 // ── 中栏「＋新建」：分析任务表单 ────────────────────────────
 
 export function renderAnalysisForm(box) {
@@ -43,6 +68,8 @@ export function renderAnalysisForm(box) {
     </details>`;
   $("#an-create").addEventListener("click", (ev) => ctx.runBusy(ev.target, "创建分析任务", async () => {
     const state2 = ctx.getState();
+    const subqVal = $("#an-subq").value || "";
+    if (!subqVal) { ctx.notify("mid", "请先选择子问题：分析任务必须归属到具体子问题。"); return; }
     const core = [...$$(".an-data:checked")].map((x) => ({ kind: x.dataset.kind, id: x.dataset.id }));
     if (!core.length) { ctx.notify("mid", "请至少选择一个数据表/测量作为必选数据。"); return; }
     // B5 必选自动推导：所选测量 → 样品 → 执行 → 方案，一并锁定为必选
@@ -60,7 +87,7 @@ export function renderAnalysisForm(box) {
       ...[...$$(".an-opt2:checked")].map((x) => ({ ref: { kind: x.dataset.kind, id: x.dataset.id }, included: true })),
       ...[...$$(".an-def:not(:checked)")].map((x) => ({ ref: { kind: "card", id: x.dataset.id }, included: false })),
     ];
-    const r = await ctx.api.createAnalysisTask({ topicId: ui.topicId, subquestionId: $("#an-subq").value || undefined, title: $("#an-title").value, core, optional });
+    const r = await ctx.api.createAnalysisTask({ topicId: ui.topicId, subquestionId: subqVal, title: $("#an-title").value, core, optional });
     ui.taskId = r.taskId; await ctx.refresh(); ctx.setStatus("分析任务已创建：必选数据已锁定（含关联执行/方案）");
   }));
 }
@@ -85,17 +112,27 @@ export function contextMapHtml(state, ui, t) {
     }
     return "";
   };
-  const inc = t.optional.map((o, i) => ({ o, i })).filter(({ o }) => o.included);
-  const others = t.optional.map((o, i) => ({ o, i })).filter(({ o }) => !o.included);
-  const cand = ({ o, i }) => `<li><label><input type="checkbox" class="cand-toggle" data-idx="${i}" ${o.included ? "checked" : ""}/> ${esc(refLabel(state, o.ref))}</label>${refOpen(o.ref)}</li>`;
+  // 待补：库内找不到对象 / 缺关联 → 标记，不补造记录关系。
+  const gap = (r) => {
+    const miss = missingTag(state, r.kind, r.id);
+    const dep = depMissingNote(state, r.kind, r.id);
+    if (miss) return ` <span class="badge warn">待补（对象缺失）</span>`;
+    if (dep) return ` <span class="badge warn">待补：${esc(dep)}</span>`;
+    return "";
+  };
+  const sel = selOf(ui, t);
+  const inc = sel.map((o, i) => ({ o, i })).filter(({ o }) => o.included);
+  const others = sel.map((o, i) => ({ o, i })).filter(({ o }) => !o.included);
+  const cand = ({ o, i }) => `<li><label><input type="checkbox" class="cand-toggle" data-idx="${i}" ${o.included ? "checked" : ""}/> ${esc(refLabel(state, o.ref))}${gap(o.ref)}</label>${refOpen(o.ref)}</li>`;
   return `
-    <p><b>课题「${esc(topicName(state, t.topicId) ?? t.topicId)}」${q ? ` → 子问题「${esc(q.question)}」` : ""}</b></p>
+    <p><b>课题「${esc(topicName(state, t.topicId) ?? t.topicId)}」${q ? ` → 子问题「${esc(q.question)}」` : ` <span class="badge warn">子问题待选（推荐前必选）</span>`}</b></p>
+    ${isDisplay() ? `<p class="hint">展示态：勾选可试选，只留在本页，不写回快照。</p>` : ""}
     <p class="hint">必选（锁定，不可取消）：</p>
-    <ul>${t.core.map((r) => `<li>🔒 ${esc(refLabel(state, r))}${refOpen(r)}</li>`).join("") || `<li class="hint">无</li>`}</ul>
+    <ul>${t.core.map((r) => `<li>🔒 ${esc(refLabel(state, r))}${gap(r)}${refOpen(r)}</li>`).join("") || `<li class="hint">无</li>`}</ul>
     <p class="hint">默认已选（可取消）：</p>
     ${inc.length ? `<ul>${inc.map(cand).join("")}</ul>` : `<p class="hint">无。</p>`}
     ${others.length ? `<details class="mini"><summary>其他可选（${others.length}，折叠）</summary><ul>${others.map(cand).join("")}</ul></details>` : ""}
-    ${t.optional.length ? `<button id="cand-save">保存候选选择</button>` : `<p class="hint">无候选。</p>`}
+    ${sel.length ? `<button id="cand-save"${isDisplay() ? " disabled title=\"展示态不可保存\"" : ""}>保存候选选择</button>` : `<p class="hint">无候选。</p>`}
     ${t.snapshot ? snapshotHtml(t.snapshot) : ""}`;
 }
 
@@ -217,9 +254,14 @@ export function analysisRightHtml(state, ui) {
     h += `<div class="item recheck"><div class="meta">需要复核</div><p class="hint">核心数据在快照之后有更新，当前分析基于旧快照。</p>
       <div class="row"><button class="primary" id="an-recheck">重新推荐（新快照）</button><button id="an-keep">保留旧快照</button></div></div>`;
   }
-  h += `<details class="mini" open><summary>方法推荐（含验收项；预期产物≠预设结论）</summary>
+  h += `<details class="mini" open><summary>确认范围并推荐（含验收项；预期产物≠预设结论）</summary>
     <textarea id="an-purpose" rows="2" placeholder="研究目的（必填，如：估计 pH3 下酶活半衰期并比较 pH5）"></textarea>
-    <button class="primary" id="an-recommend">${rec ? "重新推荐（生成新快照）" : "发起方法推荐"}</button>`;
+    ${t.subquestionId ? "" : `<p class="hint warn">本次任务未选子问题：推荐前请先在「＋新建」或任务里选定子问题。</p>`}
+    <button class="primary" id="an-recommend"${t.subquestionId ? "" : " disabled"}>${rec ? "确认并重新推荐（生成新快照）" : "确认范围并推荐"}</button>`;
+  if (ui.anRecheck === t.id && ui.anRecheckList?.length) {
+    h += `<div class="item recheck"><div class="meta">范围被改动，已阻止本次推荐</div><p class="hint">这些对象在期间改版，请复核后再提交：${ui.anRecheckList.map((x) => esc(x)).join("、")}。</p>
+      <p class="hint">当前选择已保留。</p></div>`;
+  }
   if (rec) {
     h += rec.methods.map((m) => `<div class="item"><b>${esc(m.name)}</b> · 软件：${esc(m.software)}<p>${esc(m.rationale)}</p>
       <p class="hint">预期产物：${m.expectedArtifacts.map(esc).join("；") || "（未列）"}</p>
@@ -238,6 +280,7 @@ export function analysisRightHtml(state, ui) {
     <p class="hint">只有图/脚本也可提交，但不标「可复现」；附数据文件（csv/tsv/json/txt/md）＋关键参数才可复现。</p>
     <button class="primary" id="res-submit">提交结果</button></details>`;
   h += results.map((r) => resultHtml(state, r)).join("");
+  if (results.length && t.snapshot) h += `<details class="mini"><summary>本次固定快照（结果据此产出，可回看）</summary>${snapshotHtml(t.snapshot)}</details>`;
   h += `<details class="mini" open><summary>分析初稿（有序块 · 性质 · 固定引用 · 仅供参考，非最终结论）</summary>
     <button id="rep-create">新建初稿（钉住结果）</button>
     ${reps.map((r) => reportHtml(state, ui, r)).join("") || `<p class="hint">暂无报告。</p>`}</details>`;
@@ -274,13 +317,22 @@ export function bindAnalysis(c) {
   // 中栏：保存候选选择（cand-save）
   document.querySelector("#mid-content").addEventListener("click", async (ev) => {
     if (ev.target.id === "cand-save") {
+      if (isDisplay()) { ctx.notify("mid", "展示态不可保存：试选只留在本页。"); return; }
       const t = currentTask(ctx.getState(), ui); if (!t) return;
       await runBusy(ev.target, "保存候选", async () => {
-        const optional = [...$$("#mid-content .cand-toggle")].map((cb) => ({ ref: t.optional[Number(cb.dataset.idx)].ref, included: cb.checked }));
-        await api.setTaskCandidates(t.id, optional);
-        await refresh(); ctx.setStatus("候选选择已保存（旧快照不受影响）");
+        const sel = selOf(ui, t);
+        await api.setTaskCandidates(t.id, sel.map((o) => ({ ref: o.ref, included: o.included })));
+        resetSel(ui, t); await refresh(); ctx.setStatus("候选选择已保存（旧快照不受影响）");
       }); return;
     }
+  });
+
+  // 中栏：勾选框即时同步到当前选择（不重渲染，保留滚动）
+  document.querySelector("#mid-content").addEventListener("change", (ev) => {
+    if (!ev.target.classList?.contains("cand-toggle")) return;
+    const t = currentTask(ctx.getState(), ui); if (!t) return;
+    const sel = selOf(ui, t); const i = Number(ev.target.dataset.idx);
+    if (sel[i]) { sel[i].included = ev.target.checked; ctx.setDirty(true); }
   });
 
   // 右栏：分析相关动作（推荐 / 结果 / 报告 / 回查 / 导出）
@@ -288,12 +340,33 @@ export function bindAnalysis(c) {
     try {
       if (ev.target.id === "an-recommend") {
         const t = currentTask(ctx.getState(), ui); if (!t) return;
+        if (!t.subquestionId) { ctx.notify("right", "本次任务未选子问题：先补选子问题再推荐。"); return; }
         const purpose = $("#an-purpose").value.trim();
         if (!purpose) { ctx.notify("right", "推荐须写明研究目的。"); return; }
+        const sel = selOf(ui, t);
         await runJob(ev.target, "方法推荐", async () => {
-          const r = await api.recommendMethods(t.id, purpose);
+          let r;
+          try {
+            r = await api.recommendMethods(t.id, purpose, {
+              subquestionId: t.subquestionId,
+              optional: sel.map((o) => ({ ref: o.ref, included: o.included })),
+              versions: selectionVersions(ctx.getState(), t, sel),
+            });
+          } catch (e) {
+            const code = String(e?.details?.code ?? "");
+            if (e?.status === 409 || /version|stale|conflict|改版|recheck/.test(code)) {
+              const objs = e?.details?.objects ?? e?.details?.conflicts ?? [];
+              ui.anRecheck = t.id;
+              ui.anRecheckList = objs.map((x) => (typeof x === "string" ? x : x.label ?? `${x.kind}:${x.id}`));
+              ctx.renderRight(); ctx.setStatus("范围已变：本次推荐已阻止，当前选择已保留");
+              return;
+            }
+            throw e;
+          }
+          ui.anRecheck = null; ui.anRecheckList = null;
           ctx.setStatus(`快照已冻结 ${r.snapshotHash.slice(0, 12)}…`);
           await ctx.pollJob(r.jobId, "方法推荐");
+          resetSel(ui, t);
           await refreshAfterJob(); ctx.setStatus("方法推荐完成（含验收项）");
         }); return;
       }

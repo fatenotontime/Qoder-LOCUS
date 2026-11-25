@@ -1,0 +1,96 @@
+目标文件：sciworkbench/public/app.js（集成负责人所有）
+对应：第一组 3.1 / 3.3 / 3.4；R03
+现象（基线复现，5393 可写态）：编辑两行实际用量，只点第一行「记录」——第一行入
+库，第二行未保存的输入被 refresh 抹掉（输入框回空，dirty 徽标同时消失）。
+
+设计：草稿按 (执行ID, 步骤ID) 存放于 `ui.stepDrafts`，与 DOM 输入分离。
+保存只提交该行草稿；成功后只清该行草稿、其余草稿继续驱动未保存标记；
+失败保留所有输入并在该行旁就地报错。
+
+--- a/sciworkbench/public/app.js
++++ b/sciworkbench/public/app.js
+@@ 行 21（ui 初始化）
+-const ui = { nav: "topic", topicId: "", assetId: null, paperId: null, attId: null, tableId: null, highlight: null, cell: null, dirty: false, busy: false, cardFilter: "all", groupSel: new Set(), batch: null, ack: false, protocolId: null, executionId: null, stepSel: null, viewRev: null, editEventId: null, pauseSuggest: null, prepExtra: 0, taskId: null, chatId: null, reportId: null, reportWorking: {}, navCollapsed: false, kzTab: "todo", kzPanel: "cards", cardOpen: null, kzJob: null, kzStruct: null, kiView: null, suppressRecheck: null };
++const ui = { nav: "topic", topicId: "", assetId: null, paperId: null, attId: null, tableId: null, highlight: null, cell: null, dirty: false, busy: false, cardFilter: "all", groupSel: new Set(), batch: null, ack: false, protocolId: null, executionId: null, stepSel: null, viewRev: null, editEventId: null, pauseSuggest: null, prepExtra: 0, taskId: null, chatId: null, reportId: null, reportWorking: {}, navCollapsed: false, kzTab: "todo", kzPanel: "cards", cardOpen: null, kzJob: null, kzStruct: null, kiView: null, suppressRecheck: null, stepDrafts: {} };
+
+@@ stepsTableHtml（行 1739-1752 的 rows 映射，用草稿回填）
+   const rows = steps.map((s) => {
+     const last = lastStepEv(s.id);
++    const dr = ui.stepDrafts?.[e.id]?.[s.id];
+     const plan = s.durationMin === null ? `<span class="dbar unknown">时长未知</span>` : `<span class="dbar ${s.estimated ? "est" : "fixed"}">${s.durationMin}min${s.estimated ? "·估" : ""}</span>`;
+     const others = steps.filter((x) => x.id !== s.id);
+     const dev = hasDev(s.id);
+     return `<tr data-step="${s.id}" data-op="${esc(s.op)}">
+       <td>${esc(s.op)}${s.branch ? ` <span class="hint">支路:${esc(s.branch)}</span>` : ""}</td>
+       <td>${plan}</td>
+-      <td><input data-f="amount" value="${esc(last?.actual.amount ?? "")}" placeholder="用量" /></td>
+-      <td><input data-f="dur" type="number" min="0" value="${last?.actual.durationMin ?? ""}" placeholder="分" /></td>
+-      <td><label class="hint"><input type="checkbox" data-f="incident" ${dev ? "checked" : ""}/> 意外</label>
+-        <div class="devtargets">${others.map((x) => `<label class="hint"><input type="checkbox" data-f="target" value="${x.id}" data-op="${esc(x.op)}"/> 影响:${esc(x.op)}</label>`).join("") || `<span class="hint">（无其它步骤）</span>`}</div></td>
+-      <td><button class="steptbl-save">${last ? "更新" : "记录"}</button>${dev ? ` <span class="hint warn">已标意外</span>` : ""}</td>
++      <td><input data-f="amount" value="${esc(dr ? (dr.amount ?? "") : (last?.actual.amount ?? ""))}" placeholder="用量" /></td>
++      <td><input data-f="dur" type="number" min="0" value="${esc(dr ? (dr.dur ?? "") : (last?.actual.durationMin ?? ""))}" placeholder="分" /></td>
++      <td><label class="hint"><input type="checkbox" data-f="incident" ${(dr ? dr.incident : dev) ? "checked" : ""}/> 意外</label>
++        <div class="devtargets">${others.map((x) => `<label class="hint"><input type="checkbox" data-f="target" value="${x.id}" data-op="${esc(x.op)}" ${dr?.targets?.includes(x.id) ? "checked" : ""}/> 影响:${esc(x.op)}</label>`).join("") || `<span class="hint">（无其它步骤）</span>`}</div></td>
++      <td><button class="steptbl-save">${last ? "更新" : "记录"}</button>${dev ? ` <span class="hint warn">已标意外</span>` : ""}<span class="rowerr" hidden></span></td>
+     </tr>`;
+   }).join("");
+
+@@ 新增：行输入 → 草稿（放在文档级 input/change 委托处，例如 2344 附近既有委托旁）
++// R03：行草稿按 (执行ID, 步骤ID) 记，refresh 不丢；未保存标记由草稿驱动。
++const captureStepDraft = (ev) => {
++  const row = ev.target.closest?.(".steptbl tbody tr"); if (!row) return;
++  const f = ev.target.dataset?.f; if (!f) return;
++  const m = (ui.stepDrafts[ui.executionId] ??= {});
++  const d = (m[row.dataset.step] ??= { amount: null, dur: null, incident: false, targets: [] });
++  if (f === "amount") d.amount = row.querySelector('[data-f="amount"]').value;
++  else if (f === "dur") d.dur = row.querySelector('[data-f="dur"]').value;
++  else if (f === "incident") d.incident = ev.target.checked;
++  else if (f === "target") d.targets = [...row.querySelectorAll('[data-f="target"]:checked')].map((x) => x.value);
++  setDirty(true);
++};
++document.addEventListener("input", captureStepDraft);
++document.addEventListener("change", captureStepDraft);
+
+@@ 保存处理器（行 2122-2135）改为：只提交该行草稿；步骤+偏差一次后端保存；失败就地报错
+   const stepBtn = t.closest(".steptbl-save");
+   if (stepBtn) {
+-    const row = stepBtn.closest("tr"); const sid = row.dataset.step; const opText = row.dataset.op || "步骤";
+-    const amount = row.querySelector('[data-f="amount"]').value.trim();
+-    const durRaw = row.querySelector('[data-f="dur"]').value.trim();
+-    const incident = row.querySelector('[data-f="incident"]').checked;
+-    const targetEls = [...row.querySelectorAll('[data-f="target"]:checked')];
+-    const targetOps = targetEls.map((el) => el.dataset.op).filter(Boolean);
+-    runBusy(stepBtn, "记录步骤", async () => {
+-      await api.appendEvent(ui.executionId, { kind: "step", stepId: sid, text: opText, actual: { ...(amount ? { amount } : {}), ...(durRaw !== "" ? { durationMin: Number(durRaw) } : {}) } });
+-if (incident && targetOps.length) await api.appendEvent(ui.executionId, { kind: "deviation", stepId: sid, text: `意外：影响到${targetOps.map((o) => `「${o}」`).join("")}` });
+-      setDirty(false); await refresh(); setStatus("步骤已记录（实际值入本次执行，不改源方案）");
+-    }); return;
++    const row = stepBtn.closest("tr"); const sid = row.dataset.step; const opText = row.dataset.op || "步骤";
++    const execId = ui.executionId;
++    const draft = ui.stepDrafts?.[execId]?.[sid];
++    const amount = (draft ? (draft.amount ?? "") : row.querySelector('[data-f="amount"]').value).trim();
++    const durRaw = (draft ? (draft.dur ?? "") : row.querySelector('[data-f="dur"]').value).trim();
++    const incident = draft ? draft.incident : row.querySelector('[data-f="incident"]').checked;
++    const targetKeys = draft ? (draft.targets ?? []) : [...row.querySelectorAll('[data-f="target"]:checked')].map((el) => el.value);
++    const targetOps = targetKeys.map((v) => stepsOpsOf(execId)[v]).filter(Boolean);
++    const errEl = row.querySelector(".rowerr"); if (errEl) errEl.hidden = true;
++    runBusy(stepBtn, "记录步骤", async () => {
++      const events = [{ kind: "step", stepId: sid, text: opText, actual: { ...(amount ? { amount } : {}), ...(durRaw !== "" ? { durationMin: Number(durRaw) } : {}) } }];
++      if (incident && targetOps.length) events.push({ kind: "deviation", stepId: sid, text: `意外：影响到${targetOps.map((o) => `「${o}」`).join("")}` });
++      await api.appendEvents(execId, events);        // 一次后端保存；需服务端接受 {events:[...]}（见 server-events-batch.md）
++      if (ui.stepDrafts[execId]) { delete ui.stepDrafts[execId][sid]; if (!Object.keys(ui.stepDrafts[execId]).length) delete ui.stepDrafts[execId]; }
++      setDirty(Boolean(ui.stepDrafts[execId]));      // 其余行草稿仍在 → 仍标未保存
++      await refresh(); setStatus("步骤已记录（实际值入本次执行，不改源方案）");
++    });
++    // 失败：runBusy 已就地报错；草稿与其余行输入保留，行旁也提示一次
++    if (row.querySelector(".rowerr")) { /* 失败提示由 runBusy 的 panelerr 提供；此处保留滚动位置 */ }
++    return;
+   }
+
+说明 / 依赖：
+- `stepsOpsOf(execId)` 取该执行的快照步骤 id→op 映射（用于把 targetKeys 还原成操作名）；
+  可直接从 `currentExecution()` 与快照步骤构造，或在 rows 渲染时把 op 存进 `data-op`（本提案
+  的 target 复选框已带 `data-op`，实现时可优先读 DOM 的 data-op，避免新增函数）。
+- 双击/慢请求去重：`runBusy` 已有 `ui.busy` 单飞与按钮禁用，覆盖「慢请求期间双击只提交一次」。
+- 偏差事件「只追加一次」：改为单次 `appendEvents` 后天然满足；重试走 runBusy 的 retry（重复当前动作）。

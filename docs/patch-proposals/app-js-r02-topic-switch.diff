@@ -1,0 +1,70 @@
+目标文件：sciworkbench/public/app.js（集成负责人所有）
+对应：第一组 2（课题切换、返回与迟到响应）、4（任务归属）
+现象（基线复现，5393）：A 课题发起语义提取后，用顶栏下拉切到空课题 B——
+右栏仍显示 A 的「抽取中 1/2 块…」队列（迟到回执串入当前课题）。
+根因：三条切换入口（`#topic-select`、`.material[data-topicpick]`、`.goto[data-topic]`）
+各自内联重置，未统一；且异步 job 的 UI 更新不校验发起课题；`renderShell` 每帧把
+`ui.kzJob` 置空（见 app-js-r04-kzjob-leave.diff）。
+
+--- a/sciworkbench/public/app.js
++++ b/sciworkbench/public/app.js
+@@ 新增：统一切换过程（放在 activateNav 附近）
++/** 课题切换唯一入口：先处未保存草稿，再恢复新课题上次有效的视图与对象。 */
++function switchTopic(nextId) {
++  if (nextId === ui.topicId) return;
++  if (!guardLeave()) { renderShell(); return; }
++  // 记录当前课题的视图（供返回时恢复）
++  (ui.topicViews ??= {})[ui.topicId] = { nav: ui.nav, paperId: ui.paperId, protocolId: ui.protocolId, executionId: ui.executionId, taskId: ui.taskId, chatId: ui.chatId };
++  clearAllErrors();
++  ui.topicId = nextId;
++  // 清与课题绑定的临时选择；再按新课题有效性恢复
++  const keep = (ui.topicViews[nextId] ?? {});
++  ui.assetId = null; ui.attId = null; ui.highlight = null; ui.cell = null; ui.groupSel.clear(); ui.batch = null; ui.ack = false;
++  ui.paperId = state.papers.some((p) => p.id === keep.paperId && (!nextId || p.topicIds.includes(nextId))) ? keep.paperId : null;
++  ui.protocolId = state.protocols.some((p) => p.id === keep.protocolId && p.topicId === nextId) ? keep.protocolId : null;
++  ui.executionId = state.executions.some((e) => e.id === keep.executionId && e.topicId === nextId) ? keep.executionId : null;
++  ui.taskId = state.analysisTasks.some((t) => t.id === keep.taskId && t.topicId === nextId) ? keep.taskId : null;
++  ui.chatId = state.chats.some((c) => c.id === keep.chatId && c.topicId === nextId) ? keep.chatId : null;
++  ui.reportId = null; ui.stepSel = null; ui.viewRev = null;
++  ui.kzJob = null;                       // 任务归属交给 lib（recoverJobFromRuns 按 run 找回）
++  if (ui.anSel) ui.anSel = {};           // 分析当前选择按课题隔离
++  renderAll();
++}
++
+@@ 三条入口改为调用 switchTopic
+@@ 行 2027-2032（#curtopic change）
+   if (e.target.id !== "topic-select") return;
+-  if (!guardLeave()) { renderShell(); return; }
+-  clearAllErrors();
+-  ui.topicId = e.target.value; ui.assetId = null; ui.highlight = null; ui.groupSel.clear(); ui.batch = null; ui.protocolId = null; ui.executionId = null; ui.stepSel = null; ui.viewRev = null; ui.taskId = null; ui.chatId = null; ui.reportId = null; renderAll();
++  switchTopic(e.target.value);
+@@ 行 2253-2259（material-list topicpick）
+   if (el.dataset.topicpick) {
+-    if (el.dataset.topicpick === ui.topicId) return;
+-    if (!guardLeave()) return;
+-    clearAllErrors();
+-    ui.topicId = el.dataset.topicpick; ui.assetId = null; ui.highlight = null; ui.groupSel.clear(); ui.batch = null;
+-    ui.protocolId = null; ui.executionId = null; ui.stepSel = null; ui.viewRev = null; ui.taskId = null; ui.chatId = null; ui.reportId = null;
+-    renderAll(); return;
++    switchTopic(el.dataset.topicpick); return;
+   }
+@@ 行 2005（.goto[data-topic]）
+-  if (b.dataset.topic) ui.topicId = b.dataset.topic;
++  if (b.dataset.topic) { switchTopic(b.dataset.topic); }
+@@ 异步回执归属：job 完成/轮询时校验发起课题（示例：recommend、chat、knowledge）
+@@ analysis.js 已在发起时带 taskId，前端只需在完成回调里比对课题：
+-          ui.anRecheck = null; ui.anRecheckList = null;
+-          ctx.setStatus(`快照已冻结 ${r.snapshotHash.slice(0, 12)}…`);
+-          await ctx.pollJob(r.jobId, "方法推荐");
+-          await refreshAfterJob(); ctx.setStatus("方法推荐完成（含验收项）");
++          const originTopic = t.topicId;
++          await ctx.pollJob(r.jobId, "方法推荐");
++          if (originTopic !== ui.topicId) return;   // 迟到：数据已落库，但不渲染到当前课题
++          resetSel(ui, t); await refreshAfterJob(); ctx.setStatus("方法推荐完成（含验收项）");
+
+说明：
+- 课题内对象的有效性清空 + 空态显示由 `refresh()`（行 775-794）已有逻辑兜底；本提案补的是
+  「按新课题恢复上次视图」与「切换入口收口」。
+- 共享文献沿用现有关联判断：`state.papers.topicIds.includes(nextId)` 已覆盖。
+- lib 侧 `kzJobMatches(ui, topicId, paperId)` 已保证即使有迟到 job，也不会渲染到不属于它的课题；
+  本提案的 job 回调课题校验是第二道防线（防止把 job 结果 refresh 进当前课题）。
