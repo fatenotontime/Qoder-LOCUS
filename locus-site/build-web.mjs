@@ -87,7 +87,29 @@ if (MODE === "public") {
   }
   const manifest = JSON.parse(readFileSync(join(dst, "snapshot", "manifest.json"), "utf8"));
 
-  // 2b) settings 折扇：只发布 settings-fan.js / settings-fan.css（新增入口，不改既有界面）。
+  // 2b) 只读展示子页（/demo/demo.html）：离线可走完演示主线；不接管首页、不改既有前端。
+  const demoOut = join(out, "demo");
+  cpSync(join(HERE, "web-overlay", "demo"), demoOut, { recursive: true });
+  for (const rel of ["README.md", "READ_PATHS.md", "dev-serve.mjs"]) rmSync(join(demoOut, rel), { force: true });
+  rmSync(join(demoOut, "tests"), { recursive: true, force: true });
+  rmSync(join(demoOut, "fixture"), { recursive: true, force: true });
+  const demoHtmlPath = join(demoOut, "demo.html");
+  let demoHtml = readFileSync(demoHtmlPath, "utf8");
+  if (!demoHtml.includes("locus-build-version")) {
+    const buildMeta =
+      `  <meta name="locus-build-version" content="${BUILD_VERSION}" />\n` +
+      `  <script>window.__LOCUS_BUILD__=${JSON.stringify({ version: BUILD_VERSION, commit: BUILD_COMMIT })};</script>\n`;
+    demoHtml = demoHtml.replace(/<\/head>/i, `${buildMeta}</head>`);
+  }
+  if (!demoHtml.includes("settings-fan.css")) {
+    demoHtml = demoHtml.replace(/<\/head>/i, `  <link rel="stylesheet" href="/settings/settings-fan.css" />\n</head>`);
+  }
+  if (!demoHtml.includes("settings-fan.js")) {
+    demoHtml = demoHtml.replace(/<\/body>/i, `\n  <button id="settings-open" class="modelbtn" type="button" aria-haspopup="dialog" aria-controls="settings-fan" aria-expanded="false">设置</button>\n  <script type="module" src="/settings/settings-fan.js"></script>\n</body>`);
+  }
+  writeFileSync(demoHtmlPath, demoHtml);
+
+  // 2c) settings 折扇：只发布 settings-fan.js / settings-fan.css（新增入口，不改既有界面）。
   const setOut = join(out, "settings");
   mkdirSync(setOut, { recursive: true });
   copyFileSync(join(HERE, "web-overlay", "settings", "settings-fan.js"), join(setOut, "settings-fan.js"));
