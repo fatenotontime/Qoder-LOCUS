@@ -1,0 +1,116 @@
+{
+  "steps": {
+    "s1": {
+      "channel": "UI",
+      "papers": 1,
+      "attachments": 1,
+      "paperId": "paper_13cc61a8-477e-45b8-9d60-452a1e661726",
+      "assetId": "ast_1dcc2877-dd31-4861-8c88-24b3ef2f990a",
+      "pass": true
+    },
+    "s2": {
+      "channel": "API（本构建无表格导入 UI 入口）",
+      "first": {
+        "status": 200,
+        "created": 7
+      },
+      "second": {
+        "status": 409,
+        "body": {
+          "error": "已导入相同内容（文件 hash 相同），已拒收。已有原件：darwin-flotation.csv",
+          "existingAssetId": "ast_662f375d-9671-4fbc-a94d-7f5fcd113954",
+          "existingName": "darwin-flotation.csv"
+        }
+      },
+      "tableCount": 1,
+      "dedupe": true,
+      "pass": true
+    },
+    "s3": {
+      "channel": "API（方案表单存在，来源片段绑定走 API）",
+      "status": 200,
+      "protocolId": "proto_c2ee93da-379a-4a5a-8f53-e0a8e2e17054",
+      "sourceKind": "reconstructed",
+      "sourceAssetId": "ast_1dcc2877-dd31-4861-8c88-24b3ef2f990a",
+      "steps": 3,
+      "pass": true
+    },
+    "s4": {
+      "channel": "API",
+      "executionId": "exec_8b670fe8-5b0e-4c85-ad47-c9b96f912327",
+      "events": 2,
+      "eventKinds": [
+        "start",
+        "step"
+      ],
+      "sampleStates": 2,
+      "measurementId": "meas_e64f53db-98ee-462a-9635-9a9031ecabd4",
+      "pass": true
+    },
+    "s5": {
+      "channel": "API",
+      "cardId": "card_dc254d6e-72a1-4330-af0b-6a6c53b01864",
+      "cardAudit": "confirm",
+      "reviewStatus": 200,
+      "adoptStatus": 200,
+      "adoptBody": {
+        "ok": true,
+        "adoptionId": "adp_9302a4e9-7492-422a-a11f-104df0610d38"
+      },
+      "chatStatus": 200,
+      "chatBody": {
+        "ok": true,
+        "chatId": "chat_0b7eb104-c39c-4cc8-a476-25155b259c49"
+      },
+      "adoptionDecision": "adopt",
+      "adoptionId": "adp_9302a4e9-7492-422a-a11f-104df0610d38",
+      "chatId": "chat_0b7eb104-c39c-4cc8-a476-25155b259c49",
+      "chatScope": 1,
+      "pass": true
+    }
+  },
+  "topic": {
+    "topicId": "topic_4ee7f02c-657e-4742-b51d-ee8b91712ac1",
+    "subquestionId": "subq_ea993a63-0658-4413-9ba9-35a27b28980e"
+  },
+  "_assetId": "ast_1dcc2877-dd31-4861-8c88-24b3ef2f990a",
+  "_paperId": "paper_13cc61a8-477e-45b8-9d60-452a1e661726",
+  "uiVerify": {
+    "papers": {
+      "list": [
+        "On the Origin of Species（1859）"
+      ],
+      "mid": "文献原文 · attachment.md"
+    },
+    "protocol": {
+      "list": [
+        "海水浸泡萌发试验（干燥 vs 新鲜 · R09 重构） 重构"
+      ],
+      "mid": "实验方案"
+    },
+    "record": {
+      "list": [
+        "海水浸泡萌发试验（干燥 vs 新鲜 · R09 重构） 进行"
+      ],
+      "mid": "执行记录"
+    },
+    "analysis": {
+      "list": [],
+      "mid": "分析任务"
+    },
+    "chat": {
+      "list": [
+        "干燥后漂浮时长如何？ 1 个对象 · 0 条消息"
+      ],
+      "mid": "上下文对话"
+    }
+  },
+  "modelNote": "本脚本未触发模型调用（导入/记录/采纳/对话创建均为确定性接口）；真实模型待授权。",
+  "summary": {
+    "s1": "PASS",
+    "s2": "PASS",
+    "s3": "PASS",
+    "s4": "PASS",
+    "s5": "PASS"
+  }
+}
