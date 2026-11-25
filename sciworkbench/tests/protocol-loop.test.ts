@@ -377,3 +377,64 @@ test("4C HTTP 闭环：方案→模板→执行→暂停恢复→样品→测量
     await new Promise<void>((r) => app.close(() => r()));
   }
 });
+// S10-T1：行保存＝一次请求写实际步骤＋偏差；同键重试只追加一次；含非法则整批不半写
+test("S10-A4 事件批量与幂等：steps+deviation 同笔；dedupeKey 重放；非法整批拒绝", async () => {
+  const { createApp } = await import("../server.ts");
+  const app = await createApp(new MemoryStore());
+  await new Promise<void>((r) => app.listen(0, "127.0.0.1", () => r()));
+  const url = `http://127.0.0.1:${(app.address() as import("node:net").AddressInfo).port}`;
+  const post = async (p: string, body: unknown) => {
+    const res = await fetch(`${url}${p}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+    return { status: res.status, data: await res.json() as Record<string, unknown> };
+  };
+  const get = async (p: string) => (await fetch(`${url}${p}`)).json() as Promise<Record<string, never>>;
+  const count = async () => ((await get("/api/state")).executions as { events: unknown[] }[])[0].events.length;
+  const flush = () => new Promise((r) => setTimeout(r, 10)); // POST 串行进提交队列；等一等再读计数
+  try {
+    const topicId = (await post("/api/topics", { name: "S10EV", researchQuestion: "Q" })).data.topicId as string;
+    const protocolId = (await post("/api/protocols", { topicId, name: "方案", steps: [{ id: "s1", op: "配液", durationMin: 10 }] })).data.protocolId as string;
+    const executionId = (await post("/api/executions", { topicId, protocolId })).data.executionId as string;
+    await post(`/api/executions/${executionId}/confirm-preparation`, {});
+    const base0 = await count();
+
+    // 一次请求：实际步骤＋偏差，各自事件类型/引用保留
+    const b = await post(`/api/executions/${executionId}/events`, { events: [
+      { kind: "step", stepId: "s1", text: "实际执行 s1", actual: { durationMin: 12 }, dedupeKey: "row-s1" },
+      { kind: "deviation", text: "温度偏高 2℃", dedupeKey: "row-s1-dev" },
+    ] });
+    assert.equal(b.status, 200);
+    assert.equal((b.data.eventIds as string[]).length, 2);
+    await flush();
+    assert.equal(await count(), base0 + 2);
+    const evs = ((await get("/api/state")).executions as { events: { kind: string; stepId?: string; text: string }[] }[])[0].events;
+    assert.equal(evs[base0].kind, "step");
+    assert.equal(evs[base0].stepId, "s1");
+    assert.equal(evs[base0 + 1].kind, "deviation");
+
+    // 重试同批（同去重键）→ 重放，不重复追加
+    const b2 = await post(`/api/executions/${executionId}/events`, { events: [
+      { kind: "step", stepId: "s1", text: "实际执行 s1", actual: { durationMin: 12 }, dedupeKey: "row-s1" },
+      { kind: "deviation", text: "温度偏高 2℃", dedupeKey: "row-s1-dev" },
+    ] });
+    assert.equal(b2.data.replayed, true);
+    await flush();
+    assert.equal(await count(), base0 + 2);
+
+    // 单条兼容：仍返回 eventId
+    const single = await post(`/api/executions/${executionId}/events`, { kind: "note", text: "单条" });
+    assert.equal(single.status, 200);
+    assert.ok(single.data.eventId);
+
+    // 批量原子性：含非法步骤 → 整批 422，不半写
+    const before = await count();
+    const bad = await post(`/api/executions/${executionId}/events`, { events: [
+      { kind: "note", text: "合法" },
+      { kind: "step", stepId: "ghost", text: "非法步骤" },
+    ] });
+    assert.equal(bad.status, 422);
+    await flush();
+    assert.equal(await count(), before);
+  } finally {
+    await new Promise<void>((r) => app.close(() => r()));
+  }
+});

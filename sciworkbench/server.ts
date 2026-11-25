@@ -36,7 +36,7 @@ import {
   addManualOcr,
   addMeasurement,
   addSampleState,
-  appendEvent,
+  appendEvents,
   completeExecution,
   confirmOcr,
   confirmPreparation,
@@ -69,6 +69,7 @@ import {
   previewReportEdit, applyReportEdit, confirmReportBlock, draftReportBlocks,
   createChat, chatScopeSnapshot, chatHistoryInput, appendChatTurn, applyChatResponse,
   failChat, cancelChat, retryChat, adoptProposal, recoverInterruptedChats,
+  validateWorkspaceSelection, applyTaskSelection,
 } from "./services/analysis.ts";
 import { traverseNetwork, changeHits } from "./services/references.ts";
 import { buildContextMap, parsePicks } from "./services/context-map.ts";
@@ -139,6 +140,10 @@ export interface Job {
   done: number;
   total: number;
   message: string;
+  /** 回执归属：发起时的课题（迟到回执据此归位，不跟当前页面走）；知识提取同时给 runId/paperId。 */
+  topicId?: string;
+  /** 发起时的对象归属（分析任务/执行等），供客户端把回执归到发起时的对象。 */
+  objectRef?: { kind: string; id: string };
   result?: {
     assetId?: string; created?: number; reminder?: boolean; protocolId?: string; impactId?: string;
     ocrIds?: string[]; discarded?: boolean; paperId?: string; skipped?: number;
@@ -147,6 +152,8 @@ export interface Job {
     /** 知识提取（合同 §5.4/§6）：jobId 与持久 runId 同时返回；计数按阅读壳与知识项分别给出。 */
     runId?: string; runStatus?: ExtractionRunStatus; createdItems?: number; pendingItems?: number;
     duplicateCandidates?: string[]; unresolvedLinks?: string[];
+    /** 回执归属与结果定位：迟到回执按发起时的课题/对象归位。 */
+    topicId?: string; subquestionId?: string; taskId?: string; methods?: number; snapshotHash?: string; messageId?: string;
   };
   error?: string;
 }
@@ -178,6 +185,8 @@ export async function createApp(store: Store, opts: { aiConfigPath?: string } = 
   // 任务身份/重复提交守卫：同一原件的方案解析同时只允许一个在跑 job。
   const parsingAssets = new Set<string>();
   const recommendingTasks = new Set<string>();
+  // 行保存幂等（会话内，0 依赖）：`execId::dedupeKey` → eventId；重试重放不重复追加（跨重启的持久幂等需 domain 字段，见交付说明）。
+  const eventDedupe = new Map<string, string>();
   // 知识提取运行控制（合同 §5.3/§5.4）：运行时 jobId ↔ 持久 runId；取消/暂停/继续/重试以 run 与 receipt 为准。
   const knowledgeRuns = new Map<string, KnowledgeControl>();
   const knowledgeJobByRun = new Map<string, string>();
@@ -379,8 +388,9 @@ export async function createApp(store: Store, opts: { aiConfigPath?: string } = 
     if (!knowledgeSignals.has(runId)) knowledgeSignals.set(runId, { cancelling: false, pausing: false, running: false, fatal: null });
     const job: Job = {
       id, status: "running", done: 0, total: run.chunks.length, message: "语义提取中…",
+      topicId: run.topicId, objectRef: { kind: "paper", id: run.paperRef.id },
       result: {
-        paperId: run.paperRef.id, runId, created: 0, skipped: 0, createdItems: 0, pendingItems: 0,
+        paperId: run.paperRef.id, runId, topicId: run.topicId, subquestionId: run.subquestionId, created: 0, skipped: 0, createdItems: 0, pendingItems: 0,
         chunkErrors: run.chunks.map((c, i) => (c.status === "failed" ? { index: i, error: c.error ?? "提取失败", recoverable: true } : null)).filter((x): x is { index: number; error: string; recoverable: boolean } => x !== null),
         duplicateCandidates: [], unresolvedLinks: [], runStatus: run.status,
       },
@@ -424,7 +434,7 @@ export async function createApp(store: Store, opts: { aiConfigPath?: string } = 
     const snapshot = chatScopeSnapshot(state, chat, userText, cfg.model);
     const input = `${snapshotInput(snapshot)}\n\n讨论历史：\n${chatHistoryInput(chat)}`;
     const id = `job_${randomUUID()}`;
-    const job: Job = { id, status: "running", done: 0, total: 1, message: "上下文讨论中…" };
+    const job: Job = { id, status: "running", done: 0, total: 1, message: "上下文讨论中…", topicId: chat.topicId, objectRef: { kind: "chat", id: chatId } };
     jobs.set(id, job); trimJobs();
     void (async () => {
       try {
@@ -824,7 +834,7 @@ export async function createApp(store: Store, opts: { aiConfigPath?: string } = 
           const replay = sameKey.find((r) => r.inputHash === inputHash);
           if (replay) {
             // 同键同输入：返回既有 run，不新建、不重调模型（§6.3）；未跑完由「继续」显式续跑。
-            send(res, 200, { ok: true, replayed: true, jobId: knowledgeJobByRun.get(replay.id) ?? null, runId: replay.id, total: replay.chunks.length, runStatus: replay.status });
+            send(res, 200, { ok: true, replayed: true, jobId: knowledgeJobByRun.get(replay.id) ?? null, runId: replay.id, total: replay.chunks.length, runStatus: replay.status, topicId: replay.topicId ?? null, subquestionId: replay.subquestionId ?? null });
             return;
           }
           if (sameKey.length > 0) {
@@ -842,7 +852,7 @@ export async function createApp(store: Store, opts: { aiConfigPath?: string } = 
           const withRun: LocusState = { ...state, knowledge: { ...k, extractionRuns: [...k.extractionRuns, fresh] } };
           await store.save(withRun); state = withRun;
           const jobId = startKnowledgeRun(cfg, fresh.id);
-          send(res, 202, { ok: true, jobId, runId: fresh.id, total: fresh.chunks.length, inputHash, runStatus: fresh.status });
+          send(res, 202, { ok: true, jobId, runId: fresh.id, total: fresh.chunks.length, inputHash, runStatus: fresh.status, topicId: fresh.topicId ?? null, subquestionId: fresh.subquestionId ?? null });
           return;
         }
         const kjAction = path.match(/^\/api\/knowledge\/jobs\/([^/]+)\/(cancel|pause|resume)$/);
@@ -1288,16 +1298,44 @@ export async function createApp(store: Store, opts: { aiConfigPath?: string } = 
         }
         const execEvents = path.match(/^\/api\/executions\/([^/]+)\/events$/);
         if (execEvents) {
-          const r = appendEvent(state, decodeURIComponent(execEvents[1]), {
-            kind: body.kind as never,
-            stepId: body.stepId as string | undefined,
-            text: body.text as string | undefined,
-            actual: body.actual as never,
-            at: body.at as string | undefined,
-            backfilled: body.backfilled === true,
+          const execId = decodeURIComponent(execEvents[1]);
+          type EvIn = Parameters<typeof appendEvents>[2][number];
+          const toInput = (e: Record<string, unknown>): EvIn => ({
+            kind: e.kind as never,
+            stepId: e.stepId as string | undefined,
+            text: e.text as string | undefined,
+            actual: e.actual as never,
+            at: e.at as string | undefined,
+            backfilled: e.backfilled === true,
+            dedupeKey: typeof e.dedupeKey === "string" ? e.dedupeKey : undefined,
           });
-          await store.save(r.state); state = r.state;
-          send(res, 200, { ok: true, eventId: r.execution.events[r.execution.events.length - 1].id }); return;
+          // 一次提交可含多条事件（实际步骤＋偏差同笔）；单条时沿用旧体 {kind,...}，响应仍给 eventId。
+          const batch: EvIn[] = Array.isArray(body.events)
+            ? (body.events as Record<string, unknown>[]).map(toInput)
+            : [toInput(body as Record<string, unknown>)];
+          const replay = new Map<number, string>();
+          const fresh: EvIn[] = [];
+          batch.forEach((inp, i) => {
+            const key = inp.dedupeKey;
+            const hit = key ? eventDedupe.get(`${execId}::${key}`) : undefined;
+            if (hit) replay.set(i, hit); else fresh.push(inp);
+          });
+          let appended: { id: string }[] = [];
+          if (fresh.length) {
+            const r = appendEvents(state, execId, fresh); // 整体校验后整体追加：任一条不合规都不半写
+            await store.save(r.state); state = r.state;
+            appended = r.appended;
+          }
+          const eventIds: (string | undefined)[] = [];
+          let fi = 0;
+          batch.forEach((inp, i) => {
+            if (replay.has(i)) { eventIds.push(replay.get(i)); return; }
+            const ev = appended[fi++];
+            if (ev && inp.dedupeKey) eventDedupe.set(`${execId}::${inp.dedupeKey}`, ev.id);
+            eventIds.push(ev?.id);
+          });
+          if (Array.isArray(body.events)) { send(res, 200, { ok: true, eventIds, replayed: replay.size > 0 }); return; }
+          send(res, 200, { ok: true, eventId: eventIds[0], replayed: replay.size > 0 }); return;
         }
         const evEdit = path.match(/^\/api\/executions\/([^/]+)\/events\/([^/]+)\/edit$/);
         if (evEdit) {
@@ -1513,6 +1551,8 @@ export async function createApp(store: Store, opts: { aiConfigPath?: string } = 
           const r = createAnalysisTask(state, {
             topicId: String(body.topicId ?? ""), subquestionId: body.subquestionId as string | undefined,
             title: String(body.title ?? ""), core: body.core as unknown[], optional: body.optional as unknown[] | undefined,
+            // 工作台入口（workspace:true）要求子问题必选；既有调用方不带标记，行为不变。
+            enforceSubquestion: body.workspace === true,
           });
           await store.save(r.state); state = r.state;
           send(res, 200, { ok: true, taskId: r.task.id }); return;
@@ -1532,11 +1572,35 @@ export async function createApp(store: Store, opts: { aiConfigPath?: string } = 
           if (!task) { send(res, 404, { error: `分析任务不存在：${taskId}` }); return; }
           const purpose = String(body.purpose ?? "").trim();
           if (!purpose) { send(res, 422, { error: "推荐须写明研究目的。" }); return; }
-          if (recommendingTasks.has(taskId)) { send(res, 409, { error: "该任务已有推荐在运行，请等待完成，勿重复提交。" }); return; }
-          const snapshot = buildSnapshot(state, task, purpose, cfg.model, "analysis_recommend/v1");
+          // 工作台入口：接受本次选项及其可校验版本，同一次请求内校验课题/对象/版本后据提交的选择冻结快照。
+          // 既有调用方（只发 purpose）不带 selection/topicId，走原路径，行为不变。
+          const isWorkspace = body.workspace === true || body.selection !== undefined || body.topicId !== undefined;
+          let taskForSnap = task;
+          if (isWorkspace) {
+            const selBody = (body.selection ?? {}) as Record<string, unknown>;
+            const sel = validateWorkspaceSelection(state, task, {
+              topicId: (body.topicId ?? selBody.topicId) as string | undefined,
+              subquestionId: (body.subquestionId ?? selBody.subquestionId) as string | undefined,
+              core: (body.core ?? selBody.core) as unknown[] | undefined,
+              optional: (body.optional ?? selBody.optional) as unknown[] | undefined,
+              versions: (body.versions ?? selBody.versions) as Record<string, string> | undefined,
+            });
+            if (sel.stale.length) {
+              send(res, 409, { error: `提交期间有 ${sel.stale.length} 个对象已改版，本次推荐已阻止；请复核后重试（保留当前选择）。`, code: "selection_stale", stale: sel.stale.map((s) => ({ refKey: s.refKey, current: s.current, expected: s.expected })) });
+              return;
+            }
+            if (recommendingTasks.has(taskId)) { send(res, 409, { error: "该任务已有推荐在运行，请等待完成，勿重复提交。" }); return; }
+            // 先原子持久化本次选择：模型失败也保留用户当前选择。
+            const applied = applyTaskSelection(state, taskId, sel);
+            await store.save(applied.state); state = applied.state;
+            taskForSnap = applied.task;
+          } else if (recommendingTasks.has(taskId)) {
+            send(res, 409, { error: "该任务已有推荐在运行，请等待完成，勿重复提交。" }); return;
+          }
+          const snapshot = buildSnapshot(state, taskForSnap, purpose, cfg.model, "analysis_recommend/v1");
           recommendingTasks.add(taskId);
           const id = `job_${randomUUID()}`;
-          const job: Job = { id, status: "running", done: 0, total: 1, message: "方法推荐中…" };
+          const job: Job = { id, status: "running", done: 0, total: 1, message: "方法推荐中…", topicId: task.topicId, objectRef: { kind: "analysisTask", id: taskId } };
           jobs.set(id, job); trimJobs();
           void (async () => {
             try {
@@ -1546,13 +1610,13 @@ export async function createApp(store: Store, opts: { aiConfigPath?: string } = 
                 await store.save(r.state); state = r.state;
                 writeAudit(taskId, { raws: [{ index: 0, content: raw }], model: cfg.model }, "analysis_recommend");
                 job.status = "done";
-                job.result = { taskId, methods: r.task.recommendation!.methods.length, snapshotHash: snapshot.hash };
+                job.result = { taskId, topicId: task.topicId, subquestionId: taskForSnap.subquestionId, methods: r.task.recommendation!.methods.length, snapshotHash: snapshot.hash };
                 job.message = "完成";
               });
             } catch (e) { job.status = "error"; job.error = (e as Error).message ?? "失败"; }
             finally { recommendingTasks.delete(taskId); }
           })();
-          send(res, 202, { ok: true, jobId: id, snapshotHash: snapshot.hash }); return;
+          send(res, 202, { ok: true, jobId: id, snapshotHash: snapshot.hash, topicId: task.topicId, subquestionId: taskForSnap.subquestionId ?? null }); return;
         }
         const atResult = path.match(/^\/api\/analysis\/tasks\/([^/]+)\/result$/);
         if (atResult) {

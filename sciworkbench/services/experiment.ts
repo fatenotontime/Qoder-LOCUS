@@ -460,13 +460,12 @@ export interface EventInput {
   actual?: { amount?: string; durationMin?: number; order?: number };
   at?: string;
   backfilled?: boolean;
+  /** 行保存幂等键（由界面按执行 ID＋步骤 ID 生成）：同一执行内同键只追加一次（重试重放）。 */
+  dedupeKey?: string;
 }
 
-export function appendEvent(state: LocusState, execId: string, input: EventInput): { state: LocusState; execution: ExecutionRecord } {
-  const cur = state.executions.find((e) => e.id === execId);
-  if (!cur) throw new AppError(404, `执行不存在：${execId}`);
-  if ((cur.phase ?? "recording") === "preparing") throw new AppError(422, "本次执行快照未确认：先在准备稿中确认，再补记录（准备≠已做实验）。");
-  if (cur.status === "done") throw new AppError(422, "执行已结束，不能再追加事件。");
+/** 校验单个事件输入（不落库）：返回规范化事件体；绑定/取消/取消挂起均在此拒绝，任何一条不合规都不追加。 */
+function buildEvent(cur: ExecutionRecord, state: LocusState, input: EventInput): ExecEvent {
   const text = str(input.text);
   if ((input.kind === "note" || input.kind === "deviation") && !text) throw new AppError(422, "备注/偏差必须写明内容。");
   if (input.kind === "step") {
@@ -481,7 +480,7 @@ export function appendEvent(state: LocusState, execId: string, input: EventInput
     actual.durationMin = d;
   }
   if (input.actual?.order !== undefined) actual.order = Number(input.actual.order);
-  const event: ExecEvent = {
+  return {
     id: `ev_${randomUUID()}`,
     at: str(input.at) || now(),
     recordedAt: now(),
@@ -493,8 +492,26 @@ export function appendEvent(state: LocusState, execId: string, input: EventInput
     revision: 1,
     history: [],
   };
-  const execution: ExecutionRecord = { ...cur, events: [...cur.events, event], updatedAt: now() };
-  return { state: { ...state, executions: state.executions.map((e) => (e.id === execId ? execution : e)) }, execution };
+}
+
+/**
+ * 一次提交追加一组事件（§7 行保存：实际步骤与偏差同笔进入）。
+ * 先整体校验再整体追加：任一条不合规即拒绝，不产生半写。
+ */
+export function appendEvents(state: LocusState, execId: string, inputs: EventInput[]): { state: LocusState; execution: ExecutionRecord; appended: ExecEvent[] } {
+  const cur = state.executions.find((e) => e.id === execId);
+  if (!cur) throw new AppError(404, `执行不存在：${execId}`);
+  if ((cur.phase ?? "recording") === "preparing") throw new AppError(422, "本次执行快照未确认：先在准备稿中确认，再补记录（准备≠已做实验）。");
+  if (cur.status === "done") throw new AppError(422, "执行已结束，不能再追加事件。");
+  if (!inputs.length) throw new AppError(422, "本次保存没有可追加的事件。");
+  const appended = inputs.map((input) => buildEvent(cur, state, input));
+  const execution: ExecutionRecord = { ...cur, events: [...cur.events, ...appended], updatedAt: now() };
+  return { state: { ...state, executions: state.executions.map((e) => (e.id === execId ? execution : e)) }, execution, appended };
+}
+
+export function appendEvent(state: LocusState, execId: string, input: EventInput): { state: LocusState; execution: ExecutionRecord } {
+  const r = appendEvents(state, execId, [input]);
+  return { state: r.state, execution: r.execution };
 }
 
 /** 记录层原位编辑：留历史；改实际数值须原因；不触碰源方案。 */
