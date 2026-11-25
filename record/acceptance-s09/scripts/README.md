@@ -8,10 +8,10 @@ Playwright 模块取自 npx 缓存（ESM 用 `createRequire` 指定目录，可�
 ```bash
 # 公开构建
 node locus-site/build-web.mjs sciworkbench/public /tmp/web-public --mode=public
-python record/acceptance-s09/scripts/serve.py /tmp/web-public 5280 /tmp/pub.log
+python record/acceptance-s09/scripts/serve.py /tmp/web-public 5280 /tmp/pub.txt
 # trial 构建
 node locus-site/build-web.mjs sciworkbench/public /tmp/web-trial --mode=trial
-python record/acceptance-s09/scripts/serve.py /tmp/web-trial 5281 /tmp/trial.log
+python record/acceptance-s09/scripts/serve.py /tmp/web-trial 5281 /tmp/trial.txt
 ```
 
 ## 2) 运行验收

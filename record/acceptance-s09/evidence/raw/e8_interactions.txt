@@ -1,0 +1,122 @@
+{
+ "tag": "public",
+ "kz": {
+  "kzlistText": " 数据 · M. Martens 的对照实验：将98粒种子（多为与达尔文不同者）装入盒子放入待审 思路 · 方法改进思路：M. Martens 用真实海水中干湿交替的盒子实验，被作者评价为待审 ",
+  "kzcardCount": 2,
+  "activeTab": "待审 2",
+  "tabs": [
+   "待审 2",
+   "已入候选 8",
+   "已跳过 0",
+   "已排除 0"
+  ],
+  "activePanelText": "分项"
+ },
+ "analysis": {
+  "hasReport": true,
+  "refBack": 5,
+  "tbl": 1,
+  "reportCls": [
+   "mini rep",
+   "reprow",
+   "refchip",
+   "refchip",
+   "reprow",
+   "refchip",
+   "reprow",
+   "refchip"
+  ]
+ },
+ "refnet": {
+  "bodies": 4,
+  "filled": [
+   "知识卡 马滕斯在真实海水实测：98 粒中 18 粒漂浮 42 天且仍、干燥后榛子漂浮 90 天，随后种植萌发（新鲜时立即下沉）。、芦笋带熟果：新鲜漂 23 天；"
+  ]
+ },
+ "papers": {
+  "paperRows": 2,
+  "rightCls": [
+   "item",
+   "meta",
+   "ppform",
+   "ppgrid2",
+   "ppsave",
+   "primary",
+   "history-btn",
+   "pane-title",
+   "cmppick",
+   "paper-topic",
+   "row",
+   "primary goto",
+   "item",
+   "meta",
+   "material active",
+   "m-title",
+   "m-meta",
+   "mini",
+   "row",
+   "primary"
+  ]
+ }
+}
+{
+ "tag": "personal",
+ "kz": {
+  "kzlistText": "此分区暂无卡片。",
+  "kzcardCount": 0,
+  "activeTab": "待审 0",
+  "tabs": [
+   "待审 0",
+   "已入候选 7",
+   "已跳过 0",
+   "已排除 0"
+  ],
+  "activePanelText": "分项"
+ },
+ "analysis": {
+  "hasReport": true,
+  "refBack": 5,
+  "tbl": 1,
+  "reportCls": [
+   "mini rep",
+   "reprow",
+   "refchip",
+   "refchip",
+   "reprow",
+   "refchip",
+   "reprow",
+   "refchip"
+  ]
+ },
+ "refnet": {
+  "bodies": 4,
+  "filled": [
+   "知识卡 马滕斯在真实海水实测：98 粒中 18 粒漂浮 42 天且仍、干燥后榛子漂浮 90 天，随后种植萌发（新鲜时立即下沉）。、芦笋带熟果：新鲜漂 23 天；"
+  ]
+ },
+ "papers": {
+  "paperRows": 2,
+  "rightCls": [
+   "item",
+   "meta",
+   "ppform",
+   "ppgrid2",
+   "ppsave",
+   "primary",
+   "history-btn",
+   "pane-title",
+   "cmppick",
+   "paper-topic",
+   "row",
+   "primary goto",
+   "item",
+   "meta",
+   "material active",
+   "m-title",
+   "m-meta",
+   "mini",
+   "row",
+   "primary"
+  ]
+ }
+}

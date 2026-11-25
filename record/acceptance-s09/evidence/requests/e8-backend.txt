@@ -1,0 +1,2 @@
+LOCUS dev server: http://127.0.0.1:5189  (data: F:/Qoder-e2-tmp/e8-personal.json)
+AI: 未配置（在左下角「模型设置」里填写；保存后本机留存，不入库）
