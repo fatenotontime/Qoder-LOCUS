@@ -58,7 +58,7 @@ function restoreUi() {
     if (s.cardFilter === "all" || s.cardFilter === "pending" || s.cardFilter === "reviewed") ui.cardFilter = s.cardFilter;
     if (state.topics.some((t) => t.id === s.topicId)) ui.topicId = s.topicId;
     if (state.assets.some((a) => a.id === s.assetId)) ui.assetId = s.assetId;
-    if (state.papers.some((p) => p.id === s.paperId)) ui.paperId = s.paperId;
+    if (location.hash.startsWith("#/papers/") && state.papers.some((p) => p.id === s.paperId)) ui.paperId = s.paperId;
     if (state.tables.some((t) => t.id === s.tableId)) ui.tableId = s.tableId;
     if (state.protocols.some((p) => p.id === s.protocolId)) ui.protocolId = s.protocolId;
     if (state.executions.some((e) => e.id === s.executionId)) ui.executionId = s.executionId;
@@ -1026,10 +1026,7 @@ function renderShell() {
   const kz = ui.nav === "knowledge";
   // 不清 kzJob：任务按课题/文献归属在 lib（kzJobMatches）中过滤，离开/返回由 run 记录找回。
   if (kz && !ui.paperId && state.papers.length) ui.paperId = state.papers[0].id;
-  if (ui.nav === "papers" && !ui.paperId) {
-    const pool = state.papers.filter((p) => !ui.topicId || p.topicIds.includes(ui.topicId) || !p.topicIds.length);
-    if (pool.length) ui.paperId = pool[0].id;
-  }
+  // 文献卷目进入即显示管理列表；只有点条目（或 #/papers/:id 详情路由）才进阅读页。
   // B5：进入分析页自动打开最近的分析任务
   if (ui.nav === "analysis" && !ui.taskId) {
     const ts = state.analysisTasks.filter((t) => !ui.topicId || t.topicId === ui.topicId).slice().sort((a, b) => b.createdAt.localeCompare(a.createdAt));
