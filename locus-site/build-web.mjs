@@ -3,7 +3,8 @@
 //   <publicDir> 例：F:/Qoder dev competition/sciworkbench/public
 //   [outDir]   默认本目录下的 web/
 //   --mode=trial   线上试玩/既有发布：注入 shim（默认，行为不变）
-//   --mode=public  公开展示：打包 demo-data，并把设置折扇作为新增入口挂到既有首页（不改首页结构与既有入口）
+//   --mode=public  公开展示：打包 demo-data，注入展示配置（app.js 展示模式接线），把设置折扇作为新增入口挂到既有首页（不改首页结构与既有入口）；
+//                  旧 /demo/demo.html 改为跳转兼容页（进入原工作台展示模式，不再渲染独立 demo-app.js）
 import { cpSync, existsSync, readFileSync, writeFileSync, copyFileSync, rmSync, mkdirSync } from "node:fs";
 import { join, resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -87,27 +88,27 @@ if (MODE === "public") {
   }
   const manifest = JSON.parse(readFileSync(join(dst, "snapshot", "manifest.json"), "utf8"));
 
-  // 2b) 只读展示子页（/demo/demo.html）：离线可走完演示主线；不接管首页、不改既有前端。
+  // 2b) 旧展示链接兼容页（/demo/demo.html）：只做跳转，进入原工作台的展示模式。
+  //     不再复制 demo-app.js / demo.css / a-snapshot.js，也不再渲染独立 demo 页面。
   const demoOut = join(out, "demo");
-  cpSync(join(HERE, "web-overlay", "demo"), demoOut, { recursive: true });
-  for (const rel of ["README.md", "READ_PATHS.md", "dev-serve.mjs"]) rmSync(join(demoOut, rel), { force: true });
-  rmSync(join(demoOut, "tests"), { recursive: true, force: true });
-  rmSync(join(demoOut, "fixture"), { recursive: true, force: true });
-  const demoHtmlPath = join(demoOut, "demo.html");
-  let demoHtml = readFileSync(demoHtmlPath, "utf8");
-  if (!demoHtml.includes("locus-build-version")) {
-    const buildMeta =
-      `  <meta name="locus-build-version" content="${BUILD_VERSION}" />\n` +
-      `  <script>window.__LOCUS_BUILD__=${JSON.stringify({ version: BUILD_VERSION, commit: BUILD_COMMIT })};</script>\n`;
-    demoHtml = demoHtml.replace(/<\/head>/i, `${buildMeta}</head>`);
-  }
-  if (!demoHtml.includes("settings-fan.css")) {
-    demoHtml = demoHtml.replace(/<\/head>/i, `  <link rel="stylesheet" href="/settings/settings-fan.css" />\n</head>`);
-  }
-  if (!demoHtml.includes("settings-fan.js")) {
-    demoHtml = demoHtml.replace(/<\/body>/i, `\n  <button id="settings-open" class="modelbtn" type="button" aria-haspopup="dialog" aria-controls="settings-fan" aria-expanded="false">设置</button>\n  <script type="module" src="/settings/settings-fan.js"></script>\n</body>`);
-  }
-  writeFileSync(demoHtmlPath, demoHtml);
+  mkdirSync(demoOut, { recursive: true });
+  const compatHtml = `<!doctype html>
+<html lang="zh-CN" data-theme="paper">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta http-equiv="refresh" content="0; url=/" />
+  <link rel="canonical" href="/" />
+  <meta name="locus-build-version" content="${BUILD_VERSION}" />
+  <title>LOCUS · 展示模式</title>
+</head>
+<body>
+  <p>正在进入 LOCUS 工作台展示模式…如未自动跳转，请<a href="/">点此进入</a>。</p>
+  <script>location.replace("/");</script>
+</body>
+</html>
+`;
+  writeFileSync(join(demoOut, "demo.html"), compatHtml);
 
   // 2c) settings 折扇：只发布 settings-fan.js / settings-fan.css（新增入口，不改既有界面）。
   const setOut = join(out, "settings");
@@ -115,7 +116,19 @@ if (MODE === "public") {
   copyFileSync(join(HERE, "web-overlay", "settings", "settings-fan.js"), join(setOut, "settings-fan.js"));
   copyFileSync(join(HERE, "web-overlay", "settings", "settings-fan.css"), join(setOut, "settings-fan.css"));
 
-  // 2c) 把设置折扇挂到既有首页：head 加 CSS link + 构建版本注入，body 末加静态入口 + module 脚本。
+  // 2d) 展示适配器（B 交付）：复制 /display 运行必需文件，供 app.js 动态 import。
+  const dispSrc = join(HERE, "web-overlay", "display");
+  const dispOut = join(out, "display");
+  if (existsSync(join(dispSrc, "display-api.js"))) {
+    cpSync(dispSrc, dispOut, { recursive: true });
+    for (const rel of ["README.md", "READ_PATHS.md", "dev-serve.mjs", "dev-server.mjs"]) rmSync(join(dispOut, rel), { force: true });
+    rmSync(join(dispOut, "tests"), { recursive: true, force: true });
+    rmSync(join(dispOut, "fixture"), { recursive: true, force: true });
+  } else {
+    console.warn("  [warn] public 模式缺 web-overlay/display/display-api.js：展示适配器未打包（B 交付后重跑构建）");
+  }
+
+  // 2e) 把设置折扇挂到既有首页：head 加 CSS link + 构建版本注入，body 末加静态入口 + module 脚本。
   //     不改首页结构、不删既有入口；模型状态读取既有 #ai-state。
   if (!html.includes("locus-build-version")) {
     const buildMeta =
@@ -130,8 +143,19 @@ if (MODE === "public") {
   if (!html.includes("settings-fan.js")) {
     html = html.replace(/<\/body>/i, `\n  <script type="module" src="/settings/settings-fan.js"></script>\n</body>`);
   }
+  // 2f) 注入展示配置：app.js 在首次 getState 前读取；topicId 取快照 projectId，避免写死。
+  //     仅在存在 __LOCUS_DISPLAY__ 时 app.js 才进入展示模式；trial 不注入，行为不变。
+  if (!html.includes("__LOCUS_DISPLAY__")) {
+    const displayCfg = {
+      baseUrl: "/demo-data",
+      zipUrl: ZIP_URL,
+      topicId: manifest.projectId,
+      label: "展示课题 · 只读",
+    };
+    html = html.replace(/<\/head>/i, `  <script>window.__LOCUS_DISPLAY__=${JSON.stringify(displayCfg)};</script>\n</head>`);
+  }
 
-  demoSummary = `demo-data 已打包：manifest.sourceCommit=${manifest.sourceCommit} · projectId=${manifest.projectId} · fixture=${manifest.fixtureVersion} · ZIP sha256=${zipHash.slice(0, 16)}…；settings/ 已作为新增入口挂到既有首页`;
+  demoSummary = `demo-data 已打包：manifest.sourceCommit=${manifest.sourceCommit} · projectId=${manifest.projectId} · fixture=${manifest.fixtureVersion} · ZIP sha256=${zipHash.slice(0, 16)}…；展示配置已注入首页（app.js 展示模式）；settings/ 已作为新增入口挂到既有首页；/demo/demo.html 已改为跳转兼容页`;
 }
 
 writeFileSync(join(out, "index.html"), html);

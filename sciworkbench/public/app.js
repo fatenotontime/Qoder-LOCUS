@@ -13,6 +13,9 @@ import { knowledgeLeftHtml, knowledgeWorkspaceHtml, knowledgeQueueHtml, renderKn
 import { renderAnalysisForm, currentTask, contextMapHtml, analysisRightHtml, snapshotHtml, bindAnalysis } from "./lib/pages/analysis.js";
 
 let state = { topics: [], subquestions: [], assets: [], papers: [], attachments: [], cards: [], tables: [], adoptions: [], mappings: [], comparisons: [], protocols: [], templates: [], executions: [], samples: [], measurements: [], impacts: [], ocrs: [], analysisTasks: [], analysisResults: [], reports: [], chats: [] };
+// 展示模式：公开构建在 index.html 注入 window.__LOCUS_DISPLAY__；无此配置时对既有行为零影响。
+const DISPLAY_CFG = (typeof window !== "undefined" && window.__LOCUS_DISPLAY__) || null;
+let displayMode = false;
 const ui = { nav: "topic", topicId: "", assetId: null, paperId: null, attId: null, tableId: null, highlight: null, cell: null, dirty: false, busy: false, cardFilter: "all", groupSel: new Set(), batch: null, ack: false, protocolId: null, executionId: null, stepSel: null, viewRev: null, editEventId: null, pauseSuggest: null, prepExtra: 0, taskId: null, chatId: null, reportId: null, reportWorking: {}, navCollapsed: false, kzTab: "todo", kzPanel: "cards", cardOpen: null, kzJob: null, kzStruct: null, kiView: null, suppressRecheck: null };
 let lastAction = null; // { label, run }
 function setDirty(value) {
@@ -79,6 +82,8 @@ const nextFrame = () => new Promise((res) => requestAnimationFrame(() => request
 function prefersReducedMotion() { return window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false; }
 function currentTheme() { return document.documentElement.dataset.theme === "tech" ? "tech" : "paper"; }
 function applyTheme(theme, { persist = true } = {}) {
+  // 展示模式固定宣纸：不读、不写 locus.theme.v1，冷色入口亦被隐藏。
+  if (displayMode) { theme = "paper"; persist = false; }
   const t = theme === "tech" ? "tech" : "paper";
   document.documentElement.dataset.theme = t;
   document.body.classList.toggle("theme-tech", t === "tech");
@@ -98,7 +103,7 @@ function sealAnchor(btn) {
                      : { x: innerWidth / 2, y: innerHeight / 2 };
 }
 async function quickSwitchTheme(btn) {
-  if (switchingTheme || replaying) return;
+  if (displayMode || switchingTheme || replaying) return;
   const next = currentTheme() === "paper" ? "tech" : "paper";
   if (prefersReducedMotion()) { applyTheme(next); return; }
   switchingTheme = true;
@@ -559,7 +564,7 @@ async function runInkBloom(next, { origin, onApply } = {}) {
   });
 }
 async function replayAndRecast(btn) {
-  if (replaying || switchingTheme) return;
+  if (displayMode || replaying || switchingTheme) return;
   const next = currentTheme() === "paper" ? "tech" : "paper";
   if (prefersReducedMotion()) {
     applyTheme(next);
@@ -600,6 +605,62 @@ function bootFailure(e) {
   $("#right-content").innerHTML = `<p class="hint">等待卷宗…</p>`;
   setStatus("读取失败");
 }
+// ── 展示模式接线：读取走静态快照适配器，写接口全部拦截 ──────
+// 冻结接口：/display/display-api.js 导出 createDisplayApi({ baseUrl }) → 只读对象，
+// 含 getState/getSource/backtrace/knowledgeItem/aiStatus/getJob。其余方法在展示模式一律只读。
+const DISPLAY_READS = ["getState", "getSource", "backtrace", "knowledgeItem", "aiStatus", "getJob"];
+function displayReadonlyError() {
+  const e = new Error("展示模式 · 只读：该操作在公开展示中不开放，请进入在线试玩。");
+  e.readonly = true;
+  return e;
+}
+async function installDisplayMode() {
+  const mod = await import("/display/display-api.js");
+  if (typeof mod.createDisplayApi !== "function") throw new Error("展示适配器缺少 createDisplayApi");
+  const dapi = await mod.createDisplayApi({ baseUrl: DISPLAY_CFG.baseUrl });
+  for (const m of DISPLAY_READS) {
+    if (typeof dapi[m] === "function") api[m] = (...args) => dapi[m](...args);
+  }
+  for (const m of Object.keys(api)) {
+    if (DISPLAY_READS.includes(m)) continue;
+    api[m] = async () => {
+      notify("mid", "展示模式 · 只读", "该操作在公开展示中不开放；进入在线试玩后可编辑。");
+      throw displayReadonlyError();
+    };
+  }
+  displayMode = true;
+}
+// 新增 DOM：头部「展示课题 · 只读」标识；并隐藏冷色切换入口（仅隐藏，不改既有结构）。
+function markDisplayUi() {
+  document.documentElement.dataset.displayMode = "on";
+  const slot = document.getElementById("curtopic");
+  if (slot && !document.getElementById("display-badge")) {
+    const badge = document.createElement("span");
+    badge.id = "display-badge";
+    badge.className = "display-badge";
+    badge.setAttribute("role", "note");
+    badge.textContent = DISPLAY_CFG.label || "展示课题 · 只读";
+    badge.style.cssText = "align-self:center;margin:0 10px;padding:2px 10px;border:1px solid currentColor;border-radius:999px;font-size:12px;letter-spacing:.04em;opacity:.72;white-space:nowrap;";
+    slot.insertAdjacentElement("afterend", badge);
+  }
+  for (const sel of ["#theme-seal", "#replay-theme"]) {
+    const el = document.querySelector(sel);
+    if (el) el.hidden = true;
+  }
+}
+async function init() {
+  if (DISPLAY_CFG && !displayMode) {
+    setStatus("读取展示课题…");
+    try { await installDisplayMode(); markDisplayUi(); }
+    catch (e) { bootFailure(e); return; }
+  }
+  applyTheme(DISPLAY_CFG ? "paper" : currentTheme(), { persist: false });
+  refreshAiState().catch(() => {
+    $("#ai-chip-text").textContent = "AI 状态未知";
+    $("#ai-chip").dataset.state = "off";
+  });
+  bootstrap();
+}
 async function bootstrap() {
   setStatus("读取卷宗…");
   try { await refresh(); clearError("mid"); clearBootState(); setStatus("就绪"); }
@@ -615,6 +676,10 @@ async function refresh() {
   if (ui.topicId && !state.topics.some((t) => t.id === ui.topicId)) ui.topicId = "";
   // A1：有课题即自动落到第一个（单课题自动选中；多课题默认首项，可页头切换）；无课题由中间区引导创建。
   if (!ui.topicId && state.topics.length >= 1) ui.topicId = state.topics[0].id;
+  // 展示模式：固定选中预存课题（忽略 localStorage 覆盖）。
+  if (DISPLAY_CFG) {
+    ui.topicId = state.topics.some((t) => t.id === DISPLAY_CFG.topicId) ? DISPLAY_CFG.topicId : (state.topics[0]?.id ?? "");
+  }
   if (ui.protocolId && !state.protocols.some((p) => p.id === ui.protocolId)) ui.protocolId = null;
   if (ui.executionId && !state.executions.some((e) => e.id === ui.executionId)) ui.executionId = null;
   if (ui.paperId && !state.papers.some((p) => p.id === ui.paperId)) { ui.paperId = null; ui.attId = null; }
@@ -2649,12 +2714,7 @@ $("#replay-splash").addEventListener("click", () => window.__locusSplash?.play()
 document.addEventListener("click", (ev) => {
   if (ev.target.id !== "boot-retry") return;
   ev.target.disabled = true;
-  bootstrap();
+  init();
 });
 
-applyTheme(currentTheme(), { persist: false });
-refreshAiState().catch(() => {
-  $("#ai-chip-text").textContent = "AI 状态未知";
-  $("#ai-chip").dataset.state = "off";
-});
-bootstrap();
+init();
