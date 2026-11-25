@@ -1,0 +1,53 @@
+目标文件：sciworkbench/public/app.js（集成负责人所有）
+对应：第一组 2.4（列表→详情→返回、浏览历史、刷新恢复）；第三组 1（各页入口与返回）
+现状：`navScrollPositions`（行 917-926）已保存每卷目滚动位置；但「打开详情」不入浏览历史，
+浏览器后退不生效；刷新后详情失效只靠 refresh 兜底，不回到列表。
+
+--- a/sciworkbench/public/app.js
++++ b/sciworkbench/public/app.js
+@@ 新增：路由（哈希）——列表页与详情页，同一套对象校验
++// 卷目 → 详情 id 的 ui 字段名（与 material-list 的 data-* 对应）
++const DETAIL_ID_FIELD = { papers: "paperId", protocol: "protocolId", record: "executionId", analysis: "taskId", chat: "chatId", library: "assetId" };
++function currentDetailId() { const f = DETAIL_ID_FIELD[ui.nav]; return f ? ui[f] : null; }
++function routeHash() { return `#/${ui.nav}${currentDetailId() ? "/" + encodeURIComponent(currentDetailId()) : ""}`; }
++function pushDetailRoute() { if (location.hash !== routeHash()) history.pushState({ nav: ui.nav, id: currentDetailId() }, "", routeHash()); }
++function applyRoute() {
++  const m = location.hash.match(/^#\/([\w-]+)(?:\/(.+))?$/);
++  const nav = m && ["topic","papers","knowledge","protocol","record","analysis","chat","library"].includes(m[1]) ? m[1] : "topic";
++  const id = m ? decodeURIComponent(m[2] || "") : "";
++  if (nav !== ui.nav) guardLeave() && activateNav(nav);   // activateNav 已处理草稿与动画
++  const f = DETAIL_ID_FIELD[nav];
++  if (f && id) ui[f] = id;
++  renderAll();
++}
++window.addEventListener("popstate", applyRoute);
+
+@@ 打开详情时入历史（material-list 各分支，行 2261-2288）
+   if (el.dataset.paperid) {
+-    if (el.dataset.paperid === ui.paperId) return;
+-    if (!guardLeave()) return;
+-    ui.paperId = el.dataset.paperid; ui.attId = null; ui.assetId = null; ui.highlight = null; ui.groupSel.clear(); ui.batch = null; ui.ack = false; renderAll(); return;
++    if (el.dataset.paperid === ui.paperId) return;
++    if (!guardLeave()) return;
++    saveNavScroll();                                    // 列表滚动/选中已存
++    ui.paperId = el.dataset.paperid; ui.attId = null; ui.assetId = null; ui.highlight = null; ui.groupSel.clear(); ui.batch = null; ui.ack = false; renderAll(); pushDetailRoute(); return;
+   }
+@@ 详情的「返回列表」（第三组 1）
+@@ 在各详情渲染处提供返回按钮；返回动作统一：
++function backToList() { if (window.history.length > 1 && location.hash.startsWith("#/")) { history.back(); } else { const f = DETAIL_ID_FIELD[ui.nav]; if (f) ui[f] = null; renderAll(); } }
++// 列表详情页 header 增加：<button class="detail-back" data-back>← 返回列表</button>
++document.addEventListener("click", (ev) => { if (ev.target.closest?.("[data-back]")) { ev.preventDefault(); backToList(); } });
+
+@@ 刷新恢复（refresh 行 795 之后）
+   renderAll();
++  // 已失效的详情回落到该模块列表
++  const f = DETAIL_ID_FIELD[ui.nav];
++  if (f && ui[f] && !detailExists(ui.nav, ui[f])) { ui[f] = null; }
+   clearBootState();
+
+说明：
+- `detailExists(nav,id)`：按 nav 在对应集合里查在否（papers→state.papers 等）。
+- 页内返回与浏览器后退复用同一 `applyRoute`/`backToList`，并共用 `guardLeave`（离开保护）。
+- 过滤/选中/滚动：滚动用既有 `navScrollPositions`；过滤与选中项随 nav 存于 `ui`（如 `ui.cardFilter`、
+  `ui.groupSel`），返回时按 nav 恢复即可（本提案不改这两者的存放位置，只保证切换时不清）。
+- 各页「只显示能识别对象和判断状态的信息」已由 views.js `sidebarListHtml` 满足（对象名 + 状态徽标）。

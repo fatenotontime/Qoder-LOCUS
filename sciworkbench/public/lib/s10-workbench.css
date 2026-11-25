@@ -1,0 +1,74 @@
+/* S10 工作台交互（B 角色 · sciworkbench/public/lib/**）
+   1) 迹芽暖色素材舞台（组装说明.md）：五图层读卷循环 + 一次性抬头/盖印脉冲
+   2) 窄屏补充：宽表横向滚动、长标题/错误不裁切
+   与既有 knowledge-stage.css 叠用，需在其后加载（见 docs/patch-proposals 的 index.html 提案）。 */
+
+/* ── 主迹芽素材 ─────────────────────────────────────────── */
+.kz-sprout-art {
+  position: relative;
+  display: inline-block;
+  flex: none;
+  width: 48px;
+  height: 48px;
+  color: var(--accent-2);
+}
+.kz-sprout-art .spr-base,
+.kz-sprout-art .spr-layers,
+.kz-sprout-art .spr-layer,
+.kz-sprout-art .spr-static,
+.kz-sprout-art .spr-pulse {
+  position: absolute;
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: contain;
+  pointer-events: none;
+  user-select: none;
+}
+.kz-sprout-art .spr-base,
+.kz-sprout-art .spr-layers,
+.kz-sprout-art .spr-static,
+.kz-sprout-art .spr-pulse { inset: 0; width: 100%; height: 100%; }
+.kz-sprout-art .spr-layer { inset: auto; background-size: 100% 100%; }
+
+/* 读卷姿势：默认显示五图层循环，静态图备用 */
+.kz-sprout-art[data-pose="reading"] .spr-static { display: none; }
+
+.kz-sprout-art[data-pose="reading"] .spr-layers { animation: spr-tilt 3s ease-in-out infinite; transform-origin: 50% 82%; }
+.kz-sprout-art[data-pose="reading"] .spr-sprout { animation: spr-sprout 3s ease-in-out infinite; transform-origin: 61% 93%; }
+.kz-sprout-art[data-pose="reading"] .spr-scroll { animation: spr-scroll 3s ease-in-out infinite; }
+.kz-sprout-art[data-pose="reading"] .spr-eyes { animation: spr-blink 3s steps(1, end) infinite; transform-origin: 50% 60%; }
+
+/* 一次性脉冲：抬头（新卡待审）/ 盖印（人工归入），隐藏基准图 */
+.kz-sprout-art .spr-pulse { display: none; }
+.kz-sprout-art[data-pulse="review"] .spr-base,
+.kz-sprout-art[data-pulse="stamped"] .spr-base { display: none; }
+.kz-sprout-art[data-pulse="review"] .spr-pulse-review { display: block; animation: spr-review .65s ease-out; }
+.kz-sprout-art[data-pulse="stamped"] .spr-pulse-stamped { display: block; animation: spr-stamp .6s ease-out; }
+
+@keyframes spr-tilt { 0%, 100% { transform: rotate(0deg); } 50% { transform: rotate(-2deg); } }
+@keyframes spr-sprout { 0%, 100% { transform: rotate(0deg); } 50% { transform: rotate(3deg); } }
+@keyframes spr-scroll { 0%, 100% { transform: translateX(0); } 50% { transform: translateX(-3%); } }
+@keyframes spr-blink { 0%, 92%, 100% { transform: scaleY(1); } 95%, 97% { transform: scaleY(.12); } }
+@keyframes spr-review { 0% { transform: translateY(6%); opacity: .35; } 60% { transform: translateY(0); opacity: 1; } 100% { opacity: 1; } }
+@keyframes spr-stamp { 0% { transform: translateY(-8%) scale(1.04); } 100% { transform: translateY(0) scale(1); } }
+
+/* 减少动态效果：读卷改静态图，脉冲不放动画 */
+@media (prefers-reduced-motion: reduce) {
+  .kz-sprout-art[data-pose="reading"] .spr-layers { display: none; }
+  .kz-sprout-art[data-pose="reading"] .spr-static { display: block; }
+  .kz-sprout-art .spr-layers,
+  .kz-sprout-art .spr-layer,
+  .kz-sprout-art .spr-pulse { animation: none !important; }
+}
+
+/* 窄栏：48 → 40，容器固定尺寸，不推挤文字 */
+@media (max-width: 520px) {
+  .kzstage-sprout { width: 40px; height: 40px; }
+}
+
+/* ── 窄屏补充（只补既有断点未覆盖的点，不重排外壳）── */
+.kzstage { min-width: 0; }
+.tablewrap { max-width: 100%; overflow-x: auto; }
+.panelerr .msg { overflow-wrap: anywhere; }
+.material .m-title,
+.kzstage-heading b { overflow-wrap: anywhere; }

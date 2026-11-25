@@ -1,0 +1,7 @@
+--- a/sciworkbench/public/index.html
++++ b/sciworkbench/public/index.html
+@@ index.html: 在 knowledge-stage.css 之后引入 S10 迹芽/窄屏样式
+   <link rel="stylesheet" href="/styles.css" />
+   <link rel="stylesheet" href="/knowledge-stage.css" />
++  <link rel="stylesheet" href="/lib/s10-workbench.css" />
+   <link rel="stylesheet" href="/splash.css" />

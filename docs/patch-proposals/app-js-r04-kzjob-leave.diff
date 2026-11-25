@@ -1,0 +1,30 @@
+目标文件：sciworkbench/public/app.js（集成负责人所有）
+对应：第一组 4.2 / 4.3
+现象/根因：`renderShell` 每次渲染都把 `ui.kzJob` 置空（行 965-966）：
+    const kz = ui.nav === "knowledge";
+    if (!kz) ui.kzJob = null;
+离开知识页 → 任务态丢失；返回或刷新后无法看到「可继续/可重试」。
+lib 侧已提供按持久 run 找回（`lib/pages/knowledge.js` 的 `recoverJobFromRuns`，
+在知识页中栏渲染时执行），并已用 `kzJobMatches` 做归属过滤；因此 app.js 不应再全局清空 kzJob。
+
+--- a/sciworkbench/public/app.js
++++ b/sciworkbench/public/app.js
+@@ 行 965-966
+   const kz = ui.nav === "knowledge";
+-  if (!kz) ui.kzJob = null;
++  // 不清 kzJob：任务按课题/文献归属在 lib（kzJobMatches）中过滤，离开/返回由 run 记录找回。
++  // 仅当切到别的课题时清（见 switchTopic 提案）。
+
+@@ 离开知识页前的草稿保护（activateNav 行 927 与 .goto 行 2002）
+   async function activateNav(kind) {
+-  if (kind === ui.nav || !guardLeave()) return;
++  if (kind === ui.nav || !guardLeave()) return;
++  if (ui.nav === "knowledge" && kind !== "knowledge" && !kzLeaveGuard()) return;  // 未提交审阅内容（依据/值/备注）离开前确认
+
+@@ lib 导出 kzLeaveGuard（knowledge.js 已可加，或复用现有 kzDropDraft）
+说明：
+- 现有 `kzDropDraft()` 只在知识页内部面板/文献切换时调用；本提案把「离开知识页（切卷目）」
+  也纳入同一确认，避免静默丢弃正在核对的依据/值/主题名。
+- 卡片备注 `kz-note` 走 focusout 即存（`api.reviewCard(cardId,{note})`），无需额外保护；
+  本提案只补「未提交的核对内容」这一档。
+- 任务控制按钮（暂停/继续/取消/重试）保留在 lib，无需 app.js 改动。
