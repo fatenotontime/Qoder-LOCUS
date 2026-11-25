@@ -4,8 +4,8 @@
       "channel": "UI",
       "papers": 1,
       "attachments": 1,
-      "paperId": "paper_447fc12b-6a61-4111-b369-bab3cd854f54",
-      "assetId": "ast_5ce52fcd-f57b-4730-8fa0-38d387f18812",
+      "paperId": "paper_13cc61a8-477e-45b8-9d60-452a1e661726",
+      "assetId": "ast_1dcc2877-dd31-4861-8c88-24b3ef2f990a",
       "pass": true
     },
     "s2": {
@@ -18,7 +18,7 @@
         "status": 409,
         "body": {
           "error": "已导入相同内容（文件 hash 相同），已拒收。已有原件：darwin-flotation.csv",
-          "existingAssetId": "ast_b3a97119-c684-476b-ab72-c16959e18647",
+          "existingAssetId": "ast_662f375d-9671-4fbc-a94d-7f5fcd113954",
           "existingName": "darwin-flotation.csv"
         }
       },
@@ -29,52 +29,52 @@
     "s3": {
       "channel": "API（方案表单存在，来源片段绑定走 API）",
       "status": 200,
-      "protocolId": "proto_54826cfe-6a1b-42ca-bfe0-380c431f418b",
+      "protocolId": "proto_c2ee93da-379a-4a5a-8f53-e0a8e2e17054",
       "sourceKind": "reconstructed",
-      "sourceAssetId": "ast_5ce52fcd-f57b-4730-8fa0-38d387f18812",
+      "sourceAssetId": "ast_1dcc2877-dd31-4861-8c88-24b3ef2f990a",
       "steps": 3,
       "pass": true
     },
     "s4": {
       "channel": "API",
-      "executionId": "exec_bdabdf18-620f-4457-89a6-926560fc81a4",
+      "executionId": "exec_8b670fe8-5b0e-4c85-ad47-c9b96f912327",
       "events": 2,
       "eventKinds": [
         "start",
         "step"
       ],
       "sampleStates": 2,
-      "measurementId": "meas_42d76677-6629-4091-8139-9f9a9acb3ec1",
+      "measurementId": "meas_e64f53db-98ee-462a-9635-9a9031ecabd4",
       "pass": true
     },
     "s5": {
       "channel": "API",
-      "cardId": "card_0b81498b-3dc7-48b3-89de-5a82c0d5ae1d",
+      "cardId": "card_dc254d6e-72a1-4330-af0b-6a6c53b01864",
       "cardAudit": "confirm",
       "reviewStatus": 200,
       "adoptStatus": 200,
       "adoptBody": {
         "ok": true,
-        "adoptionId": "adp_5b10f8e8-5b49-440e-9f83-e6578776c2e5"
+        "adoptionId": "adp_9302a4e9-7492-422a-a11f-104df0610d38"
       },
       "chatStatus": 200,
       "chatBody": {
         "ok": true,
-        "chatId": "chat_f8a728ed-4fa4-4e27-8268-62e25e17daf3"
+        "chatId": "chat_0b7eb104-c39c-4cc8-a476-25155b259c49"
       },
       "adoptionDecision": "adopt",
-      "adoptionId": "adp_5b10f8e8-5b49-440e-9f83-e6578776c2e5",
-      "chatId": "chat_f8a728ed-4fa4-4e27-8268-62e25e17daf3",
+      "adoptionId": "adp_9302a4e9-7492-422a-a11f-104df0610d38",
+      "chatId": "chat_0b7eb104-c39c-4cc8-a476-25155b259c49",
       "chatScope": 1,
       "pass": true
     }
   },
   "topic": {
-    "topicId": "topic_207c6d7a-3e70-4a58-b550-48f84416bade",
-    "subquestionId": "subq_7c44726d-720c-43ee-a627-488031188ff6"
+    "topicId": "topic_4ee7f02c-657e-4742-b51d-ee8b91712ac1",
+    "subquestionId": "subq_ea993a63-0658-4413-9ba9-35a27b28980e"
   },
-  "_assetId": "ast_5ce52fcd-f57b-4730-8fa0-38d387f18812",
-  "_paperId": "paper_447fc12b-6a61-4111-b369-bab3cd854f54",
+  "_assetId": "ast_1dcc2877-dd31-4861-8c88-24b3ef2f990a",
+  "_paperId": "paper_13cc61a8-477e-45b8-9d60-452a1e661726",
   "uiVerify": {
     "papers": {
       "list": [

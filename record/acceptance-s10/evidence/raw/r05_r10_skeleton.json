@@ -4,7 +4,7 @@
     "TRIAL": "http://127.0.0.1:5581",
     "NODE": "http://127.0.0.1:5284",
     "candidate": {
-      "topics": 5
+      "topics": 2
     }
   },
   "r05": {
@@ -94,7 +94,7 @@
     },
     "word": {
       "found": true,
-      "file": "F:/qoder-dev-tmp/s10-e3-1345ab2/r06-report.docx",
+      "file": "F:/qoder-dev-tmp/s10-e3-be8b3c4/r06-report.docx",
       "bytes": 1863,
       "ext": "docx",
       "sha256": "baed200b94486eca",
@@ -102,7 +102,7 @@
     },
     "trace": {
       "found": true,
-      "file": "F:/qoder-dev-tmp/s10-e3-1345ab2/r06-traceability.zip",
+      "file": "F:/qoder-dev-tmp/s10-e3-be8b3c4/r06-traceability.zip",
       "bytes": 6378,
       "ext": "zip",
       "sha256": "6b3c90792befa05b",
@@ -110,7 +110,7 @@
     },
     "sampleZip": {
       "found": true,
-      "file": "F:/qoder-dev-tmp/s10-e3-1345ab2/r06-sample.zip",
+      "file": "F:/qoder-dev-tmp/s10-e3-be8b3c4/r06-sample.zip",
       "bytes": 33855,
       "ext": "zip",
       "sha256": "5362d30267b23a98",
@@ -126,7 +126,7 @@
     },
     "sampleZipWhileFail": {
       "found": true,
-      "file": "F:/qoder-dev-tmp/s10-e3-1345ab2/r07-sample.zip",
+      "file": "F:/qoder-dev-tmp/s10-e3-be8b3c4/r07-sample.zip",
       "bytes": 33855,
       "ext": "zip",
       "sha256": "5362d30267b23a98",
@@ -152,9 +152,9 @@
       ],
       "focusAfterEsc": "settings-open",
       "narrow": {
-        "docW": 511,
+        "docW": 390,
         "winW": 390,
-        "overflow": true
+        "overflow": false
       }
     },
     "trial": {
@@ -198,7 +198,7 @@
   "r09": {
     "topicCreate": {
       "status": 200,
-      "topicId": "topic_93966f10-7f4a-4d09-ba0d-0b59d83b8146"
+      "topicId": "topic_9ae0dc64-d97e-4438-bfb6-05a9f0cb395e"
     },
     "status": "部分：可写课题创建可用；P8 五步完整走查待 P8 脚本（sciworkbench/scripts/acceptance-darwin.ts 预导入）+ 浏览器复跑"
   },

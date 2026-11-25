@@ -5,7 +5,7 @@
     "NODE": "http://127.0.0.1:5286"
   },
   "seedTopic": {
-    "id": "topic_0fc50884-e2ed-4628-836b-9c379637ee15",
+    "id": "topic_0b30fe67-7523-4eeb-9929-947a9faf3b15",
     "name": "种子经海水漂流后的萌发（达尔文 1859）"
   },
   "preset": {
@@ -1071,7 +1071,7 @@
       }
     },
     "clickPath": {
-      "hash": "#/record/exec_3e312dc6-014e-4384-a889-6c3a32734f12",
+      "hash": "#/record/exec_120f6afd-b2a2-4c15-adfe-d5adca56c1db",
       "mid": "实验图",
       "back": true
     },
@@ -1092,7 +1092,7 @@
       "external": 0
     },
     "errors": [],
-    "topicSel": "topic_0fc50884-e2ed-4628-836b-9c379637ee15"
+    "topicSel": "topic_0b30fe67-7523-4eeb-9929-947a9faf3b15"
   },
   "perView": {
     "papers": {

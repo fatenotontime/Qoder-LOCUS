@@ -34,23 +34,26 @@
     "statusAfter": "方法推荐完成（含验收项）",
     "stubRequest": {
       "task": "analysis_recommend",
-      "userLen": 1920,
-      "userHead": "研究目的：估计海水漂流时长对萌发率的影响并比较干燥组与新鲜组\n上下文摘要：课题「种子经海水漂流后的萌发（达尔文 1859）」· 6 个碎片（核心 2 ＋ 候选 3 ＋ 子问题）\n\n上下文碎片（冻结，hash eb8386facde2cdac18fc500c38dbd258ce4b567f190d359491f60f10d47e0efe）：\n【碎片 1 · 子问题 · 干燥与新鲜的漂浮时长差异如何？ · declared · subquestion:subq_744874b8-3948-4514-bfd6-87a8a16dd8ae】\n干燥与新鲜的漂浮时长差异如何？\n\n【碎片 2 · 数据表 · "
+      "userLen": 1772,
+      "userHead": "研究目的：估计海水漂流时长对萌发率的影响并比较干燥组与新鲜组\n上下文摘要：课题「种子经海水漂流后的萌发（达尔文 1859）」· 5 个碎片（核心 2 ＋ 候选 2 ＋ 子问题）\n\n上下文碎片（冻结，hash e2f31912b9e09383442dbc2adc3b8cbdc7d59832a14f4adefdf000e26dea4ad0）：\n【碎片 1 · 子问题 · 干燥与新鲜的漂浮时长差异如何？ · declared · subquestion:subq_744874b8-3948-4514-bfd6-87a8a16dd8ae】\n干燥与新鲜的漂浮时长差异如何？\n\n【碎片 2 · 数据表 · "
     },
     "snapshot": {
-      "snapshotCandidateCount": 3,
+      "snapshotCandidateCount": 2,
       "uiChecked": 2,
-      "consistent": false
+      "consistent": true
     },
     "recommendBody": {
       "keys": [
         "purpose",
+        "workspace",
+        "topicId",
         "subquestionId",
+        "core",
         "optional",
         "versions"
       ],
-      "workspace": null,
-      "topicId": null,
+      "workspace": true,
+      "topicId": "topic_f6bff443-3f74-4677-810d-0c15c7d06bf0",
       "subquestionId": "subq_744874b8-3948-4514-bfd6-87a8a16dd8ae",
       "hasOptional": true,
       "optionalCount": 3,
@@ -71,9 +74,9 @@
         "status": 200,
         "json": {
           "ok": true,
-          "taskId": "atask_342ab54d-2641-4dcb-981d-96bd91268e9c"
+          "taskId": "atask_2f5a343b-9bab-451f-b828-82e1f59f5dd1"
         },
-        "text": "{\"ok\":true,\"taskId\":\"atask_342ab54d-2641-4dcb-981d-96bd91268e9c\"}"
+        "text": "{\"ok\":true,\"taskId\":\"atask_2f5a343b-9bab-451f-b828-82e1f59f5dd1\"}"
       }
     },
     "staleProbe": {
@@ -101,15 +104,15 @@
     "topics": {
       "A": "topic_f6bff443-3f74-4677-810d-0c15c7d06bf0",
       "AName": "种子经海水漂流后的萌发（达尔文 1859）",
-      "B": "topic_d44f46fe-c9dc-4e1a-bd9c-fce0c4761e5a",
+      "B": "topic_5ca0f2e8-0c55-482e-9a50-480ce9adca89",
       "mkBStatus": 200
     },
     "startExtract": {
       "status": 202,
       "body": {
         "ok": true,
-        "jobId": "job_3b37c5b8-0858-4333-b5a8-133bd95ef46b",
-        "runId": "kr_54828f15-9d2d-4f1d-9b2b-9cfb598eb828",
+        "jobId": "job_3712a981-9cdc-497c-ba69-e4dd06910cf3",
+        "runId": "kr_77e7ab19-1e33-41b4-ae9c-3c5d85aa0627",
         "total": 2,
         "inputHash": "0b2472dbe0f88a01d78d1e98f7324ec45f20a5ec2db5e194d6aff5517330c180",
         "runStatus": "running",
@@ -118,14 +121,14 @@
       }
     },
     "onB_initial": {
-      "selectedTopic": "topic_d44f46fe-c9dc-4e1a-bd9c-fce0c4761e5a",
+      "selectedTopic": "topic_5ca0f2e8-0c55-482e-9a50-480ce9adca89",
       "paperOptionsInLeft": [],
       "kzPaper": "（本课题暂无文献）",
       "midText": " 积累流水线待机 原文献 0 份 AI 加工 待机 待人审 0 卡 / 0 项 已归入 0 项 待机：发起语义提取后，流水线按真实回执生长。 分项主题 文献：（本课题暂无文献） 待审 0已入候选 0已跳过 0已排除 0 此分区暂无卡片。 一键全部跳过为时间紧准备，不推荐",
       "hasQueue": true
     },
     "onB_afterReceipt": {
-      "selectedTopic": "topic_d44f46fe-c9dc-4e1a-bd9c-fce0c4761e5a",
+      "selectedTopic": "topic_5ca0f2e8-0c55-482e-9a50-480ce9adca89",
       "leaksA": false,
       "queueText": " AI 待审队列 新增 0 队列为空。 知识项待审 0 没有待审知识项。 ",
       "status": "就绪"
@@ -139,7 +142,7 @@
       "cardOrQueue": true
     },
     "finalRun": {
-      "id": "kr_54828f15-9d2d-4f1d-9b2b-9cfb598eb828",
+      "id": "kr_77e7ab19-1e33-41b4-ae9c-3c5d85aa0627",
       "status": "completed",
       "chunks": 2
     }
@@ -198,7 +201,7 @@
       "method": "GET"
     },
     {
-      "url": "http://me.kis.v2.scr.kaspersky-labs.com/FD126C42-EBFA-4E12-B309-BB3FDD723AC1/main.js?attr=wsWOHwcvtdrjqQeu9vuaOZfLDzdW2icflADqxPoCCo12qdIkwLVj6AJDkujUneHJ",
+      "url": "http://me.kis.v2.scr.kaspersky-labs.com/FD126C42-EBFA-4E12-B309-BB3FDD723AC1/main.js?attr=mrmfmFpuwQfj9ew26Luk6j-UUAEjlc3-1sJY-FIFnqYOtwKvmJ-XsnIEKBcWO_kt",
       "method": "GET"
     },
     {
@@ -238,11 +241,11 @@
       "method": "GET"
     },
     {
-      "url": "http://me.kis.v2.scr.kaspersky-labs.com/7D8B79A2-8974-4D7B-A76A-F4F29624C06BOljF_-vMdeXCIUCAzMTNjN6zwF3PR4Uruw2cYuVCFPRkdcgpT3MPgGIfEpRQk4xY4Bf5-rBYxYAKDUEsJFh1IQ/init?data=eyJ1cmwiOiJodHRwOi8vMTI3LjAuMC4xOjU1ODEvIiwicGx1Z2lucyI6IndudCZ3c20mdnMmdWEmY2ImeGhyX2NvbnRlbnQiLCJkYXRhIjp7ImRhdGEiOlt7InBsdWdpbiI6IndudCIsInBhcmFtZXRlcnMiOiJ7XCJyZWZlcnJlclwiOlwiXCJ9In0seyJwbHVnaW4iOiJ3c20iLCJwYXJhbWV0ZXJzIjoie1wicmVmZXJyZXJcIjpcIlwiLFwic3R1YklkXCI6XCJcIn0ifSx7InBsdWdpbiI6InVhIiwicGFyYW1ldGVycyI6Int9In0seyJwbHVnaW4iOiJ4aHJfY29udGVudCIsInBhcmFtZXRlcnMiOiJ7XCJyZWZlcnJlclwiOlwiXCJ9In1dfSwiaXNUb3BMZXZlbCI6dHJ1ZSwicGFnZVN0YXJ0VGltZSI6MCwibmF2aWdhdGlvblN0YXJ0VGltZSI6MTc5NTYxNjYzMjA3NH0%3D&nocache=10729&tm=2026-11-25T14%3A23%3A52.116Z",
+      "url": "http://me.kis.v2.scr.kaspersky-labs.com/7D8B79A2-8974-4D7B-A76A-F4F29624C06BKMZKs_CC9j6FoUr0xm5NZQcwjU8EIaa9mHBAQ77WcwqUcxwjndzJ_j3jIHgx5PHtlFo97U_uJoaXampXCAiWGg/init?data=eyJ1cmwiOiJodHRwOi8vMTI3LjAuMC4xOjU1ODEvIiwicGx1Z2lucyI6IndudCZ3c20mdnMmdWEmY2ImeGhyX2NvbnRlbnQiLCJkYXRhIjp7ImRhdGEiOlt7InBsdWdpbiI6IndudCIsInBhcmFtZXRlcnMiOiJ7XCJyZWZlcnJlclwiOlwiXCJ9In0seyJwbHVnaW4iOiJ3c20iLCJwYXJhbWV0ZXJzIjoie1wicmVmZXJyZXJcIjpcIlwiLFwic3R1YklkXCI6XCJcIn0ifSx7InBsdWdpbiI6InVhIiwicGFyYW1ldGVycyI6Int9In0seyJwbHVnaW4iOiJ4aHJfY29udGVudCIsInBhcmFtZXRlcnMiOiJ7XCJyZWZlcnJlclwiOlwiXCJ9In1dfSwiaXNUb3BMZXZlbCI6dHJ1ZSwicGFnZVN0YXJ0VGltZSI6MCwibmF2aWdhdGlvblN0YXJ0VGltZSI6MTc5NTYyMTIwNDAyOX0%3D&nocache=1f6f6&tm=2026-11-25T15%3A40%3A04.354Z",
       "method": "GET"
     },
     {
-      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/872C4566-5B17-4571-8C2E-7392ECF08971/to/wsm.sessionActivated?tm=2026-11-25T14%3A23%3A52.131Z",
+      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/2FEAF23D-FC21-4113-BE39-48E4109AA86F/to/wsm.sessionActivated?tm=2026-11-25T15%3A40%3A04.366Z",
       "method": "POST"
     },
     {
@@ -334,47 +337,47 @@
       "method": "GET"
     },
     {
-      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/872C4566-5B17-4571-8C2E-7392ECF08971/from?get&nocache=1d39e&tm=2026-11-25T14%3A23%3A54.132Z",
+      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/2FEAF23D-FC21-4113-BE39-48E4109AA86F/from?get&nocache=14667&tm=2026-11-25T15%3A40%3A06.366Z",
       "method": "GET"
     },
     {
-      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/872C4566-5B17-4571-8C2E-7392ECF08971/from?get&nocache=17ad8&tm=2026-11-25T14%3A23%3A54.636Z",
+      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/2FEAF23D-FC21-4113-BE39-48E4109AA86F/from?get&nocache=1c12b&tm=2026-11-25T15%3A40%3A06.868Z",
       "method": "GET"
     },
     {
-      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/872C4566-5B17-4571-8C2E-7392ECF08971/from?get&nocache=1248e&tm=2026-11-25T14%3A23%3A55.137Z",
+      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/2FEAF23D-FC21-4113-BE39-48E4109AA86F/from?get&nocache=10141&tm=2026-11-25T15%3A40%3A07.371Z",
       "method": "GET"
     },
     {
-      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/872C4566-5B17-4571-8C2E-7392ECF08971/from?get&nocache=107c7&tm=2026-11-25T14%3A23%3A55.641Z",
+      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/2FEAF23D-FC21-4113-BE39-48E4109AA86F/from?get&nocache=14c92&tm=2026-11-25T15%3A40%3A07.872Z",
       "method": "GET"
     },
     {
-      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/872C4566-5B17-4571-8C2E-7392ECF08971/from?get&nocache=1b90b&tm=2026-11-25T14%3A23%3A56.145Z",
+      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/2FEAF23D-FC21-4113-BE39-48E4109AA86F/from?get&nocache=1969f&tm=2026-11-25T15%3A40%3A08.373Z",
       "method": "GET"
     },
     {
-      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/872C4566-5B17-4571-8C2E-7392ECF08971/from?get&nocache=1ff46&tm=2026-11-25T14%3A23%3A56.696Z",
+      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/2FEAF23D-FC21-4113-BE39-48E4109AA86F/from?get&nocache=1f779&tm=2026-11-25T15%3A40%3A09.029Z",
       "method": "GET"
     },
     {
-      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/872C4566-5B17-4571-8C2E-7392ECF08971/from?get&nocache=12904&tm=2026-11-25T14%3A23%3A57.200Z",
+      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/2FEAF23D-FC21-4113-BE39-48E4109AA86F/from?get&nocache=1ad4d&tm=2026-11-25T15%3A40%3A09.530Z",
       "method": "GET"
     },
     {
-      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/872C4566-5B17-4571-8C2E-7392ECF08971/from?get&nocache=18c33&tm=2026-11-25T14%3A23%3A57.703Z",
+      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/2FEAF23D-FC21-4113-BE39-48E4109AA86F/from?get&nocache=1d473&tm=2026-11-25T15%3A40%3A10.041Z",
       "method": "GET"
     },
     {
-      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/872C4566-5B17-4571-8C2E-7392ECF08971/from?get&nocache=14a29&tm=2026-11-25T14%3A23%3A58.206Z",
+      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/2FEAF23D-FC21-4113-BE39-48E4109AA86F/from?get&nocache=191b9&tm=2026-11-25T15%3A40%3A10.541Z",
       "method": "GET"
     },
     {
-      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/872C4566-5B17-4571-8C2E-7392ECF08971/from?get&nocache=17fd1&tm=2026-11-25T14%3A23%3A58.706Z",
+      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/2FEAF23D-FC21-4113-BE39-48E4109AA86F/from?get&nocache=14497&tm=2026-11-25T15%3A40%3A11.044Z",
       "method": "GET"
     },
     {
-      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/872C4566-5B17-4571-8C2E-7392ECF08971/from?get&nocache=17d69&tm=2026-11-25T14%3A23%3A59.216Z",
+      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/2FEAF23D-FC21-4113-BE39-48E4109AA86F/from?get&nocache=19407&tm=2026-11-25T15%3A40%3A11.546Z",
       "method": "GET"
     },
     {
@@ -382,71 +385,71 @@
       "method": "GET"
     },
     {
-      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/872C4566-5B17-4571-8C2E-7392ECF08971/from?get&nocache=16100&tm=2026-11-25T14%3A23%3A59.728Z",
+      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/2FEAF23D-FC21-4113-BE39-48E4109AA86F/from?get&nocache=120b9&tm=2026-11-25T15%3A40%3A12.056Z",
       "method": "GET"
     },
     {
-      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/872C4566-5B17-4571-8C2E-7392ECF08971/from?get&nocache=19a01&tm=2026-11-25T14%3A24%3A00.242Z",
+      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/2FEAF23D-FC21-4113-BE39-48E4109AA86F/from?get&nocache=123cf&tm=2026-11-25T15%3A40%3A12.568Z",
       "method": "GET"
     },
     {
-      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/872C4566-5B17-4571-8C2E-7392ECF08971/from?get&nocache=111de&tm=2026-11-25T14%3A24%3A00.743Z",
+      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/2FEAF23D-FC21-4113-BE39-48E4109AA86F/from?get&nocache=1153d&tm=2026-11-25T15%3A40%3A13.078Z",
       "method": "GET"
     },
     {
-      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/872C4566-5B17-4571-8C2E-7392ECF08971/from?get&nocache=1bf40&tm=2026-11-25T14%3A24%3A01.251Z",
+      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/2FEAF23D-FC21-4113-BE39-48E4109AA86F/from?get&nocache=18175&tm=2026-11-25T15%3A40%3A13.592Z",
       "method": "GET"
     },
     {
-      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/872C4566-5B17-4571-8C2E-7392ECF08971/from?get&nocache=12e3f&tm=2026-11-25T14%3A24%3A01.759Z",
-      "method": "GET"
-    },
-    {
-      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/872C4566-5B17-4571-8C2E-7392ECF08971/to/dp.onGetFields?tm=2026-11-25T14%3A24%3A01.805Z",
+      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/2FEAF23D-FC21-4113-BE39-48E4109AA86F/to/dp.onGetFields?tm=2026-11-25T15%3A40%3A14.109Z",
       "method": "POST"
+    },
+    {
+      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/2FEAF23D-FC21-4113-BE39-48E4109AA86F/from?get&nocache=120ab&tm=2026-11-25T15%3A40%3A14.124Z",
+      "method": "GET"
     },
     {
       "url": "http://127.0.0.1:5581/functions/v1/app/api/analysis/tasks/atask_9cf2587e-9818-447d-9f63-9111eb090fa8/recommend",
       "method": "POST"
     },
     {
-      "url": "http://127.0.0.1:5581/functions/v1/app/api/jobs/job_0b82db2a-5a54-4189-a88f-2229978c4f35",
+      "url": "http://127.0.0.1:5581/functions/v1/app/api/jobs/job_961b019c-eacf-4fb9-9ffd-d1b21e4b7a42",
       "method": "GET"
     },
     {
-      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/872C4566-5B17-4571-8C2E-7392ECF08971/from?get&nocache=1b583&tm=2026-11-25T14%3A24%3A02.263Z",
+      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/2FEAF23D-FC21-4113-BE39-48E4109AA86F/from?get&nocache=13ddf&tm=2026-11-25T15%3A40%3A14.625Z",
       "method": "GET"
     },
     {
-      "url": "http://127.0.0.1:5581/functions/v1/app/api/jobs/job_0b82db2a-5a54-4189-a88f-2229978c4f35",
+      "url": "http://127.0.0.1:5581/functions/v1/app/api/jobs/job_961b019c-eacf-4fb9-9ffd-d1b21e4b7a42",
       "method": "GET"
     },
     {
-      "url": "http://127.0.0.1:5581/functions/v1/app/api/jobs/job_0b82db2a-5a54-4189-a88f-2229978c4f35",
+      "url": "http://127.0.0.1:5581/functions/v1/app/api/jobs/job_961b019c-eacf-4fb9-9ffd-d1b21e4b7a42",
       "method": "GET"
     },
     {
-      "url": "http://127.0.0.1:5581/functions/v1/app/api/jobs/job_0b82db2a-5a54-4189-a88f-2229978c4f35",
+      "url": "http://127.0.0.1:5581/functions/v1/app/api/jobs/job_961b019c-eacf-4fb9-9ffd-d1b21e4b7a42",
       "method": "GET"
     },
     {
-      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/872C4566-5B17-4571-8C2E-7392ECF08971/from?get&nocache=148d5&tm=2026-11-25T14%3A24%3A04.266Z",
+      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/2FEAF23D-FC21-4113-BE39-48E4109AA86F/from?get&nocache=1e1be&tm=2026-11-25T15%3A40%3A16.627Z",
       "method": "GET"
     },
     {
-      "url": "http://127.0.0.1:5581/functions/v1/app/api/jobs/job_0b82db2a-5a54-4189-a88f-2229978c4f35",
+      "url": "http://127.0.0.1:5581/functions/v1/app/api/jobs/job_961b019c-eacf-4fb9-9ffd-d1b21e4b7a42",
       "method": "GET"
     },
     {
-      "url": "http://127.0.0.1:5581/functions/v1/app/api/jobs/job_0b82db2a-5a54-4189-a88f-2229978c4f35",
+      "url": "http://127.0.0.1:5581/functions/v1/app/api/jobs/job_961b019c-eacf-4fb9-9ffd-d1b21e4b7a42",
       "method": "GET"
     },
     {
-      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/872C4566-5B17-4571-8C2E-7392ECF08971/from?get&nocache=157db&tm=2026-11-25T14%3A24%3A06.282Z",
+      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/2FEAF23D-FC21-4113-BE39-48E4109AA86F/from?get&nocache=12d08&tm=2026-11-25T15%3A40%3A18.635Z",
       "method": "GET"
     },
     {
-      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/872C4566-5B17-4571-8C2E-7392ECF08971/from?get&nocache=1437f&tm=2026-11-25T14%3A24%3A08.292Z",
+      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/2FEAF23D-FC21-4113-BE39-48E4109AA86F/from?get&nocache=11fc5&tm=2026-11-25T15%3A40%3A20.641Z",
       "method": "GET"
     },
     {
@@ -454,7 +457,7 @@
       "method": "GET"
     },
     {
-      "url": "http://me.kis.v2.scr.kaspersky-labs.com/FD126C42-EBFA-4E12-B309-BB3FDD723AC1/main.js?attr=wsWOHwcvtdrjqQeu9vuaOZfLDzdW2icflADqxPoCCo12qdIkwLVj6AJDkujUneHJ",
+      "url": "http://me.kis.v2.scr.kaspersky-labs.com/FD126C42-EBFA-4E12-B309-BB3FDD723AC1/main.js?attr=mrmfmFpuwQfj9ew26Luk6j-UUAEjlc3-1sJY-FIFnqYOtwKvmJ-XsnIEKBcWO_kt",
       "method": "GET"
     },
     {
@@ -494,7 +497,7 @@
       "method": "GET"
     },
     {
-      "url": "http://me.kis.v2.scr.kaspersky-labs.com/7D8B79A2-8974-4D7B-A76A-F4F29624C06BtaqvBjwHudoAQrZPx1_QoXVSR7DWIFS-kKg_I3aESxmZs74jvGT-4xBBExPdMA-lFHOmmFks4csfrrv0mCyHHg/init?data=eyJ1cmwiOiJodHRwOi8vMTI3LjAuMC4xOjU1ODEvIiwicGx1Z2lucyI6IndudCZ3c20mdnMmdWEmY2ImeGhyX2NvbnRlbnQiLCJkYXRhIjp7ImRhdGEiOlt7InBsdWdpbiI6IndudCIsInBhcmFtZXRlcnMiOiJ7XCJyZWZlcnJlclwiOlwiXCJ9In0seyJwbHVnaW4iOiJ3c20iLCJwYXJhbWV0ZXJzIjoie1wicmVmZXJyZXJcIjpcIlwiLFwic3R1YklkXCI6XCJcIn0ifSx7InBsdWdpbiI6InVhIiwicGFyYW1ldGVycyI6Int9In0seyJwbHVnaW4iOiJ4aHJfY29udGVudCIsInBhcmFtZXRlcnMiOiJ7XCJyZWZlcnJlclwiOlwiXCJ9In1dfSwiaXNUb3BMZXZlbCI6dHJ1ZSwicGFnZVN0YXJ0VGltZSI6MCwibmF2aWdhdGlvblN0YXJ0VGltZSI6MTc5NTYxNjY0OTYxOH0%3D&nocache=1b679&tm=2026-11-25T14%3A24%3A09.733Z",
+      "url": "http://me.kis.v2.scr.kaspersky-labs.com/7D8B79A2-8974-4D7B-A76A-F4F29624C06BshtKwk18k7PD-DsRKKJ2ht-kTE8zqVHMQALiohqFuGLaAEzXMFH8mF8v00ou7ZlaZRH4b3kKzL6n3Iqb6ROu9g/init?data=eyJ1cmwiOiJodHRwOi8vMTI3LjAuMC4xOjU1ODEvIiwicGx1Z2lucyI6IndudCZ3c20mdnMmdWEmY2ImeGhyX2NvbnRlbnQiLCJkYXRhIjp7ImRhdGEiOlt7InBsdWdpbiI6IndudCIsInBhcmFtZXRlcnMiOiJ7XCJyZWZlcnJlclwiOlwiXCJ9In0seyJwbHVnaW4iOiJ3c20iLCJwYXJhbWV0ZXJzIjoie1wicmVmZXJyZXJcIjpcIlwiLFwic3R1YklkXCI6XCJcIn0ifSx7InBsdWdpbiI6InVhIiwicGFyYW1ldGVycyI6Int9In0seyJwbHVnaW4iOiJ4aHJfY29udGVudCIsInBhcmFtZXRlcnMiOiJ7XCJyZWZlcnJlclwiOlwiXCJ9In1dfSwiaXNUb3BMZXZlbCI6dHJ1ZSwicGFnZVN0YXJ0VGltZSI6MCwibmF2aWdhdGlvblN0YXJ0VGltZSI6MTc5NTYyMTIyMTg5OX0%3D&nocache=11fed&tm=2026-11-25T15%3A40%3A21.943Z",
       "method": "GET"
     },
     {
@@ -546,7 +549,7 @@
       "method": "GET"
     },
     {
-      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/4DE2199D-5F65-4168-AF3C-4F4DC01A99ED/to/wsm.sessionActivated?tm=2026-11-25T14%3A24%3A09.760Z",
+      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/57DA64B8-06D2-4CEF-8B03-91D3948FBB5C/to/wsm.sessionActivated?tm=2026-11-25T15%3A40%3A21.968Z",
       "method": "POST"
     },
     {
@@ -594,27 +597,31 @@
       "method": "GET"
     },
     {
-      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/4DE2199D-5F65-4168-AF3C-4F4DC01A99ED/from?get&nocache=134fb&tm=2026-11-25T14%3A24%3A11.764Z",
+      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/57DA64B8-06D2-4CEF-8B03-91D3948FBB5C/from?get&nocache=1f5fa&tm=2026-11-25T15%3A40%3A23.978Z",
       "method": "GET"
     },
     {
-      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/4DE2199D-5F65-4168-AF3C-4F4DC01A99ED/from?get&nocache=18676&tm=2026-11-25T14%3A24%3A12.277Z",
+      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/57DA64B8-06D2-4CEF-8B03-91D3948FBB5C/from?get&nocache=13ecd&tm=2026-11-25T15%3A40%3A24.488Z",
       "method": "GET"
     },
     {
-      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/4DE2199D-5F65-4168-AF3C-4F4DC01A99ED/from?get&nocache=12070&tm=2026-11-25T14%3A24%3A12.789Z",
+      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/57DA64B8-06D2-4CEF-8B03-91D3948FBB5C/from?get&nocache=15afe&tm=2026-11-25T15%3A40%3A25.001Z",
       "method": "GET"
     },
     {
-      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/4DE2199D-5F65-4168-AF3C-4F4DC01A99ED/from?get&nocache=1078c&tm=2026-11-25T14%3A24%3A13.300Z",
+      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/57DA64B8-06D2-4CEF-8B03-91D3948FBB5C/from?get&nocache=1c7c6&tm=2026-11-25T15%3A40%3A25.511Z",
       "method": "GET"
     },
     {
-      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/4DE2199D-5F65-4168-AF3C-4F4DC01A99ED/from?get&nocache=19234&tm=2026-11-25T14%3A24%3A13.810Z",
+      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/57DA64B8-06D2-4CEF-8B03-91D3948FBB5C/from?get&nocache=16731&tm=2026-11-25T15%3A40%3A26.020Z",
       "method": "GET"
     },
     {
-      "url": "http://127.0.0.1:5581/functions/v1/app/api/knowledge/runs/kr_54828f15-9d2d-4f1d-9b2b-9cfb598eb828",
+      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/57DA64B8-06D2-4CEF-8B03-91D3948FBB5C/from?get&nocache=14b79&tm=2026-11-25T15%3A40%3A26.521Z",
+      "method": "GET"
+    },
+    {
+      "url": "http://127.0.0.1:5581/functions/v1/app/api/knowledge/runs/kr_77e7ab19-1e33-41b4-ae9c-3c5d85aa0627",
       "method": "GET"
     },
     {
@@ -638,39 +645,35 @@
       "method": "GET"
     },
     {
-      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/4DE2199D-5F65-4168-AF3C-4F4DC01A99ED/from?get&nocache=13e4f&tm=2026-11-25T14%3A24%3A14.330Z",
+      "url": "http://127.0.0.1:5581/functions/v1/app/api/jobs/job_3712a981-9cdc-497c-ba69-e4dd06910cf3",
       "method": "GET"
     },
     {
-      "url": "http://127.0.0.1:5581/functions/v1/app/api/jobs/job_3b37c5b8-0858-4333-b5a8-133bd95ef46b",
+      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/57DA64B8-06D2-4CEF-8B03-91D3948FBB5C/from?get&nocache=10801&tm=2026-11-25T15%3A40%3A27.025Z",
       "method": "GET"
     },
     {
-      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/4DE2199D-5F65-4168-AF3C-4F4DC01A99ED/from?get&nocache=17b6d&tm=2026-11-25T14%3A24%3A14.837Z",
+      "url": "http://127.0.0.1:5581/functions/v1/app/api/jobs/job_3712a981-9cdc-497c-ba69-e4dd06910cf3",
       "method": "GET"
     },
     {
-      "url": "http://127.0.0.1:5581/functions/v1/app/api/jobs/job_3b37c5b8-0858-4333-b5a8-133bd95ef46b",
+      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/57DA64B8-06D2-4CEF-8B03-91D3948FBB5C/from?get&nocache=1d53b&tm=2026-11-25T15%3A40%3A27.528Z",
       "method": "GET"
     },
     {
-      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/4DE2199D-5F65-4168-AF3C-4F4DC01A99ED/from?get&nocache=1d0ac&tm=2026-11-25T14%3A24%3A15.339Z",
+      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/57DA64B8-06D2-4CEF-8B03-91D3948FBB5C/from?get&nocache=166fb&tm=2026-11-25T15%3A40%3A28.032Z",
       "method": "GET"
     },
     {
-      "url": "http://127.0.0.1:5581/functions/v1/app/api/jobs/job_3b37c5b8-0858-4333-b5a8-133bd95ef46b",
+      "url": "http://127.0.0.1:5581/functions/v1/app/api/jobs/job_3712a981-9cdc-497c-ba69-e4dd06910cf3",
       "method": "GET"
     },
     {
-      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/4DE2199D-5F65-4168-AF3C-4F4DC01A99ED/from?get&nocache=10e6a&tm=2026-11-25T14%3A24%3A15.847Z",
+      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/57DA64B8-06D2-4CEF-8B03-91D3948FBB5C/from?get&nocache=1581e&tm=2026-11-25T15%3A40%3A28.536Z",
       "method": "GET"
     },
     {
-      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/4DE2199D-5F65-4168-AF3C-4F4DC01A99ED/from?get&nocache=16b78&tm=2026-11-25T14%3A24%3A16.349Z",
-      "method": "GET"
-    },
-    {
-      "url": "http://127.0.0.1:5581/functions/v1/app/api/jobs/job_3b37c5b8-0858-4333-b5a8-133bd95ef46b",
+      "url": "http://127.0.0.1:5581/functions/v1/app/api/jobs/job_3712a981-9cdc-497c-ba69-e4dd06910cf3",
       "method": "GET"
     },
     {
@@ -678,23 +681,23 @@
       "method": "GET"
     },
     {
-      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/4DE2199D-5F65-4168-AF3C-4F4DC01A99ED/from?get&nocache=1885c&tm=2026-11-25T14%3A24%3A16.855Z",
+      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/57DA64B8-06D2-4CEF-8B03-91D3948FBB5C/from?get&nocache=14471&tm=2026-11-25T15%3A40%3A29.037Z",
       "method": "GET"
     },
     {
-      "url": "http://127.0.0.1:5581/functions/v1/app/api/jobs/job_3b37c5b8-0858-4333-b5a8-133bd95ef46b",
+      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/57DA64B8-06D2-4CEF-8B03-91D3948FBB5C/from?get&nocache=1c1c9&tm=2026-11-25T15%3A40%3A29.546Z",
       "method": "GET"
     },
     {
-      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/4DE2199D-5F65-4168-AF3C-4F4DC01A99ED/from?get&nocache=1548f&tm=2026-11-25T14%3A24%3A17.365Z",
+      "url": "http://127.0.0.1:5581/functions/v1/app/api/jobs/job_3712a981-9cdc-497c-ba69-e4dd06910cf3",
       "method": "GET"
     },
     {
-      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/4DE2199D-5F65-4168-AF3C-4F4DC01A99ED/from?get&nocache=1eb90&tm=2026-11-25T14%3A24%3A17.879Z",
+      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/57DA64B8-06D2-4CEF-8B03-91D3948FBB5C/from?get&nocache=17c08&tm=2026-11-25T15%3A40%3A30.056Z",
       "method": "GET"
     },
     {
-      "url": "http://127.0.0.1:5581/functions/v1/app/api/jobs/job_3b37c5b8-0858-4333-b5a8-133bd95ef46b",
+      "url": "http://127.0.0.1:5581/functions/v1/app/api/jobs/job_3712a981-9cdc-497c-ba69-e4dd06910cf3",
       "method": "GET"
     },
     {
@@ -702,75 +705,75 @@
       "method": "GET"
     },
     {
-      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/4DE2199D-5F65-4168-AF3C-4F4DC01A99ED/from?get&nocache=186b0&tm=2026-11-25T14%3A24%3A18.382Z",
+      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/57DA64B8-06D2-4CEF-8B03-91D3948FBB5C/from?get&nocache=15284&tm=2026-11-25T15%3A40%3A30.559Z",
       "method": "GET"
     },
     {
-      "url": "http://127.0.0.1:5581/functions/v1/app/api/jobs/job_3b37c5b8-0858-4333-b5a8-133bd95ef46b",
+      "url": "http://127.0.0.1:5581/functions/v1/app/api/jobs/job_3712a981-9cdc-497c-ba69-e4dd06910cf3",
       "method": "GET"
     },
     {
-      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/4DE2199D-5F65-4168-AF3C-4F4DC01A99ED/from?get&nocache=19c5b&tm=2026-11-25T14%3A24%3A18.886Z",
+      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/57DA64B8-06D2-4CEF-8B03-91D3948FBB5C/from?get&nocache=154b0&tm=2026-11-25T15%3A40%3A31.062Z",
       "method": "GET"
     },
     {
-      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/4DE2199D-5F65-4168-AF3C-4F4DC01A99ED/from?get&nocache=18a09&tm=2026-11-25T14%3A24%3A19.398Z",
+      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/57DA64B8-06D2-4CEF-8B03-91D3948FBB5C/from?get&nocache=18c2e&tm=2026-11-25T15%3A40%3A31.572Z",
       "method": "GET"
     },
     {
-      "url": "http://127.0.0.1:5581/functions/v1/app/api/jobs/job_3b37c5b8-0858-4333-b5a8-133bd95ef46b",
+      "url": "http://127.0.0.1:5581/functions/v1/app/api/jobs/job_3712a981-9cdc-497c-ba69-e4dd06910cf3",
       "method": "GET"
     },
     {
-      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/4DE2199D-5F65-4168-AF3C-4F4DC01A99ED/from?get&nocache=18597&tm=2026-11-25T14%3A24%3A19.909Z",
+      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/57DA64B8-06D2-4CEF-8B03-91D3948FBB5C/from?get&nocache=1bede&tm=2026-11-25T15%3A40%3A32.080Z",
       "method": "GET"
     },
     {
-      "url": "http://127.0.0.1:5581/functions/v1/app/api/jobs/job_3b37c5b8-0858-4333-b5a8-133bd95ef46b",
+      "url": "http://127.0.0.1:5581/functions/v1/app/api/jobs/job_3712a981-9cdc-497c-ba69-e4dd06910cf3",
       "method": "GET"
     },
     {
-      "url": "http://127.0.0.1:5581/functions/v1/app/api/jobs/job_3b37c5b8-0858-4333-b5a8-133bd95ef46b",
+      "url": "http://127.0.0.1:5581/functions/v1/app/api/jobs/job_3712a981-9cdc-497c-ba69-e4dd06910cf3",
       "method": "GET"
     },
     {
-      "url": "http://127.0.0.1:5581/functions/v1/app/api/jobs/job_3b37c5b8-0858-4333-b5a8-133bd95ef46b",
+      "url": "http://127.0.0.1:5581/functions/v1/app/api/jobs/job_3712a981-9cdc-497c-ba69-e4dd06910cf3",
       "method": "GET"
     },
     {
-      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/4DE2199D-5F65-4168-AF3C-4F4DC01A99ED/from?get&nocache=1a5df&tm=2026-11-25T14%3A24%3A21.920Z",
+      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/57DA64B8-06D2-4CEF-8B03-91D3948FBB5C/from?get&nocache=17783&tm=2026-11-25T15%3A40%3A34.096Z",
       "method": "GET"
     },
     {
-      "url": "http://127.0.0.1:5581/functions/v1/app/api/jobs/job_3b37c5b8-0858-4333-b5a8-133bd95ef46b",
+      "url": "http://127.0.0.1:5581/functions/v1/app/api/jobs/job_3712a981-9cdc-497c-ba69-e4dd06910cf3",
       "method": "GET"
     },
     {
-      "url": "http://127.0.0.1:5581/functions/v1/app/api/jobs/job_3b37c5b8-0858-4333-b5a8-133bd95ef46b",
+      "url": "http://127.0.0.1:5581/functions/v1/app/api/jobs/job_3712a981-9cdc-497c-ba69-e4dd06910cf3",
       "method": "GET"
     },
     {
-      "url": "http://127.0.0.1:5581/functions/v1/app/api/jobs/job_3b37c5b8-0858-4333-b5a8-133bd95ef46b",
+      "url": "http://127.0.0.1:5581/functions/v1/app/api/jobs/job_3712a981-9cdc-497c-ba69-e4dd06910cf3",
       "method": "GET"
     },
     {
-      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/4DE2199D-5F65-4168-AF3C-4F4DC01A99ED/from?get&nocache=16efb&tm=2026-11-25T14%3A24%3A23.932Z",
+      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/57DA64B8-06D2-4CEF-8B03-91D3948FBB5C/from?get&nocache=157cf&tm=2026-11-25T15%3A40%3A36.111Z",
       "method": "GET"
     },
     {
-      "url": "http://127.0.0.1:5581/functions/v1/app/api/jobs/job_3b37c5b8-0858-4333-b5a8-133bd95ef46b",
+      "url": "http://127.0.0.1:5581/functions/v1/app/api/jobs/job_3712a981-9cdc-497c-ba69-e4dd06910cf3",
       "method": "GET"
     },
     {
-      "url": "http://127.0.0.1:5581/functions/v1/app/api/jobs/job_3b37c5b8-0858-4333-b5a8-133bd95ef46b",
+      "url": "http://127.0.0.1:5581/functions/v1/app/api/jobs/job_3712a981-9cdc-497c-ba69-e4dd06910cf3",
       "method": "GET"
     },
     {
-      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/4DE2199D-5F65-4168-AF3C-4F4DC01A99ED/from?get&nocache=10b41&tm=2026-11-25T14%3A24%3A25.948Z",
+      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/57DA64B8-06D2-4CEF-8B03-91D3948FBB5C/from?get&nocache=1d9ba&tm=2026-11-25T15%3A40%3A38.115Z",
       "method": "GET"
     },
     {
-      "url": "http://127.0.0.1:5581/functions/v1/app/api/jobs/job_3b37c5b8-0858-4333-b5a8-133bd95ef46b",
+      "url": "http://127.0.0.1:5581/functions/v1/app/api/jobs/job_3712a981-9cdc-497c-ba69-e4dd06910cf3",
       "method": "GET"
     },
     {
@@ -778,11 +781,11 @@
       "method": "GET"
     },
     {
-      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/4DE2199D-5F65-4168-AF3C-4F4DC01A99ED/from?get&nocache=18295&tm=2026-11-25T14%3A24%3A27.964Z",
+      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/57DA64B8-06D2-4CEF-8B03-91D3948FBB5C/from?get&nocache=1b6b3&tm=2026-11-25T15%3A40%3A40.129Z",
       "method": "GET"
     },
     {
-      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/4DE2199D-5F65-4168-AF3C-4F4DC01A99ED/from?get&nocache=1be70&tm=2026-11-25T14%3A24%3A29.979Z",
+      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/57DA64B8-06D2-4CEF-8B03-91D3948FBB5C/from?get&nocache=1b1a3&tm=2026-11-25T15%3A40%3A42.143Z",
       "method": "GET"
     },
     {
@@ -790,7 +793,7 @@
       "method": "GET"
     },
     {
-      "url": "http://me.kis.v2.scr.kaspersky-labs.com/FD126C42-EBFA-4E12-B309-BB3FDD723AC1/main.js?attr=wsWOHwcvtdrjqQeu9vuaOZfLDzdW2icflADqxPoCCo12qdIkwLVj6AJDkujUneHJ",
+      "url": "http://me.kis.v2.scr.kaspersky-labs.com/FD126C42-EBFA-4E12-B309-BB3FDD723AC1/main.js?attr=mrmfmFpuwQfj9ew26Luk6j-UUAEjlc3-1sJY-FIFnqYOtwKvmJ-XsnIEKBcWO_kt",
       "method": "GET"
     },
     {
@@ -830,7 +833,7 @@
       "method": "GET"
     },
     {
-      "url": "http://me.kis.v2.scr.kaspersky-labs.com/7D8B79A2-8974-4D7B-A76A-F4F29624C06B_Fo8XJZ0PJsQDXLM4-ul5Hm3XS2fpaaIicmORTmapBOaGGaIqcH4q1h2KPmFwVcDHpYsZ5g46WH76ssm1I0uUQ/init?data=eyJ1cmwiOiJodHRwOi8vMTI3LjAuMC4xOjU1ODEvIiwicGx1Z2lucyI6IndudCZ3c20mdnMmdWEmY2ImeGhyX2NvbnRlbnQiLCJkYXRhIjp7ImRhdGEiOlt7InBsdWdpbiI6IndudCIsInBhcmFtZXRlcnMiOiJ7XCJyZWZlcnJlclwiOlwiXCJ9In0seyJwbHVnaW4iOiJ3c20iLCJwYXJhbWV0ZXJzIjoie1wicmVmZXJyZXJcIjpcIlwiLFwic3R1YklkXCI6XCJcIn0ifSx7InBsdWdpbiI6InVhIiwicGFyYW1ldGVycyI6Int9In0seyJwbHVnaW4iOiJ4aHJfY29udGVudCIsInBhcmFtZXRlcnMiOiJ7XCJyZWZlcnJlclwiOlwiXCJ9In1dfSwiaXNUb3BMZXZlbCI6dHJ1ZSwicGFnZVN0YXJ0VGltZSI6MCwibmF2aWdhdGlvblN0YXJ0VGltZSI6MTc5NTYxNjY3MTQ1NH0%3D&nocache=13c2f&tm=2026-11-25T14%3A24%3A31.505Z",
+      "url": "http://me.kis.v2.scr.kaspersky-labs.com/7D8B79A2-8974-4D7B-A76A-F4F29624C06B4ik_9gWkObxkrBVG7ABbCTxOfsUJcK3TjyUkbxXhMp9WGRR4psw4lCvXNgsv3nxf9910m_PgDrr2coH9ijSZmQ/init?data=eyJ1cmwiOiJodHRwOi8vMTI3LjAuMC4xOjU1ODEvIiwicGx1Z2lucyI6IndudCZ3c20mdnMmdWEmY2ImeGhyX2NvbnRlbnQiLCJkYXRhIjp7ImRhdGEiOlt7InBsdWdpbiI6IndudCIsInBhcmFtZXRlcnMiOiJ7XCJyZWZlcnJlclwiOlwiXCJ9In0seyJwbHVnaW4iOiJ3c20iLCJwYXJhbWV0ZXJzIjoie1wicmVmZXJyZXJcIjpcIlwiLFwic3R1YklkXCI6XCJcIn0ifSx7InBsdWdpbiI6InVhIiwicGFyYW1ldGVycyI6Int9In0seyJwbHVnaW4iOiJ4aHJfY29udGVudCIsInBhcmFtZXRlcnMiOiJ7XCJyZWZlcnJlclwiOlwiXCJ9In1dfSwiaXNUb3BMZXZlbCI6dHJ1ZSwicGFnZVN0YXJ0VGltZSI6MCwibmF2aWdhdGlvblN0YXJ0VGltZSI6MTc5NTYyMTI0MzYzMn0%3D&nocache=15a54&tm=2026-11-25T15%3A40%3A43.752Z",
       "method": "GET"
     },
     {
@@ -882,7 +885,7 @@
       "method": "GET"
     },
     {
-      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/CCDF6851-BD6F-456B-8C4B-5F0DCC1D0241/to/wsm.sessionActivated?tm=2026-11-25T14%3A24%3A31.541Z",
+      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/DE4C014A-10A4-4DEE-9801-B78BF9FF9D67/to/wsm.sessionActivated?tm=2026-11-25T15%3A40%3A43.779Z",
       "method": "POST"
     },
     {
@@ -934,23 +937,23 @@
       "method": "GET"
     },
     {
-      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/CCDF6851-BD6F-456B-8C4B-5F0DCC1D0241/from?get&nocache=19fa7&tm=2026-11-25T14%3A24%3A33.546Z",
+      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/DE4C014A-10A4-4DEE-9801-B78BF9FF9D67/from?get&nocache=15310&tm=2026-11-25T15%3A40%3A45.787Z",
       "method": "GET"
     },
     {
-      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/CCDF6851-BD6F-456B-8C4B-5F0DCC1D0241/from?get&nocache=15fc8&tm=2026-11-25T14%3A24%3A34.060Z",
+      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/DE4C014A-10A4-4DEE-9801-B78BF9FF9D67/from?get&nocache=1f1aa&tm=2026-11-25T15%3A40%3A46.298Z",
       "method": "GET"
     },
     {
-      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/CCDF6851-BD6F-456B-8C4B-5F0DCC1D0241/from?get&nocache=1c946&tm=2026-11-25T14%3A24%3A34.572Z",
+      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/DE4C014A-10A4-4DEE-9801-B78BF9FF9D67/from?get&nocache=154ba&tm=2026-11-25T15%3A40%3A46.809Z",
       "method": "GET"
     },
     {
-      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/CCDF6851-BD6F-456B-8C4B-5F0DCC1D0241/from?get&nocache=117e8&tm=2026-11-25T14%3A24%3A35.084Z",
+      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/DE4C014A-10A4-4DEE-9801-B78BF9FF9D67/from?get&nocache=11663&tm=2026-11-25T15%3A40%3A47.323Z",
       "method": "GET"
     },
     {
-      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/CCDF6851-BD6F-456B-8C4B-5F0DCC1D0241/from?get&nocache=1d258&tm=2026-11-25T14%3A24%3A35.594Z",
+      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/DE4C014A-10A4-4DEE-9801-B78BF9FF9D67/from?get&nocache=1c38d&tm=2026-11-25T15%3A40%3A47.833Z",
       "method": "GET"
     },
     {
@@ -962,39 +965,39 @@
       "method": "GET"
     },
     {
-      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/CCDF6851-BD6F-456B-8C4B-5F0DCC1D0241/from?get&nocache=197dd&tm=2026-11-25T14%3A24%3A36.107Z",
+      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/DE4C014A-10A4-4DEE-9801-B78BF9FF9D67/from?get&nocache=10db1&tm=2026-11-25T15%3A40%3A48.334Z",
       "method": "GET"
     },
     {
-      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/CCDF6851-BD6F-456B-8C4B-5F0DCC1D0241/from?get&nocache=19a79&tm=2026-11-25T14%3A24%3A36.619Z",
+      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/DE4C014A-10A4-4DEE-9801-B78BF9FF9D67/from?get&nocache=197bc&tm=2026-11-25T15%3A40%3A48.848Z",
       "method": "GET"
     },
     {
-      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/CCDF6851-BD6F-456B-8C4B-5F0DCC1D0241/from?get&nocache=1d1bd&tm=2026-11-25T14%3A24%3A37.131Z",
+      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/DE4C014A-10A4-4DEE-9801-B78BF9FF9D67/from?get&nocache=14c01&tm=2026-11-25T15%3A40%3A49.359Z",
       "method": "GET"
     },
     {
-      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/CCDF6851-BD6F-456B-8C4B-5F0DCC1D0241/from?get&nocache=1f749&tm=2026-11-25T14%3A24%3A37.640Z",
+      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/DE4C014A-10A4-4DEE-9801-B78BF9FF9D67/from?get&nocache=14614&tm=2026-11-25T15%3A40%3A49.871Z",
       "method": "GET"
     },
     {
-      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/CCDF6851-BD6F-456B-8C4B-5F0DCC1D0241/from?get&nocache=12110&tm=2026-11-25T14%3A24%3A38.149Z",
+      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/DE4C014A-10A4-4DEE-9801-B78BF9FF9D67/from?get&nocache=171e1&tm=2026-11-25T15%3A40%3A50.380Z",
       "method": "GET"
     },
     {
-      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/CCDF6851-BD6F-456B-8C4B-5F0DCC1D0241/to/wsm.onHashChange?tm=2026-11-25T14%3A24%3A38.552Z",
+      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/DE4C014A-10A4-4DEE-9801-B78BF9FF9D67/to/wsm.onHashChange?tm=2026-11-25T15%3A40%3A50.815Z",
       "method": "POST"
     },
     {
-      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/CCDF6851-BD6F-456B-8C4B-5F0DCC1D0241/from?get&nocache=15b25&tm=2026-11-25T14%3A24%3A38.650Z",
+      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/DE4C014A-10A4-4DEE-9801-B78BF9FF9D67/from?get&nocache=13e29&tm=2026-11-25T15%3A40%3A50.883Z",
       "method": "GET"
     },
     {
-      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/CCDF6851-BD6F-456B-8C4B-5F0DCC1D0241/from?get&nocache=11a8d&tm=2026-11-25T14%3A24%3A39.159Z",
+      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/DE4C014A-10A4-4DEE-9801-B78BF9FF9D67/from?get&nocache=13f8f&tm=2026-11-25T15%3A40%3A51.399Z",
       "method": "GET"
     },
     {
-      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/CCDF6851-BD6F-456B-8C4B-5F0DCC1D0241/from?get&nocache=10f19&tm=2026-11-25T14%3A24%3A39.666Z",
+      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/DE4C014A-10A4-4DEE-9801-B78BF9FF9D67/from?get&nocache=1cfc7&tm=2026-11-25T15%3A40%3A51.908Z",
       "method": "GET"
     },
     {
@@ -1006,19 +1009,27 @@
       "method": "GET"
     },
     {
-      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/CCDF6851-BD6F-456B-8C4B-5F0DCC1D0241/from?get&nocache=128dd&tm=2026-11-25T14%3A24%3A40.178Z",
+      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/DE4C014A-10A4-4DEE-9801-B78BF9FF9D67/from?get&nocache=15423&tm=2026-11-25T15%3A40%3A52.420Z",
       "method": "GET"
     },
     {
-      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/CCDF6851-BD6F-456B-8C4B-5F0DCC1D0241/from?get&nocache=1ddb6&tm=2026-11-25T14%3A24%3A40.688Z",
+      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/DE4C014A-10A4-4DEE-9801-B78BF9FF9D67/from?get&nocache=14726&tm=2026-11-25T15%3A40%3A52.930Z",
       "method": "GET"
     },
     {
-      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/CCDF6851-BD6F-456B-8C4B-5F0DCC1D0241/from?get&nocache=1b218&tm=2026-11-25T14%3A24%3A41.199Z",
+      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/DE4C014A-10A4-4DEE-9801-B78BF9FF9D67/from?get&nocache=170b9&tm=2026-11-25T15%3A40%3A53.444Z",
       "method": "GET"
     },
     {
-      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/CCDF6851-BD6F-456B-8C4B-5F0DCC1D0241/from?get&nocache=1ecd5&tm=2026-11-25T14%3A24%3A41.712Z",
+      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/DE4C014A-10A4-4DEE-9801-B78BF9FF9D67/from?get&nocache=1813a&tm=2026-11-25T15%3A40%3A53.955Z",
+      "method": "GET"
+    },
+    {
+      "url": "http://127.0.0.1:5581/functions/v1/app/api/executions/exec_8eddd772-b298-42eb-b8b6-6f114bd27b3f/events",
+      "method": "POST"
+    },
+    {
+      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/DE4C014A-10A4-4DEE-9801-B78BF9FF9D67/from?get&nocache=15008&tm=2026-11-25T15%3A40%3A55.968Z",
       "method": "GET"
     },
     {
@@ -1026,23 +1037,15 @@
       "method": "POST"
     },
     {
-      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/CCDF6851-BD6F-456B-8C4B-5F0DCC1D0241/from?get&nocache=1ad99&tm=2026-11-25T14%3A24%3A43.725Z",
+      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/DE4C014A-10A4-4DEE-9801-B78BF9FF9D67/from?get&nocache=10e37&tm=2026-11-25T15%3A40%3A57.972Z",
       "method": "GET"
-    },
-    {
-      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/CCDF6851-BD6F-456B-8C4B-5F0DCC1D0241/from?get&nocache=13c26&tm=2026-11-25T14%3A24%3A45.741Z",
-      "method": "GET"
-    },
-    {
-      "url": "http://127.0.0.1:5581/functions/v1/app/api/executions/exec_8eddd772-b298-42eb-b8b6-6f114bd27b3f/events",
-      "method": "POST"
     },
     {
       "url": "http://127.0.0.1:5581/functions/v1/app/api/state",
       "method": "GET"
     },
     {
-      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/CCDF6851-BD6F-456B-8C4B-5F0DCC1D0241/from?get&nocache=1e891&tm=2026-11-25T14%3A24%3A47.754Z",
+      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/DE4C014A-10A4-4DEE-9801-B78BF9FF9D67/from?get&nocache=14259&tm=2026-11-25T15%3A40%3A59.977Z",
       "method": "GET"
     },
     {
@@ -1050,7 +1053,7 @@
       "method": "GET"
     },
     {
-      "url": "http://me.kis.v2.scr.kaspersky-labs.com/FD126C42-EBFA-4E12-B309-BB3FDD723AC1/main.js?attr=wsWOHwcvtdrjqQeu9vuaOZfLDzdW2icflADqxPoCCo12qdIkwLVj6AJDkujUneHJ",
+      "url": "http://me.kis.v2.scr.kaspersky-labs.com/FD126C42-EBFA-4E12-B309-BB3FDD723AC1/main.js?attr=mrmfmFpuwQfj9ew26Luk6j-UUAEjlc3-1sJY-FIFnqYOtwKvmJ-XsnIEKBcWO_kt",
       "method": "GET"
     },
     {
@@ -1090,7 +1093,7 @@
       "method": "GET"
     },
     {
-      "url": "http://me.kis.v2.scr.kaspersky-labs.com/7D8B79A2-8974-4D7B-A76A-F4F29624C06B7KjbddKOCFa9uTTlZYzUIDk1KwGM1QhdAeY1deFJDp8adpr9Pr5gcg_wUJ64Sfy-NYLfo7MA5Xl1xGj6UDG3lg/init?data=eyJ1cmwiOiJodHRwOi8vMTI3LjAuMC4xOjU1ODEvIiwicGx1Z2lucyI6IndudCZ3c20mdnMmdWEmY2ImeGhyX2NvbnRlbnQiLCJkYXRhIjp7ImRhdGEiOlt7InBsdWdpbiI6IndudCIsInBhcmFtZXRlcnMiOiJ7XCJyZWZlcnJlclwiOlwiXCJ9In0seyJwbHVnaW4iOiJ3c20iLCJwYXJhbWV0ZXJzIjoie1wicmVmZXJyZXJcIjpcIlwiLFwic3R1YklkXCI6XCJcIn0ifSx7InBsdWdpbiI6InVhIiwicGFyYW1ldGVycyI6Int9In0seyJwbHVnaW4iOiJ4aHJfY29udGVudCIsInBhcmFtZXRlcnMiOiJ7XCJyZWZlcnJlclwiOlwiXCJ9In1dfSwiaXNUb3BMZXZlbCI6dHJ1ZSwicGFnZVN0YXJ0VGltZSI6MCwibmF2aWdhdGlvblN0YXJ0VGltZSI6MTc5NTYxNjY4ODMxNX0%3D&nocache=186e6&tm=2026-11-25T14%3A24%3A48.365Z",
+      "url": "http://me.kis.v2.scr.kaspersky-labs.com/7D8B79A2-8974-4D7B-A76A-F4F29624C06Bw_3bSpbO_6Ftz4udk_yGsj22b40LxLlIUAJXkzykbDdzhOdnEqKW89CYHkJ74H0iOW6hWzdfKqwdg7OY5KBgMw/init?data=eyJ1cmwiOiJodHRwOi8vMTI3LjAuMC4xOjU1ODEvIiwicGx1Z2lucyI6IndudCZ3c20mdnMmdWEmY2ImeGhyX2NvbnRlbnQiLCJkYXRhIjp7ImRhdGEiOlt7InBsdWdpbiI6IndudCIsInBhcmFtZXRlcnMiOiJ7XCJyZWZlcnJlclwiOlwiXCJ9In0seyJwbHVnaW4iOiJ3c20iLCJwYXJhbWV0ZXJzIjoie1wicmVmZXJyZXJcIjpcIlwiLFwic3R1YklkXCI6XCJcIn0ifSx7InBsdWdpbiI6InVhIiwicGFyYW1ldGVycyI6Int9In0seyJwbHVnaW4iOiJ4aHJfY29udGVudCIsInBhcmFtZXRlcnMiOiJ7XCJyZWZlcnJlclwiOlwiXCJ9In1dfSwiaXNUb3BMZXZlbCI6dHJ1ZSwicGFnZVN0YXJ0VGltZSI6MCwibmF2aWdhdGlvblN0YXJ0VGltZSI6MTc5NTYyMTI2MDQ2OX0%3D&nocache=10b78&tm=2026-11-25T15%3A41%3A00.540Z",
       "method": "GET"
     },
     {
@@ -1142,7 +1145,7 @@
       "method": "GET"
     },
     {
-      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/E2971F17-620D-4C99-8229-91988E07467A/to/wsm.sessionActivated?tm=2026-11-25T14%3A24%3A48.392Z",
+      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/AFE70C15-85DD-43A4-8055-12741CEB47AC/to/wsm.sessionActivated?tm=2026-11-25T15%3A41%3A00.565Z",
       "method": "POST"
     },
     {
@@ -1190,27 +1193,27 @@
       "method": "GET"
     },
     {
-      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/E2971F17-620D-4C99-8229-91988E07467A/from?get&nocache=1688a&tm=2026-11-25T14%3A24%3A50.403Z",
+      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/AFE70C15-85DD-43A4-8055-12741CEB47AC/from?get&nocache=17f79&tm=2026-11-25T15%3A41%3A02.573Z",
       "method": "GET"
     },
     {
-      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/E2971F17-620D-4C99-8229-91988E07467A/from?get&nocache=13d63&tm=2026-11-25T14%3A24%3A50.915Z",
+      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/AFE70C15-85DD-43A4-8055-12741CEB47AC/from?get&nocache=15918&tm=2026-11-25T15%3A41%3A03.084Z",
       "method": "GET"
     },
     {
-      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/E2971F17-620D-4C99-8229-91988E07467A/from?get&nocache=1cacc&tm=2026-11-25T14%3A24%3A51.428Z",
+      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/AFE70C15-85DD-43A4-8055-12741CEB47AC/from?get&nocache=1b363&tm=2026-11-25T15%3A41%3A03.596Z",
       "method": "GET"
     },
     {
-      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/E2971F17-620D-4C99-8229-91988E07467A/from?get&nocache=10fa8&tm=2026-11-25T14%3A24%3A51.940Z",
+      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/AFE70C15-85DD-43A4-8055-12741CEB47AC/from?get&nocache=14966&tm=2026-11-25T15%3A41%3A04.106Z",
       "method": "GET"
     },
     {
-      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/E2971F17-620D-4C99-8229-91988E07467A/from?get&nocache=189f0&tm=2026-11-25T14%3A24%3A52.450Z",
+      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/AFE70C15-85DD-43A4-8055-12741CEB47AC/from?get&nocache=1878d&tm=2026-11-25T15%3A41%3A04.619Z",
       "method": "GET"
     },
     {
-      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/E2971F17-620D-4C99-8229-91988E07467A/from?get&nocache=1ff75&tm=2026-11-25T14%3A24%3A52.965Z",
+      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/AFE70C15-85DD-43A4-8055-12741CEB47AC/from?get&nocache=14f7d&tm=2026-11-25T15%3A41%3A05.123Z",
       "method": "GET"
     },
     {
@@ -1218,27 +1221,27 @@
       "method": "GET"
     },
     {
-      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/E2971F17-620D-4C99-8229-91988E07467A/from?get&nocache=1fa6a&tm=2026-11-25T14%3A24%3A53.475Z",
+      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/AFE70C15-85DD-43A4-8055-12741CEB47AC/from?get&nocache=13506&tm=2026-11-25T15%3A41%3A05.638Z",
       "method": "GET"
     },
     {
-      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/E2971F17-620D-4C99-8229-91988E07467A/from?get&nocache=10cbc&tm=2026-11-25T14%3A24%3A53.987Z",
+      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/AFE70C15-85DD-43A4-8055-12741CEB47AC/from?get&nocache=1edbc&tm=2026-11-25T15%3A41%3A06.151Z",
       "method": "GET"
     },
     {
-      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/E2971F17-620D-4C99-8229-91988E07467A/from?get&nocache=16b2d&tm=2026-11-25T14%3A24%3A54.496Z",
+      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/AFE70C15-85DD-43A4-8055-12741CEB47AC/from?get&nocache=10064&tm=2026-11-25T15%3A41%3A06.663Z",
       "method": "GET"
     },
     {
-      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/E2971F17-620D-4C99-8229-91988E07467A/from?get&nocache=1b689&tm=2026-11-25T14%3A24%3A55.006Z",
+      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/AFE70C15-85DD-43A4-8055-12741CEB47AC/from?get&nocache=130ae&tm=2026-11-25T15%3A41%3A07.174Z",
       "method": "GET"
     },
     {
-      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/E2971F17-620D-4C99-8229-91988E07467A/from?get&nocache=1ffb8&tm=2026-11-25T14%3A24%3A55.519Z",
+      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/AFE70C15-85DD-43A4-8055-12741CEB47AC/from?get&nocache=1fdf6&tm=2026-11-25T15%3A41%3A07.675Z",
       "method": "GET"
     },
     {
-      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/E2971F17-620D-4C99-8229-91988E07467A/from?get&nocache=1c294&tm=2026-11-25T14%3A24%3A56.032Z",
+      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/AFE70C15-85DD-43A4-8055-12741CEB47AC/from?get&nocache=169ee&tm=2026-11-25T15%3A41%3A08.190Z",
       "method": "GET"
     },
     {
@@ -1246,7 +1249,7 @@
       "method": "POST"
     },
     {
-      "url": "http://127.0.0.1:5581/functions/v1/app/api/jobs/job_7465d26b-8d8f-4c33-9681-34c72b313002",
+      "url": "http://127.0.0.1:5581/functions/v1/app/api/jobs/job_73130619-e0f9-435f-841b-ec972081557d",
       "method": "GET"
     },
     {
@@ -1270,75 +1273,75 @@
       "method": "GET"
     },
     {
-      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/E2971F17-620D-4C99-8229-91988E07467A/from?get&nocache=135e9&tm=2026-11-25T14%3A24%3A56.537Z",
+      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/AFE70C15-85DD-43A4-8055-12741CEB47AC/from?get&nocache=1c2a9&tm=2026-11-25T15%3A41%3A08.695Z",
       "method": "GET"
     },
     {
-      "url": "http://127.0.0.1:5581/functions/v1/app/api/jobs/job_7465d26b-8d8f-4c33-9681-34c72b313002",
+      "url": "http://127.0.0.1:5581/functions/v1/app/api/jobs/job_73130619-e0f9-435f-841b-ec972081557d",
       "method": "GET"
     },
     {
-      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/E2971F17-620D-4C99-8229-91988E07467A/from?get&nocache=15eb0&tm=2026-11-25T14%3A24%3A57.042Z",
+      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/AFE70C15-85DD-43A4-8055-12741CEB47AC/from?get&nocache=14557&tm=2026-11-25T15%3A41%3A09.198Z",
       "method": "GET"
     },
     {
-      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/E2971F17-620D-4C99-8229-91988E07467A/from?get&nocache=19321&tm=2026-11-25T14%3A24%3A57.546Z",
+      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/AFE70C15-85DD-43A4-8055-12741CEB47AC/from?get&nocache=11cdb&tm=2026-11-25T15%3A41%3A09.700Z",
       "method": "GET"
     },
     {
-      "url": "http://127.0.0.1:5581/functions/v1/app/api/jobs/job_7465d26b-8d8f-4c33-9681-34c72b313002",
+      "url": "http://127.0.0.1:5581/functions/v1/app/api/jobs/job_73130619-e0f9-435f-841b-ec972081557d",
       "method": "GET"
     },
     {
-      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/E2971F17-620D-4C99-8229-91988E07467A/from?get&nocache=14b75&tm=2026-11-25T14%3A24%3A58.050Z",
+      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/AFE70C15-85DD-43A4-8055-12741CEB47AC/from?get&nocache=1ce05&tm=2026-11-25T15%3A41%3A10.201Z",
       "method": "GET"
     },
     {
-      "url": "http://127.0.0.1:5581/functions/v1/app/api/jobs/job_7465d26b-8d8f-4c33-9681-34c72b313002",
+      "url": "http://127.0.0.1:5581/functions/v1/app/api/jobs/job_73130619-e0f9-435f-841b-ec972081557d",
       "method": "GET"
     },
     {
-      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/E2971F17-620D-4C99-8229-91988E07467A/from?get&nocache=1ae37&tm=2026-11-25T14%3A24%3A58.551Z",
+      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/AFE70C15-85DD-43A4-8055-12741CEB47AC/from?get&nocache=1918d&tm=2026-11-25T15%3A41%3A10.704Z",
       "method": "GET"
     },
     {
-      "url": "http://127.0.0.1:5581/functions/v1/app/api/jobs/job_7465d26b-8d8f-4c33-9681-34c72b313002",
+      "url": "http://127.0.0.1:5581/functions/v1/app/api/jobs/job_73130619-e0f9-435f-841b-ec972081557d",
       "method": "GET"
     },
     {
-      "url": "http://127.0.0.1:5581/functions/v1/app/api/jobs/job_7465d26b-8d8f-4c33-9681-34c72b313002",
+      "url": "http://127.0.0.1:5581/functions/v1/app/api/jobs/job_73130619-e0f9-435f-841b-ec972081557d",
       "method": "GET"
     },
     {
-      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/E2971F17-620D-4C99-8229-91988E07467A/from?get&nocache=1ab4c&tm=2026-11-25T14%3A25%3A00.552Z",
+      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/AFE70C15-85DD-43A4-8055-12741CEB47AC/from?get&nocache=1f785&tm=2026-11-25T15%3A41%3A12.707Z",
       "method": "GET"
     },
     {
-      "url": "http://127.0.0.1:5581/functions/v1/app/api/jobs/job_7465d26b-8d8f-4c33-9681-34c72b313002",
+      "url": "http://127.0.0.1:5581/functions/v1/app/api/jobs/job_73130619-e0f9-435f-841b-ec972081557d",
       "method": "GET"
     },
     {
-      "url": "http://127.0.0.1:5581/functions/v1/app/api/jobs/job_7465d26b-8d8f-4c33-9681-34c72b313002",
+      "url": "http://127.0.0.1:5581/functions/v1/app/api/jobs/job_73130619-e0f9-435f-841b-ec972081557d",
       "method": "GET"
     },
     {
-      "url": "http://127.0.0.1:5581/functions/v1/app/api/jobs/job_7465d26b-8d8f-4c33-9681-34c72b313002",
+      "url": "http://127.0.0.1:5581/functions/v1/app/api/jobs/job_73130619-e0f9-435f-841b-ec972081557d",
       "method": "GET"
     },
     {
-      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/E2971F17-620D-4C99-8229-91988E07467A/from?get&nocache=1de78&tm=2026-11-25T14%3A25%3A02.554Z",
+      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/AFE70C15-85DD-43A4-8055-12741CEB47AC/from?get&nocache=1558e&tm=2026-11-25T15%3A41%3A14.712Z",
       "method": "GET"
     },
     {
-      "url": "http://127.0.0.1:5581/functions/v1/app/api/jobs/job_7465d26b-8d8f-4c33-9681-34c72b313002",
+      "url": "http://127.0.0.1:5581/functions/v1/app/api/jobs/job_73130619-e0f9-435f-841b-ec972081557d",
       "method": "GET"
     },
     {
-      "url": "http://127.0.0.1:5581/functions/v1/app/api/jobs/job_7465d26b-8d8f-4c33-9681-34c72b313002",
+      "url": "http://127.0.0.1:5581/functions/v1/app/api/jobs/job_73130619-e0f9-435f-841b-ec972081557d",
       "method": "GET"
     },
     {
-      "url": "http://127.0.0.1:5581/functions/v1/app/api/jobs/job_7465d26b-8d8f-4c33-9681-34c72b313002",
+      "url": "http://127.0.0.1:5581/functions/v1/app/api/jobs/job_73130619-e0f9-435f-841b-ec972081557d",
       "method": "GET"
     },
     {
@@ -1346,15 +1349,15 @@
       "method": "GET"
     },
     {
-      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/E2971F17-620D-4C99-8229-91988E07467A/from?get&nocache=17d40&tm=2026-11-25T14%3A25%3A04.556Z",
+      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/AFE70C15-85DD-43A4-8055-12741CEB47AC/from?get&nocache=10589&tm=2026-11-25T15%3A41%3A16.715Z",
       "method": "GET"
     },
     {
-      "url": "http://127.0.0.1:5581/functions/v1/app/api/jobs/job_7465d26b-8d8f-4c33-9681-34c72b313002",
+      "url": "http://127.0.0.1:5581/functions/v1/app/api/jobs/job_73130619-e0f9-435f-841b-ec972081557d",
       "method": "GET"
     },
     {
-      "url": "http://127.0.0.1:5581/functions/v1/app/api/jobs/job_7465d26b-8d8f-4c33-9681-34c72b313002",
+      "url": "http://127.0.0.1:5581/functions/v1/app/api/jobs/job_73130619-e0f9-435f-841b-ec972081557d",
       "method": "GET"
     },
     {
@@ -1362,7 +1365,7 @@
       "method": "GET"
     },
     {
-      "url": "http://me.kis.v2.scr.kaspersky-labs.com/FD126C42-EBFA-4E12-B309-BB3FDD723AC1/main.js?attr=wsWOHwcvtdrjqQeu9vuaOZfLDzdW2icflADqxPoCCo12qdIkwLVj6AJDkujUneHJ",
+      "url": "http://me.kis.v2.scr.kaspersky-labs.com/FD126C42-EBFA-4E12-B309-BB3FDD723AC1/main.js?attr=mrmfmFpuwQfj9ew26Luk6j-UUAEjlc3-1sJY-FIFnqYOtwKvmJ-XsnIEKBcWO_kt",
       "method": "GET"
     },
     {
@@ -1402,7 +1405,7 @@
       "method": "GET"
     },
     {
-      "url": "http://me.kis.v2.scr.kaspersky-labs.com/7D8B79A2-8974-4D7B-A76A-F4F29624C06B5prEIpDugZdzr8GPGrhAMx9J0mt4kUjEqJvqmeEXYpxzJ0z1n0VjvoCLMu2_fERuG-qX3tzKxHnuGktsGMOOvQ/init?data=eyJ1cmwiOiJodHRwOi8vMTI3LjAuMC4xOjU1ODEvIiwicGx1Z2lucyI6IndudCZ3c20mdnMmdWEmY2ImeGhyX2NvbnRlbnQiLCJkYXRhIjp7ImRhdGEiOlt7InBsdWdpbiI6IndudCIsInBhcmFtZXRlcnMiOiJ7XCJyZWZlcnJlclwiOlwiXCJ9In0seyJwbHVnaW4iOiJ3c20iLCJwYXJhbWV0ZXJzIjoie1wicmVmZXJyZXJcIjpcIlwiLFwic3R1YklkXCI6XCJcIn0ifSx7InBsdWdpbiI6InVhIiwicGFyYW1ldGVycyI6Int9In0seyJwbHVnaW4iOiJ4aHJfY29udGVudCIsInBhcmFtZXRlcnMiOiJ7XCJyZWZlcnJlclwiOlwiXCJ9In1dfSwiaXNUb3BMZXZlbCI6dHJ1ZSwicGFnZVN0YXJ0VGltZSI6MCwibmF2aWdhdGlvblN0YXJ0VGltZSI6MTc5NTYxNjcwNjE5Nn0%3D&nocache=17f3b&tm=2026-11-25T14%3A25%3A06.260Z",
+      "url": "http://me.kis.v2.scr.kaspersky-labs.com/7D8B79A2-8974-4D7B-A76A-F4F29624C06B-2VVBBQtF7FR5KnQAYyaI95drnBrl6M0JPwt9VcAPNdWZLM5n24MQlypxr6Xxhv7mcQHUGtKeyLRtRIDRECxvg/init?data=eyJ1cmwiOiJodHRwOi8vMTI3LjAuMC4xOjU1ODEvIiwicGx1Z2lucyI6IndudCZ3c20mdnMmdWEmY2ImeGhyX2NvbnRlbnQiLCJkYXRhIjp7ImRhdGEiOlt7InBsdWdpbiI6IndudCIsInBhcmFtZXRlcnMiOiJ7XCJyZWZlcnJlclwiOlwiXCJ9In0seyJwbHVnaW4iOiJ3c20iLCJwYXJhbWV0ZXJzIjoie1wicmVmZXJyZXJcIjpcIlwiLFwic3R1YklkXCI6XCJcIn0ifSx7InBsdWdpbiI6InVhIiwicGFyYW1ldGVycyI6Int9In0seyJwbHVnaW4iOiJ4aHJfY29udGVudCIsInBhcmFtZXRlcnMiOiJ7XCJyZWZlcnJlclwiOlwiXCJ9In1dfSwiaXNUb3BMZXZlbCI6dHJ1ZSwicGFnZVN0YXJ0VGltZSI6MCwibmF2aWdhdGlvblN0YXJ0VGltZSI6MTc5NTYyMTI3ODMwNX0%3D&nocache=1322c&tm=2026-11-25T15%3A41%3A18.360Z",
       "method": "GET"
     },
     {
@@ -1454,7 +1457,7 @@
       "method": "GET"
     },
     {
-      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/2E560A0E-E41D-4C8F-A7D7-C5428C307557/to/wsm.sessionActivated?tm=2026-11-25T14%3A25%3A06.284Z",
+      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/C18272CF-B67F-4818-BA51-6411947B75ED/to/wsm.sessionActivated?tm=2026-11-25T15%3A41%3A18.385Z",
       "method": "POST"
     },
     {
@@ -1498,11 +1501,7 @@
       "method": "GET"
     },
     {
-      "url": "http://127.0.0.1:5581/functions/v1/app/api/knowledge/runs/kr_2e16145a-e5ca-4889-baca-0ccab8eadd3a",
-      "method": "GET"
-    },
-    {
-      "url": "http://127.0.0.1:5581/functions/v1/app/api/jobs/job_7465d26b-8d8f-4c33-9681-34c72b313002",
+      "url": "http://127.0.0.1:5581/functions/v1/app/api/knowledge/runs/kr_892cdad9-4129-4f98-9e79-30c1c4fbb24c",
       "method": "GET"
     },
     {
@@ -1530,51 +1529,55 @@
       "method": "GET"
     },
     {
-      "url": "http://127.0.0.1:5581/functions/v1/app/api/jobs/job_7465d26b-8d8f-4c33-9681-34c72b313002",
+      "url": "http://127.0.0.1:5581/functions/v1/app/api/jobs/job_73130619-e0f9-435f-841b-ec972081557d",
       "method": "GET"
     },
     {
-      "url": "http://127.0.0.1:5581/functions/v1/app/api/jobs/job_7465d26b-8d8f-4c33-9681-34c72b313002",
+      "url": "http://127.0.0.1:5581/functions/v1/app/api/jobs/job_73130619-e0f9-435f-841b-ec972081557d",
       "method": "GET"
     },
     {
-      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/2E560A0E-E41D-4C8F-A7D7-C5428C307557/from?get&nocache=12500&tm=2026-11-25T14%3A25%3A08.284Z",
+      "url": "http://127.0.0.1:5581/functions/v1/app/api/jobs/job_73130619-e0f9-435f-841b-ec972081557d",
       "method": "GET"
     },
     {
-      "url": "http://127.0.0.1:5581/functions/v1/app/api/jobs/job_7465d26b-8d8f-4c33-9681-34c72b313002",
+      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/C18272CF-B67F-4818-BA51-6411947B75ED/from?get&nocache=101f4&tm=2026-11-25T15%3A41%3A20.387Z",
       "method": "GET"
     },
     {
-      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/2E560A0E-E41D-4C8F-A7D7-C5428C307557/from?get&nocache=1c638&tm=2026-11-25T14%3A25%3A08.786Z",
+      "url": "http://127.0.0.1:5581/functions/v1/app/api/jobs/job_73130619-e0f9-435f-841b-ec972081557d",
       "method": "GET"
     },
     {
-      "url": "http://127.0.0.1:5581/functions/v1/app/api/jobs/job_7465d26b-8d8f-4c33-9681-34c72b313002",
+      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/C18272CF-B67F-4818-BA51-6411947B75ED/from?get&nocache=1b430&tm=2026-11-25T15%3A41%3A20.888Z",
       "method": "GET"
     },
     {
-      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/2E560A0E-E41D-4C8F-A7D7-C5428C307557/from?get&nocache=155c2&tm=2026-11-25T14%3A25%3A09.289Z",
+      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/C18272CF-B67F-4818-BA51-6411947B75ED/from?get&nocache=137f0&tm=2026-11-25T15%3A41%3A21.391Z",
       "method": "GET"
     },
     {
-      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/2E560A0E-E41D-4C8F-A7D7-C5428C307557/from?get&nocache=126a4&tm=2026-11-25T14%3A25%3A09.789Z",
+      "url": "http://127.0.0.1:5581/functions/v1/app/api/jobs/job_73130619-e0f9-435f-841b-ec972081557d",
       "method": "GET"
     },
     {
-      "url": "http://127.0.0.1:5581/functions/v1/app/api/jobs/job_7465d26b-8d8f-4c33-9681-34c72b313002",
+      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/C18272CF-B67F-4818-BA51-6411947B75ED/from?get&nocache=1989c&tm=2026-11-25T15%3A41%3A21.895Z",
       "method": "GET"
     },
     {
-      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/2E560A0E-E41D-4C8F-A7D7-C5428C307557/from?get&nocache=162a6&tm=2026-11-25T14%3A25%3A10.292Z",
+      "url": "http://127.0.0.1:5581/functions/v1/app/api/jobs/job_73130619-e0f9-435f-841b-ec972081557d",
       "method": "GET"
     },
     {
-      "url": "http://127.0.0.1:5581/functions/v1/app/api/jobs/job_7465d26b-8d8f-4c33-9681-34c72b313002",
+      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/C18272CF-B67F-4818-BA51-6411947B75ED/from?get&nocache=125c1&tm=2026-11-25T15%3A41%3A22.400Z",
       "method": "GET"
     },
     {
-      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/2E560A0E-E41D-4C8F-A7D7-C5428C307557/from?get&nocache=18c83&tm=2026-11-25T14%3A25%3A10.793Z",
+      "url": "http://127.0.0.1:5581/functions/v1/app/api/jobs/job_73130619-e0f9-435f-841b-ec972081557d",
+      "method": "GET"
+    },
+    {
+      "url": "http://me.kis.v2.scr.kaspersky-labs.com/715E15B4-27A6-4427-9817-DB29846162AA/C18272CF-B67F-4818-BA51-6411947B75ED/from?get&nocache=1d779&tm=2026-11-25T15%3A41%3A22.904Z",
       "method": "GET"
     }
   ],
@@ -1582,7 +1585,7 @@
     {
       "url": "http://127.0.0.1:5581/functions/v1/app/api/analysis/tasks/atask_9cf2587e-9818-447d-9f63-9111eb090fa8/recommend",
       "method": "POST",
-      "post": "{\"purpose\":\"估计海水漂流时长对萌发率的影响并比较干燥组与新鲜组\",\"subquestionId\":\"subq_744874b8-3948-4514-bfd6-87a8a16dd8ae\",\"optional\":[{\"ref\":{\"kind\":\"card\",\"id\":\"card_cfa0372e-18bb-4aa2-9606-8a140780c598\"},\"included\":true},{\"ref\":{\"kind\":\"card\",\"id\":\"card_7012e88a-b06a-4b57-8d00-ba0bdbae1386\"},\"included\":true},{\"ref\":{\"kind\":\"card\",\"id\":\"card_a56d5514-401c-44a5-a19e-3006ddcec46a\"},\"included\":false}],\"versions\":{\"table:tbl_3c626067-1f9e-41f0-a168-00ebba478810\":1,\"measurement:meas_28204d07-e9ec-4f56-8404-6c873a07c0e8\":1,\"card:card_cfa0372e-18bb-4aa2-9606-8a140780c598\":2,\"card:card_7012e88a-b06a-4b57-8d00-ba0bdbae1386\":2,\"card:card_a56d5514-401c-44a5-a19e-3006ddcec46a\":2}}"
+      "post": "{\"purpose\":\"估计海水漂流时长对萌发率的影响并比较干燥组与新鲜组\",\"workspace\":true,\"topicId\":\"topic_f6bff443-3f74-4677-810d-0c15c7d06bf0\",\"subquestionId\":\"subq_744874b8-3948-4514-bfd6-87a8a16dd8ae\",\"core\":[{\"kind\":\"table\",\"id\":\"tbl_3c626067-1f9e-41f0-a168-00ebba478810\",\"version\":\"r1\"},{\"kind\":\"measurement\",\"id\":\"meas_28204d07-e9ec-4f56-8404-6c873a07c0e8\",\"version\":\"r1\"}],\"optional\":[{\"ref\":{\"kind\":\"card\",\"id\":\"card_cfa0372e-18bb-4aa2-9606-8a140780c598\"},\"included\":true,\"version\":\"r2\"},{\"ref\":{\"kind\":\"card\",\"id\":\"card_7012e88a-b06a-4b57-8d00-ba0bdbae1386\"},\"included\":true,\"version\":\"r2\"},{\"ref\":{\"kind\":\"card\",\"id\":\"card_a56d5514-401c-44a5-a19e-3006ddcec46a\"},\"included\":false,\"version\":\"r2\"}],\"versions\":{\"table:tbl_3c626067-1f9e-41f0-a168-00ebba478810\":\"r1\",\"measurement:meas_28204d07-e9ec-4f56-8404-6c873a07c0e8\":\"r1\",\"card:card_cfa0372e-18bb-4aa2-9606-8a140780c598\":\"r2\",\"card:card_7012e88a-b06a-4b57-8d00-ba0bdbae1386\":\"r2\"}}"
     },
     {
       "url": "http://127.0.0.1:5581/functions/v1/app/api/executions/exec_8eddd772-b298-42eb-b8b6-6f114bd27b3f/events",
